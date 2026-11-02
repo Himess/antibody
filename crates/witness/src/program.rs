@@ -16,7 +16,7 @@ use antibody_verifier::{
     manifest::Manifest,
     program::{anchor_checks, canaries_pass, classify, execute_program, ProgramError},
     run::{anchor_checks_on_witness, program_chain_spec, reserved_address},
-    run_program, BaseWitness, Envelope, Payload, ProgramContext, ProgramWitness, QuorumVote, VerifyError, WITNESS_VERSION,
+    run_program, BaseWitness, Envelope, Payload, ProgramContext, ProgramWitness, QuorumVote, SubmissionWitness, VerifyError, WITNESS_VERSION,
 };
 use eyre::{eyre, Result};
 use revm::{primitives::KECCAK_EMPTY, state::Bytecode};
@@ -166,6 +166,65 @@ pub fn build_program(
     Err(eyre!("fixpoint not reached after 8 passes"))
 }
 
+/// A submission built from the program's pinned base witness alone, with no RPC (docs/spec.md §4.4):
+/// the bundle and a delta that proves nothing, for a proof that reads only state the base proves (its
+/// senders are never read). The TEE merges it with the base it pinned. A proof that reads anything
+/// else is `Err`, naming what is missing, so the caller can build from an RPC at the anchor instead.
+/// `manifest_json` is the manifest the run is judged under (the round's after round 0).
+pub fn build_submission_from_base(base_envelope: &[u8], manifest_json: &[u8], bundle: Bundle, program_key: &str) -> Result<(Vec<u8>, ProgramBuildMeta, ProgramReceipt)> {
+    let t_all = Instant::now();
+    let base_env = Envelope::decode(base_envelope).map_err(|e| eyre!(e))?;
+    let Payload::Base(base) = &base_env.payload else {
+        return Err(eyre!("not a base witness"));
+    };
+    let header: alloy_consensus::Header = alloy_rlp::decode_exact(&base.header_rlp).map_err(|e| eyre!("base header: {e}"))?;
+    let anchor_hash = header.hash_slow();
+    let sub = SubmissionWitness {
+        bundle: bundle.clone(),
+        state: antibody_verifier::trie::digest_only(header.state_root).map_err(|e| eyre!(e))?,
+        bytecodes: vec![],
+    };
+    // What the TEE runs: the base merged with this submission, under `manifest_json`.
+    let w = ProgramWitness::assemble(base, &sub, manifest_json.to_vec().into()).map_err(|e| eyre!(e))?;
+    let full = Envelope {
+        version: WITNESS_VERSION,
+        chain_id: base_env.chain_id,
+        claimed_block_hash: anchor_hash,
+        quorum: base_env.quorum.clone(),
+        payload: Payload::Program(w.clone()),
+    };
+    let reserved = Some(reserved_address(program_key, anchor_hash));
+    match execute_program_witness(&full, &w, None, reserved) {
+        Ok(_) | Err(ProgramError::Verdict { .. }) => {}
+        Err(ProgramError::Verify(VerifyError::Incomplete(mw))) => return Err(eyre!("the proof reads {mw}, which the base witness does not prove")),
+        Err(ProgramError::Verify(e)) => return Err(eyre!("strict verification on the base failed: {e}")),
+    }
+    let digest: [u8; 32] = Sha256::digest(full.encode()).into();
+    let receipt = run_program(&full, &w, digest, &ProgramContext::default());
+    let env = Envelope {
+        version: WITNESS_VERSION,
+        chain_id: base_env.chain_id,
+        claimed_block_hash: anchor_hash,
+        quorum: base_env.quorum.clone(),
+        payload: Payload::Submission(sub),
+    };
+    let bytes = env.encode();
+    let meta = ProgramBuildMeta {
+        anchor_block: header.number,
+        anchor_hash,
+        senders: (0..bundle.senders).map(|i| sender_address(&bundle.sender_salt, i)).collect(),
+        trace_verdict: None,
+        trace_ms: 0,
+        trace_rpc_reads: 0,
+        fixpoint_passes: 0,
+        fixpoint_added: vec![],
+        proof_quorum: vec![],
+        stats: witness_stats(&env, &bytes, &Default::default()),
+        total_ms: t_all.elapsed().as_millis() as u64,
+    };
+    Ok((bytes, meta, receipt))
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BaseBuildMeta {
     pub anchor_block: u64,
@@ -265,6 +324,9 @@ fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, 
     for t in &manifest.targets {
         access.entry(t.address).or_default().insert(implementation_slot);
     }
+    // The fee recipient: every transaction of a proof credits it, so a proof that reads only state the
+    // base proves can be sealed against the base alone (`build_submission_from_base`).
+    access.entry(header.beneficiary).or_default();
     let mut codes = rec.codes.clone();
     let mut block_numbers = rec.block_numbers.clone();
     let mut reports = Vec::new();
