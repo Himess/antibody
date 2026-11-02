@@ -1,872 +1,732 @@
-//! Rule tests driven by the recorded fixture: the exact canonical manifest bytes and the fp_tags the
-//! verifier produced for agents A–F and the project's known issue (fixtures/acme-local).
+//! Adapter tests. The rules themselves are tested in `crates/rules` (scenarios, and replay against the
+//! Quint model); these cover what near-antibody adds: requests built from its own records, the
+//! OutLayer call, callbacks that never panic, the T1 binding and image pins, storage paid from NEAR
+//! credit, and credit-then-withdraw.
 
 use near_sdk::{
-    json_types::U128,
-    serde_json::{self, json, Value},
-    test_utils::VMContextBuilder,
-    testing_env, AccountId, PromiseError,
+    mock::MockAction,
+    test_utils::{get_created_receipts, get_logs, VMContextBuilder},
+    testing_env, RuntimeFeesConfig,
 };
 
 use super::*;
+use antibody_rules::{CommitState, Kind, Phase, Tier};
 
-const MANIFEST: &str = include_str!("../../../fixtures/acme-local/manifest.json");
-const EXPECTED: &str = include_str!("../../../fixtures/acme-local/expected.json");
-const ONE_TUSD: u128 = 1_000_000;
+const ONE: u128 = 1_000_000;
+const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+const RUN_DEPOSIT: u128 = 20_000_000_000_000_000_000_000;
+const START: u64 = 1_800_000_000;
+const ESCROW: u128 = 50_000 * ONE;
+const BOND: u128 = 10 * ONE;
+const CRITICAL: u128 = 5_000 * ONE;
+const EPOCH: &str = "00112233aabbccdd";
 
 fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
 }
-
-fn contract_id() -> AccountId {
+fn me() -> AccountId {
     acc("antibody.testnet")
 }
 fn token() -> AccountId {
-    acc("tusd.antibody-hq.testnet")
+    acc("tusd.antibody.testnet")
 }
 fn project() -> AccountId {
-    acc("acme.antibody-hq.testnet")
+    acc("acme.testnet")
 }
-fn owner() -> AccountId {
-    acc("owner.testnet")
+fn alice() -> AccountId {
+    acc("alice.testnet")
 }
-fn hunter(a: &str) -> AccountId {
-    acc(&format!("agent-{}.testnet", a.to_lowercase()))
+fn wasm_hash() -> String {
+    "ab".repeat(32)
 }
-
-struct World {
-    c: Antibody,
-    height: u64,
-    ts: u64,
+fn terms() -> String {
+    "cc".repeat(32)
 }
 
-fn manifest_json() -> Value {
-    serde_json::from_str(MANIFEST).unwrap()
+/// A worker image whose five registers are the bytes n, n+1, …, n+4.
+fn image(n: u8) -> Measurements {
+    let h = |k: u8| format!("{:02x}", n + k).repeat(48);
+    Measurements { mrtd: h(0), rtmr0: h(1), rtmr1: h(2), rtmr2: h(3), rtmr3: h(4) }
 }
 
-fn expected() -> Value {
-    serde_json::from_str(EXPECTED).unwrap()
-}
-
-/// fp_tags recorded for one fixture submission: [(slot, tag)].
-fn tags_of(agent: &str) -> Vec<(u8, String)> {
-    expected()["submissions"][agent]["fp_tags"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| (t["slot"].as_u64().unwrap() as u8, t["tag"].as_str().unwrap().to_string()))
-        .collect()
-}
-
-fn verifier() -> VerifierConfig {
-    VerifierConfig {
-        wasm_url: "https://github.com/Himess/antibody/releases/download/v0.4.0/antibody-verify.wasm".into(),
-        wasm_hash: "23136cf2367e6b60a59c50cdb9b1af5d9a467acd11fbe4c75c40ad9b0aeac08b".into(),
-        pubkey: Some("11".repeat(32)),
-        secrets_owner: Some(acc("antibody-hq.testnet")),
-        secrets_profile: Some("antibody-v1".into()),
-        max_instructions: 5_000_000_000,
-        max_memory_mb: 512,
-        max_execution_seconds: 60,
-        deposit: U128(10_000_000_000_000_000_000_000),
-        tier: "T0".into(),
+fn defaults(hash: &str) -> Defaults {
+    Defaults {
+        verifier: VerifierPin {
+            wasm_url: "https://example.org/antibody-verify.wasm".into(),
+            wasm_hash: hash.into(),
+            max_instructions: 10_000_000_000,
+            max_memory_mb: 512,
+            max_execution_seconds: 60,
+            deposit: U128(RUN_DEPOSIT),
+        },
+        outlayer: acc("outlayer.testnet"),
+        dcap_verifier: acc("tee-verifier.testnet"),
+        accepted_tcb: vec!["UpToDate".into()],
+        image_delay_secs: 7 * 86_400,
+        light_client: None,
+        guardian: None,
+        treasury: acc("treasury.testnet"),
+        image_registry: acc("worker.outlayer.testnet"),
     }
 }
 
-impl World {
-    fn new() -> Self {
-        Self::with_verifier(verifier())
-    }
+fn manifest(schema: &str, project: &AccountId) -> String {
+    json!({
+        "schema": schema,
+        "program": {"name": "Acme Lend (test)", "project": project, "description": "A test fixture with a planted bug."},
+        "anchor": {"chain_id": 31337, "block_number": 22, "evm_spec": "osaka", "trust": "project-attested",
+                   "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0"},
+        "targets": [{"name": "Pool", "address": "0x1fca3c5c59c22727fa8052158f737f4fc4c3062e", "code_hash": format!("0x{}", "11".repeat(32))}],
+        "invariants": {"gas_limit": 1_000_000, "slots": [
+            {"bit": 0, "name": "solvency", "severity": "critical"},
+            {"bit": 1, "name": "accounting", "severity": "high"}]},
+        "settlement": {
+            "payouts": {"critical": CRITICAL.to_string(), "high": (1_000 * ONE).to_string(), "medium": (100 * ONE).to_string(),
+                        "low": (10 * ONE).to_string(), "impact_bps": 0, "impact_cap": "0", "decimals": 6},
+            "instant": {"cap": CRITICAL.to_string(), "budget": (10_000 * ONE).to_string(), "window_secs": 86_400},
+            "fees": {"protocol_bps": 100, "release": "0"},
+            "bond": BOND.to_string(),
+            "challenge_bond": (50 * ONE).to_string(),
+            "windows": {"reveal": 3_600, "challenge": 1_800, "resolve": 3_600, "infra_grace": 3_600, "run_timeout": 600,
+                        "round_min": 3_600, "rerun_window": 3_600, "disclosure_max_delay": 86_400,
+                        "deadline": START + 10 * 86_400, "exit_grace": 86_400},
+            "slot_budgets": [{"slot": 0, "budget": (20_000 * ONE).to_string()}],
+            "unevaluable": "refund",
+            "known": {"max_count": 4, "max_share_bps": 5_000},
+            "pause": {"slots": [0], "min_impact_usd_micro": "0"},
+            "terms_sha256": terms(),
+        }
+    })
+    .to_string()
+}
 
-    fn with_verifier(v: VerifierConfig) -> Self {
-        let deadline = manifest_json()["rules"]["deadline_unix"].as_u64().unwrap();
-        let mut w = World { c: unsafe_default(), height: 1_000, ts: (deadline - 12 * 86_400) * 1_000_000_000 };
-        w.ctx(owner());
-        w.c = Antibody::new(owner(), token(), acc("outlayer.testnet"), None, v);
+fn base() -> Loc {
+    Loc { location: "near-tx:9Xq1base:acme.testnet".into(), sha256: "33".repeat(32) }
+}
+
+struct W {
+    c: Contract,
+    now: u64,
+}
+
+fn set_env(predecessor: &AccountId, signer: &AccountId, now: u64, deposit: u128, results: Vec<PromiseResult>) {
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(me())
+        .predecessor_account_id(predecessor.clone())
+        .signer_account_id(signer.clone())
+        .block_timestamp(now * 1_000_000_000)
+        .attached_deposit(NearToken::from_yoctonear(deposit))
+        .account_balance(NearToken::from_near(1_000))
+        .prepaid_gas(Gas::from_tgas(300));
+    testing_env!(b.build(), near_sdk::test_vm_config(), RuntimeFeesConfig::test(), Default::default(), results);
+}
+
+impl W {
+    fn new() -> W {
+        set_env(&acc("owner.testnet"), &acc("owner.testnet"), START, 0, vec![]);
+        let c = Contract::new(acc("owner.testnet"), token(), defaults(&wasm_hash()));
+        let mut w = W { c, now: START };
+        // OutLayer's registry lists image 1 before any program exists.
+        w.callback(vec![]);
+        assert_eq!(w.c.on_images(Ok(vec![image(1)])), 1);
         w
     }
 
-    fn ctx(&self, predecessor: AccountId) {
-        let mut b = VMContextBuilder::new();
-        b.current_account_id(contract_id())
-            .predecessor_account_id(predecessor.clone())
-            .signer_account_id(predecessor)
-            .block_height(self.height)
-            .block_timestamp(self.ts)
-            .account_balance(near_sdk::NearToken::from_near(100))
-            .prepaid_gas(near_sdk::Gas::from_tgas(1000));
-        testing_env!(b.build());
+    fn call(&self, who: &AccountId) {
+        set_env(who, who, self.now, 0, vec![]);
+    }
+    fn call_with(&self, who: &AccountId, deposit: u128) {
+        set_env(who, who, self.now, deposit, vec![]);
+    }
+    fn token_call(&self, sender: &AccountId) {
+        set_env(&token(), sender, self.now, 0, vec![]);
+    }
+    fn callback(&self, results: Vec<PromiseResult>) {
+        set_env(&me(), &acc("relayer.testnet"), self.now, 0, results);
+    }
+    fn tick(&mut self, secs: u64) {
+        self.now += secs;
     }
 
-    fn advance(&mut self, blocks: u64) {
-        self.height += blocks;
-        self.ts += blocks * 600_000_000;
+    fn register(&mut self, who: &AccountId) {
+        self.call_with(who, NEAR);
+        self.c.storage_deposit(None, None);
     }
 
-    fn create_program(&mut self, guardian: Option<AccountId>) -> u32 {
-        self.ctx(token());
-        let msg = json!({"create_program": {"manifest": MANIFEST, "manifest_url": "https://example.org/manifest.json",
-                                            "project_pubkey": "22".repeat(32), "guardian": guardian}})
-        .to_string();
-        let _ = self.c.ft_on_transfer(project(), U128(25_000 * ONE_TUSD), msg);
-        self.c.get_program(0).map(|p| p.id).unwrap()
+    fn create(&mut self) -> u32 {
+        self.register(&project());
+        self.token_call(&project());
+        let msg = json!({"create_program": {"manifest": manifest("antibody.manifest.v2", &project()),
+                                           "manifest_url": "https://example.org/acme.json", "project_pk": "22".repeat(32)}});
+        let _ = self.c.ft_on_transfer(project(), U128(ESCROW), msg.to_string());
+        self.c.list_programs(None, None).last().unwrap().id
     }
 
-    fn deposit(&mut self, who: &AccountId, amount: u128) {
-        self.ctx(token());
-        let _ = self.c.ft_on_transfer(who.clone(), U128(amount), json!({"deposit": {}}).to_string());
+    fn facts(&self, run_id: u64, kind: &str, keys: Value, extra: Value) -> Vec<u8> {
+        let r = self.c.get_run(run_id).unwrap();
+        let p = self.c.get_program(r.program).unwrap();
+        let mut f = json!({
+            "v": 2, "mode": r.mode, "request_sha256": r.request_sha256, "manifest_sha256": p.manifest_of(r.round),
+            "program_key": p.key, "round": r.round,
+            "key_epoch": if r.mode == Mode::Activate { EPOCH.to_string() } else { p.key_epoch.clone() },
+            "commit_id": r.commit, "run_id": run_id, "kind": kind, "keys": keys, "receipt_sha256": "77".repeat(32),
+        });
+        if let Value::Object(m) = extra {
+            for (k, v) in m {
+                f[k] = v;
+            }
+        }
+        serde_json::to_vec(&f).unwrap()
     }
 
-    fn sealed(&self, who: &AccountId, salt: u8) -> SealedRef {
-        let sha = hex(&near_sdk::env::sha256(format!("blob/{who}/{salt}").as_bytes()));
-        SealedRef { url: format!("https://blobs.example.org/{sha}"), sha256: sha, wrap_v: "ab".repeat(92) }
+    fn answer(&mut self, run_id: u64, out: &[u8]) {
+        self.callback(vec![PromiseResult::Successful(out.to_vec())]);
+        self.c.on_run(run_id);
     }
 
-    /// commit + submit for `who`; returns the commit id.
-    fn commit_and_submit(&mut self, who: &AccountId, salt: u8) -> u64 {
-        let s = self.sealed(who, salt);
-        let h = commit_hash_for(&format!("{}/0", contract_id()), who.as_str(), &s.sha256);
-        self.ctx(who.clone());
-        let id = self.c.commit(0, h);
-        self.ctx(who.clone());
-        let _ = self.c.submit(id, s);
-        id
-    }
-
-    fn facts(&self, commit_id: u64, kind: Kind, tags: &[(u8, String)], impact: u128) -> FactsIn {
-        let bits: Vec<u8> = tags.iter().map(|t| t.0).collect();
-        FactsIn {
-            v: 1,
-            program: format!("{}/0", contract_id()),
-            commit_id,
-            poc_hash: "33".repeat(32),
-            kind,
-            broken_mask: mask_hex(&bits),
-            fp_tags: tags.iter().map(|(s, t)| FpTagIn { slot: *s, tag: t.clone() }).collect(),
-            impact_usd_micro: impact.to_string(),
-            project_wrap: if kind == Kind::Violation { Some("44".repeat(80)) } else { None },
-            receipt_hash: hex(&near_sdk::env::sha256(format!("receipt/{commit_id}").as_bytes())),
-            manifest_hash: hex(&near_sdk::env::sha256(MANIFEST.as_bytes())),
-            wasm_hash: None,
+    fn attestation(&self, run_id: u64, out: &[u8]) -> tee::TeeAttestationIn {
+        let r = self.c.get_run(run_id).unwrap();
+        tee::TeeAttestationIn {
+            task_type: "execute".into(),
+            task_id: 42,
+            repo: None,
+            commit: None,
+            build_target: Some("wasm32-wasip2".into()),
+            wasm_hash: Some(wasm_hash()),
+            input_hash: Some(r.request_sha256.hex()),
+            output_hash: hex::encode(env::sha256(out)),
+            block_height: Some(100),
+            caller_account_id: Some(r.signer.clone()),
+            project_id: None,
+            secrets_ref: None,
+            timestamp: 1_700_000_000,
+            attached_usd: None,
         }
     }
 
-    /// Facts for a round-`r` commit or re-run (`manifest_hash` of that round's manifest).
-    fn facts_at(&self, commit_id: u64, kind: Kind, tags: &[(u8, String)], manifest_hash: &str, poc_hash: &str) -> FactsIn {
-        let mut f = self.facts(commit_id, kind, tags, 0);
-        f.manifest_hash = manifest_hash.to_string();
-        f.poc_hash = poc_hash.to_string();
-        f.project_wrap = None;
-        f
+    /// The DCAP verifier's answer for a quote from `img` whose report_data is `rd`.
+    fn verified(&self, img: &Measurements, rd: &[u8], status: &str) -> tee::VerificationResultIn {
+        let b48 = |h: &str| <[u8; 48]>::try_from(hex::decode(h).unwrap()).unwrap();
+        let mut report_data = [0u8; 64];
+        report_data[..32].copy_from_slice(rd);
+        let td = tee::TDReport10In {
+            tee_tcb_svn: [0; 16],
+            mr_seam: [0; 48],
+            mr_signer_seam: [0; 48],
+            seam_attributes: [0; 8],
+            td_attributes: [0; 8],
+            xfam: [0; 8],
+            mr_td: b48(&img.mrtd),
+            mr_config_id: [0; 48],
+            mr_owner: [0; 48],
+            mr_owner_config: [0; 48],
+            rt_mr0: b48(&img.rtmr0),
+            rt_mr1: b48(&img.rtmr1),
+            rt_mr2: b48(&img.rtmr2),
+            rt_mr3: b48(&img.rtmr3),
+            report_data,
+        };
+        let ok = || tee::TcbStatusWithAdvisoryIn { status: tee::TcbStatusIn::UpToDate, advisory_ids: vec![] };
+        tee::VerificationResultIn::Verified(tee::VerifiedReportIn {
+            status: status.into(),
+            advisory_ids: vec![],
+            report: tee::ReportIn::TD10(td),
+            ppid: vec![],
+            qe_status: ok(),
+            platform_status: ok(),
+        })
     }
 
-    fn verdict(&mut self, commit_id: u64, f: FactsIn) {
-        self.ctx(contract_id());
-        self.c.on_verified(commit_id, Ok(Some(f)));
+    /// Relays run `run_id`'s quote from `img`; returns whether near-antibody accepted it.
+    fn t1(&mut self, run_id: u64, out: &[u8], img: &Measurements) -> bool {
+        let a = self.attestation(run_id, out);
+        self.call(&acc("relayer.testnet"));
+        let _ = self.c.confirm_tee(run_id, a.clone(), Base64VecU8(vec![1, 2, 3]), Base64VecU8(vec![4, 5]));
+        let rd = a.task_hash();
+        self.callback(vec![]);
+        let v = self.verified(img, &rd, "UpToDate");
+        self.c.on_tee(run_id, hex::encode(&rd), Ok(v))
     }
 
-    fn outcome(&self, id: u64) -> Outcome {
-        self.c.get_commit(id).unwrap().outcome
+    /// A program through creation, a T1 activation and open.
+    fn open(&mut self) -> u32 {
+        let id = self.create();
+        self.call(&project());
+        self.c.activate(id, base());
+        let run = self.c.get_program(id).unwrap().activation_run.unwrap();
+        let out = self.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+        self.answer(run, &out);
+        assert!(self.t1(run, &out, &image(1)));
+        self.call(&project());
+        self.c.open_program(id);
+        id
     }
 
-    fn finalize(&mut self, id: u64) {
-        self.ctx(acc("anyone.testnet"));
-        let _ = self.c.finalize(id);
-    }
-}
-
-#[allow(clippy::uninit_assumed_init, invalid_value)]
-fn unsafe_default() -> Antibody {
-    // Replaced immediately by `Antibody::new` in `World::new`; never used before that.
-    Antibody {
-        owner: owner(),
-        token: token(),
-        outlayer: acc("outlayer.testnet"),
-        light_client: None,
-        verifier: verifier(),
-        programs: Vector::new(b"P"),
-        commits: Vector::new(b"C"),
-        claims: LookupMap::new(b"K"),
-        program_claims: LookupMap::new(b"Q"),
-        balances: LookupMap::new(b"B"),
-        reputation: LookupMap::new(b"R"),
-        hunters: Vector::new(b"H"),
-        stats: Stats::default(),
-        tee: TeeConfig::default(),
-    }
-}
-
-fn setup_open_program_with_known_issue(guardian: Option<AccountId>) -> (World, u128) {
-    let mut w = World::new();
-    w.create_program(guardian);
-    let p = w.c.get_program(0).unwrap();
-    assert_eq!(p.status, ProgramStatus::KnownIssues);
-    assert!(matches!(p.anchor_trust, AnchorTrust::ProjectAttested { .. }));
-    assert_eq!(p.manifest_hash, hex(&near_sdk::env::sha256(MANIFEST.as_bytes())));
-    // t0: the project's known issue (dust withdrawals) claims (share_price, AcmeVault.withdraw).
-    let s = w.sealed(&project(), 0);
-    w.ctx(project());
-    let _ = w.c.submit_known(0, s);
-    let known = w.facts(0, Kind::Violation, &tags_of("KNOWN"), 0);
-    w.verdict(0, known);
-    assert_eq!(w.outcome(0), Outcome::KnownIssue);
-    w.ctx(project());
-    w.c.open_program(0);
-    assert_eq!(w.c.get_program(0).unwrap().status, ProgramStatus::Open);
-    let bond = w.c.get_program(0).unwrap().bond.0;
-    for a in ["A", "B", "C", "D", "E", "F"] {
-        w.deposit(&hunter(a), 100 * ONE_TUSD);
-    }
-    (w, bond)
-}
-
-#[test]
-fn six_scripted_submissions_follow_the_committed_rules() {
-    let (mut w, bond) = setup_open_program_with_known_issue(Some(acc("guardian.antibody-hq.testnet")));
-    let a = w.commit_and_submit(&hunter("A"), 1);
-    let b = w.commit_and_submit(&hunter("B"), 1);
-    let c = w.commit_and_submit(&hunter("C"), 1);
-    w.advance(5);
-    let d = w.commit_and_submit(&hunter("D"), 1);
-    let e = w.commit_and_submit(&hunter("E"), 1);
-    let f = w.commit_and_submit(&hunter("F"), 1);
-    assert_eq!((a, b, c, d, e, f), (1, 2, 3, 4, 5, 6));
-
-    // Facts exactly as the verifier produced them for the fixture.
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 462_931_853_867));
-    assert!(w.c.get_program(0).unwrap().pause_requested, "a verified Critical triggers the guardian");
-    w.verdict(b, w.facts(b, Kind::Violation, &tags_of("B"), 1_000_000_000));
-    w.verdict(c, w.facts(c, Kind::NoViolation, &[], 33_480_361));
-    w.verdict(d, w.facts(d, Kind::Violation, &tags_of("D"), 6_375_600_000));
-    w.verdict(e, w.facts(e, Kind::Violation, &tags_of("E"), 0));
-    w.verdict(f, w.facts(f, Kind::Violation, &tags_of("F"), 10_400_000_000));
-
-    // Bonds: refunded on any Violation, forfeited to the project on NoViolation.
-    for x in ["A", "B", "D", "E", "F"] {
-        assert_eq!(w.c.get_balance(hunter(x)).0, 100 * ONE_TUSD, "{x} bond refunded");
-    }
-    assert_eq!(w.c.get_balance(hunter("C")).0, 100 * ONE_TUSD - bond, "C forfeits the bond");
-    assert_eq!(w.c.get_balance(project()).0, bond, "the forfeited bond goes to the project");
-    assert_eq!(w.outcome(c), Outcome::Rejected { kind: Kind::NoViolation });
-
-    // Finalization waits for every earlier reveal window.
-    w.ctx(acc("anyone.testnet"));
-    let early = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.finalize(a);
-    }));
-    assert!(early.is_err(), "finalize must wait for the reveal window");
-    let window = w.c.get_program(0).unwrap().reveal_window_blocks;
-    w.advance(window + 10);
-    for id in [a, b, d, e, f] {
-        w.finalize(id);
+    fn commitment(&self, program: u32, who: &AccountId, blob: &[u8]) -> String {
+        let p = self.c.get_program(program).unwrap();
+        commitment_for(&p.key, p.round, who.as_str(), &H32(env::sha256_array(blob))).hex()
     }
 
-    // A: Critical 10,000 tUSD > instant cap 5,000 => T0 optimistic delay, then release.
-    let delayed = w.outcome(a);
-    assert!(matches!(delayed, Outcome::Delayed { amount, severity: Severity::Critical, .. } if amount.0 == 10_000 * ONE_TUSD));
-    // B: High 3,000 tUSD <= cap => paid at once.
-    assert!(matches!(w.outcome(b), Outcome::Paid { amount, severity: Severity::High, .. } if amount.0 == 3_000 * ONE_TUSD));
-    // D: same (slot, tag) as A, committed later => Duplicate of A, no payout.
-    assert_eq!(w.outcome(d), Outcome::Duplicate { of: a });
-    // E: key claimed by the project's known issue at t0 => Known.
-    assert_eq!(w.outcome(e), Outcome::Known { of: 0 });
-    // F: solvency again but a different function (repay) => a new key, paid.
-    assert!(matches!(w.outcome(f), Outcome::Delayed { severity: Severity::Critical, .. }));
+    /// A commit with its bond by `ft_transfer_call`; returns the commit id.
+    fn commit(&mut self, program: u32, who: &AccountId, blob: &[u8]) -> u64 {
+        let cm = self.commitment(program, who, blob);
+        let round = self.c.get_program(program).unwrap().round;
+        self.token_call(who);
+        let msg = json!({"commit": {"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms()}});
+        let _ = self.c.ft_on_transfer(who.clone(), U128(BOND), msg.to_string());
+        let p = self.c.get_program(program).unwrap();
+        self.c.list_commits(program, Some(p.commits - 1), Some(1))[0].id
+    }
 
-    let proof = w.c.get_duplicate_proof(d).unwrap();
-    assert_eq!(proof["earlier"]["id"], json!(a));
-    assert_eq!(proof["equal_keys"].as_array().unwrap().len(), 1);
-    assert_eq!(proof["disclosed"], json!(false));
-    assert!(w.c.get_duplicate_proof(e).is_some(), "known issues show the t0 claim too");
+    fn outlayer_call(&self) -> (Value, u128) {
+        let r = get_created_receipts().into_iter().find(|r| r.receiver_id == acc("outlayer.testnet")).expect("an OutLayer call");
+        match &r.actions[0] {
+            MockAction::FunctionCallWeight { method_name, args, attached_deposit, .. } => {
+                assert_eq!(method_name, b"request_execution");
+                (serde_json::from_slice(args).unwrap(), attached_deposit.as_yoctonear())
+            }
+            a => panic!("unexpected action {a:?}"),
+        }
+    }
 
-    // Release after the challenge delay.
-    w.ts += 301 * 1_000_000_000;
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.release(a);
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.release(f);
-    assert!(matches!(w.outcome(a), Outcome::Paid { amount, .. } if amount.0 == 10_000 * ONE_TUSD));
-    assert!(matches!(w.outcome(f), Outcome::Paid { .. }));
-
-    let p = w.c.get_program(0).unwrap();
-    assert_eq!(p.paid.0, 23_000 * ONE_TUSD);
-    assert_eq!(p.reserved.0, 0);
-    let s = w.c.get_stats();
-    assert_eq!((s.paid_findings, s.duplicates, s.known, s.slop_rejected), (3, 1, 1, 1));
-    let keys = w.c.get_keys(0, None);
-    assert_eq!(keys.len(), 4, "known(share_price) + A + B + F");
-    let rep_d = w.c.get_reputation(hunter("D"));
-    assert_eq!((rep_d.late, rep_d.earned.0), (1, 0));
-    let board = w.c.leaderboard(None);
-    assert_eq!(board[0].0, hunter("A"));
-}
-
-#[test]
-fn an_earlier_commit_revealed_later_still_wins() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    // A commits first but reveals after D (same key).
-    let sa = w.sealed(&hunter("A"), 7);
-    w.ctx(hunter("A"));
-    let a = w.c.commit(0, commit_hash_for("antibody.testnet/0", hunter("A").as_str(), &sa.sha256));
-    let d = w.commit_and_submit(&hunter("D"), 7);
-    w.verdict(d, w.facts(d, Kind::Violation, &tags_of("D"), 1));
-    w.ctx(hunter("A"));
-    let _ = w.c.submit(a, sa);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 1));
-    w.advance(1_000);
-    w.finalize(d);
-    assert_eq!(w.outcome(d), Outcome::Duplicate { of: a });
-    w.finalize(a);
-    assert!(matches!(w.outcome(a), Outcome::Delayed { .. } | Outcome::Paid { .. }));
-}
-
-#[test]
-fn finalize_waits_for_earlier_verifications() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 2); // stays Verifying
-    let b = w.commit_and_submit(&hunter("B"), 2);
-    w.verdict(b, w.facts(b, Kind::Violation, &tags_of("B"), 1));
-    w.advance(1_000);
-    w.ctx(acc("anyone.testnet"));
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.finalize(b);
-    }));
-    assert!(r.is_err(), "A (earlier) is still being verified");
-    w.verdict(a, w.facts(a, Kind::NoViolation, &[], 0));
-    w.finalize(b);
-    assert!(matches!(w.outcome(b), Outcome::Paid { .. }));
-}
-
-#[test]
-fn unrevealed_commits_forfeit_and_late_reveals_fail() {
-    let (mut w, bond) = setup_open_program_with_known_issue(None);
-    let s = w.sealed(&hunter("A"), 3);
-    w.ctx(hunter("A"));
-    let a = w.c.commit(0, commit_hash_for("antibody.testnet/0", hunter("A").as_str(), &s.sha256));
-    w.advance(1_000);
-    w.ctx(hunter("A"));
-    let late = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.submit(a, s.clone());
-    }));
-    assert!(late.is_err(), "reveal after the window must fail");
-    w.ctx(acc("anyone.testnet"));
-    w.c.expire(a);
-    assert_eq!(w.outcome(a), Outcome::Forfeited);
-    assert_eq!(w.c.get_balance(project()).0, bond);
-    assert_eq!(w.c.get_reputation(hunter("A")).unrevealed, 1);
-}
-
-#[test]
-fn reveal_must_match_the_commitment_and_the_committer() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let s = w.sealed(&hunter("A"), 4);
-    w.ctx(hunter("A"));
-    let a = w.c.commit(0, commit_hash_for("antibody.testnet/0", hunter("A").as_str(), &s.sha256));
-    // Another account cannot reveal A's commit.
-    w.ctx(hunter("B"));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.submit(a, s.clone());
-    }))
-    .is_err());
-    // A different blob does not match the commitment.
-    let other = w.sealed(&hunter("A"), 5);
-    w.ctx(hunter("A"));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.submit(a, other);
-    }))
-    .is_err());
-}
-
-#[test]
-fn malformed_or_mismatched_facts_are_errors_not_payouts() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 6);
-    let mut f = w.facts(a, Kind::Violation, &tags_of("A"), 1);
-    f.manifest_hash = "00".repeat(32);
-    w.verdict(a, f);
-    assert!(matches!(w.outcome(a), Outcome::Error { .. }));
-    let b = w.commit_and_submit(&hunter("B"), 6);
-    let mut f = w.facts(b, Kind::Violation, &tags_of("B"), 1);
-    f.broken_mask = "0x3".into();
-    w.verdict(b, f);
-    assert!(matches!(w.outcome(b), Outcome::Error { .. }));
-    let c = w.commit_and_submit(&hunter("C"), 6);
-    w.verdict(c, w.facts(c, Kind::Violation, &[(9, "aa".repeat(32))], 1));
-    assert!(matches!(w.outcome(c), Outcome::Error { .. }), "undeclared invariant");
-    for x in ["A", "B", "C"] {
-        assert_eq!(w.c.get_balance(hunter(x)).0, 100 * ONE_TUSD, "{x}: bond refunded on error");
+    fn events(&self, name: &str) -> Vec<Value> {
+        get_logs()
+            .iter()
+            .filter_map(|l| l.strip_prefix("EVENT_JSON:"))
+            .map(|j| serde_json::from_str::<Value>(j).unwrap())
+            .filter(|e| e["event"] == name)
+            .map(|e| e["data"][0].clone())
+            .collect()
     }
 }
 
+// ------------------------------------------------------------------------------------------ creation
+
 #[test]
-fn null_results_are_retried_then_given_up() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 8);
-    w.ctx(contract_id());
-    w.c.on_verified(a, Ok(None));
-    assert_eq!(w.c.get_commit(a).unwrap().status, CommitStatus::VerifyFailed);
-    for _ in 0..2 {
-        w.ctx(acc("anyone.testnet"));
-        let _ = w.c.retry_verify(a);
-        w.ctx(contract_id());
-        w.c.on_verified(a, Err(PromiseError::Failed));
+fn create_pins_the_defaults_and_charges_storage_to_the_project() {
+    let mut w = W::new();
+    let id = w.create();
+    let p = w.c.get_program(id).unwrap();
+    assert_eq!(p.key, "antibody.testnet/0");
+    assert_eq!(p.phase, Phase::Setup, "a chain the light client cannot check: unconfirmed, then setup");
+    assert_eq!(p.manifest_sha256, H32(env::sha256_array(manifest("antibody.manifest.v2", &project()).as_bytes())));
+    assert_eq!(p.params.critical, CRITICAL);
+    assert_eq!(p.params.run_deposit, RUN_DEPOSIT + RUN_STORAGE_ALLOWANCE);
+    let pins = w.c.get_pins(id).unwrap();
+    assert_eq!(pins.verifier.wasm_hash, wasm_hash());
+    assert_eq!(pins.images, vec![image(1)]);
+    let meta = w.c.get_program_meta(id).unwrap();
+    assert_eq!(meta.terms_sha256, terms());
+    assert_eq!(meta.slots.len(), 2);
+    let credit = w.c.get_account(project()).near;
+    assert!(credit < NEAR && credit > NEAR - NEAR / 10, "storage came from the project's NEAR credit: {credit}");
+    assert!(w.c.audit_contract().ok);
+}
+
+#[test]
+#[should_panic(expected = "not enough NEAR credit for storage")]
+fn create_needs_a_storage_deposit() {
+    let mut w = W::new();
+    w.token_call(&project());
+    let msg = json!({"create_program": {"manifest": manifest("antibody.manifest.v2", &project()), "manifest_url": "u", "project_pk": "22".repeat(32)}});
+    let _ = w.c.ft_on_transfer(project(), U128(ESCROW), msg.to_string());
+}
+
+#[test]
+#[should_panic(expected = "the manifest's project must create the program")]
+fn only_the_manifests_project_creates_it() {
+    let mut w = W::new();
+    w.register(&alice());
+    w.token_call(&alice());
+    let msg = json!({"create_program": {"manifest": manifest("antibody.manifest.v2", &project()), "manifest_url": "u", "project_pk": "22".repeat(32)}});
+    let _ = w.c.ft_on_transfer(alice(), U128(ESCROW), msg.to_string());
+}
+
+#[test]
+#[should_panic(expected = "schema must be antibody.manifest.v2")]
+fn a_v1_manifest_is_refused() {
+    let mut w = W::new();
+    w.register(&project());
+    w.token_call(&project());
+    let msg = json!({"create_program": {"manifest": manifest("antibody.manifest.v1", &project()), "manifest_url": "u", "project_pk": "22".repeat(32)}});
+    let _ = w.c.ft_on_transfer(project(), U128(ESCROW), msg.to_string());
+}
+
+#[test]
+#[should_panic(expected = "low-order point")]
+fn a_low_order_project_key_is_refused() {
+    let mut w = W::new();
+    w.register(&project());
+    w.token_call(&project());
+    let msg = json!({"create_program": {"manifest": manifest("antibody.manifest.v2", &project()), "manifest_url": "u", "project_pk": "00".repeat(32)}});
+    let _ = w.c.ft_on_transfer(project(), U128(ESCROW), msg.to_string());
+}
+
+#[test]
+#[should_panic(expected = "only the payout token")]
+fn only_the_payout_token_calls_ft_on_transfer() {
+    let mut w = W::new();
+    w.call(&alice());
+    let _ = w.c.ft_on_transfer(alice(), U128(1), json!("deposit").to_string());
+}
+
+#[test]
+#[should_panic(expected = "not enough NEAR credit for storage")]
+fn a_registration_pays_for_its_own_entry() {
+    let w = W::new();
+    let mut c = w.c;
+    set_env(&alice(), &alice(), START, 1, vec![]);
+    c.storage_deposit(Some(acc("spam-1.testnet")), None);
+}
+
+#[test]
+fn defaults_reach_new_programs_only() {
+    let mut w = W::new();
+    let first = w.create();
+    w.call_with(&acc("owner.testnet"), 1);
+    w.c.set_defaults(defaults(&"cd".repeat(32)));
+    let second = w.create();
+    assert_eq!(w.c.get_pins(first).unwrap().verifier.wasm_hash, wasm_hash());
+    assert_eq!(w.c.get_pins(second).unwrap().verifier.wasm_hash, "cd".repeat(32));
+}
+
+// ------------------------------------------------------------------------------------------ runs
+
+#[test]
+fn a_run_request_names_its_run_and_is_hashed_into_it() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let (args, attached) = w.outlayer_call();
+    assert_eq!(attached, RUN_DEPOSIT, "the pinned deposit; the storage allowance stays with near-antibody");
+    assert_eq!(args["payer_account_id"], json!(project()), "OutLayer refunds the unused deposit to the requester");
+    assert_eq!(args["source"]["WasmUrl"]["hash"], json!(wasm_hash()));
+    assert_eq!(args["response_format"], json!("Json"));
+    let input = args["input_data"].as_str().unwrap();
+    assert_eq!(w.c.get_run(run).unwrap().request_sha256, H32(env::sha256_array(input.as_bytes())));
+    let req: Value = serde_json::from_str(input).unwrap();
+    assert_eq!(req["v"], json!(2));
+    assert_eq!(req["mode"], json!("activate"));
+    assert_eq!(req["program_key"], json!("antibody.testnet/0"));
+    assert_eq!(req["run_id"], json!(run));
+    assert_eq!(req["commit_id"], Value::Null);
+    assert_eq!(req["base"], json!({"near_tx": base().location, "sha256": base().sha256}));
+    let left = w.c.get_account(project()).near;
+    w.call(&project());
+    assert!(left < NEAR - RUN_DEPOSIT - RUN_STORAGE_ALLOWANCE, "the requester paid the run");
+}
+
+#[test]
+fn outlayer_failures_and_bad_output_never_panic() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    // The call failed: a typed failure, and the run can be retried.
+    w.callback(vec![PromiseResult::Failed]);
+    w.c.on_run(run);
+    assert!(matches!(w.c.get_run(run).unwrap().outcome, RunOutcome::Failed { .. }));
+    assert_eq!(w.events("retry_available").len(), 1);
+    // A second callback for the same run is stale: logged, not a panic.
+    w.callback(vec![PromiseResult::Successful(b"{}".to_vec())]);
+    w.c.on_run(run);
+    // `null` (OutLayer's failure output) is a failure too.
+    w.tick(601);
+    w.call(&project());
+    w.c.activate(id, base());
+    let run2 = w.c.get_program(id).unwrap().activation_run.unwrap();
+    assert_ne!(run, run2);
+    w.answer(run2, b"null");
+    assert!(matches!(w.c.get_run(run2).unwrap().outcome, RunOutcome::Failed { .. }));
+    // Output that is not facts is the run's fault: InfraError, never a verdict.
+    w.tick(601);
+    w.call(&project());
+    w.c.activate(id, base());
+    let run3 = w.c.get_program(id).unwrap().activation_run.unwrap();
+    w.answer(run3, b"{not json");
+    assert_eq!(w.c.get_run(run3).unwrap().facts().unwrap().kind, Kind::InfraError);
+}
+
+// ------------------------------------------------------------------------------------------ T1
+
+#[test]
+fn activation_counts_only_with_t1() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    assert_eq!(w.c.get_run(run).unwrap().tier(), Some(Tier::T0));
+    assert!(w.c.get_program(id).unwrap().sealing_pk.is_none(), "T0 does not activate");
+    assert!(w.t1(run, &out, &image(1)));
+    let p = w.c.get_program(id).unwrap();
+    assert_eq!(p.sealing_pk, Some(H32([0x55; 32])));
+    assert_eq!(p.key_epoch, EPOCH);
+    assert_eq!(w.c.get_run(run).unwrap().tier(), Some(Tier::T1));
+}
+
+#[test]
+#[should_panic(expected = "not the program's pinned verifier")]
+fn t1_binds_the_pinned_build() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    let mut a = w.attestation(run, &out);
+    a.wasm_hash = Some("ee".repeat(32));
+    w.call(&alice());
+    let _ = w.c.confirm_tee(run, a, Base64VecU8(vec![1]), Base64VecU8(vec![2]));
+}
+
+#[test]
+#[should_panic(expected = "output differs")]
+fn t1_binds_the_output_near_antibody_received() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    let a = w.attestation(run, b"{\"another\":\"output\"}");
+    w.call(&alice());
+    let _ = w.c.confirm_tee(run, a, Base64VecU8(vec![1]), Base64VecU8(vec![2]));
+}
+
+#[test]
+#[should_panic(expected = "a run with secrets is not a v2 run")]
+fn t1_refuses_runs_with_secrets() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    let mut a = w.attestation(run, &out);
+    a.secrets_ref = Some("antibody-hq.testnet/antibody-v1".into());
+    w.call(&alice());
+    let _ = w.c.confirm_tee(run, a, Base64VecU8(vec![1]), Base64VecU8(vec![2]));
+}
+
+#[test]
+fn quotes_that_do_not_bind_or_come_from_other_images_are_refused() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    let a = w.attestation(run, &out);
+    let rd = a.task_hash();
+    // Another task's report_data.
+    w.callback(vec![]);
+    let v = w.verified(&image(1), &[9u8; 32], "UpToDate");
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)));
+    // A TCB status the program does not accept.
+    w.callback(vec![]);
+    let v = w.verified(&image(1), &rd, "OutOfDate");
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)));
+    // The DCAP verifier rejected the quote, or its call failed.
+    w.callback(vec![]);
+    let rej = tee::VerificationResultIn::Rejected(tee::VerifierErrorIn::DcapVerification("bad quote".into()));
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(rej)));
+    w.callback(vec![]);
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Err(PromiseError::Failed)));
+    // An image approved after the program was created counts only after the image delay.
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(Ok(vec![image(1), image(20)])), 1);
+    w.callback(vec![]);
+    let v = w.verified(&image(20), &rd, "UpToDate");
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)));
+    assert_eq!(w.events("tee_rejected")[0]["reason"], json!("worker image not pinned for this program"));
+    assert!(w.c.get_program(id).unwrap().sealing_pk.is_none());
+    w.tick(7 * 86_400 + 1);
+    w.callback(vec![]);
+    let v = w.verified(&image(20), &rd, "UpToDate");
+    assert!(w.c.on_tee(run, hex::encode(&rd), Ok(v)));
+    assert!(w.c.get_program(id).unwrap().sealing_pk.is_some());
+}
+
+#[test]
+fn a_vetoed_image_is_refused_even_when_pinned() {
+    let mut w = W::new();
+    let id = w.create();
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    w.call_with(&acc("owner.testnet"), 1);
+    w.c.veto_image(image(1));
+    assert!(!w.t1(run, &out, &image(1)));
+}
+
+// ------------------------------------------------------------------------------------------ hunters
+
+#[test]
+fn proof_to_payment_to_withdrawal() {
+    let mut w = W::new();
+    let id = w.open();
+    w.register(&alice());
+    let blob = b"sealed proof of concept".to_vec();
+    let cid = w.commit(id, &alice(), &blob);
+    assert_eq!(w.c.get_commit(cid).unwrap().state, CommitState::Committed);
+    w.call(&alice());
+    w.c.reveal(cid, BlobIn::Inline(hex::encode(&blob)));
+    let (args, _) = w.outlayer_call();
+    let req: Value = serde_json::from_str(args["input_data"].as_str().unwrap()).unwrap();
+    assert_eq!(req["mode"], json!("verify"));
+    assert_eq!(req["hunter"], json!(alice()));
+    assert_eq!(req["blob"], json!({"inline": hex::encode(&blob)}));
+    assert_eq!(args["payer_account_id"], json!(alice()));
+    let run = w.c.get_commit(cid).unwrap().run.unwrap();
+    let out = w.facts(run, "Violation", json!([{"slot": 0, "tag": "66".repeat(32)}]), json!({"impact_usd_micro": "0"}));
+    w.answer(run, &out);
+    // T0: final only after the challenge window.
+    w.call(&acc("keeper.testnet"));
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.c.allocate(id, None))).is_err());
+    w.tick(1_801);
+    w.call(&acc("keeper.testnet"));
+    w.c.allocate(id, None);
+    assert!(matches!(w.c.get_commit(cid).unwrap().state, CommitState::Holder { .. }));
+    w.call(&acc("keeper.testnet"));
+    w.c.pay(cid);
+    assert_eq!(w.c.get_account(alice()).tokens, CRITICAL + BOND, "payout plus the returned bond");
+    let a = w.c.audit(id).unwrap();
+    assert!(a.ok, "{a:?}");
+    // Credit, then withdraw.
+    w.call_with(&alice(), 1);
+    w.c.withdraw(U128(CRITICAL));
+    let r = get_created_receipts().into_iter().find(|r| r.receiver_id == token()).expect("an ft_transfer");
+    match &r.actions[0] {
+        MockAction::FunctionCallWeight { method_name, args, attached_deposit, .. } => {
+            assert_eq!(method_name, b"ft_transfer");
+            assert_eq!(attached_deposit.as_yoctonear(), 1);
+            let a: Value = serde_json::from_slice(args).unwrap();
+            assert_eq!(a["receiver_id"], json!(alice()));
+            assert_eq!(a["amount"], json!(CRITICAL.to_string()));
+        }
+        a => panic!("unexpected action {a:?}"),
     }
-    assert!(matches!(w.outcome(a), Outcome::Error { .. }));
-    assert_eq!(w.c.get_balance(hunter("A")).0, 100 * ONE_TUSD);
+    assert_eq!(w.c.get_account(alice()).tokens, BOND);
+    // A failed transfer is credited back.
+    w.callback(vec![]);
+    w.c.on_withdraw(alice().to_string(), U128(CRITICAL), Err(PromiseError::Failed));
+    assert_eq!(w.c.get_account(alice()).tokens, CRITICAL + BOND);
+    assert!(w.c.audit_contract().ok);
 }
 
 #[test]
-fn challenge_freezes_a_delayed_payout_for_the_arbiter() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 9);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 1));
-    w.advance(1_000);
-    w.finalize(a);
-    w.ctx(acc("watcher.testnet"));
-    w.c.challenge(a, "local re-run disagrees".into());
-    assert!(matches!(w.outcome(a), Outcome::Challenged { .. }));
-    w.ts += 10_000 * 1_000_000_000;
-    w.ctx(acc("anyone.testnet"));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.release(a);
-    }))
-    .is_err());
-    w.ctx(owner());
-    let _ = w.c.resolve_challenge(a, false, "receipt mismatch confirmed".into());
-    assert!(matches!(w.outcome(a), Outcome::Cancelled { .. }));
-    assert_eq!(w.c.get_program(0).unwrap().reserved.0, 0);
+#[should_panic(expected = "does not match the commitment")]
+fn a_reveal_must_match_its_commitment() {
+    let mut w = W::new();
+    let id = w.open();
+    w.register(&alice());
+    let cid = w.commit(id, &alice(), b"the committed blob");
+    w.call(&alice());
+    w.c.reveal(cid, BlobIn::Inline(hex::encode(b"another blob")));
 }
 
 #[test]
-fn light_client_anchor_check() {
-    let mut w = World::new();
-    w.ctx(owner());
-    w.c.set_light_client(Some(acc("client-eth2.sepolia.testnet")));
-    // A Sepolia variant of the fixture manifest.
-    let mut m = manifest_json();
-    m["anchor"]["chain_id"] = json!(SEPOLIA);
-    let manifest = serde_json::to_string(&m).unwrap();
-    let anchor_hash = m["anchor"]["block_hash"].as_str().unwrap().to_string();
-    let create = |w: &mut World| {
-        w.ctx(token());
-        let msg = json!({"create_program": {"manifest": manifest, "manifest_url": "https://example.org/m.json",
-                                            "project_pubkey": "22".repeat(32), "guardian": null}})
-        .to_string();
-        let _ = w.c.ft_on_transfer(project(), U128(1_000 * ONE_TUSD), msg);
-    };
-    let mut h = [0u8; 32];
-    h.copy_from_slice(&(0..32).map(|i| u8::from_str_radix(&anchor_hash[2 + 2 * i..4 + 2 * i], 16).unwrap()).collect::<Vec<_>>());
-    create(&mut w);
-    w.ctx(contract_id());
-    assert_eq!(w.c.on_anchor_checked(0, acc("client-eth2.sepolia.testnet"), Ok(Some(h))).0, 0);
-    assert!(matches!(w.c.get_program(0).unwrap().anchor_trust, AnchorTrust::LightClient { .. }));
-    create(&mut w);
-    w.ctx(contract_id());
-    let refund = w.c.on_anchor_checked(1, acc("client-eth2.sepolia.testnet"), Ok(Some([7u8; 32])));
-    assert_eq!(refund.0, 1_000 * ONE_TUSD, "a forged anchor refunds the escrow");
-    assert!(matches!(w.c.get_program(1).unwrap().status, ProgramStatus::Rejected { .. }));
-    create(&mut w);
-    w.ctx(contract_id());
-    assert_eq!(w.c.on_anchor_checked(2, acc("client-eth2.sepolia.testnet"), Ok(None)).0, 0);
-    assert!(matches!(w.c.get_program(2).unwrap().anchor_trust, AnchorTrust::ProjectAttested { .. }));
+#[should_panic(expected = "inline blobs are at most 15 KB")]
+fn large_blobs_go_through_fastfs() {
+    let mut w = W::new();
+    let id = w.open();
+    w.register(&alice());
+    let blob = vec![7u8; MAX_INLINE_BLOB + 1];
+    let cid = w.commit(id, &alice(), &blob);
+    w.call(&alice());
+    w.c.reveal(cid, BlobIn::Inline(hex::encode(&blob)));
 }
 
 #[test]
-fn disclosure_publishes_content_keys_for_duplicate_proofs() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 11);
-    let d = w.commit_and_submit(&hunter("D"), 11);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 1));
-    w.verdict(d, w.facts(d, Kind::Violation, &tags_of("D"), 1));
-    w.advance(1_000);
-    w.finalize(d);
-    let p = w.c.get_program(0).unwrap();
-    w.ts = p.deadline_ns + p.disclosure_after_ns + 1;
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.disclose(0);
-    w.ctx(contract_id());
-    let keys = vec![
-        DisclosedKey { commit_id: a, round: None, content_key: "aa".repeat(32) },
-        DisclosedKey { commit_id: d, round: None, content_key: "dd".repeat(32) },
-    ];
-    w.c.on_disclosed(0, Ok(Some(DisclosureIn { program: "antibody.testnet/0".into(), k_program: "cc".repeat(32), keys })));
-    let proof = w.c.get_duplicate_proof(d).unwrap();
-    assert_eq!(proof["disclosed"], json!(true));
-    assert_eq!(proof["earlier_content_key"], json!("aa".repeat(32)));
-    assert_eq!(proof["k_program"], json!("cc".repeat(32)));
+fn a_fastfs_blob_is_recorded_and_reused_by_later_runs() {
+    let mut w = W::new();
+    let id = w.open();
+    w.register(&alice());
+    let blob = vec![7u8; 40 * 1024];
+    let cid = w.commit(id, &alice(), &blob);
+    let loc = Loc { location: "near-tx:4Zk9blob:alice.testnet".into(), sha256: hex::encode(env::sha256(&blob)) };
+    w.call(&alice());
+    w.c.reveal(cid, BlobIn::NearTx(loc.clone()));
+    let run = w.c.get_commit(cid).unwrap().run.unwrap();
+    // OutLayer failed; the retry finds the blob without the hunter passing it again.
+    w.callback(vec![PromiseResult::Failed]);
+    w.c.on_run(run);
+    w.call(&alice());
+    w.c.retry(cid, None);
+    let (args, _) = w.outlayer_call();
+    let req: Value = serde_json::from_str(args["input_data"].as_str().unwrap()).unwrap();
+    assert_eq!(req["blob"], json!({"near_tx": loc.location, "sha256": loc.sha256}));
 }
 
 #[test]
-fn escrow_stays_locked_while_commits_are_pending() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 12);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 1));
-    let p = w.c.get_program(0).unwrap();
-    w.ts = p.deadline_ns + 1;
-    w.ctx(project());
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = w.c.withdraw_escrow(0);
-    }))
-    .is_err());
-    w.advance(1_000);
-    w.finalize(a);
-    w.ts += 10_000 * 1_000_000_000;
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.release(a);
-    w.ctx(project());
-    let _ = w.c.withdraw_escrow(0);
-    let p = w.c.get_program(0).unwrap();
-    assert!(p.escrow_withdrawn);
-    assert_eq!(p.escrow.0, p.paid.0);
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn withdrawals_need_a_full_access_key() {
+    let mut w = W::new();
+    w.register(&alice());
+    w.call(&alice());
+    w.c.withdraw(U128(1));
 }
 
 #[test]
-fn commit_needs_an_open_program_and_a_bond() {
-    let mut w = World::new();
-    w.create_program(None);
-    let s = w.sealed(&hunter("A"), 1);
-    w.deposit(&hunter("A"), 100 * ONE_TUSD);
-    w.ctx(hunter("A"));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        w.c.commit(0, commit_hash_for("antibody.testnet/0", hunter("A").as_str(), &s.sha256));
-    }))
-    .is_err(), "not open yet (known-issues phase)");
-    w.ctx(project());
-    w.c.open_program(0);
-    w.ctx(hunter("Z"));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        w.c.commit(0, "ab".repeat(32));
-    }))
-    .is_err(), "no internal balance for the bond");
+fn an_agent_over_its_cap_is_contained() {
+    let mut w = W::new();
+    let id = w.open();
+    w.register(&alice());
+    // Alice funds her credit and lets her agent bond at most half a bond per commit.
+    w.token_call(&alice());
+    let _ = w.c.ft_on_transfer(alice(), U128(100 * ONE), json!("deposit").to_string());
+    let bot = acc("bot.alice.testnet");
+    w.call_with(&alice(), 1);
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND / 2));
+    let cm = w.commitment(id, &bot, b"agent blob");
+    w.call(&bot);
+    assert_eq!(w.c.commit(id, 0, cm.clone(), terms()), None);
+    let s = w.c.agent_statement(bot.clone());
+    assert_eq!(s["containment_events"], json!(1));
+    assert_eq!(w.events("containment").len(), 1);
+    assert_eq!(w.c.get_account(alice()).tokens, 100 * ONE, "nothing was bonded");
+    // Within its cap, the bond comes from Alice's credit and payouts go to her.
+    w.call_with(&alice(), 1);
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND));
+    w.call(&bot);
+    let cid = w.c.commit(id, 0, cm, terms()).unwrap();
+    let c = w.c.get_commit(cid).unwrap();
+    assert_eq!((c.hunter.as_str(), c.beneficiary.as_str()), (bot.as_str(), "alice.testnet"));
+    assert_eq!(w.c.get_account(alice()).tokens, 100 * ONE - BOND);
 }
 
 #[test]
-fn mask_hex_matches_the_verifier_format() {
-    assert_eq!(mask_hex(&[]), "0x0");
-    assert_eq!(mask_hex(&[0]), "0x1");
-    assert_eq!(mask_hex(&[2]), "0x4");
-    assert_eq!(mask_hex(&[0, 1, 2]), "0x7");
-    assert_eq!(mask_hex(&[8]), "0x100");
-    assert_eq!(mask_hex(&[254]), format!("0x4{}", "0".repeat(63)));
-}
-
-/// The round-1 manifest of the fixture: AcmeLend's runtime code replaced (the fix), nothing else.
-fn round1_manifest() -> (String, String) {
-    let mut m = manifest_json();
-    let i = m["targets"].as_array().unwrap().iter().position(|t| t["name"] == "AcmeLend").unwrap();
-    let code = [0x60u8, 0x00, 0x60, 0x00, 0xf3];
-    let h = format!("0x{}", hex(&near_sdk::env::keccak256(&code)));
-    m["targets"][i]["code_hash"] = json!(h);
-    m["round"] = json!(1);
-    m["overrides"] = json!([{"address": m["targets"][i]["address"], "code_hash": h, "runtime_code": format!("0x{}", hex(&code))}]);
-    let s = serde_json::to_string(&m).unwrap();
-    let mh = hex(&near_sdk::env::sha256(s.as_bytes()));
-    (s, mh)
-}
-
-fn panics(f: impl FnOnce()) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+#[should_panic(expected = "an agent cannot withdraw")]
+fn an_agent_cannot_withdraw() {
+    let mut w = W::new();
+    w.register(&alice());
+    let bot = acc("bot.alice.testnet");
+    w.call_with(&alice(), 1);
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND));
+    w.call_with(&bot, 1);
+    w.c.withdraw(U128(1));
 }
 
 #[test]
-fn rounds_release_fixed_keys_and_carry_the_rest() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    for x in ["G", "H", "K"] {
-        w.deposit(&hunter(x), 100 * ONE_TUSD);
-    }
-    let a = w.commit_and_submit(&hunter("A"), 1);
-    let b = w.commit_and_submit(&hunter("B"), 1);
-    let f = w.commit_and_submit(&hunter("F"), 1);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
-    w.verdict(b, w.facts(b, Kind::Violation, &tags_of("B"), 0));
-    w.verdict(f, w.facts(f, Kind::Violation, &tags_of("F"), 0));
-    let window = w.c.get_program(0).unwrap().reveal_window_blocks;
-    w.advance(window + 1);
-    for id in [a, b, f] {
-        w.finalize(id);
-    }
-
-    // The project ships the fix for A's bug as a code override at the same anchor.
-    let (r1, r1_hash) = round1_manifest();
-    w.ctx(acc("mallory.testnet"));
-    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 9)); }), "no proposed round yet");
-    w.ctx(project());
-    w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://example.org/round1.json".into());
-    let p = w.c.get_program(0).unwrap();
-    assert_eq!((p.round, p.open_round, p.rounds[0].status.clone()), (1, 0, RoundStatus::Proposed));
-    assert_eq!(p.rounds[0].overrides[0].name, "AcmeLend");
-
-    // A new hunter finds a second, different bug in AcmeLend.borrow at the fixed state (same key as A).
-    let g = w.commit_and_submit(&hunter("G"), 1);
-    assert_eq!(w.c.get_commit(g).unwrap().round, 1);
-    w.verdict(g, w.facts_at(g, Kind::Violation, &tags_of("A"), &r1_hash, &"77".repeat(32)));
-    w.advance(window + 1);
-    w.ctx(acc("anyone.testnet"));
-    assert!(panics(|| {
-        let _ = w.c.finalize(g);
-    }), "round 1 is not open yet");
-
-    // Re-runs: only the project or the finder, only claim holders.
-    w.ctx(acc("mallory.testnet"));
-    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 9)); }), "strangers cannot re-run");
-    w.ctx(project());
-    let _ = w.c.request_rerun(a, w.sealed(&project(), 9));
-    w.ctx(project());
-    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 10)); }), "one re-run in flight");
-    let poc = "33".repeat(32); // the original verdicts' poc_hash in these tests
-    w.ctx(contract_id());
-    w.c.on_rerun(a, 1, Ok(Some(w.facts_at(a, Kind::NoViolation, &[], &r1_hash, &poc))));
-    w.ctx(hunter("F"));
-    let _ = w.c.request_rerun(f, w.sealed(&hunter("F"), 9));
-    w.ctx(contract_id());
-    w.c.on_rerun(f, 1, Ok(Some(w.facts_at(f, Kind::Violation, &tags_of("F"), &r1_hash, &poc))));
-    // A re-run that executed another PoC is no evidence: B's key will carry over.
-    w.ctx(project());
-    let _ = w.c.request_rerun(b, w.sealed(&project(), 11));
-    w.ctx(contract_id());
-    w.c.on_rerun(b, 1, Ok(Some(w.facts_at(b, Kind::NoViolation, &[], &r1_hash, &"55".repeat(32)))));
-    let rb = w.c.get_commit(b).unwrap().reruns[0].clone();
-    assert!(matches!(rb.status, RerunStatus::Failed { ref reason } if reason.contains("another PoC")));
-    let ra = w.c.get_commit(a).unwrap().reruns[0].clone();
-    assert_eq!((ra.status, ra.kind, ra.still_broken.len()), (RerunStatus::Done, Some(Kind::NoViolation), 0));
-
-    w.ctx(acc("mallory.testnet"));
-    assert!(panics(|| w.c.open_round(0)), "only the project opens a round");
-    w.ctx(project());
-    w.c.open_round(0);
-    let p = w.c.get_program(0).unwrap();
-    assert_eq!((p.open_round, p.rounds[0].carried, p.rounds[0].released), (1, 3, 1));
-    let keys = w.c.get_keys(0, Some(1));
-    assert_eq!(keys.len(), 4, "known + B + F carried, A's key now held by G");
-    let a_key = &tags_of("A")[0];
-    let holder = keys.iter().find(|k| k["slot"] == json!(a_key.0) && k["tag"] == json!(a_key.1)).unwrap();
-    assert_eq!(holder["commit"], json!(g));
-    assert_eq!(w.c.get_keys(0, Some(0)).len(), 4, "round-0 claims are kept as history");
-
-    // G is paid: the key was released by A's re-run. A still breaking key (F) and the known issue
-    // stay claimed in round 1.
-    w.finalize(g);
-    // Critical, capped by the escrow still uncommitted (25,000 - B 3,000 - A and F 10,000 each).
-    assert!(matches!(w.outcome(g), Outcome::Paid { amount, severity: Severity::Critical, .. } if amount.0 == 2_000 * ONE_TUSD));
-    let h = w.commit_and_submit(&hunter("H"), 1);
-    w.verdict(h, w.facts_at(h, Kind::Violation, &tags_of("F"), &r1_hash, &"88".repeat(32)));
-    let k = w.commit_and_submit(&hunter("K"), 1);
-    w.verdict(k, w.facts_at(k, Kind::Violation, &tags_of("KNOWN"), &r1_hash, &"99".repeat(32)));
-    w.advance(window + 1);
-    w.finalize(h);
-    w.finalize(k);
-    assert_eq!(w.outcome(h), Outcome::Duplicate { of: f });
-    assert_eq!(w.outcome(k), Outcome::Known { of: 0 });
-    // Disclosure covers re-run blobs too.
-    let p = w.c.get_program(0).unwrap();
-    w.ts = p.deadline_ns + p.disclosure_after_ns + 1;
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.disclose(0);
-}
-
-#[test]
-fn round_manifests_may_only_change_target_code() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let (r1, _) = round1_manifest();
-    let tweak = |f: &dyn Fn(&mut Value)| {
-        let mut m: Value = serde_json::from_str(&r1).unwrap();
-        f(&mut m);
-        serde_json::to_string(&m).unwrap()
-    };
-    let lower_bond = tweak(&|m| m["rules"]["bond"] = json!("1"));
-    let cheaper = tweak(&|m| m["payout"]["critical"] = json!("1"));
-    let new_anchor = tweak(&|m| m["anchor"]["block_number"] = json!(23));
-    let wrong_round = tweak(&|m| m["round"] = json!(2));
-    let bad_hash = tweak(&|m| m["overrides"][0]["code_hash"] = json!(format!("0x{}", "00".repeat(32))));
-    let no_override = tweak(&|m| m["overrides"] = json!([]));
-    for (bad, why) in [
-        (&lower_bond, "rules"),
-        (&cheaper, "payouts"),
-        (&new_anchor, "anchor"),
-        (&wrong_round, "round number"),
-        (&bad_hash, "override hash"),
-        (&no_override, "no override"),
-    ] {
-        w.ctx(project());
-        assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), bad.clone(), "https://e.org/r.json".into())), "{why} must not change");
-    }
-    w.ctx(project());
-    assert!(panics(|| w.c.propose_round(0, r1.clone(), r1.clone(), "https://e.org/r.json".into())), "base must be the program's manifest");
-    w.ctx(hunter("A"));
-    assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into())), "only the project");
-    w.ctx(project());
-    w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into());
-    w.ctx(project());
-    assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into())), "one proposed round at a time");
-}
-
-#[test]
-fn rounds_wait_for_earlier_commits_and_need_a_claim_to_rerun() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 1);
-    let d = w.commit_and_submit(&hunter("D"), 1);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
-    w.verdict(d, w.facts(d, Kind::Violation, &tags_of("D"), 0));
-    let (r1, _) = round1_manifest();
-    w.ctx(project());
-    w.c.propose_round(0, MANIFEST.into(), r1, "https://example.org/round1.json".into());
-    w.ctx(project());
-    assert!(panics(|| w.c.open_round(0)), "A and D are not finalized yet");
-    let window = w.c.get_program(0).unwrap().reveal_window_blocks;
-    w.advance(window + 1);
-    w.finalize(a);
-    w.finalize(d);
-    assert_eq!(w.outcome(d), Outcome::Duplicate { of: a });
-    w.ctx(project());
-    assert!(panics(|| { let _ = w.c.request_rerun(d, w.sealed(&project(), 3)); }), "a duplicate holds no key");
-    // Never re-run: everything carries over.
-    w.ctx(project());
-    w.c.open_round(0);
-    let p = w.c.get_program(0).unwrap();
-    assert_eq!((p.rounds[0].carried, p.rounds[0].released), (2, 0));
-}
-
-// ---------------------------------------------------------------------------- T1
-
-const T1_ATTESTATION: &str = include_str!("../../../fixtures/t1/outlayer-attestation-request-6496.json");
-const T1_COLLATERAL: &[u8] = include_bytes!("../../../fixtures/t1/collateral.borsh");
-const T1_VERIFY_RESULT: &[u8] = include_bytes!("../../../fixtures/t1/verify_quote-result.borsh");
-const T1_MEASUREMENT: &str = include_str!("../../../fixtures/t1/approved-measurement-109.json");
-
-/// Recorded public data: OutLayer's attestation for request 6496 and what the testnet DCAP verifier
-/// (`tee-verifier-2026-07-22.testnet.verify_quote`) returned for its quote. OutLayer attests the
-/// signer of the requesting transaction, so the hunter here is that request's signer, and every
-/// binding check runs on real values.
-#[test]
-fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
-    use near_sdk::borsh::BorshDeserialize;
-    use near_sdk::json_types::Base64VecU8;
-    let att: Value = serde_json::from_str(T1_ATTESTATION).unwrap();
-    let signer = acc(att["caller_account_id"].as_str().unwrap());
-    assert_ne!(signer, contract_id(), "the attested caller is the signer, not near-antibody");
-    let mut v = verifier();
-    v.wasm_hash = att["wasm_hash"].as_str().unwrap().into();
-    let (so, sp) = att["secrets_ref"].as_str().unwrap().split_once('/').unwrap();
-    v.secrets_owner = Some(acc(so));
-    v.secrets_profile = Some(sp.into());
-    let mut w = World::with_verifier(v);
-    w.create_program(None);
-    let s = w.sealed(&project(), 0);
-    w.ctx(project());
-    let _ = w.c.submit_known(0, s);
-    w.verdict(0, w.facts(0, Kind::Violation, &tags_of("KNOWN"), 0));
-    w.ctx(project());
-    w.c.open_program(0);
-    w.deposit(&signer, 100 * ONE_TUSD);
-    let a = w.commit_and_submit(&signer, 1);
-    assert_eq!(w.c.get_commit(a).unwrap().run_signer, Some(signer.clone()), "near-antibody records who requested the run");
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
-    w.advance(w.c.get_program(0).unwrap().reveal_window_blocks + 1);
-    w.finalize(a);
-    assert!(matches!(w.outcome(a), Outcome::Delayed { .. }), "Critical above the instant cap waits (T0)");
-    w.ctx(acc("doubter.testnet"));
-    w.c.challenge(a, "my local re-run disagrees".into());
-    // The run near-antibody requested and received is the one OutLayer attested (recorded values).
-    {
-        let cm = w.c.commit_mut(a);
-        cm.run_input_sha256 = Some(att["input_hash"].as_str().unwrap().into());
-        cm.run_output_sha256 = Some(att["output_hash"].as_str().unwrap().into());
-    }
-    let pinned: TeeMeasurements = serde_json::from_str(T1_MEASUREMENT).unwrap();
-    let verifier_acc = acc("tee-verifier-2026-07-22.testnet");
-    w.ctx(owner());
-    w.c.set_tee_config(TeeConfig { verifier: Some(verifier_acc.clone()), measurements: vec![pinned], accepted_tcb: vec!["UpToDate".into()] });
-    let a_in: TeeAttestationIn = serde_json::from_str(T1_ATTESTATION).unwrap();
-    let quote: Base64VecU8 = serde_json::from_value(att["tdx_quote"].clone()).unwrap();
-    let collateral = Base64VecU8(T1_COLLATERAL.to_vec());
-
-    // Binding checks before the DCAP call: another output, wasm or caller is refused.
-    let mut tampered = a_in.clone();
-    tampered.output_hash = "00".repeat(32);
-    w.ctx(acc("relayer.testnet"));
-    assert!(panics(|| {
-        let _ = w.c.confirm_tee(a, None, tampered.clone(), quote.clone(), collateral.clone());
-    }), "output must be what near-antibody received");
-    let mut other_wasm = a_in.clone();
-    other_wasm.wasm_hash = Some("11".repeat(32));
-    w.ctx(acc("relayer.testnet"));
-    assert!(panics(|| {
-        let _ = w.c.confirm_tee(a, None, other_wasm.clone(), quote.clone(), collateral.clone());
-    }), "only the pinned verifier build");
-    let mut other_caller = a_in.clone();
-    other_caller.caller_account_id = Some("mallory.testnet".into());
-    w.ctx(acc("relayer.testnet"));
-    assert!(panics(|| {
-        let _ = w.c.confirm_tee(a, None, other_caller.clone(), quote.clone(), collateral.clone());
-    }), "a run someone else requested");
-    // A relayed meta-transaction: OutLayer attests the predecessor of `request_execution`, which is
-    // near-antibody itself. (Only the caller rule is exercised here: this quote's report_data binds
-    // the signer, so the DCAP step would refuse it.)
-    let mut relayed = a_in.clone();
-    relayed.caller_account_id = Some(contract_id().to_string());
-    w.ctx(acc("relayer.testnet"));
-    let _ = w.c.confirm_tee(a, None, relayed, quote.clone(), collateral.clone());
-    w.ctx(acc("relayer.testnet"));
-    let _ = w.c.confirm_tee(a, None, a_in.clone(), quote.clone(), collateral);
-
-    // The verifier's real answer for this quote: Verified, TCB UpToDate.
-    let result = VerificationResultIn::try_from_slice(T1_VERIFY_RESULT).unwrap();
-    let rd = hex(&a_in.task_hash());
-    let qh = hex(&near_sdk::env::sha256(&quote.0));
-    w.ctx(contract_id());
-    assert!(!w.c.on_tee_verified(a, None, "22".repeat(32), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(result.clone())), "another run's report_data");
-    w.ctx(owner());
-    w.c.set_tee_config(TeeConfig { verifier: Some(verifier_acc.clone()), measurements: vec![], accepted_tcb: vec!["UpToDate".into()] });
-    w.ctx(contract_id());
-    assert!(!w.c.on_tee_verified(a, None, rd.clone(), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(result.clone())), "unpinned worker image");
-    w.ctx(owner());
-    w.c.set_tee_config(TeeConfig {
-        verifier: Some(verifier_acc.clone()),
-        measurements: vec![serde_json::from_str(T1_MEASUREMENT).unwrap()],
-        accepted_tcb: vec!["UpToDate".into()],
-    });
-    w.ctx(contract_id());
-    let rejected = VerificationResultIn::Rejected(VerifierErrorIn::DcapVerification("bad signature".into()));
-    assert!(!w.c.on_tee_verified(a, None, rd.clone(), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(rejected)), "a rejected quote");
-    assert!(w.c.get_commit(a).unwrap().tee.is_none());
-    w.ctx(contract_id());
-    assert!(w.c.on_tee_verified(a, None, rd.clone(), qh, a_in.task_id, verifier_acc, Ok(result)), "the real quote binds this run");
-    let c = w.c.get_commit(a).unwrap();
-    assert_eq!(c.verdict.unwrap().tier, T1_TIER);
-    assert_eq!(c.tee.as_ref().unwrap().tcb_status, "UpToDate");
-    assert_eq!(c.tee.unwrap().report_data, rd);
-
-    // A challenged T1 payout is upheld without the arbiter.
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.resolve_challenge_t1(a);
-    assert!(matches!(w.outcome(a), Outcome::Paid { severity: Severity::Critical, .. }));
-}
-
-#[test]
-fn t1_releases_a_delayed_payout_early() {
-    let (mut w, _) = setup_open_program_with_known_issue(None);
-    let a = w.commit_and_submit(&hunter("A"), 1);
-    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
-    w.advance(w.c.get_program(0).unwrap().reveal_window_blocks + 1);
-    w.finalize(a);
-    w.ctx(acc("anyone.testnet"));
-    assert!(panics(|| {
-        let _ = w.c.release(a);
-    }), "T0: wait for the challenge window");
-    w.c.commit_mut(a).tee = Some(TeeConfirmation {
-        quote_sha256: "aa".repeat(32),
-        report_data: "bb".repeat(32),
-        tcb_status: "UpToDate".into(),
-        mrtd: "cc".repeat(48),
-        rtmr3: "dd".repeat(48),
-        outlayer_task_id: 1,
-        verifier: acc("tee-verifier-2026-07-22.testnet"),
-        height: 1,
-        ns: 1,
-    });
-    w.ctx(acc("anyone.testnet"));
-    let _ = w.c.release(a);
-    assert!(matches!(w.outcome(a), Outcome::Paid { .. }), "a T1 verdict needs no challenge window");
+fn the_commitment_binds_the_hunter() {
+    // The same blob committed by another account gives another commitment.
+    let w = W::new();
+    let h = H32([1; 32]);
+    assert_ne!(commitment_for("antibody.testnet/0", 0, "alice.testnet", &h), commitment_for("antibody.testnet/0", 0, "bob.testnet", &h));
+    assert_ne!(commitment_for("antibody.testnet/0", 0, "alice.testnet", &h), commitment_for("antibody.testnet/0", 1, "alice.testnet", &h));
+    drop(w);
 }
 
 // near-sdk 5.9's mocked blockchain does not implement yield/resume, yet `env` references the host

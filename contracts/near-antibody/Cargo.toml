@@ -1,16 +1,18 @@
 [package]
 name = "near-antibody"
-version = "0.4.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-description = "Antibody settlement contract: programs, escrow, commit-reveal, verified facts -> payouts"
+description = "Antibody settlement contract v2: the NEAR adapter of the rule core (antibody-rules)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 near-sdk = { version = "=5.9.0", features = ["unstable"] }
+antibody-rules = { path = "../../crates/rules" }
+hex = "0.4"
 
 [dev-dependencies]
 near-sdk = { version = "=5.9.0", features = ["unstable", "unit-testing"] }
@@ -25,6 +27,7 @@ opt-level = "z"
 lto = true
 debug = false
 panic = "abort"
+strip = true
 overflow-checks = true
 
 [patch.crates-io]
