@@ -316,6 +316,10 @@ fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
 pub fn run(a: DemoArgs) -> Result<Value> {
     let t_all = Instant::now();
     std::fs::create_dir_all(&a.work)?;
+    // A fresh chain: no service state or local record may survive from an earlier run.
+    for d in ["services", "state", "keys"] {
+        let _ = std::fs::remove_dir_all(a.work.join(d));
+    }
     let mut procs = Procs(Vec::new());
     let mut results = json!({"started_unix": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs()});
 

@@ -79,7 +79,8 @@ impl T1Relayer {
                 continue;
             }
             let attempts = prev["attempts"].as_u64().unwrap_or(0) as u32;
-            if !wants_t1(&r) || prev["confirmed"] == json!(true) || attempts >= self.max_attempts {
+            // The chain decides: a run that is T1 no longer wants T1, whatever this file remembers.
+            if !wants_t1(&r) || attempts >= self.max_attempts {
                 continue;
             }
             lowest_open.get_or_insert(run_id);
