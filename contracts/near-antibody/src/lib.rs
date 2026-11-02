@@ -20,6 +20,10 @@
 //! - **Critical** findings make the program's guardian sign `pause()` on every registered chain.
 //! - **T0.** Payouts above `instant_cap` wait `challenge_delay`; `challenge()` freezes them for the
 //!   arbiter.
+//! - **Rounds.** The project commits a fix as code overrides at the same anchor (`propose_round`).
+//!   The TEE re-runs claimed findings against it (`request_rerun`); keys whose PoCs no longer break
+//!   are released when the round opens, so a second bug in the same function can be paid. Keys
+//!   that still break, or that were never re-run, carry over.
 //! - **Disclosure.** After `deadline + disclosure_after`, one TEE run publishes every content key
 //!   and `k_program`, so anyone can re-verify every receipt and tag.
 
@@ -31,7 +35,7 @@ pub mod types;
 mod tests;
 
 use events::emit;
-use manifest::{is_hex, parse_amount, ManifestIn};
+use manifest::{check_round, is_hex, parse_amount, ManifestIn};
 use near_sdk::{
     env,
     json_types::U128,
@@ -81,8 +85,25 @@ pub fn mask_hex(bits: &[u8]) -> String {
     format!("0x{}", if t.is_empty() { "0" } else { t })
 }
 
-fn claim_key(program: u32, slot: u8, tag: &str) -> String {
-    format!("{program}:{slot}:{tag}")
+fn claim_key(program: u32, round: u32, slot: u8, tag: &str) -> String {
+    format!("{program}:{round}:{slot}:{tag}")
+}
+
+/// Keys of a Violation's facts (severity from the committed table), or why the facts are malformed.
+fn fact_keys(p: &Program, facts: &FactsIn) -> Result<Vec<FindingKey>, &'static str> {
+    let mut keys: Vec<FindingKey> = Vec::new();
+    for t in &facts.fp_tags {
+        let sev = p.severity(t.slot).ok_or("facts name an undeclared invariant")?;
+        if !is_hex(&t.tag, 32) || keys.iter().any(|k| k.slot == t.slot) {
+            return Err("malformed fingerprint tags");
+        }
+        keys.push(FindingKey { slot: t.slot, tag: t.tag.clone(), severity: sev });
+    }
+    let bits: Vec<u8> = keys.iter().map(|k| k.slot).collect();
+    if keys.is_empty() || mask_hex(&bits) != facts.broken_mask.to_lowercase() {
+        return Err("broken mask and tags disagree");
+    }
+    Ok(keys)
 }
 
 fn valid_sealed(s: &SealedRef) {
@@ -311,6 +332,9 @@ impl Antibody {
             misconfigured: false,
             disclosure_pending: false,
             disclosure: None,
+            rounds: Vec::new(),
+            round: 0,
+            open_round: 0,
         };
         emit(
             "program_created",
@@ -410,6 +434,8 @@ impl Antibody {
             verdict: None,
             outcome: Outcome::None,
             bonus: U128(0),
+            round: 0,
+            reruns: Vec::new(),
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
         emit("known_issue_submitted", json!({"program_id": program_id, "commit_id": id, "commit_hash": commit_hash, "sealed_sha256": sealed.sha256}));
@@ -463,6 +489,8 @@ impl Antibody {
             verdict: None,
             outcome: Outcome::None,
             bonus: U128(0),
+            round: p.round,
+            reruns: Vec::new(),
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
         self.rep_mut(&hunter).commits += 1;
@@ -534,7 +562,7 @@ impl Antibody {
             "program_id": p.key,
             "commit_id": commit_id,
             "hunter": c.hunter,
-            "manifest_hash": p.manifest_hash,
+            "manifest_hash": p.manifest_hash_of(c.round),
             "sealed": c.sealed,
             "project_pubkey": p.project_pubkey,
         })
@@ -565,28 +593,19 @@ impl Antibody {
                 return;
             }
         };
-        if facts.commit_id != commit_id || facts.program != p.key || facts.manifest_hash != p.manifest_hash || facts.v != 1 {
+        if facts.commit_id != commit_id || facts.program != p.key || facts.manifest_hash != p.manifest_hash_of(c.round) || facts.v != 1 {
             self.settle_error(commit_id, "facts do not match the request");
             return;
         }
         let impact = facts.impact_usd_micro.parse::<u128>().unwrap_or(0);
-        let mut keys: Vec<FindingKey> = Vec::new();
-        if facts.kind == Kind::Violation {
-            for t in &facts.fp_tags {
-                let sev = match p.severity(t.slot) {
-                    Some(s) => s,
-                    None => return self.settle_error(commit_id, "facts name an undeclared invariant"),
-                };
-                if !is_hex(&t.tag, 32) || keys.iter().any(|k| k.slot == t.slot) {
-                    return self.settle_error(commit_id, "malformed fingerprint tags");
-                }
-                keys.push(FindingKey { slot: t.slot, tag: t.tag.clone(), severity: sev });
+        let keys = if facts.kind == Kind::Violation {
+            match fact_keys(&p, &facts) {
+                Ok(k) => k,
+                Err(e) => return self.settle_error(commit_id, e),
             }
-            let bits: Vec<u8> = keys.iter().map(|k| k.slot).collect();
-            if keys.is_empty() || mask_hex(&bits) != facts.broken_mask.to_lowercase() {
-                return self.settle_error(commit_id, "broken mask and tags disagree");
-            }
-        }
+        } else {
+            Vec::new()
+        };
         let height = env::block_height();
         let verdict = Verdict {
             kind: facts.kind,
@@ -620,7 +639,7 @@ impl Antibody {
         match facts.kind {
             Kind::Violation if c.known_issue => {
                 for k in &keys {
-                    let ck = claim_key(c.program, k.slot, &k.tag);
+                    let ck = claim_key(c.program, c.round, k.slot, &k.tag);
                     if !self.claims.contains_key(&ck) {
                         self.claims.insert(ck.clone(), Claim { commit: commit_id, known: true });
                         self.push_program_claim(c.program, ck);
@@ -631,7 +650,7 @@ impl Antibody {
             }
             Kind::Violation => {
                 for k in &keys {
-                    let ck = claim_key(c.program, k.slot, &k.tag);
+                    let ck = claim_key(c.program, c.round, k.slot, &k.tag);
                     match self.claims.get(&ck).copied() {
                         None => {
                             self.claims.insert(ck.clone(), Claim { commit: commit_id, known: false });
@@ -702,6 +721,7 @@ impl Antibody {
             return self.pay(commit_id, amount.0, severity);
         }
         require!(c.status == CommitStatus::Verified && c.outcome == Outcome::Pending, "nothing to finalize");
+        require!(c.round <= p.open_round, "this commit's round is not open yet (re-runs pending)");
         require!(
             env::block_height() > c.height + p.reveal_window_blocks,
             "reveal windows of earlier commits are still open"
@@ -718,7 +738,7 @@ impl Antibody {
         let keys = c.verdict.as_ref().map(|v| v.keys.clone()).unwrap_or_default();
         let mut newly: Vec<&FindingKey> = Vec::new();
         for k in &keys {
-            let cl = self.claims.get(&claim_key(c.program, k.slot, &k.tag)).copied();
+            let cl = self.claims.get(&claim_key(c.program, c.round, k.slot, &k.tag)).copied();
             if cl == Some(Claim { commit: commit_id, known: false }) {
                 newly.push(k);
             }
@@ -727,7 +747,7 @@ impl Antibody {
             let mut sorted = keys.clone();
             sorted.sort_by(|a, b| b.severity.cmp(&a.severity));
             let holders: Vec<Claim> =
-                sorted.iter().map(|k| *self.claims.get(&claim_key(c.program, k.slot, &k.tag)).unwrap()).collect();
+                sorted.iter().map(|k| *self.claims.get(&claim_key(c.program, c.round, k.slot, &k.tag)).unwrap()).collect();
             if holders.iter().all(|h| h.known) {
                 self.commit_mut(commit_id).outcome = Outcome::Known { of: holders[0].commit };
                 self.rep_mut(&c.hunter).known += 1;
@@ -883,6 +903,213 @@ impl Antibody {
         emit("expired", json!({"commit_id": commit_id, "hunter": c.hunter}));
     }
 
+    // ------------------------------------------------------------------ rounds
+
+    /// The project ships a fix: a round manifest that is the program's manifest plus code overrides
+    /// at the same anchor (`base_manifest` must hash to the committed manifest). From now on new
+    /// commits verify against the fix; claimed findings can be re-run against it before it opens.
+    pub fn propose_round(&mut self, program_id: u32, base_manifest: String, manifest: String, manifest_url: String) {
+        let p = self.load_program(program_id);
+        require!(env::predecessor_account_id() == p.project, "only the project");
+        require!(p.status == ProgramStatus::Open, "program is not open");
+        require!(p.round == p.open_round, "the previous round is not open yet");
+        require!(env::block_timestamp() < p.deadline_ns, "program deadline has passed");
+        require!(hex(&env::sha256(base_manifest.as_bytes())) == p.manifest_hash, "base_manifest is not the program's manifest");
+        require!(
+            (manifest_url.starts_with("https://") || manifest_url.starts_with("near-tx:")) && manifest_url.len() <= 512,
+            "manifest_url must be https://… or near-tx:… (<= 512 chars)"
+        );
+        let round = p.round + 1;
+        let overrides = check_round(&base_manifest, &manifest, round);
+        let manifest_hash = hex(&env::sha256(manifest.as_bytes()));
+        emit(
+            "round_proposed",
+            json!({"program_id": program_id, "round": round, "manifest_hash": manifest_hash, "overrides": overrides}),
+        );
+        let pm = self.programs.get_mut(program_id).unwrap();
+        pm.rounds.push(Round {
+            index: round,
+            manifest_hash,
+            manifest_url,
+            overrides,
+            status: RoundStatus::Proposed,
+            proposed_height: env::block_height(),
+            proposed_ns: env::block_timestamp(),
+            opened_ns: None,
+            carried: 0,
+            released: 0,
+        });
+        pm.round = round;
+    }
+
+    /// Re-runs a claimed finding against the proposed round's fix. `sealed` is a fresh witness of
+    /// the same PoC built at the round manifest (the TEE checks its poc_hash), sealed to the verifier.
+    /// The project can build it for any Violation (project wrap); the finder for their own commit.
+    pub fn request_rerun(&mut self, commit_id: u64, sealed: SealedRef) -> Promise {
+        let c = self.load_commit(commit_id);
+        let p = self.load_program(c.program);
+        let caller = env::predecessor_account_id();
+        require!(caller == p.project || caller == c.hunter, "only the project or the finder");
+        require!(p.round == p.open_round + 1, "no proposed round is waiting for re-runs");
+        require!(!self.held_keys(&c, p.open_round).is_empty(), "this commit holds no key in the open round");
+        valid_sealed(&sealed);
+        let round = p.round;
+        let prev = c.reruns.iter().position(|r| r.round == round);
+        let attempts = prev.map(|i| c.reruns[i].attempts).unwrap_or(0);
+        if let Some(i) = prev {
+            require!(matches!(c.reruns[i].status, RerunStatus::Failed { .. }), "already re-run (or in flight) for this round");
+        }
+        require!(attempts < MAX_VERIFY_ATTEMPTS, "no re-run attempts left");
+        let rr = Rerun {
+            round,
+            sealed: sealed.clone(),
+            requested_by: caller.clone(),
+            attempts: attempts + 1,
+            status: RerunStatus::Requested,
+            kind: None,
+            still_broken: Vec::new(),
+            receipt_hash: None,
+            height: env::block_height(),
+        };
+        {
+            let cm = self.commit_mut(commit_id);
+            match prev {
+                Some(i) => cm.reruns[i] = rr,
+                None => cm.reruns.push(rr),
+            }
+        }
+        let poc_hash = c.verdict.as_ref().map(|v| v.poc_hash.clone()).unwrap_or_default();
+        emit("rerun_requested", json!({"program_id": c.program, "commit_id": commit_id, "round": round, "by": caller, "sealed_sha256": sealed.sha256}));
+        let input = json!({
+            "mode": "rerun",
+            "program_id": p.key,
+            "commit_id": commit_id,
+            "round": round,
+            "hunter": c.hunter,
+            "manifest_hash": p.manifest_hash_of(round),
+            "poc_hash": poc_hash,
+            "sealed": sealed,
+        })
+        .to_string();
+        self.outlayer_request(&p.verifier, input).then(
+            Self::ext(env::current_account_id()).with_static_gas(VERIFY_CB_GAS).on_rerun(commit_id, round),
+        )
+    }
+
+    /// OutLayer callback for a re-run: records which keys the PoC still breaks at the fix.
+    #[private]
+    pub fn on_rerun(&mut self, commit_id: u64, round: u32, #[callback_result] r: Result<Option<FactsIn>, PromiseError>) {
+        let c = self.load_commit(commit_id);
+        let p = self.load_program(c.program);
+        let Some(idx) = c.reruns.iter().position(|x| x.round == round && x.status == RerunStatus::Requested) else {
+            log!("on_rerun: no re-run in flight for commit {} round {}", commit_id, round);
+            return;
+        };
+        let original = c.verdict.as_ref().map(|v| v.poc_hash.clone()).unwrap_or_default();
+        let result: Result<(Kind, Vec<FindingKey>, String), String> = match r {
+            Ok(Some(f)) if f.commit_id != commit_id || f.program != p.key || f.manifest_hash != p.manifest_hash_of(round) || f.v != 1 => {
+                Err("facts do not match the request".into())
+            }
+            Ok(Some(f)) => match f.kind {
+                Kind::Violation | Kind::NoViolation if f.poc_hash != original => Err("the re-run executed another PoC".into()),
+                Kind::NoViolation => Ok((Kind::NoViolation, Vec::new(), f.receipt_hash.clone())),
+                Kind::Violation => fact_keys(&p, &f).map(|k| (Kind::Violation, k, f.receipt_hash.clone())).map_err(String::from),
+                other => Err(format!("the re-run was {other:?}")),
+            },
+            _ => Err("the re-run produced no result".into()),
+        };
+        let height = env::block_height();
+        let rr = &mut self.commit_mut(commit_id).reruns[idx];
+        rr.height = height;
+        match result {
+            Ok((kind, still, receipt)) => {
+                rr.status = RerunStatus::Done;
+                rr.kind = Some(kind);
+                rr.receipt_hash = Some(receipt.clone());
+                rr.still_broken = still.clone();
+                emit(
+                    "rerun_result",
+                    json!({"program_id": c.program, "commit_id": commit_id, "round": round, "kind": kind,
+                           "still_broken": still, "receipt_hash": receipt}),
+                );
+            }
+            Err(reason) => {
+                rr.status = RerunStatus::Failed { reason: reason.clone() };
+                emit("rerun_failed", json!({"program_id": c.program, "commit_id": commit_id, "round": round, "reason": reason}));
+            }
+        }
+    }
+
+    /// Opens the proposed round once every earlier commit's claims are final and no re-run is in
+    /// flight: keys whose holder's re-run shows the PoC no longer breaks them are released; every
+    /// other key carries over, ahead of any claim by this round's own commits (it was found first).
+    pub fn open_round(&mut self, program_id: u32) {
+        let p = self.load_program(program_id);
+        require!(env::predecessor_account_id() == p.project, "only the project");
+        require!(p.round == p.open_round + 1, "no proposed round");
+        let (prev, next) = (p.open_round, p.round);
+        for &id in &p.commits {
+            let c = self.load_commit(id);
+            if c.round >= next {
+                continue;
+            }
+            require!(self.claims_final(&c, &p), "commits of earlier rounds are still settling");
+            require!(!c.reruns.iter().any(|r| r.round == next && r.status == RerunStatus::Requested), "a re-run is still in flight");
+        }
+        let prefix = format!("{program_id}:{prev}:");
+        let keys: Vec<String> =
+            self.program_claims.get(&program_id).cloned().unwrap_or_default().into_iter().filter(|k| k.starts_with(&prefix)).collect();
+        let (mut carried, mut released) = (0u32, 0u32);
+        let mut released_keys = Vec::new();
+        for k in keys {
+            let cl = *self.claims.get(&k).unwrap();
+            let mut parts = k[prefix.len()..].splitn(2, ':');
+            let slot: u8 = parts.next().and_then(|s| s.parse().ok()).unwrap();
+            let tag = parts.next().unwrap().to_string();
+            let holder = self.load_commit(cl.commit);
+            let fixed = holder.reruns.iter().any(|r| {
+                r.round == next && r.status == RerunStatus::Done && !r.still_broken.iter().any(|b| b.slot == slot && b.tag == tag)
+            });
+            if fixed {
+                released += 1;
+                released_keys.push(json!({"slot": slot, "tag": tag, "was": cl.commit}));
+                continue;
+            }
+            let nk = claim_key(program_id, next, slot, &tag);
+            let existed = self.claims.contains_key(&nk);
+            self.claims.insert(nk.clone(), cl);
+            if !existed {
+                self.push_program_claim(program_id, nk);
+            }
+            carried += 1;
+        }
+        let pm = self.programs.get_mut(program_id).unwrap();
+        let r = &mut pm.rounds[next as usize - 1];
+        r.status = RoundStatus::Open;
+        r.opened_ns = Some(env::block_timestamp());
+        r.carried = carried;
+        r.released = released;
+        pm.open_round = next;
+        emit("round_opened", json!({"program_id": program_id, "round": next, "carried": carried, "released": released_keys}));
+    }
+
+    fn held_keys(&self, c: &Commit, round: u32) -> Vec<FindingKey> {
+        let keys = c.verdict.as_ref().map(|v| v.keys.clone()).unwrap_or_default();
+        keys.into_iter()
+            .filter(|k| self.claims.get(&claim_key(c.program, round, k.slot, &k.tag)).map(|cl| cl.commit) == Some(c.id))
+            .collect()
+    }
+
+    /// Whether a commit can no longer claim or lose a key in its own round.
+    fn claims_final(&self, c: &Commit, p: &Program) -> bool {
+        match c.status {
+            CommitStatus::Expired => true,
+            CommitStatus::Committed => env::block_height() > c.height + p.reveal_window_blocks,
+            CommitStatus::Verifying | CommitStatus::VerifyFailed => false,
+            CommitStatus::Verified => c.outcome != Outcome::Pending,
+        }
+    }
+
     // ------------------------------------------------------------- withdrawals
 
     /// Withdraws the caller's internal balance (not callable by an agent's function-call key
@@ -951,8 +1178,12 @@ impl Antibody {
         require!(env::block_timestamp() >= p.deadline_ns + p.disclosure_after_ns, "disclosure time not reached");
         let mut entries = Vec::new();
         for &id in &p.commits {
-            if let Some(s) = &self.load_commit(id).sealed {
+            let c = self.load_commit(id);
+            if let Some(s) = &c.sealed {
                 entries.push(json!({"commit_id": id, "wrap_v": s.wrap_v}));
+            }
+            for r in c.reruns.iter().filter(|r| r.status != RerunStatus::Requested) {
+                entries.push(json!({"commit_id": id, "round": r.round, "wrap_v": r.sealed.wrap_v}));
             }
         }
         require!(entries.len() <= MAX_DISCLOSURE_ENTRIES, "too many entries for one disclosure run");
@@ -1054,25 +1285,35 @@ impl Antibody {
         p.commits.iter().skip(from).take(limit).filter_map(|&i| self.commits.get(i as u32).cloned()).collect()
     }
 
-    /// Claimed keys of a program: (slot, tag) → claimant, and whether it is a known issue.
-    pub fn get_keys(&self, program_id: u32) -> Vec<Value> {
+    /// Claimed keys of a program in `round` (default: the latest open round): (slot, tag) →
+    /// claimant, and whether it is a known issue.
+    pub fn get_keys(&self, program_id: u32, round: Option<u32>) -> Vec<Value> {
         let p = match self.programs.get(program_id) {
             Some(p) => p,
             None => return Vec::new(),
         };
+        let round = round.unwrap_or(p.open_round);
         let keys = self.program_claims.get(&program_id).cloned().unwrap_or_default();
         keys.iter()
             .filter_map(|k| {
                 let cl = self.claims.get(k)?;
-                let mut parts = k.splitn(3, ':');
+                let mut parts = k.splitn(4, ':');
                 let _ = parts.next();
+                let r: u32 = parts.next()?.parse().ok()?;
                 let slot: u8 = parts.next()?.parse().ok()?;
                 let tag = parts.next()?.to_string();
+                if r != round {
+                    return None;
+                }
                 let rule = p.slots.iter().find(|s| s.bit == slot);
-                Some(json!({"slot": slot, "name": rule.map(|r| r.name.clone()), "severity": rule.map(|r| r.severity),
+                Some(json!({"round": r, "slot": slot, "name": rule.map(|r| r.name.clone()), "severity": rule.map(|r| r.severity),
                             "tag": tag, "commit": cl.commit, "known": cl.known}))
             })
             .collect()
+    }
+
+    pub fn get_rounds(&self, program_id: u32) -> Vec<Round> {
+        self.programs.get(program_id).map(|p| p.rounds.clone()).unwrap_or_default()
     }
 
     /// The proof a duplicate (or known-issue) submission is shown: the earlier claim's commitment,
@@ -1089,8 +1330,11 @@ impl Antibody {
         let mine = c.verdict.as_ref().map(|v| v.keys.clone()).unwrap_or_default();
         let theirs = e.verdict.as_ref().map(|v| v.keys.clone()).unwrap_or_default();
         let equal: Vec<&FindingKey> = mine.iter().filter(|k| theirs.iter().any(|t| t.slot == k.slot && t.tag == k.tag)).collect();
-        let content_key = |id: u64| p.disclosure.as_ref().and_then(|d| d.keys.iter().find(|k| k.commit_id == id)).map(|k| k.content_key.clone());
+        let content_key = |id: u64| {
+            p.disclosure.as_ref().and_then(|d| d.keys.iter().find(|k| k.commit_id == id && k.round.is_none())).map(|k| k.content_key.clone())
+        };
         Some(json!({
+            "round": c.round,
             "commit": {"id": c.id, "hunter": c.hunter, "height": c.height, "ns": c.ns, "commit_hash": c.commit_hash,
                        "receipt_hash": c.verdict.as_ref().map(|v| v.receipt_hash.clone()), "keys": mine,
                        "sealed_sha256": c.sealed.as_ref().map(|s| s.sha256.clone())},

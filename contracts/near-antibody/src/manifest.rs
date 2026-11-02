@@ -2,9 +2,12 @@
 //! The manifest is passed as its canonical JSON text; its sha256 is the committed manifest hash.
 //! Unknown fields (impact, capabilities) are ignored here: the verifier enforces them.
 
-use near_sdk::{near, require};
+use near_sdk::{
+    env, near, require,
+    serde_json::{self, Value},
+};
 
-use crate::types::Severity;
+use crate::types::{Severity, TargetInfo};
 
 pub const MANIFEST_SCHEMA: &str = "antibody.manifest.v1";
 
@@ -123,4 +126,56 @@ impl ManifestIn {
             parse_amount(v, w);
         }
     }
+}
+
+fn decode_0x(s: &str) -> Option<Vec<u8>> {
+    let h = s.strip_prefix("0x")?;
+    if h.len() % 2 != 0 {
+        return None;
+    }
+    (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).ok()).collect()
+}
+
+/// Largest override accepted (matches the verifier).
+pub const MAX_OVERRIDE_CODE: usize = 49_152;
+
+/// Checks a round manifest against the program's own (base) manifest: it must be the base manifest
+/// plus `round` and `overrides`, with each overridden target carrying the fix's code hash, and
+/// nothing else changed (rules, payouts, invariants, anchor and capabilities stay committed).
+/// Returns the overridden targets with their new code hashes.
+pub fn check_round(base: &str, manifest: &str, round: u32) -> Vec<TargetInfo> {
+    let b: Value = serde_json::from_str(base).unwrap_or_else(|e| env::panic_str(&format!("base manifest: {e}")));
+    let mut r: Value = serde_json::from_str(manifest).unwrap_or_else(|e| env::panic_str(&format!("round manifest: {e}")));
+    require!(r["round"].as_u64() == Some(round as u64), "round manifest: wrong round number");
+    let overrides = r["overrides"].as_array().cloned().unwrap_or_default();
+    require!(!overrides.is_empty(), "round manifest: no overrides");
+    let obj = r.as_object_mut().unwrap_or_else(|| env::panic_str("round manifest: not an object"));
+    obj.remove("round");
+    obj.remove("overrides");
+    let targets = r["targets"].as_array().cloned().unwrap_or_default();
+    let base_targets = b["targets"].as_array().cloned().unwrap_or_default();
+    require!(targets.len() == base_targets.len(), "round manifest: targets differ");
+    let mut out = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for o in &overrides {
+        let addr = o["address"].as_str().unwrap_or_default().to_lowercase();
+        let hash = o["code_hash"].as_str().unwrap_or_default().to_lowercase();
+        let code = decode_0x(o["runtime_code"].as_str().unwrap_or_default())
+            .unwrap_or_else(|| env::panic_str("round manifest: override runtime_code"));
+        require!(is_0x_hex(&addr, 20) && is_0x_hex(&hash, 32), "round manifest: override address/code_hash");
+        require!(!code.is_empty() && code.len() <= MAX_OVERRIDE_CODE, "round manifest: override code size");
+        require!(format!("0x{}", crate::hex(&env::keccak256(&code))) == hash, "round manifest: override code does not match its hash");
+        require!(!seen.contains(&addr), "round manifest: duplicate override");
+        seen.push(addr.clone());
+        let i = targets
+            .iter()
+            .position(|t| t["address"].as_str().unwrap_or_default().to_lowercase() == addr)
+            .unwrap_or_else(|| env::panic_str("round manifest: override is not a target"));
+        require!(targets[i]["code_hash"].as_str().unwrap_or_default().to_lowercase() == hash, "round manifest: target must carry the override hash");
+        out.push(TargetInfo { name: targets[i]["name"].as_str().unwrap_or_default().to_string(), address: addr, code_hash: hash });
+        // Normalize back to the base code hash for the equality check below.
+        r["targets"][i]["code_hash"] = base_targets[i]["code_hash"].clone();
+    }
+    require!(r == b, "round manifest: only target code may change in a round");
+    out
 }

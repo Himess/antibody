@@ -69,7 +69,7 @@ fn pause_all_signs_every_chain_with_its_own_nonce() {
     let p0_base = g.preview(84532, 0);
     assert_ne!(p0_sep, p0_base, "chain id is part of the signed payload");
     ctx("bounty.testnet");
-    let _ = g.pause_all("bounty.testnet/0".into(), 1);
+    assert_eq!(g.pause_all("bounty.testnet/0".into(), 1), vec![0, 1], "one sign request per chain");
     let chains = g.get_chains();
     assert!(chains.iter().all(|c| c.next_nonce == 1));
     ctx("guardian.testnet");

@@ -87,7 +87,7 @@ impl World {
         b.current_account_id(contract_id())
             .predecessor_account_id(predecessor.clone())
             .signer_account_id(predecessor)
-            .block_index(self.height)
+            .block_height(self.height)
             .block_timestamp(self.ts)
             .account_balance(near_sdk::NearToken::from_near(100))
             .prepaid_gas(near_sdk::Gas::from_tgas(1000));
@@ -145,6 +145,15 @@ impl World {
             manifest_hash: hex(&near_sdk::env::sha256(MANIFEST.as_bytes())),
             wasm_hash: None,
         }
+    }
+
+    /// Facts for a round-`r` commit or re-run (`manifest_hash` of that round's manifest).
+    fn facts_at(&self, commit_id: u64, kind: Kind, tags: &[(u8, String)], manifest_hash: &str, poc_hash: &str) -> FactsIn {
+        let mut f = self.facts(commit_id, kind, tags, 0);
+        f.manifest_hash = manifest_hash.to_string();
+        f.poc_hash = poc_hash.to_string();
+        f.project_wrap = None;
+        f
     }
 
     fn verdict(&mut self, commit_id: u64, f: FactsIn) {
@@ -279,7 +288,7 @@ fn six_scripted_submissions_follow_the_committed_rules() {
     assert_eq!(p.reserved.0, 0);
     let s = w.c.get_stats();
     assert_eq!((s.paid_findings, s.duplicates, s.known, s.slop_rejected), (3, 1, 1, 1));
-    let keys = w.c.get_keys(0);
+    let keys = w.c.get_keys(0, None);
     assert_eq!(keys.len(), 4, "known(share_price) + A + B + F");
     let rep_d = w.c.get_reputation(hunter("D"));
     assert_eq!((rep_d.late, rep_d.earned.0), (1, 0));
@@ -472,8 +481,8 @@ fn disclosure_publishes_content_keys_for_duplicate_proofs() {
     let _ = w.c.disclose(0);
     w.ctx(contract_id());
     let keys = vec![
-        DisclosedKey { commit_id: a, content_key: "aa".repeat(32) },
-        DisclosedKey { commit_id: d, content_key: "dd".repeat(32) },
+        DisclosedKey { commit_id: a, round: None, content_key: "aa".repeat(32) },
+        DisclosedKey { commit_id: d, round: None, content_key: "dd".repeat(32) },
     ];
     w.c.on_disclosed(0, Ok(Some(DisclosureIn { program: "antibody.testnet/0".into(), k_program: "cc".repeat(32), keys })));
     let proof = w.c.get_duplicate_proof(d).unwrap();
@@ -534,6 +543,182 @@ fn mask_hex_matches_the_verifier_format() {
     assert_eq!(mask_hex(&[0, 1, 2]), "0x7");
     assert_eq!(mask_hex(&[8]), "0x100");
     assert_eq!(mask_hex(&[254]), format!("0x4{}", "0".repeat(63)));
+}
+
+/// The round-1 manifest of the fixture: AcmeLend's runtime code replaced (the fix), nothing else.
+fn round1_manifest() -> (String, String) {
+    let mut m = manifest_json();
+    let i = m["targets"].as_array().unwrap().iter().position(|t| t["name"] == "AcmeLend").unwrap();
+    let code = [0x60u8, 0x00, 0x60, 0x00, 0xf3];
+    let h = format!("0x{}", hex(&near_sdk::env::keccak256(&code)));
+    m["targets"][i]["code_hash"] = json!(h);
+    m["round"] = json!(1);
+    m["overrides"] = json!([{"address": m["targets"][i]["address"], "code_hash": h, "runtime_code": format!("0x{}", hex(&code))}]);
+    let s = serde_json::to_string(&m).unwrap();
+    let mh = hex(&near_sdk::env::sha256(s.as_bytes()));
+    (s, mh)
+}
+
+fn panics(f: impl FnOnce()) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
+}
+
+#[test]
+fn rounds_release_fixed_keys_and_carry_the_rest() {
+    let (mut w, _) = setup_open_program_with_known_issue(None);
+    for x in ["G", "H", "K"] {
+        w.deposit(&hunter(x), 100 * ONE_TUSD);
+    }
+    let a = w.commit_and_submit(&hunter("A"), 1);
+    let b = w.commit_and_submit(&hunter("B"), 1);
+    let f = w.commit_and_submit(&hunter("F"), 1);
+    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
+    w.verdict(b, w.facts(b, Kind::Violation, &tags_of("B"), 0));
+    w.verdict(f, w.facts(f, Kind::Violation, &tags_of("F"), 0));
+    let window = w.c.get_program(0).unwrap().reveal_window_blocks;
+    w.advance(window + 1);
+    for id in [a, b, f] {
+        w.finalize(id);
+    }
+
+    // The project ships the fix for A's bug as a code override at the same anchor.
+    let (r1, r1_hash) = round1_manifest();
+    w.ctx(acc("mallory.testnet"));
+    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 9)); }), "no proposed round yet");
+    w.ctx(project());
+    w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://example.org/round1.json".into());
+    let p = w.c.get_program(0).unwrap();
+    assert_eq!((p.round, p.open_round, p.rounds[0].status.clone()), (1, 0, RoundStatus::Proposed));
+    assert_eq!(p.rounds[0].overrides[0].name, "AcmeLend");
+
+    // A new hunter finds a second, different bug in AcmeLend.borrow at the fixed state (same key as A).
+    let g = w.commit_and_submit(&hunter("G"), 1);
+    assert_eq!(w.c.get_commit(g).unwrap().round, 1);
+    w.verdict(g, w.facts_at(g, Kind::Violation, &tags_of("A"), &r1_hash, &"77".repeat(32)));
+    w.advance(window + 1);
+    w.ctx(acc("anyone.testnet"));
+    assert!(panics(|| {
+        let _ = w.c.finalize(g);
+    }), "round 1 is not open yet");
+
+    // Re-runs: only the project or the finder, only claim holders.
+    w.ctx(acc("mallory.testnet"));
+    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 9)); }), "strangers cannot re-run");
+    w.ctx(project());
+    let _ = w.c.request_rerun(a, w.sealed(&project(), 9));
+    w.ctx(project());
+    assert!(panics(|| { let _ = w.c.request_rerun(a, w.sealed(&project(), 10)); }), "one re-run in flight");
+    let poc = "33".repeat(32); // the original verdicts' poc_hash in these tests
+    w.ctx(contract_id());
+    w.c.on_rerun(a, 1, Ok(Some(w.facts_at(a, Kind::NoViolation, &[], &r1_hash, &poc))));
+    w.ctx(hunter("F"));
+    let _ = w.c.request_rerun(f, w.sealed(&hunter("F"), 9));
+    w.ctx(contract_id());
+    w.c.on_rerun(f, 1, Ok(Some(w.facts_at(f, Kind::Violation, &tags_of("F"), &r1_hash, &poc))));
+    // A re-run that executed another PoC is no evidence: B's key will carry over.
+    w.ctx(project());
+    let _ = w.c.request_rerun(b, w.sealed(&project(), 11));
+    w.ctx(contract_id());
+    w.c.on_rerun(b, 1, Ok(Some(w.facts_at(b, Kind::NoViolation, &[], &r1_hash, &"55".repeat(32)))));
+    let rb = w.c.get_commit(b).unwrap().reruns[0].clone();
+    assert!(matches!(rb.status, RerunStatus::Failed { ref reason } if reason.contains("another PoC")));
+    let ra = w.c.get_commit(a).unwrap().reruns[0].clone();
+    assert_eq!((ra.status, ra.kind, ra.still_broken.len()), (RerunStatus::Done, Some(Kind::NoViolation), 0));
+
+    w.ctx(acc("mallory.testnet"));
+    assert!(panics(|| w.c.open_round(0)), "only the project opens a round");
+    w.ctx(project());
+    w.c.open_round(0);
+    let p = w.c.get_program(0).unwrap();
+    assert_eq!((p.open_round, p.rounds[0].carried, p.rounds[0].released), (1, 3, 1));
+    let keys = w.c.get_keys(0, Some(1));
+    assert_eq!(keys.len(), 4, "known + B + F carried, A's key now held by G");
+    let a_key = &tags_of("A")[0];
+    let holder = keys.iter().find(|k| k["slot"] == json!(a_key.0) && k["tag"] == json!(a_key.1)).unwrap();
+    assert_eq!(holder["commit"], json!(g));
+    assert_eq!(w.c.get_keys(0, Some(0)).len(), 4, "round-0 claims are kept as history");
+
+    // G is paid: the key was released by A's re-run. A still breaking key (F) and the known issue
+    // stay claimed in round 1.
+    w.finalize(g);
+    // Critical, capped by the escrow still uncommitted (25,000 - B 3,000 - A and F 10,000 each).
+    assert!(matches!(w.outcome(g), Outcome::Paid { amount, severity: Severity::Critical, .. } if amount.0 == 2_000 * ONE_TUSD));
+    let h = w.commit_and_submit(&hunter("H"), 1);
+    w.verdict(h, w.facts_at(h, Kind::Violation, &tags_of("F"), &r1_hash, &"88".repeat(32)));
+    let k = w.commit_and_submit(&hunter("K"), 1);
+    w.verdict(k, w.facts_at(k, Kind::Violation, &tags_of("KNOWN"), &r1_hash, &"99".repeat(32)));
+    w.advance(window + 1);
+    w.finalize(h);
+    w.finalize(k);
+    assert_eq!(w.outcome(h), Outcome::Duplicate { of: f });
+    assert_eq!(w.outcome(k), Outcome::Known { of: 0 });
+    // Disclosure covers re-run blobs too.
+    let p = w.c.get_program(0).unwrap();
+    w.ts = p.deadline_ns + p.disclosure_after_ns + 1;
+    w.ctx(acc("anyone.testnet"));
+    let _ = w.c.disclose(0);
+}
+
+#[test]
+fn round_manifests_may_only_change_target_code() {
+    let (mut w, _) = setup_open_program_with_known_issue(None);
+    let (r1, _) = round1_manifest();
+    let tweak = |f: &dyn Fn(&mut Value)| {
+        let mut m: Value = serde_json::from_str(&r1).unwrap();
+        f(&mut m);
+        serde_json::to_string(&m).unwrap()
+    };
+    let lower_bond = tweak(&|m| m["rules"]["bond"] = json!("1"));
+    let cheaper = tweak(&|m| m["payout"]["critical"] = json!("1"));
+    let new_anchor = tweak(&|m| m["anchor"]["block_number"] = json!(23));
+    let wrong_round = tweak(&|m| m["round"] = json!(2));
+    let bad_hash = tweak(&|m| m["overrides"][0]["code_hash"] = json!(format!("0x{}", "00".repeat(32))));
+    let no_override = tweak(&|m| m["overrides"] = json!([]));
+    for (bad, why) in [
+        (&lower_bond, "rules"),
+        (&cheaper, "payouts"),
+        (&new_anchor, "anchor"),
+        (&wrong_round, "round number"),
+        (&bad_hash, "override hash"),
+        (&no_override, "no override"),
+    ] {
+        w.ctx(project());
+        assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), bad.clone(), "https://e.org/r.json".into())), "{why} must not change");
+    }
+    w.ctx(project());
+    assert!(panics(|| w.c.propose_round(0, r1.clone(), r1.clone(), "https://e.org/r.json".into())), "base must be the program's manifest");
+    w.ctx(hunter("A"));
+    assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into())), "only the project");
+    w.ctx(project());
+    w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into());
+    w.ctx(project());
+    assert!(panics(|| w.c.propose_round(0, MANIFEST.into(), r1.clone(), "https://e.org/r.json".into())), "one proposed round at a time");
+}
+
+#[test]
+fn rounds_wait_for_earlier_commits_and_need_a_claim_to_rerun() {
+    let (mut w, _) = setup_open_program_with_known_issue(None);
+    let a = w.commit_and_submit(&hunter("A"), 1);
+    let d = w.commit_and_submit(&hunter("D"), 1);
+    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
+    w.verdict(d, w.facts(d, Kind::Violation, &tags_of("D"), 0));
+    let (r1, _) = round1_manifest();
+    w.ctx(project());
+    w.c.propose_round(0, MANIFEST.into(), r1, "https://example.org/round1.json".into());
+    w.ctx(project());
+    assert!(panics(|| w.c.open_round(0)), "A and D are not finalized yet");
+    let window = w.c.get_program(0).unwrap().reveal_window_blocks;
+    w.advance(window + 1);
+    w.finalize(a);
+    w.finalize(d);
+    assert_eq!(w.outcome(d), Outcome::Duplicate { of: a });
+    w.ctx(project());
+    assert!(panics(|| { let _ = w.c.request_rerun(d, w.sealed(&project(), 3)); }), "a duplicate holds no key");
+    // Never re-run: everything carries over.
+    w.ctx(project());
+    w.c.open_round(0);
+    let p = w.c.get_program(0).unwrap();
+    assert_eq!((p.rounds[0].carried, p.rounds[0].released), (2, 0));
 }
 
 // near-sdk 5.9's mocked blockchain does not implement yield/resume, yet `env` references the host

@@ -158,20 +158,20 @@ impl Guardian {
     }
 
     /// Asks the MPC network to sign `pause()` for every registered chain (parallel requests).
-    pub fn pause_all(&mut self, program: String, commit_id: u64) -> Promise {
+    /// Returns the sign request ids. Each chain gets its own sign → `on_signed` chain, scheduled
+    /// detached: the NEAR runtime refuses to return a joint (`and`) promise, and one chain's
+    /// failure must not hold up the others.
+    pub fn pause_all(&mut self, program: String, commit_id: u64) -> Vec<u64> {
         let caller = env::predecessor_account_id();
         require!(caller == self.owner || self.authorized.contains(&caller), "not authorized to request a pause");
         require!(!self.chains.is_empty(), "no chains registered");
         let reason = format!("{program}#{commit_id}");
-        let mut joint: Option<Promise> = None;
+        let first = self.next_request;
         for i in 0..self.chains.len() {
-            let p = self.request_sign(i, reason.clone());
-            joint = Some(match joint {
-                None => p,
-                Some(j) => j.and(p),
-            });
+            // Dropping the promise schedules it.
+            drop(self.request_sign(i, reason.clone()));
         }
-        joint.unwrap()
+        (first..self.next_request).collect()
     }
 
     /// Owner-only re-request for one chain (e.g. a fee bump at the same nonce after a stuck tx).

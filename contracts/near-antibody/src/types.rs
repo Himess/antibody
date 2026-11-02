@@ -122,6 +122,9 @@ pub enum ProgramStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DisclosedKey {
     pub commit_id: u64,
+    /// Set for a re-run blob (rounds); `None` for the commit's own submission.
+    #[serde(default)]
+    pub round: Option<u32>,
     pub content_key: String,
 }
 
@@ -172,6 +175,12 @@ pub struct Program {
     pub misconfigured: bool,
     pub disclosure_pending: bool,
     pub disclosure: Option<Disclosure>,
+    /// Rounds after the first (docs/rounds.md); `rounds[i]` is round `i + 1`.
+    pub rounds: Vec<Round>,
+    /// Latest proposed round: new commits verify against its manifest.
+    pub round: u32,
+    /// Latest open round: its claims (carried and new) are settled, so its commits can finalize.
+    pub open_round: u32,
 }
 
 impl Program {
@@ -181,6 +190,67 @@ impl Program {
     pub fn available(&self) -> u128 {
         self.escrow.0.saturating_sub(self.paid.0).saturating_sub(self.reserved.0)
     }
+    /// The manifest hash a commit of `round` is verified against.
+    pub fn manifest_hash_of(&self, round: u32) -> &str {
+        match round {
+            0 => &self.manifest_hash,
+            r => &self.rounds[r as usize - 1].manifest_hash,
+        }
+    }
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RoundStatus {
+    /// The fix is committed; claimed findings are being re-run against it. New commits already
+    /// verify against this round's manifest but settle only once it opens.
+    Proposed,
+    /// Carried and released keys are settled.
+    Open,
+}
+
+/// A fix committed as code overrides at the program's anchor (round manifest).
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Round {
+    pub index: u32,
+    pub manifest_hash: String,
+    pub manifest_url: String,
+    /// Overridden targets and the code hash of the fix.
+    pub overrides: Vec<TargetInfo>,
+    pub status: RoundStatus,
+    pub proposed_height: u64,
+    pub proposed_ns: u64,
+    pub opened_ns: Option<u64>,
+    /// Keys of the previous round carried into this one (still broken at the fix, or not re-run).
+    pub carried: u32,
+    /// Keys whose PoCs no longer break at the fix: open again for new findings in this round.
+    pub released: u32,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RerunStatus {
+    Requested,
+    /// No usable result (no output, or a re-run witness the TEE rejected): retry with a new blob.
+    Failed { reason: String },
+    Done,
+}
+
+/// A claimed finding re-run by the TEE at a later round's state.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rerun {
+    pub round: u32,
+    pub sealed: SealedRef,
+    pub requested_by: AccountId,
+    pub attempts: u8,
+    pub status: RerunStatus,
+    pub kind: Option<Kind>,
+    /// Keys the PoC still breaks at the round's state; every other key it held is released.
+    pub still_broken: Vec<FindingKey>,
+    pub receipt_hash: Option<String>,
+    pub height: u64,
 }
 
 /// Pointer to a sealed submission (docs/crypto-spec.md §4).
@@ -275,6 +345,9 @@ pub struct Commit {
     pub verdict: Option<Verdict>,
     pub outcome: Outcome,
     pub bonus: U128,
+    /// The program round this commit belongs to (its manifest decides the verdict).
+    pub round: u32,
+    pub reruns: Vec<Rerun>,
 }
 
 #[near(serializers = [borsh, json])]
