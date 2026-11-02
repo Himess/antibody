@@ -389,6 +389,50 @@ pub fn fund(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
     ensure_ok(ctx, &out, "fund_program")
 }
 
+// ---------------------------------------------------------------------- anchors
+
+/// Read-only: compares a Sepolia block's header hash with NEAR's Ethereum light client, the check
+/// near-antibody runs when a program is created. With `forge`, it also shows that a forged header
+/// (one bit of the state root flipped) disagrees with the light client, so a program anchored on it
+/// would be rejected and its escrow refunded (`on_anchor_checked`).
+pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
+    let lc = ctx.dep.light_client.clone().ok_or_else(|| eyre!("the deployments file names no light client"))?;
+    let pool = ctx.eth_pool()?;
+    let header = antibody_witness::build::fetch_header(&pool, block)?;
+    let real = header.hash_slow();
+    let raw = ctx.near.view_raw(&lc, "block_hash_safe", &block.to_le_bytes())?;
+    let client = match raw.first() {
+        Some(1) if raw.len() == 33 => Some(B256::from_slice(&raw[1..])),
+        _ => None,
+    };
+    let mut out = json!({
+        "light_client": lc, "block": block, "header_hash": format!("{real:#x}"),
+        "light_client_hash": client.map(|h| format!("{h:#x}")),
+        "matches": client == Some(real),
+        "verdict": match client {
+            Some(h) if h == real => "light-client: create_program would accept this anchor",
+            Some(_) => "mismatch: create_program would reject this anchor and refund the escrow",
+            None => "outside the light-client window: the program would be labelled project-attested",
+        },
+    });
+    if forge {
+        let mut forged = header.clone();
+        forged.state_root.0[31] ^= 1;
+        let fh = forged.hash_slow();
+        out["forged"] = json!({
+            "what": "the same header with one bit of state_root flipped",
+            "forged_hash": format!("{fh:#x}"),
+            "matches_light_client": client == Some(fh),
+            "verdict": if client.is_some() && client != Some(fh) {
+                "rejected: a program anchored on the forged header is refunded (near-antibody on_anchor_checked)"
+            } else {
+                "not checkable: the block is outside the light-client window"
+            },
+        });
+    }
+    Ok(out)
+}
+
 // ----------------------------------------------------------------------- rounds
 
 /// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code

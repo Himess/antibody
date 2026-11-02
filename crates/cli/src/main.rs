@@ -370,6 +370,14 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentKeyCmd,
     },
+    /// Read-only: compare a Sepolia block hash with NEAR's Ethereum light client (the check
+    /// create_program runs); --forge also shows a forged header being rejected
+    AnchorCheck {
+        #[arg(long)]
+        block: u64,
+        #[arg(long)]
+        forge: bool,
+    },
     /// Draft invariants for your program from its sources (a defensive helper; you review and
     /// approve the output before committing anything)
     Invariants {
@@ -496,6 +504,7 @@ fn run(cli: Cli) -> Result<Value> {
                 }
             }
         }
+        Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
         Cmd::Invariants { cmd: InvariantsCmd::Draft { ref sources, ref out, ai, ref model, ref effort, max_tokens } } => {
             antibody_cli::draft::run(sources, out, ai, model, effort, max_tokens)
         }
