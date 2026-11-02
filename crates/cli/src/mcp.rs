@@ -31,7 +31,7 @@ fn tools() -> Value {
          "inputSchema": {"type": "object", "properties": {"from": int("first program id"), "limit": int("max programs")}}},
         {"name": "get_program", "description": "One program: its parameters (payouts, bond, windows, budgets), anchor status, record, audit, and every commit with its verdict.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id")}, "required": ["program_id"]}},
-        {"name": "fetch_env", "description": "Write a hunting workspace for a program: the hash-checked manifest, invariants code, targets, a bundle template and the anvil fork command for the anchor block.",
+        {"name": "fetch_env", "description": "Write a workspace for a program: the hash-checked manifest, invariants code, targets, a bundle template and the anvil fork command for the anchor block.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "out_dir": s("directory to write")}, "required": ["program_id"]}},
         {"name": "check_poc", "description": "Run the verifier locally on a PoC bundle against the proven anchor state (no keys, nothing sent). Returns the verdict: which invariants break, where, and the impact.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "bundle_path": s("bundle JSON file"), "salt": s("optional 0x 32-byte sender salt")}, "required": ["program_id", "bundle_path"]}},
@@ -40,7 +40,10 @@ fn tools() -> Value {
         {"name": "submit", "description": "Reveal a committed PoC (commit_id), or commit+reveal a bundle in one step; near-antibody has OutLayer verify it. Waits for the verdict (kind, keys, tier).",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "commit_id": int("an existing commit to reveal"), "bundle_path": s("bundle JSON (commit + reveal)"), "report_path": s("optional report"), "wait": {"type": "boolean"}}, "required": ["program_id"]}},
         {"name": "status", "description": "A commit (state, verdict), a run, a program summary, and/or an account's credit and agent statement.",
-         "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id"), "run_id": int("run id"), "program_id": int("program id"), "account": s("NEAR account")}}}
+         "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id"), "run_id": int("run id"), "program_id": int("program id"), "account": s("NEAR account")}}},
+        {"name": "practice_try", "description": "The practice program (a tutorial whose bug and proof are public): get a practice account from the vending contract, prove its vault with the tutorial proof, and settle. Returns the verdict, the payout and a link for every transaction. Needs no account.",
+         "inputSchema": {"type": "object", "properties": {"vending": s("the vending contract, e.g. practice.antibody.testnet"), "program_id": int("the practice program's id"),
+                         "name": s("your practice account's name: 1 to 32 of a-z, 0-9, - and _")}, "required": ["vending", "program_id", "name"]}}
     ])
 }
 
@@ -146,6 +149,11 @@ fn call(ctx: &Ctx, name: &str, a: &Value) -> Result<Value> {
             }
         }
         "status" => cmd::status(ctx, a["commit_id"].as_u64(), a["run_id"].as_u64(), a["program_id"].as_u64().map(|x| x as u32), a["account"].as_str().map(String::from)),
+        "practice_try" => {
+            let vending = a["vending"].as_str().ok_or_else(|| eyre!("vending"))?;
+            let name = a["name"].as_str().ok_or_else(|| eyre!("name"))?;
+            crate::practice::try_it(ctx, vending, arg_u64(a, "program_id")? as u32, name)
+        }
         other => Err(eyre!("unknown tool {other}")),
     }
 }
