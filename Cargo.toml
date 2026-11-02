@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/verifier", "crates/witness", "crates/runner"]
+members = ["crates/verifier", "crates/witness", "crates/runner", "crates/cli"]
 exclude = ["third_party", "contracts"]
 resolver = "2"
 

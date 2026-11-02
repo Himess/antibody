@@ -773,7 +773,10 @@ pub fn execute_program_witness(
     if env.chain_id != manifest.anchor.chain_id || env.claimed_block_hash != manifest.anchor.block_hash {
         return Err(bad(Kind::InvalidPoC, "witness is not anchored at the program's committed block".into()));
     }
-    if keccak256(&w.invariants_code) != manifest.invariants.runtime_code_hash {
+    if keccak256(&manifest.invariants.runtime_code) != manifest.invariants.runtime_code_hash {
+        return Err(bad(Kind::ProgramMisconfigured, "manifest invariants code does not match its hash".into()));
+    }
+    if w.invariants_code != manifest.invariants.runtime_code {
         return Err(bad(Kind::InvalidPoC, "invariants code does not match the manifest".into()));
     }
     let header = Header::decode(&mut w.header_rlp.as_ref()).map_err(|e| VerifyError::Decode(e.to_string()))?;

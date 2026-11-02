@@ -21,12 +21,12 @@
       "failures_per_provider": {},
       "raw_json_differs_but_normalised_equal": 0,
       "disagreements": [],
-      "fetch_ms": 1
+      "fetch_ms": 2
     }
   ],
   "stats": {
-    "witness_bytes": 31554,
-    "witness_sha256": "5504b6bbde4bf0ed3012b41587405cfc95f701b8bd3836580a6f05c411265683",
+    "witness_bytes": 37400,
+    "witness_sha256": "499ecf427aebf71a53b30694bb98af9eeef834529b2de3c54524cc1b45e7ef3c",
     "accounts": 11,
     "storage_slots": 28,
     "storage_tries": 11,
@@ -38,5 +38,5 @@
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 35
+  "total_ms": 36
 }

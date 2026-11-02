@@ -10,7 +10,7 @@
     },
     "program": "acme-local",
     "commit_id": 1,
-    "manifest_hash": "0x8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "manifest_hash": "0xf13bf172cee10359a7d34cc0d0820171652827dd4feca933ace13c756ac71ea9",
     "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
     "anchor": {
       "chain_id": 31337,
@@ -20,7 +20,7 @@
       "timestamp": 1793605560,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "e84cae8dbc808ed77e10276563c2b0b65949ce088fccd6f7d0372b5937b0e9fd",
+    "witness_sha256": "a1532d927440b26820cffc4b7d50d574d7c87eb7b66e70c19f31f8c4c26060ca",
     "poc_hash": "39915e344c990147303e0646ff1e21503f880952028fda61ba6cca8d2c64c760",
     "kind": "Violation",
     "reason": null,
@@ -135,8 +135,8 @@
     ],
     "impact_usd_micro": "462931853867",
     "project_wrap": null,
-    "receipt_hash": "c739c371d05ccd85e4bc81257ad56c270001c464edb4ec6da88a675488185765",
-    "manifest_hash": "8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "receipt_hash": "770313c956818f38c447a5f492f3d875746a07e77642dcacc039717a3bab4dcd",
+    "manifest_hash": "f13bf172cee10359a7d34cc0d0820171652827dd4feca933ace13c756ac71ea9",
     "wasm_hash": null
   }
 }

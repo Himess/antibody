@@ -25,8 +25,8 @@
     }
   ],
   "stats": {
-    "witness_bytes": 32647,
-    "witness_sha256": "e84cae8dbc808ed77e10276563c2b0b65949ce088fccd6f7d0372b5937b0e9fd",
+    "witness_bytes": 38493,
+    "witness_sha256": "a1532d927440b26820cffc4b7d50d574d7c87eb7b66e70c19f31f8c4c26060ca",
     "accounts": 11,
     "storage_slots": 34,
     "storage_tries": 11,
@@ -38,5 +38,5 @@
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 43
+  "total_ms": 40
 }

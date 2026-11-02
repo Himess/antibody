@@ -1,0 +1,30 @@
+[package]
+name = "antibody-cli"
+description = "antibody: create programs, hunt, commit/submit sealed PoCs, verify receipts, MCP server for agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "antibody"
+path = "src/main.rs"
+
+[dependencies]
+antibody-verifier = { path = "../verifier" }
+antibody-witness = { path = "../witness" }
+alloy-primitives.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+eyre = "0.6.12"
+clap = { version = "4.5", features = ["derive"] }
+ed25519-dalek = "2"
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+bs58 = "0.5"
+base64 = "0.22"
+getrandom = "0.2"

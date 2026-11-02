@@ -60,8 +60,8 @@ jobs:
       - name: toolchain from rust-toolchain.toml
         run: rustup show
       - uses: Swatinem/rust-cache@v2
-      - name: unit tests
-        run: cargo test --release -p antibody-verifier
+      - name: unit and integration tests (verifier, TEE mode on the fixture, CLI)
+        run: cargo test --release -p antibody-verifier -p antibody-cli
       - name: build (native)
         run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
       - name: build (wasm32-wasip2)

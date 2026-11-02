@@ -54,6 +54,8 @@ pub struct Target {
 pub struct Invariants {
     /// Reserved address where the runtime code is injected (must be empty at the anchor).
     pub address: Address,
+    /// The runtime bytecode itself: the committed manifest carries the rules as code.
+    pub runtime_code: alloy_primitives::Bytes,
     pub runtime_code_hash: B256,
     /// Gas cap for each `snapshot()` / `check()` evaluation.
     pub gas_limit: u64,

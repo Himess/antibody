@@ -79,7 +79,7 @@ def toml_str(v):
     return json.dumps(v)
 
 
-def write_toml(path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_hash, code_hashes, net):
+def write_toml(path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_code, inv_hash, code_hashes, net):
     deadline = int(datetime.datetime(2026, 11, 14, 23, 59, 59, tzinfo=datetime.timezone.utc).timestamp())
     targets = ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeVault", "AcmeTreasury"]
     L = []
@@ -103,6 +103,7 @@ def write_toml(path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_hash, code
         L.append(f'code_hash = "{code_hashes[t]}"\n')
     L.append("[invariants]")
     L.append(f'address = "{inv_addr}"')
+    L.append(f'runtime_code = "{inv_code}"')
     L.append(f'runtime_code_hash = "{inv_hash}"')
     L.append("gas_limit = 5000000\n")
     for bit, name in [(0, "solvency"), (1, "fees_to_treasury"), (2, "share_price")]:
@@ -213,7 +214,7 @@ def main():
     assert keccak_hex(inv_code) == inv_hash, "invariants code hash"
     open(os.path.join(out_dir, "invariants.hex"), "w").write(inv_code + "\n")
     toml_path = os.path.join(out_dir, "antibody.toml")
-    write_toml(toml_path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_hash, code_hashes, a.net)
+    write_toml(toml_path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_code, inv_hash, code_hashes, a.net)
     man_path = os.path.join(out_dir, "manifest.json")
     r = subprocess.run([os.path.join(BIN, "antibody-witness" + EXE), "manifest", "--toml", toml_path, "--out", man_path],
                        capture_output=True, text=True, cwd=ROOT)

@@ -5,7 +5,7 @@
     "0x363699d14f9d8c430085c95f5c68d502763af7f0"
   ],
   "trace_verdict": null,
-  "trace_ms": 10,
+  "trace_ms": 13,
   "trace_rpc_reads": 33,
   "fixpoint_passes": 1,
   "fixpoint_added": [],
@@ -21,12 +21,12 @@
       "failures_per_provider": {},
       "raw_json_differs_but_normalised_equal": 0,
       "disagreements": [],
-      "fetch_ms": 1
+      "fetch_ms": 2
     }
   ],
   "stats": {
-    "witness_bytes": 30438,
-    "witness_sha256": "2ae87cfaa6c8e514b59299503a8f846fb1524c0163ebabe1cd74118ccdba854f",
+    "witness_bytes": 36284,
+    "witness_sha256": "4082436968bb633f52381d6d53fad5d42b3cb32ce1855d7bbe43c9ebda6ed3bc",
     "accounts": 10,
     "storage_slots": 23,
     "storage_tries": 10,
@@ -38,5 +38,5 @@
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 33
+  "total_ms": 44
 }

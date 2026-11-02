@@ -5,7 +5,7 @@
     "0x82dba22ad4bbe6a0a88c2fce52860fe2f2012e10"
   ],
   "trace_verdict": null,
-  "trace_ms": 12,
+  "trace_ms": 14,
   "trace_rpc_reads": 45,
   "fixpoint_passes": 1,
   "fixpoint_added": [],
@@ -25,8 +25,8 @@
     }
   ],
   "stats": {
-    "witness_bytes": 32380,
-    "witness_sha256": "a2781091816101829db9843b68a9d5f3fbcac889d96b9ebd0c03ace8b0340e2e",
+    "witness_bytes": 38226,
+    "witness_sha256": "29747b45d43b54b5b4183c6573467144a37554ee850b4c1d419416b1566be3d4",
     "accounts": 11,
     "storage_slots": 34,
     "storage_tries": 11,
@@ -38,5 +38,5 @@
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 37
+  "total_ms": 41
 }

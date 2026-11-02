@@ -48,3 +48,4 @@ fixtures/local/
 fixtures/**/*.wasm.*.json
 third_party/patches/**/.github/
 third_party/patches/**/.cargo-ok
+.antibody/
