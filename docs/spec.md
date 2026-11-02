@@ -489,6 +489,10 @@ anything else. A `check_round` run (TEE) verifies:
 - the old slots are byte-identical;
 - `check()` holds at the anchor with the new code;
 - the **canaries** still succeed. A "fix" that makes the targets revert everything is rejected;
+- the round keeps every invariant of the open round: its slots extend the open round's (near-antibody sends
+  that manifest along), and the invariants code changes only together with new slots;
+- the **new slots** the proposal will price are exactly the ones the round manifest adds, at their
+  severities;
 - every proposed **release** names a target that is an ERC-1967 proxy at the anchor, and the code hash of
   the override that replaces that proxy's implementation. A release permit can then only install code
   the round's re-runs ran. Base witnesses prove every target's implementation slot for this.

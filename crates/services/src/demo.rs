@@ -722,7 +722,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     println!("round 1: {}", r1["summary"]);
     step("Round 2, the final fix (AcmeLendFinal, AcmeVaultFixed): every paid PoC is fixed, so the release gate holds");
     let r2 = run_round(&a, &acme, &keeper, &near, pid, 2, &manifest_path, &dep_a, &evm_a,
-                       &[("AcmeLendImpl", "AcmeLendFinal"), ("AcmeVaultImpl", "AcmeVaultFixed")], None,
+                       &[("AcmeLendImpl", "AcmeLendFinal"), ("AcmeVaultImpl", "AcmeVaultFixed")],
+                       Some((v2.as_str(), &["3:protected_balances:medium"])),
                        &[("AcmeLend", "AcmeLendFinal"), ("AcmeVault", "AcmeVaultFixed")])?;
     println!("round 2: {}", r2["summary"]);
     step("Release: the guardian signs a permit per proxy and chain; the relayer upgrades both proxies on both chains");

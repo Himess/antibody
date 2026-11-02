@@ -380,3 +380,36 @@ fn a_round_check_binds_its_new_slots() {
     assert!(!check(serde_json::json!([{"slot": 3, "severity": "low"}])), "at another severity");
     assert!(!check(serde_json::json!([{"slot": 3, "severity": "medium"}, {"slot": 4, "severity": "medium"}])), "a slot the manifest does not add");
 }
+
+/// A round keeps every invariant of the round it follows (spec §8.1): after round 1 adds slot 3, a
+/// round 2 that drops it, or changes the invariants code without adding a slot, is refused.
+#[test]
+fn a_round_keeps_the_invariants_of_the_round_before() {
+    use antibody_verifier::manifest::{Manifest, Severity, Slot};
+    let w = World::new();
+    let base = Manifest::parse(&std::fs::read(root().join("fixtures/acme-local/manifest.json")).unwrap()).unwrap();
+    let fix = |n: u32| -> Vec<_> {
+        let m = Manifest::parse(&std::fs::read(root().join(format!("fixtures/acme-local/round{n}/manifest.json"))).unwrap()).unwrap();
+        m.overrides.iter().map(|o| (o.address, o.runtime_code.clone())).collect()
+    };
+    let code = base.invariants.runtime_code.clone();
+    let slot3 = || vec![Slot { bit: 3, name: "protected_balances".into(), severity: Severity::Medium }];
+    let r1 = base.with_round(1, &fix(1), Some((code.clone(), slot3()))).unwrap().canonical();
+    let check = |round: &[u8]| {
+        let req = w.request(
+            "check_round",
+            None,
+            serde_json::json!({"round": 2, "manifest_sha256": hex::encode(sha256(round)), "round_manifest": w.upload(round),
+                               "new_slots": [], "prev_round_manifest": w.upload(&r1)}),
+        );
+        serde_json::to_value(w.run(&req, CONTRACT).0.facts).unwrap()["round_check"]["ok"].as_bool().unwrap()
+    };
+    let keep = base.with_round(2, &fix(2), Some((code.clone(), slot3()))).unwrap().canonical();
+    assert!(check(&keep), "round 2 keeps slot 3");
+    let drop = base.with_round(2, &fix(2), None).unwrap().canonical();
+    assert!(!check(&drop), "round 2 drops slot 3");
+    let mut other = code.to_vec();
+    other.push(0x00);
+    let changed = base.with_round(2, &fix(2), Some((other.into(), slot3()))).unwrap().canonical();
+    assert!(!check(&changed), "the invariants code changes with no new slot");
+}

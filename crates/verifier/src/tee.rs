@@ -91,6 +91,9 @@ pub struct Request {
     /// `check_round`: the slots the round adds, as near-antibody will price them (spec §8.1).
     #[serde(default)]
     pub new_slots: Vec<NewSlotIn>,
+    /// `check_round` after round 1: the open round's manifest, which the proposal may only extend.
+    #[serde(default)]
+    pub prev_round_manifest: Option<BlobRef>,
 }
 
 /// A slot a round adds: its bit and severity must be the round manifest's.
@@ -496,9 +499,17 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
             let (benv, base) = base_witness(env, req)?;
             let round_bytes = manifest_for(env, req, &base)?;
             let base_m = Manifest::parse(&base.manifest_json).map_err(|e| Stop(Kind::ProgramMisconfigured, e))?;
+            // The open round's manifest (round 0's for a first round): a round only ever adds invariants.
+            let prev = match &req.prev_round_manifest {
+                Some(r) => Manifest::parse(&read_blob(env, r)?).map_err(|e| infra(format!("previous round manifest: {}", short(&e))))?,
+                None => base_m.clone(),
+            };
             let rc = match Manifest::parse(&round_bytes) {
                 Err(_) => RoundCheck { ok: false, canaries_ok: false },
-                Ok(m) => match round_rules(&base_m, &m, req.round).and_then(|()| new_slots_match(&base_m, &m, &req.new_slots)) {
+                Ok(m) => match round_rules(&base_m, &m, req.round)
+                    .and_then(|()| extends(&prev, &m))
+                    .and_then(|()| new_slots_match(&prev, &m, &req.new_slots))
+                {
                     Err(e) => {
                         facts.reason = Some(short(&e));
                         RoundCheck { ok: false, canaries_ok: false }
@@ -631,6 +642,19 @@ fn check_base(program_key: &str, benv: &Envelope, base: &BaseWitness, manifest: 
 }
 
 /// A round may replace target code and add slots; nothing else changes (spec §8.1).
+/// A round keeps every invariant of the round it follows: its slots extend the previous ones, and the
+/// invariants code changes only when slots are added.
+fn extends(prev: &Manifest, round: &Manifest) -> Result<(), String> {
+    let (p, r) = (&prev.invariants, &round.invariants);
+    if r.slots.len() < p.slots.len() || r.slots[..p.slots.len()] != p.slots[..] {
+        return Err("a round keeps every invariant of the round before it".into());
+    }
+    if r.slots.len() == p.slots.len() && r.runtime_code_hash != p.runtime_code_hash {
+        return Err("the invariants code changes only with new slots".into());
+    }
+    Ok(())
+}
+
 /// The slots a proposal names are exactly the ones its round manifest adds, with their severities.
 fn new_slots_match(base: &Manifest, round: &Manifest, named: &[NewSlotIn]) -> Result<(), String> {
     let added: Vec<(u8, String)> = round.invariants.slots[base.invariants.slots.len()..]
