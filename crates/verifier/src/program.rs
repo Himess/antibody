@@ -200,6 +200,9 @@ struct Frame {
     is_static: bool,
     target: Address,
     selector: [u8; 4],
+    /// `points.len()` when the frame began. A frame that fails is truncated back to it, so the
+    /// timeline holds only evaluations of state that persisted.
+    mark: usize,
 }
 
 /// One invariant evaluation at the end of a protocol-entry call.
@@ -219,6 +222,8 @@ struct FingerprintInspector {
     check_data: Bytes,
     declared: U256,
     max_points: u32,
+    /// Evaluations performed (the `max_entry_calls` cap), including ones later truncated.
+    evals: u32,
     stack: Vec<Frame>,
     tx: u32,
     points: Vec<EvalPoint>,
@@ -245,19 +250,26 @@ impl<DB: Database> Inspector<EthEvmContext<DB>> for FingerprintInspector {
                 selector.copy_from_slice(&input[..4]);
             }
         }
-        self.stack.push(Frame { in_target, entry, is_static: inputs.is_static, target: inputs.target_address, selector });
+        let mark = self.points.len();
+        self.stack.push(Frame { in_target, entry, is_static: inputs.is_static, target: inputs.target_address, selector, mark });
         None
     }
 
-    fn call_end(&mut self, context: &mut EthEvmContext<DB>, _inputs: &CallInputs, _outcome: &mut FrameCallOutcome) {
+    fn call_end(&mut self, context: &mut EthEvmContext<DB>, _inputs: &CallInputs, outcome: &mut FrameCallOutcome) {
         let Some(frame) = self.stack.pop() else { return };
+        if !outcome.result.is_ok() {
+            // Everything the frame did was reverted, and so are the evaluations recorded inside it.
+            self.points.truncate(frame.mark);
+            return;
+        }
         if !frame.entry || frame.is_static || self.db_error.is_some() {
             return;
         }
-        if self.points.len() as u32 >= self.max_points {
+        if self.evals >= self.max_points {
             self.too_many = true;
             return;
         }
+        self.evals += 1;
         let block = context.block.clone();
         let cfg = context.cfg.clone();
         let journal = &mut context.journaled_state;
@@ -272,12 +284,17 @@ impl<DB: Database> Inspector<EthEvmContext<DB>> for FingerprintInspector {
     }
 
     fn create(&mut self, _context: &mut EthEvmContext<DB>, _inputs: &mut CreateInputs) -> Option<CreateOutcome> {
-        self.stack.push(Frame { in_target: false, entry: false, is_static: false, target: Address::ZERO, selector: [0; 4] });
+        let mark = self.points.len();
+        self.stack.push(Frame { in_target: false, entry: false, is_static: false, target: Address::ZERO, selector: [0; 4], mark });
         None
     }
 
-    fn create_end(&mut self, _context: &mut EthEvmContext<DB>, _inputs: &CreateInputs, _outcome: &mut CreateOutcome) {
-        self.stack.pop();
+    fn create_end(&mut self, _context: &mut EthEvmContext<DB>, _inputs: &CreateInputs, outcome: &mut CreateOutcome) {
+        if let Some(frame) = self.stack.pop() {
+            if !outcome.result.is_ok() {
+                self.points.truncate(frame.mark);
+            }
+        }
     }
 }
 
@@ -442,6 +459,7 @@ where
         check_data: check_data.clone(),
         declared,
         max_points: caps.max_entry_calls,
+        evals: 0,
         stack: Vec::new(),
         tx: 0,
         points: Vec::new(),
