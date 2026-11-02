@@ -309,6 +309,27 @@ impl Manifest {
         Ok(m)
     }
 
+    /// A round that also adds invariants: `code` as in [`Self::with_overrides`], a new invariants
+    /// contract, and the slots it adds after the existing ones (which keep their bits, names and
+    /// severities).
+    pub fn with_round(&self, round: u32, code: &[(Address, Bytes)], invariants: Option<(Bytes, Vec<Slot>)>) -> Result<Manifest, String> {
+        let mut m = self.with_overrides(round, code)?;
+        if let Some((runtime, added)) = invariants {
+            if added.is_empty() {
+                return Err("manifest: new invariants add at least one slot".into());
+            }
+            for s in &added {
+                if m.invariants.slots.iter().any(|x| x.bit == s.bit) || added.iter().filter(|x| x.bit == s.bit).count() > 1 {
+                    return Err(format!("manifest: slot {} already exists", s.bit));
+                }
+            }
+            m.invariants.runtime_code_hash = keccak256(&runtime);
+            m.invariants.runtime_code = runtime;
+            m.invariants.slots.extend(added);
+        }
+        Ok(m)
+    }
+
     /// sha256 of the exact canonical bytes (what the project commits on NEAR).
     pub fn hash(bytes: &[u8]) -> B256 {
         B256::from_slice(&Sha256::digest(bytes))

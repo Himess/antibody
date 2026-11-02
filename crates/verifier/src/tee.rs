@@ -88,6 +88,17 @@ pub struct Request {
     /// `check_round`: the releases the round proposes (spec §9).
     #[serde(default)]
     pub releases: Vec<ReleaseIn>,
+    /// `check_round`: the slots the round adds, as near-antibody will price them (spec §8.1).
+    #[serde(default)]
+    pub new_slots: Vec<NewSlotIn>,
+}
+
+/// A slot a round adds: its bit and severity must be the round manifest's.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NewSlotIn {
+    pub slot: u8,
+    pub severity: String,
 }
 
 /// A proposed release: the proxy to upgrade and the code hash its new implementation must have.
@@ -487,8 +498,11 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
             let base_m = Manifest::parse(&base.manifest_json).map_err(|e| Stop(Kind::ProgramMisconfigured, e))?;
             let rc = match Manifest::parse(&round_bytes) {
                 Err(_) => RoundCheck { ok: false, canaries_ok: false },
-                Ok(m) => match round_rules(&base_m, &m, req.round) {
-                    Err(_) => RoundCheck { ok: false, canaries_ok: false },
+                Ok(m) => match round_rules(&base_m, &m, req.round).and_then(|()| new_slots_match(&base_m, &m, &req.new_slots)) {
+                    Err(e) => {
+                        facts.reason = Some(short(&e));
+                        RoundCheck { ok: false, canaries_ok: false }
+                    }
                     Ok(()) => {
                         let full = ProgramWitness {
                             manifest_json: round_bytes.clone(),
@@ -617,6 +631,19 @@ fn check_base(program_key: &str, benv: &Envelope, base: &BaseWitness, manifest: 
 }
 
 /// A round may replace target code and add slots; nothing else changes (spec §8.1).
+/// The slots a proposal names are exactly the ones its round manifest adds, with their severities.
+fn new_slots_match(base: &Manifest, round: &Manifest, named: &[NewSlotIn]) -> Result<(), String> {
+    let added: Vec<(u8, String)> = round.invariants.slots[base.invariants.slots.len()..]
+        .iter()
+        .map(|s| (s.bit, serde_json::to_value(s.severity).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()))
+        .collect();
+    let named: Vec<(u8, String)> = named.iter().map(|s| (s.slot, s.severity.to_ascii_lowercase())).collect();
+    if added != named {
+        return Err("the proposal's new slots are not the ones the round manifest adds".into());
+    }
+    Ok(())
+}
+
 fn round_rules(base: &Manifest, round: &Manifest, n: u32) -> Result<(), String> {
     if round.round != n || n == 0 {
         return Err("wrong round number".into());

@@ -241,6 +241,12 @@ enum Cmd {
         /// <target address>=<file with the fixed runtime code in hex>; repeatable
         #[arg(long = "override", required = true)]
         overrides: Vec<String>,
+        /// A new invariants contract (runtime code hex) that adds slots (--add-slot)
+        #[arg(long)]
+        invariants_code: Option<PathBuf>,
+        /// <bit>:<name>:<severity> of a slot the new invariants add; repeatable
+        #[arg(long = "add-slot")]
+        add_slots: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -481,7 +487,9 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Keygen { kind: KeygenKind::X25519 { ref out } } => cmd::keygen_x25519(out),
         Cmd::Keygen { kind: KeygenKind::Near { ref account_id, ref out } } => cmd::keygen_near(account_id.clone(), out),
         Cmd::Manifest { ref toml, ref out } => cmd::manifest_compile(toml, out),
-        Cmd::ManifestRound { ref base, round, ref overrides, ref out } => cmd::manifest_round(base, round, overrides, out),
+        Cmd::ManifestRound { ref base, round, ref overrides, ref invariants_code, ref add_slots, ref out } => {
+            cmd::manifest_round(base, round, overrides, invariants_code.as_deref().map(|f| (f, add_slots.as_slice())), out)
+        }
         Cmd::Program { ref cmd } => {
             let c = mk()?;
             match cmd {

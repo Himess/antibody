@@ -354,3 +354,29 @@ fn a_rerun_judges_the_same_poc_at_the_fix() {
     assert_eq!(rerun("B", 2).0, Kind::NoViolation, "B is fixed in round 2");
     assert_eq!(rerun("F", 2).0, Kind::NoViolation, "F is fixed in round 2");
 }
+
+/// A round that adds an invariant (spec §8.1): the slots the proposal will price must be exactly the
+/// ones its manifest adds, at their severities.
+#[test]
+fn a_round_check_binds_its_new_slots() {
+    use antibody_verifier::manifest::{Manifest, Severity, Slot};
+    let w = World::new();
+    let base = Manifest::parse(&std::fs::read(root().join("fixtures/acme-local/manifest.json")).unwrap()).unwrap();
+    let r1 = Manifest::parse(&std::fs::read(root().join("fixtures/acme-local/round1/manifest.json")).unwrap()).unwrap();
+    let fix: Vec<_> = r1.overrides.iter().map(|o| (o.address, o.runtime_code.clone())).collect();
+    let slot = Slot { bit: 3, name: "protected_balances".into(), severity: Severity::Medium };
+    let round = base.with_round(1, &fix, Some((base.invariants.runtime_code.clone(), vec![slot]))).unwrap().canonical();
+    let check = |new_slots: serde_json::Value| {
+        let req = w.request(
+            "check_round",
+            None,
+            serde_json::json!({"round": 1, "manifest_sha256": hex::encode(sha256(&round)), "round_manifest": w.upload(&round),
+                               "new_slots": new_slots}),
+        );
+        serde_json::to_value(w.run(&req, CONTRACT).0.facts).unwrap()["round_check"]["ok"].as_bool().unwrap()
+    };
+    assert!(check(serde_json::json!([{"slot": 3, "severity": "medium"}])), "the slot the manifest adds");
+    assert!(!check(serde_json::json!([])), "a new slot the proposal does not price");
+    assert!(!check(serde_json::json!([{"slot": 3, "severity": "low"}])), "at another severity");
+    assert!(!check(serde_json::json!([{"slot": 3, "severity": "medium"}, {"slot": 4, "severity": "medium"}])), "a slot the manifest does not add");
+}

@@ -692,8 +692,20 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     let overrides = hex::encode(sha256(&serde_json::to_vec(&m["overrides"])?));
     let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
     ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    // The slots the round adds, at their manifest severities; each new slot's budget is the escrow's
+    // deposits, as for a slot the program created without one.
+    let p = ctx.program(program)?;
+    let known: Vec<u64> = p["params"]["slots"].as_array().into_iter().flatten().filter_map(|s| s["slot"].as_u64()).collect();
+    let budget = p["ledger"]["deposits"].clone();
+    let new_slots: Vec<Value> = m["invariants"]["slots"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|s| !known.contains(&s["bit"].as_u64().unwrap_or(u64::MAX)))
+        .map(|s| json!({"slot": s["bit"], "severity": s["severity"], "budget": budget}))
+        .collect();
     let args = json!({"program_id": program, "manifest": {"location": up["near_tx"], "sha256": sha}, "overrides_sha256": overrides,
-                      "new_slots": [], "releases": releases});
+                      "new_slots": new_slots, "releases": releases});
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "propose_round", args, RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "propose_round")?;
     let run_id = run_of(&s)?;
@@ -932,7 +944,7 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
 
 /// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code
 /// file)` replaces that target's runtime code at the same anchor (docs/rounds.md).
-pub fn manifest_round(base: &Path, round: u32, overrides: &[String], out: &Path) -> Result<Value> {
+pub fn manifest_round(base: &Path, round: u32, overrides: &[String], invariants: Option<(&Path, &[String])>, out: &Path) -> Result<Value> {
     let m = Manifest::parse(&std::fs::read(base)?).map_err(|e| eyre!(e))?;
     let mut code = Vec::new();
     for o in overrides {
@@ -941,7 +953,22 @@ pub fn manifest_round(base: &Path, round: u32, overrides: &[String], out: &Path)
         let bytes = hex::decode(hexs.trim().trim_start_matches("0x"))?;
         code.push((addr.parse::<alloy_primitives::Address>()?, alloy_primitives::Bytes::from(bytes)));
     }
-    let r = m.with_overrides(round, &code).map_err(|e| eyre!(e))?;
+    let added = match invariants {
+        None => None,
+        Some((file, slots)) => {
+            let runtime = hex::decode(std::fs::read_to_string(file)?.trim().trim_start_matches("0x"))?;
+            let mut parsed = Vec::new();
+            for s in slots {
+                let [bit, name, severity] = s.splitn(3, ':').collect::<Vec<_>>()[..] else {
+                    return Err(eyre!("--add-slot takes <bit>:<name>:<severity>"));
+                };
+                let severity = serde_json::from_value(json!(severity)).map_err(|_| eyre!("severity: critical, high, medium or low"))?;
+                parsed.push(antibody_verifier::manifest::Slot { bit: bit.parse()?, name: name.into(), severity });
+            }
+            Some((alloy_primitives::Bytes::from(runtime), parsed))
+        }
+    };
+    let r = m.with_round(round, &code, added).map_err(|e| eyre!(e))?;
     let bytes = r.canonical();
     std::fs::write(out, &bytes)?;
     Ok(json!({"manifest": out, "round": round, "bytes": bytes.len(), "sha256": format!("{:#x}", Manifest::hash(&bytes)),
