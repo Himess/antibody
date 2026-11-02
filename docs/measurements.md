@@ -10,9 +10,9 @@ covers.
 |---|---|---|
 | Verifier work per verification (program mode, Acme fixture) | 462–476 M wasm instructions | `python3 scripts/demo/check_fixtures.py fixtures/acme-local` (wasmtime with OutLayer's engine config; also `round1`) |
 | Native vs wasm output | Byte-identical for every fixture (full receipt and facts) | Same script; CI job `verifier` |
-| Sandbox end to end | All expected outcomes in 263 s (CI run 41428059314) | `make demo`, CI job `e2e`, `target/demo/results.json` |
+| Sandbox end to end | All expected outcomes, including round 1 and disclosure, in 376 s (CI run 41438293042) | `make demo`, CI job `e2e`, `target/demo/results.json` |
 | Guardian pause after a verified Critical (sandbox, MOCK MPC) | 0.5 s to `paused() == true` on both chains | Same run (`guardian.pause_seconds_after_verdict`) |
-| TEE re-run of one claimed finding (sandbox, MOCK OutLayer) | 7.8–7.9 s each, from the witness build to the recorded result | CI run 41429903675, round-1 step |
+| TEE re-run of one claimed finding (sandbox, MOCK OutLayer) | 7.8–7.9 s each, from the witness build to the recorded result | Same run, round-1 step |
 | near-antibody wasm | 937,426 B (fits one deploy transaction) | `contracts/near-antibody/target/wasm32-unknown-unknown/release/near_antibody.wasm` |
 
 ## OutLayer on testnet (`outlayer.testnet`)
