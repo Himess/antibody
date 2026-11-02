@@ -25,6 +25,13 @@ ab() { "$AB" --network testnet --deployments "$DEP" "$@"; }
 exists() { curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' \
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$1\"}}" \
     | grep -q '"amount"'; }
+# near_view <contract> <method> <json args>: prints the JSON result of a view call. Fails (and, under
+# `set -e`, stops the runbook) when the call fails, so an RPC error is never read as "not set yet".
+near_view() { curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$1\",\"method_name\":\"$2\",\"args_base64\":\"$(printf '%s' "$3" | base64 -w0)\"}}" \
+    | python3 -c 'import sys,json; r=json.load(sys.stdin); res=(r.get("result") or {}).get("result")
+if res is None: sys.exit("view failed: " + json.dumps(r.get("error") or (r.get("result") or {}).get("error"))[:300])
+print(bytes(res).decode())'; }
 
 echo "== 1. NEAR accounts under $HQ"
 if ! exists "$HQ"; then
@@ -73,14 +80,27 @@ deploy "bounty.$HQ" "$WASM_DIR/near_antibody.wasm" "{\"owner\":\"$HQ\",\"token\"
 deploy "guardian.$HQ" "$GUARDIAN_WASM" "{\"owner\":\"$HQ\",\"mpc\":\"v1.signer-prod.testnet\",\"path\":\"guardian/acme\",\"guardian_address\":\"$GUARDIAN_EVM\"}"
 
 echo "== 6. Verifier key: PROTECTED_ secret in OutLayer's keystore, then the pubkey run"
-ab --key-file "$KEYS/$HQ.json" admin outlayer-secret --wasm-hash "$WASM_HASH" --contract "bounty.$HQ"
-ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method refresh_verifier_pubkey --gas-tgas 150
+# Only once: a new seed would make every blob sealed to the old public key unreadable (InvalidPoC).
+# ROTATE_SEED=1 replaces it deliberately, before any program exists.
+PUBKEY_SET="$(near_view "bounty.$HQ" get_config '{}' | python3 -c 'import sys,json; print("yes" if json.load(sys.stdin)["verifier"]["pubkey"] else "no")')"
+if [ "$PUBKEY_SET" = "no" ] || [ "${ROTATE_SEED:-0}" = "1" ]; then
+  ab --key-file "$KEYS/$HQ.json" admin outlayer-secret --wasm-hash "$WASM_HASH" --contract "bounty.$HQ"
+  ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method refresh_verifier_pubkey --gas-tgas 150
+else
+  echo "verifier pubkey already set: keeping the seed"
+fi
 
 echo "== 7. Guardian targets and authorization"
+# Registered once: registering again would reset next_nonce and jam the chain's pause transactions.
+# 250,000 gas: since Glamsterdam, Sepolia charges far more for a new storage slot than Osaka does.
+CHAINS="$(near_view "guardian.$HQ" get_chains '{}')"
 for c in "11155111 sepolia https://sepolia.etherscan.io/tx/ 20000000000 1500000000" "84532 base-sepolia https://sepolia.basescan.org/tx/ 1000000000 100000000"; do
   set -- $c
+  if printf '%s' "$CHAINS" | python3 -c "import sys,json; sys.exit(0 if any(t['chain_id'] == $1 for t in (json.load(sys.stdin) or [])) else 1)"; then
+    echo "chain $1 already registered: keeping its nonce"; continue
+  fi
   ab --key-file "$KEYS/$HQ.json" admin call --contract "guardian.$HQ" --method set_chain --args \
-    "{\"target\":{\"chain_id\":$1,\"name\":\"$2\",\"to\":\"$ACME_GUARD\",\"calldata\":\"0x8456cb59\",\"gas_limit\":80000,\"max_fee_per_gas\":\"$4\",\"max_priority_fee_per_gas\":\"$5\",\"next_nonce\":0,\"explorer\":\"$3\"}}"
+    "{\"target\":{\"chain_id\":$1,\"name\":\"$2\",\"to\":\"$ACME_GUARD\",\"calldata\":\"0x8456cb59\",\"gas_limit\":250000,\"max_fee_per_gas\":\"$4\",\"max_priority_fee_per_gas\":\"$5\",\"next_nonce\":0,\"explorer\":\"$3\"}}"
 done
 ab --key-file "$KEYS/$HQ.json" admin call --contract "guardian.$HQ" --method set_authorized --args "{\"account_id\":\"bounty.$HQ\",\"enabled\":true}"
 
@@ -89,10 +109,14 @@ MEAS="$(curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/j
 ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method set_tee_config   --args "{\"config\":{\"verifier\":\"tee-verifier-2026-07-22.testnet\",\"measurements\":$MEAS,\"accepted_tcb\":[\"UpToDate\"]}}"
 
 echo "== 8. tUSD for the project and the scripted agents (testnet token, no value)"
-ab --key-file "$KEYS/$HQ.json" admin call --contract "tusd.$HQ" --method mint --args "{\"account_id\":\"acme.$HQ\",\"amount\":\"30000000000\"}"
-for x in a b c d e f; do
-  ab --key-file "$KEYS/$HQ.json" admin call --contract "tusd.$HQ" --method mint --args "{\"account_id\":\"agent-$x.$HQ\",\"amount\":\"200000000\"}"
-done
+mint_to() { # <account> <target raw amount>: mints only the shortfall, so re-runs mint nothing
+  local have; have="$(near_view "tusd.$HQ" ft_balance_of "{\"account_id\":\"$1\"}" | tr -d '"')"
+  if [ "$have" -lt "$2" ]; then
+    ab --key-file "$KEYS/$HQ.json" admin call --contract "tusd.$HQ" --method mint --args "{\"account_id\":\"$1\",\"amount\":\"$(( $2 - have ))\"}"
+  fi
+}
+mint_to "acme.$HQ" 30000000000
+for x in a b c d e f; do mint_to "agent-$x.$HQ" 200000000; done
 
 python3 - "$HQ" > "$DEP" <<'EOF'
 import json, sys
