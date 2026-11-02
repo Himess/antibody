@@ -357,6 +357,24 @@ fn regression_blocks_release() {
     w.audit_ok(&[p]);
 }
 
+/// A round check that fails without a verdict (OutLayer down, an infrastructure error) drops the
+/// proposal: one proposal at a time must not block the program's rounds for good.
+#[test]
+fn a_failed_round_check_lets_the_project_propose_again() {
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let ctx = w.ctx(PROJECT);
+    let spec = w.spec();
+    let r = w.e.propose_round(&ctx, p, H32([8; 32]), H32([6; 32]), vec![], spec);
+    let run = last_run(&w.ok(r));
+    let now = w.ctx(PROJECT);
+    let r = w.e.run_failed(&now, run, "outlayer unavailable");
+    w.ok(r);
+    assert!(w.e.store.program(p).unwrap().proposal.is_none(), "the failed check drops the proposal");
+    w.propose(p, vec![], true);
+    assert!(w.e.store.program(p).unwrap().proposal.is_some(), "and the project proposes again");
+}
+
 #[test]
 fn canaries_block_release() {
     let mut w = W::new();

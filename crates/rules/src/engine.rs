@@ -739,6 +739,9 @@ impl<S: Store> Engine<S> {
         r.outcome = RunOutcome::Failed { at: ctx.now, reason: reason.chars().take(64).collect() };
         self.store.put_run(&r);
         let mut fx = vec![ev("run_failed", serde_json::json!({"run_id": run, "reason": reason}))];
+        if r.mode == Mode::CheckRound {
+            fx.extend(self.drop_unchecked_proposal(r.program, run)?);
+        }
         // A challenge's re-run that failed leaves the challenge open until `resolve`.
         if r.mode == Mode::Second {
             if let Some(cid) = r.commit {
@@ -834,12 +837,13 @@ impl<S: Store> Engine<S> {
             Mode::CheckRound => {
                 if let Some(pr) = p.proposal.as_mut() {
                     if pr.check_run == r.id {
-                        if let Extra::RoundCheck { ok, canaries_ok } = facts.extra {
-                            if !ok {
+                        match facts.extra {
+                            Extra::RoundCheck { ok: true, canaries_ok } => pr.canaries_ok = canaries_ok,
+                            // Rejected, or no verdict at all (an infrastructure error): the project
+                            // may propose again.
+                            _ => {
                                 fx.push(ev("round_rejected", serde_json::json!({"program_id": p.id, "round": pr.round})));
                                 p.proposal = None;
-                            } else {
-                                pr.canaries_ok = canaries_ok;
                             }
                         }
                     }
@@ -1498,6 +1502,17 @@ impl<S: Store> Engine<S> {
         p.proposal.as_mut().unwrap().check_run = run.id;
         self.store.put_program(&p);
         Ok(vec![fx, ev("round_proposed", serde_json::json!({"program_id": program, "round": round, "run_id": run.id}))])
+    }
+
+    /// A proposal whose round check failed without a verdict is dropped, so the project can propose
+    /// again (one proposal at a time would otherwise block the program's rounds for good).
+    fn drop_unchecked_proposal(&mut self, program: ProgramId, run: RunId) -> R<Vec<Effect>> {
+        let mut p = self.get_program(program)?;
+        let Some(pr) = p.proposal.as_ref().filter(|pr| pr.check_run == run) else { return Ok(vec![]) };
+        let fx = vec![ev("round_rejected", serde_json::json!({"program_id": program, "round": pr.round, "run_id": run}))];
+        p.proposal = None;
+        self.store.put_program(&p);
+        Ok(fx)
     }
 
     /// When the proposal's round check was answered, if it is T1-confirmed and valid. Structural facts
