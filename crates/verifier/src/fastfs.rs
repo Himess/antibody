@@ -19,7 +19,7 @@ pub fn parse_location(url: &str) -> Option<(&str, &str)> {
 /// JSON-RPC body that fetches the transaction (archival nodes keep old ones).
 pub fn tx_request(hash: &str, signer: &str) -> serde_json::Value {
     serde_json::json!({"jsonrpc": "2.0", "id": "antibody", "method": "tx",
-                       "params": {"tx_hash": hash, "sender_account_id": signer, "wait_until": "NONE"}})
+                       "params": {"tx_hash": hash, "sender_account_id": signer, "wait_until": "INCLUDED_FINAL"}})
 }
 
 /// Default archival RPC for a NEAR network id (`NEAR_NETWORK_ID` inside OutLayer).

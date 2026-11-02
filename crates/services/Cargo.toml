@@ -1,0 +1,24 @@
+[package]
+name = "antibody-services"
+description = "Antibody backend: indexer, API, relayer, notifier, sandbox mocks and the offline end-to-end demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "antibody-services"
+path = "src/main.rs"
+
+[dependencies]
+antibody-cli = { path = "../cli" }
+antibody-verifier = { path = "../verifier" }
+alloy-primitives.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+eyre = "0.6.12"
+clap = { version = "4.5", features = ["derive"] }
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
+axum = "0.8"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }

@@ -91,3 +91,38 @@ jobs:
         run: |
           cargo test --lib -p near-antibody -p antibody-tusd
           cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc
+
+  e2e:
+    name: sandbox end-to-end (near-sandbox + 2 anvils, MOCK OutLayer/MPC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - name: toolchains
+        run: |
+          rustup show
+          rustup toolchain install 1.85.0 --profile minimal --target wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            contracts/near-antibody
+            contracts/near-guardian
+      - name: build contracts, verifier (native + wasm), CLI and services
+        run: make build
+      - name: sandbox demo
+        run: make e2e
+      - name: results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-demo
+          path: |
+            target/demo/results.json
+            target/demo/*.log
+          if-no-files-found: warn

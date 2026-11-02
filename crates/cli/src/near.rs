@@ -270,7 +270,8 @@ impl Near {
     pub fn explorer_tx(&self, hash: &str) -> String {
         match self.network.as_str() {
             "mainnet" => format!("https://nearblocks.io/txns/{hash}"),
-            _ => format!("https://testnet.nearblocks.io/txns/{hash}"),
+            "testnet" => format!("https://testnet.nearblocks.io/txns/{hash}"),
+            other => format!("{other}:{hash}"),
         }
     }
 }

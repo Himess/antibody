@@ -8,14 +8,18 @@ pragma solidity 0.8.28;
 // is only instantiated in the local simulation: it is never broadcast.
 //
 //   DEPLOYER_KEY=<env> GUARDIAN_ADDRESS=0x.. SEED=true forge script script/DeployAcme.s.sol --rpc-url <url> --broadcast
+// Local chains can skip the key: `--unlocked --sender <anvil account>` (DEPLOYER_KEY unset).
+// DEPLOYMENTS_OUT overrides the output file.
 
 import {AcmeSetup} from "../src/acme/AcmeSetup.sol";
 import {AcmeInvariants} from "../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../src/acme/AcmeTokens.sol";
 
 interface Vm {
-    function envUint(string calldata) external view returns (uint256);
     function envOr(string calldata, address) external view returns (address);
+    function envOr(string calldata, uint256) external view returns (uint256);
+    function envOr(string calldata, string calldata) external view returns (string memory);
+    function startBroadcast() external;
     function envOr(string calldata, bool) external view returns (bool);
     function addr(uint256) external pure returns (address);
     function startBroadcast(uint256) external;
@@ -33,12 +37,13 @@ contract DeployAcme {
     Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     function run() external {
-        uint256 key = vm.envUint("DEPLOYER_KEY");
-        address admin = vm.addr(key);
+        uint256 key = vm.envOr("DEPLOYER_KEY", uint256(0));
+        address admin = key == 0 ? msg.sender : vm.addr(key);
         address guardian = vm.envOr("GUARDIAN_ADDRESS", address(0));
         bool seed = vm.envOr("SEED", true);
 
-        vm.startBroadcast(key);
+        if (key == 0) vm.startBroadcast();
+        else vm.startBroadcast(key);
         AcmeSetup.Deployment memory d = AcmeSetup.deploy(admin);
         if (guardian != address(0)) d.guard.setPauser(guardian, true);
         if (seed) AcmeSetup.seed(d, admin);
@@ -69,6 +74,7 @@ contract DeployAcme {
         vm.serializeBytes32(o, "codehashAcmeGuard", address(d.guard).codehash);
         vm.serializeBytes32(o, "invariantsCodeHash", address(inv).codehash);
         string memory json = vm.serializeBytes(o, "invariantsRuntimeCode", address(inv).code);
-        vm.writeJson(json, string.concat("deployments/", vm.toString(block.chainid), ".json"));
+        string memory def = string.concat("deployments/", vm.toString(block.chainid), ".json");
+        vm.writeJson(json, vm.envOr("DEPLOYMENTS_OUT", def));
     }
 }

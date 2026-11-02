@@ -61,7 +61,8 @@ pub fn upload(ctx: &Ctx, signer: &Signer, relative_path: &str, content: &[u8]) -
         _ => format!("https://test.fastfs.io/{}/{}/{}", signer.account_id, ctx.dep.antibody, relative_path),
     };
     let near_tx = format!("{}{}:{}", fastfs::SCHEME, hash, signer.account_id);
-    let gateway_ok = reqwest::blocking::Client::builder()
+    let has_gateway = matches!(ctx.near.network.as_str(), "testnet" | "mainnet");
+    let gateway_ok = has_gateway && reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()?
         .get(&gateway)
@@ -71,6 +72,7 @@ pub fn upload(ctx: &Ctx, signer: &Signer, relative_path: &str, content: &[u8]) -
         .and_then(|r| r.bytes().ok())
         .map(|b| b.as_ref() == content)
         .unwrap_or(false);
+    let gateway = if has_gateway { gateway } else { String::new() };
     Ok(json!({
         "location": if gateway_ok { gateway.clone() } else { near_tx.clone() },
         "gateway_url": gateway, "gateway_serves_it": gateway_ok, "near_tx": near_tx,
@@ -81,11 +83,14 @@ pub fn upload(ctx: &Ctx, signer: &Signer, relative_path: &str, content: &[u8]) -
 /// Reads a blob from an https URL or a `near-tx:` location (NEAR archival RPC). Callers check hashes.
 pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
     if let Some((hash, signer)) = fastfs::parse_location(url) {
-        let rpc = fastfs::archival_rpc(&near.network);
+        let rpc = match near.network.as_str() {
+            "testnet" | "mainnet" => fastfs::archival_rpc(&near.network).to_string(),
+            _ => near.rpc.clone(),
+        };
         let v: Value = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()?
-            .post(rpc)
+            .post(&rpc)
             .json(&fastfs::tx_request(hash, signer))
             .send()?
             .json()?;
