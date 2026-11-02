@@ -63,11 +63,11 @@ impl Drop for Procs {
     }
 }
 
-fn step(name: &str) {
+pub(crate) fn step(name: &str) {
     println!("\n== {name}");
 }
 
-fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut f: F) -> Result<()> {
+pub(crate) fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut f: F) -> Result<()> {
     let t0 = Instant::now();
     while t0.elapsed() < timeout {
         if f() {
@@ -79,7 +79,7 @@ fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut f: F) -> Resu
 }
 
 const ANVIL_SENDER: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-const ONE_TUSD: u128 = 1_000_000;
+pub(crate) const ONE_TUSD: u128 = 1_000_000;
 
 fn start_anvil(bin: &Path, chain_id: u64, port: u16, log: &Path) -> Result<Child> {
     let child = Command::new(bin)
@@ -132,7 +132,7 @@ fn start_sandbox(a: &DemoArgs, home: &Path, log: &Path) -> Result<(Child, Signer
     Ok((child, root))
 }
 
-fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path, eth_rpc: &str, state: &Path) -> Ctx {
+pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path, eth_rpc: &str, state: &Path) -> Ctx {
     Ctx {
         near: near.clone(),
         dep: dep.clone(),
@@ -218,15 +218,28 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
     })
 }
 
-/// Agent A submits through the MCP server, the way an AI agent would.
+/// Agent A submits through the MCP server, the way an AI agent would. `net` selects the NEAR
+/// network; without `eth_rpc` the CLI reads `SEPOLIA_RPC` from `.env`, so the URL never appears in a
+/// command line.
 #[allow(clippy::too_many_arguments)]
-fn mcp_submit(antibody_bin: &Path, deployments: &Path, account: &str, key: &Path, eth_rpc: &str, state: &Path, program: u32, bundle: &Path) -> Result<Value> {
-    let mut child = Command::new(antibody_bin)
-        .args(["--network", "sandbox", "--rpc", "http://127.0.0.1:3030", "--deployments"])
-        .arg(deployments)
-        .args(["--account", account, "--key-file"])
-        .arg(key)
-        .args(["--eth-rpc", eth_rpc, "mcp"])
+pub(crate) fn mcp_submit(
+    antibody_bin: &Path,
+    net: &[&str],
+    deployments: &Path,
+    account: &str,
+    key: &Path,
+    eth_rpc: Option<&str>,
+    state: &Path,
+    program: u32,
+    bundle: &Path,
+) -> Result<Value> {
+    let mut command = Command::new(antibody_bin);
+    command.args(net).arg("--deployments").arg(deployments).args(["--account", account, "--key-file"]).arg(key);
+    if let Some(rpc) = eth_rpc {
+        command.args(["--eth-rpc", rpc]);
+    }
+    let mut child = command
+        .arg("mcp")
         .current_dir(state)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -255,7 +268,7 @@ fn mcp_submit(antibody_bin: &Path, deployments: &Path, account: &str, key: &Path
     Ok(json!({"mcp_tools": n, "result": serde_json::from_str::<Value>(text)?}))
 }
 
-fn outcome_label(o: &Value) -> String {
+pub(crate) fn outcome_label(o: &Value) -> String {
     match o {
         Value::String(s) => s.clone(),
         Value::Object(m) => m.keys().next().cloned().unwrap_or_default(),
@@ -409,7 +422,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let state_a = a.work.join("state/agent-a-mcp");
     std::fs::create_dir_all(&state_a)?;
     let t = Instant::now();
-    let mcp = mcp_submit(&a.antibody_bin, &dep_file, &acct("agent-a"), &agent_key, "http://127.0.0.1:8545", &state_a, pid, &fx.join("A.bundle.json"))?;
+    let sandbox = ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030"];
+    let mcp = mcp_submit(&a.antibody_bin, &sandbox, &dep_file, &acct("agent-a"), &agent_key, Some("http://127.0.0.1:8545"), &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
     rows.push(("A (MCP)".into(), a_commit, t.elapsed().as_secs_f64()));
     results["mcp"] = json!({"tools": mcp["mcp_tools"], "commit_id": a_commit});

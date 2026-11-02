@@ -25,8 +25,10 @@ impl Evm {
             .client
             .post(&self.url)
             .json(&json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
-            .send()?
-            .json()?;
+            .send()
+            .and_then(|r| r.json())
+            // Without the URL: RPC URLs may carry API keys and must never reach a log.
+            .map_err(|e| eyre!("{method}: {}", e.without_url()))?;
         if let Some(e) = v.get("error") {
             return Err(eyre!("{method}: {e}"));
         }

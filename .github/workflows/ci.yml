@@ -62,8 +62,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-      - name: unit and integration tests (verifier, TEE mode on the fixture, CLI)
-        run: cargo test --release -p antibody-verifier -p antibody-cli
+      - name: unit and integration tests (verifier, TEE mode on the fixture, CLI, services)
+        run: cargo test --release -p antibody-verifier -p antibody-cli -p antibody-services
       - name: build (native)
         run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
       - name: build (wasm32-wasip2)

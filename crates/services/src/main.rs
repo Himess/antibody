@@ -8,11 +8,13 @@
 //! - `all`      — indexer + relayer + notifier + api in one process
 //! - `worker-mock`, `signer-mock` — sandbox stand-ins for OutLayer and the MPC network
 //! - `demo`     — the offline end-to-end run on near-sandbox + two anvils
+//! - `live`     — the same story on NEAR testnet, Sepolia and Base Sepolia, nothing mocked
 
 mod api;
 mod demo;
 mod evm;
 mod indexer;
+mod live;
 mod mocks;
 mod notifier;
 mod relayer;
@@ -127,6 +129,29 @@ enum Cmd {
         #[arg(long)]
         keep: bool,
     },
+    /// The Acme story live on NEAR testnet, Sepolia and Base Sepolia: real OutLayer TEE, Chain
+    /// Signatures, light client and DCAP verifier. Resumable: finished steps are skipped
+    Live {
+        /// NEAR key files `<account>.json` (default: .secrets/near)
+        #[arg(long)]
+        keys: Option<PathBuf>,
+        /// The Sepolia fixture (default: fixtures/acme-sepolia, from scripts/demo/acme_fixture.py --net sepolia)
+        #[arg(long)]
+        fixture: Option<PathBuf>,
+        /// Acme Lend's Sepolia deployment (default: contracts/evm/deployments/11155111.json)
+        #[arg(long)]
+        acme: Option<PathBuf>,
+        #[arg(long)]
+        work_dir: Option<PathBuf>,
+        #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
+        api: String,
+        /// The program's deadline, in minutes from its creation (round 1 must be proposed before it)
+        #[arg(long, default_value_t = 60)]
+        deadline_minutes: u64,
+        /// Run these finished steps again (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        redo: Vec<String>,
+    },
 }
 
 fn load_dep(cli: &Cli) -> Result<Deployments> {
@@ -210,6 +235,23 @@ fn main() -> Result<()> {
                 antibody_bin: root.join(format!("target/release/antibody{exe}")),
                 root,
                 keep: *keep,
+            })?;
+            Ok(())
+        }
+        Cmd::Live { keys, fixture, acme, work_dir, api, deadline_minutes, redo } => {
+            let root = repo_root().ok_or_else(|| eyre!("run the live story from inside the repository"))?;
+            let exe = if cfg!(windows) { ".exe" } else { "" };
+            live::run(live::LiveArgs {
+                work: work_dir.clone().unwrap_or_else(|| root.join("target/live")),
+                deployments: cli.deployments.clone().unwrap_or_else(|| root.join("deployments/near-testnet.json")),
+                keys: keys.clone().unwrap_or_else(|| root.join(".secrets/near")),
+                fixture: fixture.clone().unwrap_or_else(|| root.join("fixtures/acme-sepolia")),
+                acme: acme.clone().unwrap_or_else(|| root.join("contracts/evm/deployments/11155111.json")),
+                antibody_bin: root.join(format!("target/release/antibody{exe}")),
+                outlayer_api: api.clone(),
+                deadline_minutes: *deadline_minutes,
+                redo: redo.clone(),
+                root,
             })?;
             Ok(())
         }

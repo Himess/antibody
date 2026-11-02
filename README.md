@@ -180,6 +180,30 @@ Full table: [docs/trust.md](docs/trust.md).
 7. registers both chains;
 8. configures T1 with OutLayer's latest approved worker images.
 
+**The live story.** Two more steps run it with nothing mocked.
+1. `python scripts/demo/acme_fixture.py --net sepolia --rpc "$SEPOLIA_RPC" --anchor N` builds the
+   Sepolia fixture at block N, natively, and checks every expected verdict before anything is spent.
+   N must be a finalized block that the light client already has; `antibody anchor-check --block N`
+   tells.
+2. `target/release/antibody-services live` runs the Acme story on NEAR testnet, Sepolia and Base
+   Sepolia:
+   - the program, with its anchor checked by the light client;
+   - the known issue;
+   - agent A over MCP;
+   - the MPC-signed pause on both chains;
+   - agents B–F;
+   - a challenge of A's delayed payout, settled by A's TDX quote verified on NEAR, and F's payout
+     released early the same way;
+   - round 1;
+   - disclosure and `verify` of D.
+
+   Each step records its transactions in `target/live/live.json`, and a re-run skips the finished
+   steps. `target/live/results.json` collects, measured from block timestamps:
+   - tx links, verdicts and outcomes;
+   - OutLayer and Chain Signatures latency;
+   - DCAP gas;
+   - submit-to-payout time.
+
 Transaction links, latency and cost from the live run will be listed here when it runs.
 
 | Account / contract | Planned |
