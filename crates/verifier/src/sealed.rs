@@ -230,6 +230,21 @@ pub fn project_unwrap(wrap: &[u8], sk_p: &StaticSecret, program_key: &str) -> Re
     k.try_into().map_err(|_| SealError::Format("content key must be 32 bytes"))
 }
 
+/// AEAD seal for callers outside this module (the disclosure wrap, docs/spec.md §11.6).
+pub fn aead_seal_pub(key: &[u8; 32], nonce: &[u8; 12], msg: &[u8], ad: &[u8]) -> Vec<u8> {
+    aead_seal(key, nonce, msg, ad)
+}
+
+pub fn aead_open_pub(key: &[u8; 32], nonce: &[u8; 12], ct: &[u8], ad: &[u8]) -> Result<Vec<u8>, SealError> {
+    aead_open(key, nonce, ct, ad)
+}
+
+/// A public key whose shared secrets are contributory: low-order points are refused (spec §11.5).
+pub fn is_contributory(pk: &[u8; 32]) -> bool {
+    let probe = StaticSecret::from([0x42u8; 32]);
+    probe.diffie_hellman(&PublicKey::from(*pk)).was_contributory()
+}
+
 pub fn x25519_public(secret: [u8; 32]) -> [u8; 32] {
     PublicKey::from(&StaticSecret::from(secret)).to_bytes()
 }

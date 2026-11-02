@@ -46,12 +46,15 @@ pub struct ProgramBuildMeta {
     pub total_ms: u64,
 }
 
+/// `program_key` is the program's on-chain key: the verifier serves the invariants at the address it
+/// derives from it, so the traced access set must use the same one.
 pub fn build_program(
     pool: &Pool,
     manifest_json: &[u8],
     invariants_code: &Bytes,
     bundle: Bundle,
     min_agree: usize,
+    program_key: &str,
 ) -> Result<(Vec<u8>, ProgramBuildMeta, ProgramReceipt)> {
     let t_all = Instant::now();
     let manifest = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
@@ -67,7 +70,8 @@ pub fn build_program(
     // Trace: the verifier's own program path on a fetching DB records the exact access set.
     let t_trace = Instant::now();
     let fdb = FetchingDb::new(pool.clone(), m, Seed::default());
-    let trace_verdict = match execute_program(&header, &manifest, &inv, &bundle, spec, &fdb) {
+    let reserved = Some(antibody_verifier::run::reserved_address(program_key, anchor_hash));
+    let trace_verdict = match execute_program(&header, &manifest, &inv, &bundle, spec, &fdb, reserved) {
         Ok(_) => None,
         Err(ProgramError::Verdict { kind, reason }) => Some(format!("{kind:?}: {reason}")),
         Err(ProgramError::Verify(e)) => return Err(eyre!("trace failed: {e}")),
@@ -122,7 +126,7 @@ pub fn build_program(
         };
         let bytes = envelope.encode();
         let Payload::Program(w) = &envelope.payload else { unreachable!() };
-        match execute_program_witness(&envelope, w, None) {
+        match execute_program_witness(&envelope, w, None, reserved) {
             Ok(_) | Err(ProgramError::Verdict { .. }) => {
                 let digest: [u8; 32] = Sha256::digest(&bytes).into();
                 let receipt = run_program(&envelope, w, digest, &ProgramContext::default());

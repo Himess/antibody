@@ -2,10 +2,10 @@
   "anchor_block": 22,
   "anchor_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
   "senders": [
-    "0x8495d826ae4d83d7e277cd69e3500117d766d6e9"
+    "0xc5e4693439cba2bfff71a9b2b0cb94ef469ed0b3"
   ],
   "trace_verdict": null,
-  "trace_ms": 13,
+  "trace_ms": 14,
   "trace_rpc_reads": 45,
   "fixpoint_passes": 1,
   "fixpoint_added": [],
@@ -25,18 +25,18 @@
     }
   ],
   "stats": {
-    "witness_bytes": 47615,
-    "witness_sha256": "6f5e4ce7166278874915db9e8ca5ea1d130fd1e25bada6d1e71e9f056aac8e6c",
+    "witness_bytes": 47666,
+    "witness_sha256": "949f102b7928430f30b804344261ba58bbf49bc3bed4fcea0d3c3414ca38ab5e",
     "accounts": 11,
     "storage_slots": 34,
     "storage_tries": 11,
-    "proof_nodes_total": 94,
-    "proof_nodes_unique": 46,
-    "proof_bytes_unique": 4183,
+    "proof_nodes_total": 91,
+    "proof_nodes_unique": 47,
+    "proof_bytes_unique": 4262,
     "bytecodes": 7,
     "bytecode_bytes": 17120,
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 39
+  "total_ms": 43
 }

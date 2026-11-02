@@ -28,7 +28,10 @@ use revm::{
     interpreter::{CallInputs, CallOutcome as FrameCallOutcome, CreateInputs, CreateOutcome},
     primitives::{hardfork::SpecId, KECCAK_EMPTY, B256},
     state::{AccountInfo, Bytecode, EvmState},
-    Context, Database, DatabaseRef, Inspector, MainBuilder, MainContext, SystemCallEvm,
+    context::ContextSetters,
+    handler::{EthFrame, Handler, MainnetHandler},
+    interpreter::interpreter::EthInterpreter,
+    Context, Database, DatabaseRef, Inspector, MainBuilder, MainContext,
 };
 use rsp_client_executor::custom::{CustomCrypto, CustomEvmFactory};
 
@@ -98,11 +101,28 @@ pub struct InvariantCode {
 }
 
 /// Read view used only by evaluation calls: in-flight journal first (if any), then the committed
-/// state below it, plus the injected invariants code at its reserved address.
+/// state below it, plus the injected invariants code at its reserved address. Code that the PoC
+/// deployed (and any code at a sender) is served as a single `INVALID`: it never runs during an
+/// evaluation, so a PoC cannot make a rule judge itself (docs/spec.md §5.4).
 struct Overlay<'a, D> {
     journal: Option<&'a EvmState>,
     inner: D,
     inv: &'a InvariantCode,
+    blocked: &'a BTreeSet<Address>,
+}
+
+/// The code served for blocked accounts during evaluation.
+fn blocked_code() -> Bytecode {
+    Bytecode::new_raw(Bytes::from_static(&[0xfe]))
+}
+
+fn blocked_info(mut info: AccountInfo) -> AccountInfo {
+    if info.code_hash != KECCAK_EMPTY {
+        let code = blocked_code();
+        info.code_hash = code.hash_slow();
+        info.code = Some(code);
+    }
+    info
 }
 
 impl<D: Database> Database for Overlay<'_, D> {
@@ -118,18 +138,25 @@ impl<D: Database> Database for Overlay<'_, D> {
                 account_id: None,
             }));
         }
+        let blocked = self.blocked.contains(&address);
         if let Some(acc) = self.journal.and_then(|s| s.get(&address)) {
             if acc.is_selfdestructed() || acc.is_loaded_as_not_existing_not_touched() {
                 return Ok(None);
             }
-            return Ok(Some(acc.info.clone()));
+            let info = acc.info.clone();
+            return Ok(Some(if blocked { blocked_info(info) } else { info }));
         }
-        self.inner.basic(address)
+        let info = self.inner.basic(address)?;
+        Ok(if blocked { info.map(blocked_info) } else { info })
     }
 
     fn code_by_hash(&mut self, code_hash: B256) -> Result<Bytecode, Self::Error> {
         if code_hash == self.inv.code_hash {
             return Ok(self.inv.code.clone());
+        }
+        let blocked = blocked_code();
+        if code_hash == blocked.hash_slow() {
+            return Ok(blocked);
         }
         if let Some(st) = self.journal {
             if let Some(code) =
@@ -167,10 +194,13 @@ struct EvalOut {
     gas_used: u64,
 }
 
-/// A never-committed call from `PROBE_CALLER` (system-call semantics: no fee, no nonce).
-fn eval_call<DB: Database>(db: DB, block: &BlockEnv, cfg: &CfgEnv, to: Address, data: Bytes) -> Result<EvalOut, DB::Error> {
+/// A never-committed call from `PROBE_CALLER` (system-call semantics: no fee, no nonce), with exactly
+/// `gas_limit` gas: the committed budget binds inside the EVM (docs/spec.md §5.5).
+fn eval_call<DB: Database>(db: DB, block: &BlockEnv, cfg: &CfgEnv, to: Address, data: Bytes, gas_limit: u64) -> Result<EvalOut, DB::Error> {
     let mut evm = Context::mainnet().with_db(db).with_block(block.clone()).with_cfg(cfg.clone()).build_mainnet();
-    match evm.system_call_one_with_caller(PROBE_CALLER, to, data) {
+    let tx = TxEnv::builder().caller(PROBE_CALLER).data(data).kind(TxKind::Call(to)).gas_limit(gas_limit).build().expect("system tx");
+    evm.set_tx(tx);
+    match MainnetHandler::<_, EVMError<DB::Error>, EthFrame<EthInterpreter>>::default().run_system_call(&mut evm) {
         Ok(r) => Ok(EvalOut {
             success: r.is_success(),
             output: r.output().cloned().unwrap_or_default(),
@@ -229,6 +259,11 @@ struct FingerprintInspector {
     points: Vec<EvalPoint>,
     db_error: Option<String>,
     too_many: bool,
+    /// Senders and every contract the PoC created: blocked during evaluation.
+    blocked: BTreeSet<Address>,
+    eval_gas: u64,
+    max_eval_gas: u64,
+    over_eval_budget: bool,
 }
 
 impl FingerprintInspector {
@@ -269,13 +304,21 @@ impl<DB: Database> Inspector<EthEvmContext<DB>> for FingerprintInspector {
             self.too_many = true;
             return;
         }
+        if self.over_eval_budget {
+            return;
+        }
         self.evals += 1;
         let block = context.block.clone();
         let cfg = context.cfg.clone();
         let journal = &mut context.journaled_state;
-        let overlay = Overlay { journal: Some(&journal.inner.state), inner: &mut journal.database, inv: &self.inv };
-        match eval_call(overlay, &block, &cfg, self.inv.address, self.check_data.clone()) {
+        let overlay =
+            Overlay { journal: Some(&journal.inner.state), inner: &mut journal.database, inv: &self.inv, blocked: &self.blocked };
+        match eval_call(overlay, &block, &cfg, self.inv.address, self.check_data.clone(), self.inv.gas_limit) {
             Ok(o) => {
+                self.eval_gas = self.eval_gas.saturating_add(o.gas_used);
+                if self.eval_gas > self.max_eval_gas {
+                    self.over_eval_budget = true;
+                }
                 let mask = mask_of(&o, self.inv.gas_limit).map(|m| m & self.declared);
                 self.points.push(EvalPoint { tx: self.tx, target: frame.target, selector: frame.selector, mask });
             }
@@ -295,19 +338,23 @@ impl<DB: Database> Inspector<EthEvmContext<DB>> for FingerprintInspector {
                 self.points.truncate(frame.mark);
             }
         }
+        if let Some(a) = outcome.address {
+            self.blocked.insert(a);
+        }
     }
 }
 
 fn missing_or<T: MissingTracker + ?Sized>(db: &T, e: impl std::fmt::Display) -> ProgramError {
     match db.first_missing() {
         Some(m) => ProgramError::Verify(VerifyError::Incomplete(m)),
-        None => verdict(Kind::ExecutionError, e.to_string()),
+        None => verdict(Kind::InfraError, e.to_string()),
     }
 }
 
 /// Runs the PoC of `bundle` against the program `manifest` on the anchored state `db` (the
 /// post-state of `header`, already proven by the caller). In a round > 0 the manifest's code
 /// overrides (the project's fix) replace the anchor's code at their target addresses.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_program<D>(
     header: &Header,
     manifest: &Manifest,
@@ -315,6 +362,7 @@ pub fn execute_program<D>(
     bundle: &Bundle,
     chain_spec: std::sync::Arc<reth_chainspec::ChainSpec>,
     db: &D,
+    reserved: Option<Address>,
 ) -> Result<ProgramRun, ProgramError>
 where
     D: DatabaseRef + MissingTracker + std::fmt::Debug,
@@ -325,7 +373,123 @@ where
         return Err(verdict(Kind::ProgramMisconfigured, "an override targets the reserved invariants address"));
     }
     let odb = OverrideDb::new(db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
-    execute_on(header, manifest, inv_code, bundle, chain_spec, &odb)
+    execute_on(header, manifest, inv_code, bundle, chain_spec, &odb, reserved)
+}
+
+/// What the anchor checks establish: the environment, the invariants at their address, and the
+/// `check(snapshot())` call data.
+pub struct AnchorEnv {
+    pub evm_env: reth_evm::EvmEnv,
+    pub inv: InvariantCode,
+    pub declared: U256,
+    pub check_data: Bytes,
+}
+
+/// Program checks at the anchor (ProgramMisconfigured otherwise): the invariants pass the lint, the
+/// reserved address holds no code, nonce or storage (a balance is tolerated, docs/spec.md §5.7), every
+/// target's code hash matches, `snapshot()` succeeds and `check(snapshot())` holds.
+pub fn anchor_checks<D>(
+    header: &Header,
+    manifest: &Manifest,
+    inv_code: &Bytecode,
+    chain_spec: std::sync::Arc<reth_chainspec::ChainSpec>,
+    db: &D,
+    reserved: Option<Address>,
+) -> Result<AnchorEnv, ProgramError>
+where
+    D: DatabaseRef + MissingTracker + std::fmt::Debug,
+    D::Error: DBErrorMarker + std::error::Error + Send + Sync + 'static,
+{
+    crate::lint::lint(inv_code.original_byte_slice()).map_err(|e| verdict(Kind::ProgramMisconfigured, e))?;
+    let spec = spec_id(&manifest.anchor.evm_spec)
+        .ok_or_else(|| verdict(Kind::ProgramMisconfigured, format!("unsupported evm_spec {}", manifest.anchor.evm_spec)))?;
+    revm::install_crypto(CustomCrypto::default());
+    let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, CustomEvmFactory::new(None));
+    let mut evm_env = evm_config.evm_env(header).map_err(|e| verdict(Kind::InfraError, e.to_string()))?;
+    evm_env.cfg_env.spec = spec;
+    evm_env.cfg_env.chain_id = manifest.anchor.chain_id;
+    let block = evm_env.block_env.clone();
+    let cfg = evm_env.cfg_env.clone();
+    let inv = InvariantCode {
+        address: reserved.unwrap_or(manifest.invariants.address),
+        code_hash: inv_code.hash_slow(),
+        code: inv_code.clone(),
+        gas_limit: manifest.invariants.gas_limit,
+    };
+    let declared = manifest
+        .invariants
+        .slots
+        .iter()
+        .filter(|s| s.bit < 255)
+        .fold(U256::ZERO, |m, s| m | (U256::from(1u8) << s.bit as usize));
+    let none = BTreeSet::new();
+    let mut pre_state = State::builder().with_database(WrapDatabaseRef(db)).build();
+    match pre_state.basic(inv.address).map_err(|e| missing_or(db, e))? {
+        None => {}
+        Some(a) if a.nonce == 0 && a.code_hash == KECCAK_EMPTY => {}
+        Some(_) => return Err(verdict(Kind::ProgramMisconfigured, "reserved invariants address holds code at the anchor")),
+    }
+    for t in &manifest.targets {
+        let a = pre_state.basic(t.address).map_err(|e| missing_or(db, e))?;
+        let h = a.map(|a| a.code_hash).unwrap_or(KECCAK_EMPTY);
+        if h != t.code_hash {
+            return Err(verdict(Kind::ProgramMisconfigured, format!("target {} code hash {h} != manifest", t.name)));
+        }
+    }
+    let snap = eval_call(
+        Overlay { journal: None, inner: &mut pre_state, inv: &inv, blocked: &none },
+        &block,
+        &cfg,
+        inv.address,
+        selector_of("snapshot()").to_vec().into(),
+        inv.gas_limit,
+    )
+    .map_err(|e| missing_or(db, e))?;
+    if !snap.success || snap.gas_used > inv.gas_limit {
+        return Err(verdict(Kind::ProgramMisconfigured, "snapshot() failed at the anchor"));
+    }
+    // `bytes` return data is exactly the ABI encoding of a single `bytes` argument.
+    let check_data: Bytes = [selector_of("check(bytes)").as_slice(), snap.output.as_ref()].concat().into();
+    let m0 = eval_call(
+        Overlay { journal: None, inner: &mut pre_state, inv: &inv, blocked: &none },
+        &block,
+        &cfg,
+        inv.address,
+        check_data.clone(),
+        inv.gas_limit,
+    )
+    .map_err(|e| missing_or(db, e))?;
+    match mask_of(&m0, inv.gas_limit) {
+        Some(m) if (m & declared).is_zero() => {}
+        Some(m) => return Err(verdict(Kind::ProgramMisconfigured, format!("check(snapshot()) = {m:#x} at the anchor"))),
+        None => return Err(verdict(Kind::ProgramMisconfigured, "check() failed at the anchor")),
+    }
+    Ok(AnchorEnv { evm_env, inv, declared, check_data })
+}
+
+/// The manifest's canaries at the anchor (with a round's overrides): each must succeed.
+pub fn canaries_pass<D>(manifest: &Manifest, anchor: &AnchorEnv, db: &D) -> Result<bool, ProgramError>
+where
+    D: DatabaseRef + MissingTracker + std::fmt::Debug,
+    D::Error: DBErrorMarker + std::error::Error + Send + Sync + 'static,
+{
+    let none = BTreeSet::new();
+    let mut st = State::builder().with_database(WrapDatabaseRef(db)).build();
+    for c in &manifest.canaries {
+        let o = eval_call(
+            Overlay { journal: None, inner: &mut st, inv: &anchor.inv, blocked: &none },
+            &anchor.evm_env.block_env,
+            &anchor.evm_env.cfg_env,
+            c.to,
+            c.data.clone(),
+            MAX_CALL_GAS,
+        )
+        .map_err(|e| missing_or(db, e))?;
+        if !o.success {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn execute_on<D>(
@@ -335,6 +499,7 @@ fn execute_on<D>(
     bundle: &Bundle,
     chain_spec: std::sync::Arc<reth_chainspec::ChainSpec>,
     db: &D,
+    reserved: Option<Address>,
 ) -> Result<ProgramRun, ProgramError>
 where
     D: DatabaseRef + MissingTracker + std::fmt::Debug,
@@ -371,64 +536,11 @@ where
         return Err(verdict(Kind::InvalidPoC, format!("total gas {gas_sum} > cap {}", caps.max_total_gas)));
     }
 
-    // ---- environment: header M, committed EVM rules ----
-    let spec = spec_id(&manifest.anchor.evm_spec)
-        .ok_or_else(|| verdict(Kind::ProgramMisconfigured, format!("unsupported evm_spec {}", manifest.anchor.evm_spec)))?;
-    revm::install_crypto(CustomCrypto::default());
+    // ---- environment: header M, committed EVM rules; anchor checks (ProgramMisconfigured) ----
+    let AnchorEnv { evm_env, inv, declared, check_data } = anchor_checks(header, manifest, inv_code, chain_spec.clone(), db, reserved)?;
     let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, CustomEvmFactory::new(None));
-    let mut evm_env = evm_config.evm_env(header).map_err(|e| verdict(Kind::ExecutionError, e.to_string()))?;
-    evm_env.cfg_env.spec = spec;
-    evm_env.cfg_env.chain_id = manifest.anchor.chain_id;
     let block = evm_env.block_env.clone();
     let cfg = evm_env.cfg_env.clone();
-    let inv = InvariantCode {
-        address: manifest.invariants.address,
-        code_hash: inv_code.hash_slow(),
-        code: inv_code.clone(),
-        gas_limit: manifest.invariants.gas_limit,
-    };
-    let declared = manifest
-        .invariants
-        .slots
-        .iter()
-        .filter(|s| s.bit < 255)
-        .fold(U256::ZERO, |m, s| m | (U256::from(1u8) << s.bit as usize));
-
-    // ---- anchor checks (ProgramMisconfigured) ----
-    let mut pre_state = State::builder().with_database(WrapDatabaseRef(db)).build();
-    match pre_state.basic(inv.address).map_err(|e| missing_or(db, e))? {
-        None => {}
-        Some(a) if a.nonce == 0 && a.balance.is_zero() && a.code_hash == KECCAK_EMPTY => {}
-        Some(_) => return Err(verdict(Kind::ProgramMisconfigured, "reserved invariants address is in use at the anchor")),
-    }
-    for t in &manifest.targets {
-        let a = pre_state.basic(t.address).map_err(|e| missing_or(db, e))?;
-        let h = a.map(|a| a.code_hash).unwrap_or(KECCAK_EMPTY);
-        if h != t.code_hash {
-            return Err(verdict(Kind::ProgramMisconfigured, format!("target {} code hash {h} != manifest", t.name)));
-        }
-    }
-    let snap = eval_call(
-        Overlay { journal: None, inner: &mut pre_state, inv: &inv },
-        &block,
-        &cfg,
-        inv.address,
-        selector_of("snapshot()").to_vec().into(),
-    )
-    .map_err(|e| missing_or(db, e))?;
-    if !snap.success || snap.gas_used > inv.gas_limit {
-        return Err(verdict(Kind::ProgramMisconfigured, "snapshot() failed at the anchor"));
-    }
-    // `bytes` return data is exactly the ABI encoding of a single `bytes` argument.
-    let check_data: Bytes = [selector_of("check(bytes)").as_slice(), snap.output.as_ref()].concat().into();
-    let m0 = eval_call(Overlay { journal: None, inner: &mut pre_state, inv: &inv }, &block, &cfg, inv.address, check_data.clone())
-        .map_err(|e| missing_or(db, e))?;
-    match mask_of(&m0, inv.gas_limit) {
-        Some(m) if (m & declared).is_zero() => {}
-        Some(m) => return Err(verdict(Kind::ProgramMisconfigured, format!("check(snapshot()) = {m:#x} at the anchor"))),
-        None => return Err(verdict(Kind::ProgramMisconfigured, "check() failed at the anchor")),
-    }
-    drop(pre_state);
 
     // ---- the PoC: fresh salted senders, bounded endowment, anchor environment ----
     let senders: Vec<Address> = (0..bundle.senders).map(|i| sender_address(&bundle.sender_salt, i)).collect();
@@ -465,6 +577,10 @@ where
         points: Vec::new(),
         db_error: None,
         too_many: false,
+        blocked: senders.iter().copied().collect(),
+        eval_gas: 0,
+        max_eval_gas: manifest.max_eval_gas(),
+        over_eval_budget: false,
     };
     let mut evm = evm_config.evm_with_env_and_inspector(&mut state, evm_env, inspector);
     let mut calls = Vec::new();
@@ -496,6 +612,9 @@ where
         if evm.inspector().too_many {
             return Err(verdict(Kind::InvalidPoC, format!("more than {} protocol-entry calls", caps.max_entry_calls)));
         }
+        if evm.inspector().over_eval_budget {
+            return Err(verdict(Kind::InvalidPoC, format!("invariant evaluations above the committed {} gas", manifest.max_eval_gas())));
+        }
         let res = match res {
             Ok(r) => r,
             Err(e) if e.is_invalid_tx_err() => return Err(verdict(Kind::InvalidPoC, format!("tx {i}: {e}"))),
@@ -520,14 +639,16 @@ where
         });
     }
     let points = evm.inspector().points.clone();
+    let mut blocked = evm.inspector().blocked.clone();
+    blocked.extend(created.iter().copied());
     drop(evm);
 
-    // ---- final evaluation ----
-    let fin = eval_call(Overlay { journal: None, inner: &mut state, inv: &inv }, &block, &cfg, inv.address, check_data)
+    // ---- final evaluation, with its own reserved gas (outside the evaluation budget) ----
+    let fin = eval_call(Overlay { journal: None, inner: &mut state, inv: &inv, blocked: &blocked }, &block, &cfg, inv.address, check_data, inv.gas_limit)
         .map_err(|e| missing_or(db, e))?;
     let final_mask = match mask_of(&fin, inv.gas_limit) {
         Some(m) => m & declared,
-        None => return Err(verdict(Kind::ExecutionError, "invariant check reverted or ran out of gas after the PoC")),
+        None => return Err(verdict(Kind::Unevaluable, "check() reverted or ran out of gas after the PoC")),
     };
 
     // ---- root-cause fingerprints: last 0 -> 1 flip per broken invariant ----
@@ -564,7 +685,7 @@ where
 
     // ---- impact at the committed reference prices ----
     let closure: Vec<Address> = senders.iter().chain(created.iter()).copied().collect();
-    let impact = measure_impact(manifest, db, &mut state, &inv, &block, &cfg, &senders, &closure, bundle.endowment_wei, &fees)?;
+    let impact = measure_impact(manifest, db, &mut state, &inv, &block, &cfg, &senders, &closure, bundle.endowment_wei, &fees, &blocked)?;
 
     Ok(ProgramRun {
         senders,
@@ -592,6 +713,7 @@ fn measure_impact<D>(
     closure: &[Address],
     endowment: u128,
     fees: &[U256],
+    blocked: &BTreeSet<Address>,
 ) -> Result<ImpactV2, ProgramError>
 where
     D: DatabaseRef + MissingTracker + std::fmt::Debug,
@@ -606,6 +728,12 @@ where
     let mut accounts: Vec<(Address, &'static str)> =
         manifest.impact.protocol_accounts.iter().map(|a| (*a, "protocol")).collect();
     accounts.extend(closure.iter().map(|a| (*a, "attacker")));
+    for pa in &manifest.protected_accounts {
+        if !accounts.iter().any(|(a, _)| *a == pa.address) {
+            accounts.push((pa.address, "protected"));
+        }
+    }
+    let none = BTreeSet::new();
 
     let mut pre = State::builder().with_database(WrapDatabaseRef(db)).build();
     let balances = |st: &mut State<WrapDatabaseRef<&D>>| -> Result<Vec<(U256, Vec<U256>)>, ProgramError> {
@@ -615,11 +743,12 @@ where
             let mut tb = Vec::new();
             for (t, _, _, _) in &tokens {
                 let o = eval_call(
-                    Overlay { journal: None, inner: &mut *st, inv },
+                    Overlay { journal: None, inner: &mut *st, inv, blocked: if blocked.is_empty() { &none } else { blocked } },
                     block,
                     cfg,
                     *t,
                     impact::calldata_balance_of(*a),
+                    MAX_CALL_GAS,
                 )
                 .map_err(|e| missing_or(db, e))?;
                 tb.push(if o.success { word0(&o.output).unwrap_or_default() } else { U256::ZERO });
@@ -632,7 +761,7 @@ where
     let after = balances(post)?;
 
     let to_i = |u: U256| I256::from_raw(u);
-    let (mut protocol, mut attacker) = (I256::ZERO, I256::ZERO);
+    let (mut protocol, mut attacker, mut harm) = (I256::ZERO, I256::ZERO, I256::ZERO);
     let mut rows = Vec::new();
     for (k, (a, role)) in accounts.iter().enumerate() {
         let sender_idx = senders.iter().position(|s| s == a);
@@ -655,8 +784,11 @@ where
         }
         if *role == "protocol" {
             protocol += usd;
-        } else {
+        } else if *role == "attacker" {
             attacker += usd;
+        }
+        if manifest.protected_accounts.iter().any(|pa| pa.address == *a) && usd < I256::ZERO {
+            harm -= usd;
         }
         if eth_delta != I256::ZERO || !token_rows.is_empty() {
             rows.push(AccountValue {
@@ -677,6 +809,7 @@ where
         impact_usd_micro: i.to_string(),
         impact_usd: impact::fmt_usd(i),
         accounts: rows,
+        protected_harm_usd_micro: harm.to_string(),
     })
 }
 
@@ -693,7 +826,7 @@ pub fn classify(e: &ProgramError) -> (Kind, String) {
             | VerifyError::TargetOutOfRange(..)
             | VerifyError::SignatureRecovery(_) => (Kind::InvalidPoC, v.to_string()),
             VerifyError::UnsupportedChain(_) | VerifyError::UnsupportedFork(_) | VerifyError::Execution(_) => {
-                (Kind::ExecutionError, v.to_string())
+                (Kind::InfraError, v.to_string())
             }
         },
     }

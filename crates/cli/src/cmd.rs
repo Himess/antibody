@@ -201,7 +201,7 @@ pub fn program_show(ctx: &Ctx, program: u32) -> Result<Value> {
 // ------------------------------------------------------------------ witnesses
 
 /// Builds a program witness for `bundle_file` from the Ethereum RPC (state at the anchor).
-pub fn build_witness(ctx: &Ctx, manifest_json: &[u8], bundle_file: &Path, salt: Option<B256>) -> Result<(Vec<u8>, Value, ProgramReceipt, B256)> {
+pub fn build_witness(ctx: &Ctx, manifest_json: &[u8], bundle_file: &Path, salt: Option<B256>, program_key: &str) -> Result<(Vec<u8>, Value, ProgramReceipt, B256)> {
     let m = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
     let bf: BundleFile = serde_json::from_str(&std::fs::read_to_string(bundle_file)?)?;
     let salt = match salt {
@@ -211,7 +211,7 @@ pub fn build_witness(ctx: &Ctx, manifest_json: &[u8], bundle_file: &Path, salt: 
     let bundle = parse_bundle(&bf, salt)?;
     let pool = ctx.eth_pool()?;
     let (bytes, meta, receipt) =
-        antibody_witness::program::build_program(&pool, manifest_json, &m.invariants.runtime_code, bundle, 1)?;
+        antibody_witness::program::build_program(&pool, manifest_json, &m.invariants.runtime_code, bundle, 1, program_key)?;
     Ok((bytes, serde_json::to_value(&meta)?, receipt, salt))
 }
 
@@ -230,7 +230,11 @@ pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &
         (Some(p), None) => program_manifest(ctx, &ctx.program(p)?)?,
         _ => return Err(eyre!("pass --program or --manifest")),
     };
-    let (bytes, meta, receipt, salt) = build_witness(ctx, &manifest_json, bundle, salt)?;
+    let key = match program {
+        Some(p) => ctx.program(p)?["key"].as_str().unwrap_or("local").to_string(),
+        None => "local".to_string(),
+    };
+    let (bytes, meta, receipt, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
     Ok(json!({"verdict": verdict_view(&receipt), "witness_bytes": bytes.len(), "fixpoint_passes": meta["fixpoint_passes"],
               "salt_note": "a fresh random salt is drawn per submission unless --salt is given", "salt": format!("{salt:#x}"),
               "receipt": receipt}))
@@ -262,8 +266,8 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
     let signer = ctx.signer()?;
     let p = ctx.program(program)?;
     let manifest_json = program_manifest(ctx, &p)?;
-    let (envelope, _meta, local, salt) = build_witness(ctx, &manifest_json, bundle, salt)?;
     let key = p["key"].as_str().unwrap_or_default().to_string();
+    let (envelope, _meta, local, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
     let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
@@ -316,8 +320,8 @@ pub fn submit_known(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, 
     let signer = ctx.signer()?;
     let p = ctx.program(program)?;
     let manifest_json = program_manifest(ctx, &p)?;
-    let (envelope, _, local, _) = build_witness(ctx, &manifest_json, bundle, salt)?;
     let key = p["key"].as_str().unwrap_or_default().to_string();
+    let (envelope, _, local, _) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
     let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
@@ -616,7 +620,7 @@ pub fn round_rerun(ctx: &Ctx, commit_id: u64, project_key: Option<&Path>, wait: 
     let manifest_json = program_manifest_at(ctx, &p, round)?;
     let m = Manifest::parse(&manifest_json).map_err(|e| eyre!(e))?;
     let pool = ctx.eth_pool()?;
-    let (envelope, _meta, local) = antibody_witness::program::build_program(&pool, &manifest_json, &m.invariants.runtime_code, w.bundle, 1)?;
+    let (envelope, _meta, local) = antibody_witness::program::build_program(&pool, &manifest_json, &m.invariants.runtime_code, w.bundle, 1, &key)?;
     let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
     let hunter = c["hunter"].as_str().unwrap_or_default();
     let s = blob::seal(pubkey, &key, hunter, envelope, Vec::new())?;
@@ -690,7 +694,7 @@ fn reverify(ctx: &Ctx, program: &Value, c: &Value, k: &[u8; 32]) -> Result<Value
     let env = Envelope::decode(&payload.envelope).map_err(|e| eyre!(e))?;
     let Payload::Program(w) = &env.payload else { return Err(eyre!("not a program witness")) };
     let mh = B256::from_slice(&hex::decode(round_manifest_hash(program, c["round"].as_u64().unwrap_or(0)))?);
-    let receipt = run_program(&env, w, sha256(&payload.envelope), &ProgramContext { program_id: key.into(), commit_id: id, expected_manifest_hash: Some(mh) });
+    let receipt = run_program(&env, w, sha256(&payload.envelope), &ProgramContext { program_id: key.into(), commit_id: id, expected_manifest_hash: Some(mh), reserved: None });
     let rh = hex::encode(receipt.hash());
     let onchain_rh = c["verdict"]["receipt_hash"].as_str().unwrap_or_default();
     let kp = program["disclosure"]["k_program"].as_str().and_then(|s| hex::decode(s).ok()).and_then(|b| <[u8; 32]>::try_from(b).ok());

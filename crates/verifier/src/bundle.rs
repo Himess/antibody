@@ -46,7 +46,7 @@ pub struct BundleCall {
     pub gas_limit: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Bundle {
     /// Researcher-held secret; only its hash-derived senders may act.
     pub sender_salt: B256,

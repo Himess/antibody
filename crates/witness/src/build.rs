@@ -365,6 +365,18 @@ pub fn witness_stats(env: &Envelope, bytes: &[u8], proofs: &HashMap<Address, Acc
             st.ancestor_headers = w.ancestor_headers_rlp.len();
             st.block_rlp_bytes = w.header_rlp.len();
         }
+        Payload::Base(w) => {
+            st.storage_tries = w.state.storage_tries.len();
+            st.bytecodes = w.bytecodes.len();
+            st.bytecode_bytes = w.bytecodes.iter().map(|b| b.original_bytes().len()).sum();
+            st.ancestor_headers = w.ancestor_headers_rlp.len();
+            st.block_rlp_bytes = w.header_rlp.len();
+        }
+        Payload::Submission(w) => {
+            st.storage_tries = w.state.storage_tries.len();
+            st.bytecodes = w.bytecodes.len();
+            st.bytecode_bytes = w.bytecodes.iter().map(|b| b.original_bytes().len()).sum();
+        }
         Payload::Block(_) => {}
     }
     st

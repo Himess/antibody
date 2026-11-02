@@ -1,0 +1,1 @@
+{"capabilities":{"network":["archival-rpc.testnet.fastnear.com","archival-rpc.testnet.near.org","archival-rpc.mainnet.fastnear.com","archival-rpc.mainnet.near.org"]},"encryption_keys":[{"path":"antibody","bind":"wasm","caller":"predecessor"}]}

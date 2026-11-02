@@ -64,19 +64,11 @@ impl MockWorker {
             let input = p["input_data"].as_str().unwrap_or_default().as_bytes().to_vec();
             let rpc = self.near.rpc.clone();
             let fetch = move |url: &str| fetch_with(&rpc, url);
-            let env = tee::TeeEnv {
-                seed: Some(self.seed),
-                predecessor: p["caller"].as_str().map(String::from),
-                fetch: &fetch,
-                wasm_hash: None,
-            };
-            let output = match tee::handle(&input, &env) {
-                Ok(out) => Some(String::from_utf8(out)?),
-                Err(e) => {
-                    eprintln!("mock worker: request {id}: {e:?} -> null");
-                    None
-                }
-            };
+            // MOCK OutLayer: the real verifier, with the TEST root key standing in for OutLayer's host key.
+            let mac = antibody_verifier::keys::TestMac(self.seed);
+            let env = tee::Env { mac: &mac, fetch: &fetch, predecessor: p["caller"].as_str().map(String::from) };
+            let out = tee::handle(&input, &env);
+            let output = Some(serde_json::to_string(&out.facts)?);
             self.near.function_call(&self.worker, &self.outlayer, "resolve_execution", json!({"request_id": id, "output": output}), 100, 0)?;
             self.done.insert(id);
             n += 1;

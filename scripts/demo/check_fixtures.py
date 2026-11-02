@@ -5,13 +5,12 @@ For every submission in <fixture>/expected.json it runs the native verifier and 
 under wasmtime with OutLayer's engine config, then requires:
   * native output == wasm output, byte for byte (full receipt + facts, and facts alone);
   * the verdict kind, broken-invariant mask and root-cause keys equal the expected ones;
-  * every fp_tag equals an independent HMAC recomputation, and equal keys give equal tags;
+  * every tag equals an independent recomputation (scripts/demo/v2keys.py), and equal keys give equal
+    tags;
   * the receipt hash equals the recorded one (receipts are platform-independent).
 
   python scripts/demo/check_fixtures.py fixtures/acme-local [--native-only]
 """
-import hashlib
-import hmac
 import json
 import os
 import subprocess
@@ -23,17 +22,8 @@ NATIVE = os.path.join(ROOT, "target", "release", "antibody-verify" + EXE)
 RUNNER = os.path.join(ROOT, "target", "release", "antibody-run" + EXE)
 WASM = os.path.join(ROOT, "target", "wasm32-wasip2", "release", "antibody-verify.wasm")
 
-# TEST-ONLY fingerprint secret (the TEE derives k_program from a protected secret instead).
-TEST_SECRET = hashlib.sha256(b"antibody/TEST-ONLY-secret/never-use-in-production").digest()
-
-
-def k_program(program_id):
-    return hmac.new(TEST_SECRET, b"antibody/k_program/v1" + program_id.encode(), hashlib.sha256).digest()
-
-
-def fp_tag(k, slot, target, selector):
-    msg = b"antibody/fp/v1" + bytes([slot]) + bytes.fromhex(target[2:]) + bytes.fromhex(selector[2:])
-    return hmac.new(k, msg, hashlib.sha256).hexdigest()
+sys.path.insert(0, os.path.dirname(__file__))
+import v2keys  # noqa: E402  TEST-ONLY v2 keys (docs/spec.md §11.2)
 
 
 def run_native(witness, env):
@@ -62,13 +52,12 @@ def main():
     native_only = "--native-only" in sys.argv
     exp = json.load(open(os.path.join(fx, "expected.json")))
     pid = exp["program_id"]
-    kp = k_program(pid)
     failures = []
     tags_by_key = {}
     for agent, e in exp["submissions"].items():
         w = os.path.join(fx, "submissions", f"{agent}.witness.bin")
         env = {"ANTIBODY_PROGRAM_ID": pid, "ANTIBODY_COMMIT_ID": str(e["commit_id"]),
-               "ANTIBODY_EXPECTED_MANIFEST": exp["manifest_sha256"], "ANTIBODY_K_PROGRAM": kp.hex()}
+               "ANTIBODY_EXPECTED_MANIFEST": exp["manifest_sha256"]}
         full = run_native(w, env)
         facts_only = run_native(w, dict(env, ANTIBODY_OUTPUT="facts"))
         out = json.loads(full)
@@ -81,13 +70,13 @@ def main():
         want = [(b["slot"], b["target"], b["selector"]) for b in e["broken"]]
         if got != want:
             failures.append(f"{agent}: keys {got} != expected {want}")
-        if facts["receipt_hash"] != e["receipt_hash"]:
-            failures.append(f"{agent}: receipt hash {facts['receipt_hash']} != recorded {e['receipt_hash']}")
+        if facts["receipt_sha256"] != e["receipt_hash"]:
+            failures.append(f"{agent}: receipt hash {facts['receipt_sha256']} != recorded {e['receipt_hash']}")
         if len(json.dumps(facts, separators=(",", ":"))) > 1024:
             failures.append(f"{agent}: facts exceed 1 KB")
-        for b, t in zip(rec["broken"], facts["fp_tags"]):
-            if t["tag"] != fp_tag(kp, b["slot"], b["target"], b["selector"]):
-                failures.append(f"{agent}: fp_tag for slot {b['slot']} does not match the HMAC recomputation")
+        for b, t in zip(rec["broken"], facts.get("keys", [])):
+            if t["tag"] != v2keys.tag(pid, b["slot"], b["target"], b["selector"]):
+                failures.append(f"{agent}: tag for slot {b['slot']} does not match the independent recomputation")
             key = (b["slot"], b["target"].lower(), b["selector"])
             tags_by_key.setdefault(key, set()).add(t["tag"])
         if not native_only:

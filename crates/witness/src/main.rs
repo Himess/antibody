@@ -75,6 +75,8 @@ fn main() -> Result<()> {
                 Payload::Bundle(w) => ("bundle", w.bytecodes.len(), w.bytecodes.iter().map(|b| b.original_bytes().len()).sum::<usize>(), w.state.storage_tries.len(), w.ancestor_headers.len()),
                 Payload::Block(i) => ("block", i.bytecodes.len(), i.bytecodes.iter().map(|b| b.original_bytes().len()).sum::<usize>(), i.parent_state.storage_tries.len(), i.ancestor_headers.len()),
                 Payload::Program(w) => ("program", w.bytecodes.len(), w.bytecodes.iter().map(|b| b.original_bytes().len()).sum::<usize>(), w.state.storage_tries.len(), w.ancestor_headers_rlp.len()),
+                Payload::Base(w) => ("base", w.bytecodes.len(), w.bytecodes.iter().map(|b| b.original_bytes().len()).sum::<usize>(), w.state.storage_tries.len(), w.ancestor_headers_rlp.len()),
+                Payload::Submission(w) => ("submission", w.bytecodes.len(), w.bytecodes.iter().map(|b| b.original_bytes().len()).sum::<usize>(), w.state.storage_tries.len(), 0),
             };
             println!("{}", json!({"witness": wpath, "bytes": bytes.len(), "payload": kind, "bytecodes": codes, "bytecode_bytes": code_bytes, "storage_tries": tries, "ancestor_headers": anc, "claimed_block_hash": env.claimed_block_hash}));
         }
@@ -144,7 +146,8 @@ fn main() -> Result<()> {
             let bundle = build::parse_bundle(&bf, salt)?;
             let min_agree: usize = arg(&args, "--min-agree").map(|s| s.parse().unwrap()).unwrap_or(1);
             let out = arg(&args, "--out").ok_or_else(|| eyre!("--out prefix"))?;
-            let (bytes, meta, receipt) = program::build_program(&pool, &manifest_json, &code, bundle, min_agree)?;
+            let program_key = arg(&args, "--program-key").unwrap_or_else(|| "local".into());
+            let (bytes, meta, receipt) = program::build_program(&pool, &manifest_json, &code, bundle, min_agree, &program_key)?;
             std::fs::write(format!("{out}.witness.bin"), &bytes)?;
             std::fs::write(format!("{out}.meta.json"), serde_json::to_string_pretty(&meta)?)?;
             println!("{}", serde_json::to_string_pretty(&json!({

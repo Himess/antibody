@@ -193,6 +193,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
             max_total_gas: 30_000_000,
             max_blocks: 1,
             max_timestamp_delta: 0,
+            max_eval_gas: None,
             max_entry_calls: 256,
         },
         payout: Payout {
@@ -215,6 +216,9 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
         },
         round: 0,
         overrides: Vec::new(),
+        groups: vec![],
+        protected_accounts: vec![],
+        canaries: vec![],
     })
 }
 

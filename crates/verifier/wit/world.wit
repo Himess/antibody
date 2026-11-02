@@ -1,0 +1,6 @@
+// The verifier imports one host interface: OutLayer's encryption keys (docs/spec.md §11.1).
+package antibody:verifier;
+
+world antibody-verifier {
+    import outlayer:encryption-keys/api@0.1.0;
+}

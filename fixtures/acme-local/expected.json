@@ -1,19 +1,19 @@
 {
- "program_id": "acme-local",
+ "program_id": "antibody.testnet/acme-local",
  "chain_id": 31337,
  "anchor": {
   "number": 22,
   "hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0"
  },
- "manifest_sha256": "0xf13bf172cee10359a7d34cc0d0820171652827dd4feca933ace13c756ac71ea9",
+ "manifest_sha256": "0x5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
  "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
- "invariants_address": "0xe88d533fa3f57c4d6fa6489a13e3430d30003596",
- "k_program_note": "TEST-ONLY key: HMAC(sha256('antibody/TEST-ONLY-secret/never-use-in-production'), 'antibody/k_program/v1' || program_id)",
+ "invariants_address": "0x1fca3c5c59c22727fa8052158f737f4fc4c3062e",
+ "keys_note": "TEST-ONLY keys: mac = HMAC(sha256('antibody/TEST-ONLY-root/never-use-in-production'), label), scripts/demo/v2keys.py",
  "submissions": {
   "A": {
    "title": "Agent A: planted bug #1 via a swap (spot-price collateral)",
    "commit_id": 1,
-   "salt": "0xb5c183ae2a5ea7246cf09c4523f6f2de11cbede1a5ea18fe3379650f721347d7",
+   "salt": "0xcda30d234f4a6409e35194e121c538b2e0bff1738833986e3007adce887872c3",
    "kind": "Violation",
    "broken_mask": "0x1",
    "broken": [
@@ -27,10 +27,10 @@
      "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 0,
-     "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+     "tag": "799adb82dd2d7daba76dc3365075b115a47ef232af8d6465dd6d12a45d653caa"
     }
    ],
    "impact_usd": "462931.85",
@@ -38,16 +38,16 @@
    "attacker_gain_usd_micro": "462931853867",
    "evaluations": 9,
    "reason": null,
-   "poc_hash": "39915e344c990147303e0646ff1e21503f880952028fda61ba6cca8d2c64c760",
-   "receipt_hash": "770313c956818f38c447a5f492f3d875746a07e77642dcacc039717a3bab4dcd",
-   "witness_sha256": "a1532d927440b26820cffc4b7d50d574d7c87eb7b66e70c19f31f8c4c26060ca",
-   "facts_bytes": 493,
+   "poc_hash": "21c5dd8deb739d0a63beab12d43c7d1c30f918cd877762ed79a7822cb1556224",
+   "receipt_hash": "6f95870ee32966e182a85a86f063a313fc0ecc83651cdad2661d69b7701fd2df",
+   "witness_sha256": "5344565cf5e3c425d2ac0fccf039b87e41b6670eb483dc6cac0aa69ed084ac9e",
+   "facts_bytes": 468,
    "matches_expected": true
   },
   "B": {
    "title": "Agent B: planted bug #2 (sweepFees has no access control)",
    "commit_id": 2,
-   "salt": "0x61a62c006abf769a46d65fd6949a742692abc6fa2516c193608419309c2d5d3d",
+   "salt": "0x66088f74d597bfb91db7d53d9b49f35e2eecf1626e9ff7b079b1ea067f9f955d",
    "kind": "Violation",
    "broken_mask": "0x2",
    "broken": [
@@ -61,10 +61,10 @@
      "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 1,
-     "tag": "6fbec4b28d0d7dbb155cdd4bfac1dd1929b9435b7039269529e07d578cc2774c"
+     "tag": "7cd425a22d14fadabd2dab5f9f2612915079f7209b75ab9208fb1cad5a304a0f"
     }
    ],
    "impact_usd": "1000.00",
@@ -72,35 +72,35 @@
    "attacker_gain_usd_micro": "1000000000",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
-   "receipt_hash": "f9e460a56b47e6fbebeca86123c13398ef7068c8d745e8ecec2eee9367c782d1",
-   "witness_sha256": "be65a23c3163a5c79b14c1445944eecf32ac6b467998fd6d5f0619629748fbf4",
-   "facts_bytes": 491,
+   "poc_hash": "179dbf79d04124f303156e762e44214fb1863ad47caf218127402f385ed7b320",
+   "receipt_hash": "4fc649fd69f7237606855f0628e9f4135759af4d77b51696004afca69eb21849",
+   "witness_sha256": "b3f74399ac37a08852aafac3f056bc87a759ee905cd08981ab4b547aadca563a",
+   "facts_bytes": 466,
    "matches_expected": true
   },
   "C": {
    "title": "Agent C: profitable arbitrage only + a report with injected text",
    "commit_id": 3,
-   "salt": "0x9a06932c41f10732ae1105debf0ebd786bb015afa96da912dba6613c17a3706c",
+   "salt": "0x93b8e1a54a5e8aa92757d3c6f14a434752e8b87b9eda87c52a3435e9b2afade7",
    "kind": "NoViolation",
    "broken_mask": "0x0",
    "broken": [],
-   "fp_tags": [],
+   "keys": [],
    "impact_usd": "33.48",
    "protocol_loss_usd_micro": "33480361",
    "attacker_gain_usd_micro": "33480361",
    "evaluations": 5,
    "reason": null,
-   "poc_hash": "bcaa0e96e145e7d67b3096d3f00ecb7f2b2c1a3e62383369dc9aafd590c46351",
-   "receipt_hash": "2394ccf8955d0ef399818c68a566f4e06247b652929af890bf937d4d730a216a",
-   "witness_sha256": "499ecf427aebf71a53b30694bb98af9eeef834529b2de3c54524cc1b45e7ef3c",
-   "facts_bytes": 408,
+   "poc_hash": "0eea14cedd3caf52aaf3a0d7085f2933daeac6d42933542e75dfd28801c81280",
+   "receipt_hash": "7fa03d7f5d0f901e893bfe7da540f15b16545ccf32a37b63363f0721cab03408",
+   "witness_sha256": "1c1cc8b2daf78702b13f9cf5182f8a2270cbfd27f46a4be61881e7710d09cdac",
+   "facts_bytes": 373,
    "matches_expected": true
   },
   "D": {
    "title": "Agent D: planted bug #1 via donation + sync (committed after A)",
    "commit_id": 4,
-   "salt": "0x7c70da8b9333beb928ef3bb73189a8d768bd861f13a540b25dfca7ce1ebca6d8",
+   "salt": "0x1c2f89977d26efaaeafcdd043bc07df0acc35675ed17e91c6f87ee73c32c0d61",
    "kind": "Violation",
    "broken_mask": "0x1",
    "broken": [
@@ -114,10 +114,10 @@
      "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 0,
-     "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+     "tag": "799adb82dd2d7daba76dc3365075b115a47ef232af8d6465dd6d12a45d653caa"
     }
    ],
    "impact_usd": "6375.60",
@@ -125,16 +125,16 @@
    "attacker_gain_usd_micro": "6375600000",
    "evaluations": 8,
    "reason": null,
-   "poc_hash": "8abe2002b812cf3dd7be477eb36e3f24b74ce322d1389fc2f44c0bb8e6842e2a",
-   "receipt_hash": "77634ebfbed875053f487f1985734894488a907d890f3a8e717460234aa43b90",
-   "witness_sha256": "4701220a59b25bf610330241f8f36e02265777304a071569d5df48abfe774b52",
-   "facts_bytes": 491,
+   "poc_hash": "953b8b683e506ede617288622b686bffa3157780c92a844b479e555e7ba815e6",
+   "receipt_hash": "ace3f23204c2c79d96b22c412ec00e83985a9bd76035c04ad4a231f9536c94c5",
+   "witness_sha256": "4cd54b3f3d718edcbf9b65912ccb71c1e4731c3149a114afc44c688ba4192852",
+   "facts_bytes": 466,
    "matches_expected": true
   },
   "E": {
    "title": "Agent E: planted bug #4, the project's known issue (withdraw rounding)",
    "commit_id": 5,
-   "salt": "0xc105a5ae7a7e0c7fb96418c3ad58276090f680889d64186e5446ceba29973cf7",
+   "salt": "0xdb70beb41a86da162f5cd87e538a788d7433e5aabec42e0867607706ef80fefc",
    "kind": "Violation",
    "broken_mask": "0x4",
    "broken": [
@@ -148,10 +148,10 @@
      "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 2,
-     "tag": "05dbd72c13b9e01d431bc5060e3f95b5364ea001e66824d6cbd803653d0d63dd"
+     "tag": "facc21a3771535c15bfdb7649ea0f915f58855f40a93a3e374ac225400a96ca8"
     }
    ],
    "impact_usd": "0.00",
@@ -159,16 +159,16 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "878b9c84e6f5f9cef345803de0b846f50f711d710e5531265995ecfbc92439aa",
-   "receipt_hash": "05b6883ff84efb8ed98f2c06ce3012c2a1d5c4d0acb59452203453429aa9bf01",
-   "witness_sha256": "4082436968bb633f52381d6d53fad5d42b3cb32ce1855d7bbe43c9ebda6ed3bc",
-   "facts_bytes": 482,
+   "poc_hash": "bb1c2803a38d94911210096353d3f6b4e7306d0ac360dc80c61d25f0be2e9942",
+   "receipt_hash": "42240d39a61cbdefcd30a9ff404c84bfe30d0590c02e050886d4db07df215c95",
+   "witness_sha256": "72a3443462ed7a020063314fc4aca44986d37e68461801c40cb5ebb333e2847a",
+   "facts_bytes": 457,
    "matches_expected": true
   },
   "F": {
    "title": "Agent F: planted bug #3 (repay ignores transferFrom's return value)",
    "commit_id": 6,
-   "salt": "0x5741bf30e82fa61040f8dcdd4165b10712d028968f3dc68bff28cf5874f4cf96",
+   "salt": "0x1e5500ff39b8508cb2782d043ca8ac28659a7a9f0f5830052048cb7def47f996",
    "kind": "Violation",
    "broken_mask": "0x1",
    "broken": [
@@ -182,10 +182,10 @@
      "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 0,
-     "tag": "0c8722ac5cef40555f5a5ac306a887b094b3b77031b8974c70d2a25f17fcca81"
+     "tag": "5bec843462165eaf6106860719505191365e12c1bac3228865bd9ef327efca34"
     }
    ],
    "impact_usd": "10400.00",
@@ -193,16 +193,16 @@
    "attacker_gain_usd_micro": "10400000000",
    "evaluations": 8,
    "reason": null,
-   "poc_hash": "0f41b28646974efdb08e3541be25520c5f7092f00a3fec35d98e22d34fcd991b",
-   "receipt_hash": "ecd4d4112a3694d729d4ad3b10e7e5dded5e6728fe99fb4793fe56279858d09d",
-   "witness_sha256": "29747b45d43b54b5b4183c6573467144a37554ee850b4c1d419416b1566be3d4",
-   "facts_bytes": 492,
+   "poc_hash": "2fd56484ddefd26d31c9f2cd9a5b6f0a6252f9fc598d29393629e4d22baf5d64",
+   "receipt_hash": "cf82851e90a694e0a33307dcf34b088f4525358749483b9f849912ea497cfe73",
+   "witness_sha256": "be84834825bf62ad7d895617b2f13702b3f63a63a4b6cc847d0b2683ab59c416",
+   "facts_bytes": 467,
    "matches_expected": true
   },
   "KNOWN": {
    "title": "Project at t0: declared known issue (dust withdrawals)",
    "commit_id": 0,
-   "salt": "0x365850b7938d014dacad2e0bf7fbbe9d0dc54da15e522ec076f47dbc3ccc59c4",
+   "salt": "0x724e7f8cd509127bbeab244ed2b923b3a84bc99561f1ed6988c908cb21b005b7",
    "kind": "Violation",
    "broken_mask": "0x4",
    "broken": [
@@ -216,10 +216,10 @@
      "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
     }
    ],
-   "fp_tags": [
+   "keys": [
     {
      "slot": 2,
-     "tag": "05dbd72c13b9e01d431bc5060e3f95b5364ea001e66824d6cbd803653d0d63dd"
+     "tag": "facc21a3771535c15bfdb7649ea0f915f58855f40a93a3e374ac225400a96ca8"
     }
    ],
    "impact_usd": "0.00",
@@ -227,10 +227,10 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 5,
    "reason": null,
-   "poc_hash": "c7320237a49c8abdc861bc3e083446f7388f7fbff78d10dac53498684f29802a",
-   "receipt_hash": "3a152cdd0c2c056aeb38acc9fdc3582de2f593d0709e4d04439f44334110ef74",
-   "witness_sha256": "9c98df2c6d382ad12fcd4e33ec07b8397b3b19d52aee6ed42cfc9563a37047a6",
-   "facts_bytes": 482,
+   "poc_hash": "212cad7236aca2868a6d24e26eb161e6c76f4b254dcd11a19aac8c81b78a38c1",
+   "receipt_hash": "bc2bcca3a7b62b989e74712a201e263948ea4341b376c37352dceb78ff508df8",
+   "witness_sha256": "c48607f02b3a736a16ca1c94916625af714efcef0bb5c61244675b1ecb029c55",
+   "facts_bytes": 457,
    "matches_expected": true
   }
  }

@@ -52,6 +52,10 @@ base64 = "0.22"
 [target.'cfg(target_os = "wasi")'.dependencies]
 # outbound HTTPS from the guest (wasi:http), the client OutLayer's own examples use
 wasi-http-client = "0.2"
+# OutLayer's encryption-keys host interface (wit/), the root of every program key (docs/spec.md §11.1)
+wit-bindgen = "0.36"
 
 [dev-dependencies]
 x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+# The settlement rules' facts parser: the verifier's output must be what the contract accepts.
+antibody-rules = { path = "../rules" }

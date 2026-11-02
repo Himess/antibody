@@ -7,12 +7,15 @@ pub mod db;
 pub mod facts;
 pub mod fastfs;
 pub mod impact;
+pub mod keys;
+pub mod lint;
 pub mod manifest;
 pub mod program;
 pub mod receipt;
 pub mod run;
 pub mod sealed;
 pub mod tee;
+pub mod trie;
 pub mod witness;
 
 pub use run::{
@@ -20,5 +23,6 @@ pub use run::{
     VerifyError,
 };
 pub use witness::{
-    BundleWitness, Envelope, Payload, PriceFeed, ProgramWitness, QuorumVote, ReplayWitness, WITNESS_VERSION,
+    BaseWitness, BundleWitness, Envelope, Payload, PriceFeed, ProgramWitness, QuorumVote, ReplayWitness, SubmissionWitness,
+    WITNESS_VERSION,
 };

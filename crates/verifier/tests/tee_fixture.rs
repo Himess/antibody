@@ -1,173 +1,276 @@
-//! TEE mode end to end on the recorded fixture: each witness is sealed exactly as a hunter's CLI
-//! would (docs/crypto-spec.md), then handled by `tee::handle` the way OutLayer runs the verifier.
-//! The facts must equal the recorded ones (same receipt hash, kind, mask and fp_tags) and carry a
-//! project wrap that opens with the project's key only.
+//! TEE mode v2 end to end on the recorded fixture (docs/spec.md §5): the program is activated from its
+//! base witness, each submission is sealed to the program's own key exactly as a hunter's CLI does, and
+//! `tee::handle` runs it the way OutLayer runs the verifier. Every output is parsed with the settlement
+//! rules' own facts parser (`antibody-rules`), so the verifier and the contract agree on the format.
 
 use std::path::PathBuf;
 
+use antibody_rules::facts::{self as rf, Expect};
 use antibody_verifier::{
-    facts::{sha256, Facts, Kind},
+    facts::{sha256, Kind},
+    keys::{ProgramKeys, TestMac},
     sealed::{self, SealedPayload},
-    tee::{handle, TeeEnv, TeeError},
+    tee::{handle, BlobRef, Env},
+    BaseWitness, Envelope, Payload,
 };
-use x25519_dalek::StaticSecret;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The fixture's TEST-ONLY secret (scripts/demo/check_fixtures.py).
-fn test_seed() -> [u8; 32] {
-    sha256(b"antibody/TEST-ONLY-secret/never-use-in-production")
-}
-
+const CONTRACT: &str = "antibody.testnet";
 const PROJECT_SK: [u8; 32] = [77u8; 32];
 
-fn sealed_request(agent: &str, program_id: &str, commit_id: u64, hunter: &str, expected: &serde_json::Value) -> (Vec<u8>, Vec<u8>) {
-    let envelope = std::fs::read(root().join(format!("fixtures/acme-local/submissions/{agent}.witness.bin"))).unwrap();
-    let pk_v = sealed::verifier_public(&test_seed());
-    let k = sha256(format!("content-key/{agent}").as_bytes());
-    let wrap = sealed::wrap_v(&k, &pk_v, program_id, sha256(format!("eph/{agent}").as_bytes()), [1u8; 12]);
-    let payload = SealedPayload { program_key: program_id.into(), hunter: hunter.into(), envelope, report: b"ignored".to_vec() };
-    let blob = sealed::seal(&k, &payload, &wrap, [2u8; 12]);
-    let req = serde_json::json!({
-        "mode": "verify",
-        "program_id": program_id,
-        "commit_id": commit_id,
-        "hunter": hunter,
-        "manifest_hash": expected["manifest_sha256"].as_str().unwrap().trim_start_matches("0x"),
-        "sealed": {"url": "https://blobs.example/x", "sha256": hex::encode(sha256(&blob)), "wrap_v": hex::encode(wrap)},
-        "project_pubkey": hex::encode(sealed::x25519_public(PROJECT_SK)),
-    });
-    (serde_json::to_vec(&req).unwrap(), blob)
+fn mac() -> TestMac {
+    TestMac(sha256(b"antibody/TEST-ONLY-root/never-use-in-production"))
 }
 
-#[test]
-fn tee_mode_reproduces_the_recorded_facts() {
-    let expected: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root().join("fixtures/acme-local/expected.json")).unwrap()).unwrap();
-    let program_id = expected["program_id"].as_str().unwrap().to_string();
-    for (agent, e) in expected["submissions"].as_object().unwrap() {
-        let commit_id = e["commit_id"].as_u64().unwrap();
-        let (req, blob) = sealed_request(agent, &program_id, commit_id, "agent.testnet", &expected);
-        let fetch = |_: &str| Ok(blob.clone());
-        let env = TeeEnv { seed: Some(test_seed()), predecessor: None, fetch: &fetch, wasm_hash: None };
-        let facts: Facts = serde_json::from_slice(&handle(&req, &env).unwrap()).unwrap();
-        assert_eq!(facts.receipt_hash, e["receipt_hash"].as_str().unwrap(), "{agent}: receipt hash");
-        assert_eq!(format!("{:?}", facts.kind), e["kind"].as_str().unwrap(), "{agent}: kind");
-        assert_eq!(facts.broken_mask, e["broken_mask"].as_str().unwrap(), "{agent}: mask");
-        let tags: Vec<String> = facts.fp_tags.iter().map(|t| t.tag.clone()).collect();
-        let want: Vec<String> = e["fp_tags"].as_array().unwrap().iter().map(|t| t["tag"].as_str().unwrap().to_string()).collect();
-        assert_eq!(tags, want, "{agent}: fp_tags");
-        assert!(serde_json::to_vec(&facts).unwrap().len() <= 1024, "{agent}: facts <= 1 KB");
-        match facts.kind {
-            Kind::Violation => {
-                let wrap = hex::decode(facts.project_wrap.as_ref().expect("project wrap")).unwrap();
-                let k = sealed::project_unwrap(&wrap, &StaticSecret::from(PROJECT_SK), &program_id).unwrap();
-                let p = sealed::open_with_key(&blob, &k, &program_id).unwrap();
-                assert_eq!(p.hunter, "agent.testnet");
-            }
-            _ => assert!(facts.project_wrap.is_none(), "{agent}: non-violations are never disclosed to the project"),
+fn expected() -> serde_json::Value {
+    serde_json::from_slice(&std::fs::read(root().join("fixtures/acme-local/expected.json")).unwrap()).unwrap()
+}
+
+/// A base witness: a fixture witness without its PoC (the project's pinned state at the anchor).
+fn base_from(agent: &str) -> Vec<u8> {
+    let bytes = std::fs::read(root().join(format!("fixtures/acme-local/submissions/{agent}.witness.bin"))).unwrap();
+    let mut env = Envelope::decode(&bytes).unwrap();
+    let Payload::Program(w) = env.payload.clone() else { panic!("program witness") };
+    env.payload = Payload::Base(BaseWitness {
+        manifest_json: w.manifest_json,
+        invariants_code: w.invariants_code,
+        header_rlp: w.header_rlp,
+        ancestor_headers_rlp: w.ancestor_headers_rlp,
+        state: w.state,
+        bytecodes: w.bytecodes,
+    });
+    env.encode()
+}
+
+fn seal(program_key: &str, hunter: &str, agent: &str) -> Vec<u8> {
+    let envelope = std::fs::read(root().join(format!("fixtures/acme-local/submissions/{agent}.witness.bin"))).unwrap();
+    let m = mac();
+    let pk = ProgramKeys::new(&m, program_key).seal_public().unwrap();
+    let k = sha256(format!("content-key/{agent}").as_bytes());
+    let wrap = sealed::wrap_v(&k, &pk, program_key, sha256(format!("eph/{agent}").as_bytes()), [1u8; 12]);
+    let payload = SealedPayload { program_key: program_key.into(), hunter: hunter.into(), envelope, report: b"ignored".to_vec() };
+    sealed::seal(&k, &payload, &wrap, [2u8; 12])
+}
+
+struct World {
+    program_key: String,
+    base: Vec<u8>,
+    manifest: String,
+    epoch: String,
+    /// Sealed blobs served as FastFS uploads (a full fixture witness is above the 32 KB inline cap).
+    blobs: std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>,
+}
+
+impl World {
+    fn new() -> World {
+        let e = expected();
+        // The fixtures' program key, "<near-antibody account>/<id>" (scripts/demo/v2keys.py).
+        let program_key = e["program_id"].as_str().unwrap().to_string();
+        assert!(program_key.starts_with(&format!("{CONTRACT}/")));
+        let m = mac();
+        let epoch = ProgramKeys::new(&m, &program_key).key_epoch().unwrap();
+        World {
+            program_key,
+            base: base_from("KNOWN"),
+            manifest: e["manifest_sha256"].as_str().unwrap().trim_start_matches("0x").into(),
+            epoch,
+            blobs: Default::default(),
         }
     }
-}
 
-#[test]
-fn tampering_and_rebinding_become_invalid_poc() {
-    let expected: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root().join("fixtures/acme-local/expected.json")).unwrap()).unwrap();
-    let pid = "bounty.testnet/0";
-    // A copycat commits someone else's blob under their own account: rejected (payload binds the hunter).
-    let (req, blob) = sealed_request("A", pid, 5, "agent-a.testnet", &expected);
-    let mut r: serde_json::Value = serde_json::from_slice(&req).unwrap();
-    r["hunter"] = "copycat.testnet".into();
-    let fetch = |_: &str| Ok(blob.clone());
-    let env = TeeEnv { seed: Some(test_seed()), predecessor: Some("bounty.testnet".into()), fetch: &fetch, wasm_hash: None };
-    let f: Facts = serde_json::from_slice(&handle(&serde_json::to_vec(&r).unwrap(), &env).unwrap()).unwrap();
-    assert_eq!(f.kind, Kind::InvalidPoC);
-    // A blob that does not hash to the committed sha256: rejected.
-    let mut tampered = blob.clone();
-    *tampered.last_mut().unwrap() ^= 1;
-    let fetch2 = |_: &str| Ok(tampered.clone());
-    let env2 = TeeEnv { seed: Some(test_seed()), predecessor: None, fetch: &fetch2, wasm_hash: None };
-    let f: Facts = serde_json::from_slice(&handle(&req, &env2).unwrap()).unwrap();
-    assert_eq!(f.kind, Kind::InvalidPoC);
-    // A request that does not come from the program's contract is refused outright.
-    let env3 = TeeEnv { seed: Some(test_seed()), predecessor: Some("someone-else.testnet".into()), fetch: &fetch, wasm_hash: None };
-    assert!(matches!(handle(&req, &env3), Err(TeeError::Fatal(_))));
-    // A fetch failure is transient (retry), not a verdict.
-    let fail = |_: &str| Err("502".to_string());
-    let env4 = TeeEnv { seed: Some(test_seed()), predecessor: None, fetch: &fail, wasm_hash: None };
-    assert!(matches!(handle(&req, &env4), Err(TeeError::Transient(_))));
-}
-
-#[test]
-fn pubkey_and_disclosure_modes() {
-    let fetch = |_: &str| Err("unused".to_string());
-    let env = TeeEnv { seed: Some(test_seed()), predecessor: Some("bounty.testnet".into()), fetch: &fetch, wasm_hash: None };
-    let pk: serde_json::Value = serde_json::from_slice(&handle(br#"{"mode":"pubkey"}"#, &env).unwrap()).unwrap();
-    assert_eq!(pk["pubkey"].as_str().unwrap(), hex::encode(sealed::verifier_public(&test_seed())));
-    let pid = "bounty.testnet/0";
-    let k = [5u8; 32];
-    let wrap = sealed::wrap_v(&k, &sealed::verifier_public(&test_seed()), pid, [6u8; 32], [7u8; 12]);
-    let req = serde_json::json!({"mode": "disclose", "program_id": pid, "entries": [{"commit_id": 3, "wrap_v": hex::encode(wrap)}]});
-    let out: serde_json::Value = serde_json::from_slice(&handle(&serde_json::to_vec(&req).unwrap(), &env).unwrap()).unwrap();
-    assert_eq!(out["keys"][0]["content_key"].as_str().unwrap(), hex::encode(k));
-    assert_eq!(out["k_program"].as_str().unwrap().len(), 64);
-}
-
-/// Seals a recorded witness the way the CLI does; returns (blob, wrap_v).
-fn seal_file(path: &str, program_id: &str, hunter: &str, label: &str) -> (Vec<u8>, Vec<u8>) {
-    let envelope = std::fs::read(root().join(path)).unwrap();
-    let pk_v = sealed::verifier_public(&test_seed());
-    let k = sha256(format!("content-key/{label}").as_bytes());
-    let wrap = sealed::wrap_v(&k, &pk_v, program_id, sha256(format!("eph/{label}").as_bytes()), [3u8; 12]);
-    let payload = SealedPayload { program_key: program_id.into(), hunter: hunter.into(), envelope, report: Vec::new() };
-    (sealed::seal(&k, &payload, &wrap, [4u8; 12]), wrap.to_vec())
-}
-
-/// Rounds: a claimed finding re-run at the round-1 fix (AcmeLend's code overridden) in TEE mode.
-/// The spot-price findings no longer break anything; the others keep their exact keys.
-#[test]
-fn rerun_mode_runs_the_same_poc_at_the_fix() {
-    let r0: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root().join("fixtures/acme-local/expected.json")).unwrap()).unwrap();
-    let r1: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root().join("fixtures/acme-local/round1/expected.json")).unwrap()).unwrap();
-    let pid = r0["program_id"].as_str().unwrap().to_string();
-    let mh1 = r1["manifest_sha256"].as_str().unwrap().trim_start_matches("0x").to_string();
-    let request = |agent: &str, blob: &[u8], wrap: &[u8], poc_hash: &str, manifest_hash: &str, round: u32| {
-        serde_json::to_vec(&serde_json::json!({
-            "mode": "rerun", "program_id": pid, "commit_id": r0["submissions"][agent]["commit_id"], "round": round,
-            "hunter": "agent.testnet", "manifest_hash": manifest_hash, "poc_hash": poc_hash,
-            "sealed": {"url": "near-tx:x:y", "sha256": hex::encode(sha256(blob)), "wrap_v": hex::encode(wrap)},
-        }))
-        .unwrap()
-    };
-    for (agent, e) in r1["submissions"].as_object().unwrap() {
-        let (blob, wrap) = seal_file(&format!("fixtures/acme-local/round1/submissions/{agent}.witness.bin"), &pid, "agent.testnet", agent);
-        let fetch = |_: &str| Ok(blob.clone());
-        let env = TeeEnv { seed: Some(test_seed()), predecessor: None, fetch: &fetch, wasm_hash: None };
-        let poc0 = r0["submissions"][agent.as_str()]["poc_hash"].as_str().unwrap();
-        let facts: Facts = serde_json::from_slice(&handle(&request(agent, &blob, &wrap, poc0, &mh1, 1), &env).unwrap()).unwrap();
-        assert_eq!(facts.receipt_hash, e["receipt_hash"].as_str().unwrap(), "{agent}: receipt hash at round 1");
-        assert_eq!(format!("{:?}", facts.kind), e["kind"].as_str().unwrap(), "{agent}: kind at round 1");
-        assert_eq!(facts.poc_hash, poc0, "{agent}: same PoC as the claimed finding");
-        assert!(facts.project_wrap.is_none(), "re-runs carry no project wrap");
-        let tags: Vec<&str> = facts.fp_tags.iter().map(|t| t.tag.as_str()).collect();
-        let want: Vec<&str> = e["fp_tags"].as_array().unwrap().iter().map(|t| t["tag"].as_str().unwrap()).collect();
-        assert_eq!(tags, want, "{agent}: keys at round 1");
+    fn fetch(&self) -> impl Fn(&str) -> Result<Vec<u8>, String> + '_ {
+        move |loc: &str| {
+            if loc == "near-tx:base:project.testnet" {
+                return Ok(self.base.clone());
+            }
+            self.blobs.borrow().get(loc).cloned().ok_or_else(|| format!("unknown {loc}"))
+        }
     }
-    // Another PoC than the claimed one, or the round-0 manifest, is no re-run of this finding.
-    let (blob, wrap) = seal_file("fixtures/acme-local/round1/submissions/A.witness.bin", &pid, "agent.testnet", "A");
-    let fetch = |_: &str| Ok(blob.clone());
-    let env = TeeEnv { seed: Some(test_seed()), predecessor: None, fetch: &fetch, wasm_hash: None };
-    let other = r0["submissions"]["D"]["poc_hash"].as_str().unwrap();
-    let f: Facts = serde_json::from_slice(&handle(&request("A", &blob, &wrap, other, &mh1, 1), &env).unwrap()).unwrap();
-    assert_eq!(f.kind, Kind::InvalidPoC, "PoC hash must match the claimed finding");
-    let poc_a = r0["submissions"]["A"]["poc_hash"].as_str().unwrap();
-    let mh0 = r0["manifest_sha256"].as_str().unwrap().trim_start_matches("0x");
-    let f: Facts = serde_json::from_slice(&handle(&request("A", &blob, &wrap, poc_a, mh0, 1), &env).unwrap()).unwrap();
-    assert_eq!(f.kind, Kind::InvalidPoC, "the witness must be built at the round's manifest");
-    assert!(matches!(handle(&request("A", &blob, &wrap, poc_a, &mh1, 0), &env), Err(TeeError::Fatal(_))), "round 0 is not a re-run");
+
+    /// Uploads a blob (FastFS) and returns its reference for a request.
+    fn upload(&self, blob: &[u8]) -> serde_json::Value {
+        let loc = format!("near-tx:{}:agent.testnet", hex::encode(&sha256(blob)[..8]));
+        self.blobs.borrow_mut().insert(loc.clone(), blob.to_vec());
+        serde_json::json!({"near_tx": loc, "sha256": hex::encode(sha256(blob))})
+    }
+
+    fn request(&self, mode: &str, commit: Option<u64>, extra: serde_json::Value) -> Vec<u8> {
+        let mut r = serde_json::json!({
+            "v": 2, "mode": mode, "program_key": self.program_key, "manifest_sha256": self.manifest, "round": 0,
+            "key_epoch": if mode == "activate" { String::new() } else { self.epoch.clone() },
+            "commit_id": commit, "run_id": 41,
+            "base": {"near_tx": "near-tx:base:project.testnet", "sha256": hex::encode(sha256(&self.base))},
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            r[k] = v.clone();
+        }
+        serde_json::to_vec(&r).unwrap()
+    }
+
+    fn run(&self, req: &[u8], caller: &str) -> (antibody_verifier::tee::Output, Vec<u8>) {
+        let m = mac();
+        let fetch = self.fetch();
+        let env = Env { mac: &m, fetch: &fetch, predecessor: Some(caller.into()) };
+        let out = handle(req, &env);
+        let bytes = serde_json::to_vec(&out.facts).unwrap();
+        (out, bytes)
+    }
+
+    /// The contract's own parser accepts the facts for this request.
+    fn parse(&self, req: &[u8], facts: &[u8], mode: antibody_rules::Mode, commit: Option<u64>) -> rf::FactsSummary {
+        let slots = vec![
+            antibody_rules::SlotRule { slot: 0, severity: antibody_rules::Severity::Critical, budget: 1 },
+            antibody_rules::SlotRule { slot: 1, severity: antibody_rules::Severity::High, budget: 1 },
+            antibody_rules::SlotRule { slot: 2, severity: antibody_rules::Severity::Medium, budget: 1 },
+        ];
+        let ex = Expect {
+            mode,
+            request_sha256: antibody_rules::H32(sha256(req)),
+            manifest_sha256: antibody_rules::H32::from_hex(&self.manifest).unwrap(),
+            program_key: &self.program_key,
+            round: 0,
+            key_epoch: &self.epoch,
+            commit_id: commit,
+            run_id: 41,
+            slots: &slots,
+        };
+        rf::parse(facts, &ex).unwrap_or_else(|e| panic!("the contract rejects the facts: {e}: {}", String::from_utf8_lossy(facts)))
+    }
+}
+
+#[test]
+fn activation_outputs_the_program_key() {
+    let w = World::new();
+    let req = w.request("activate", None, serde_json::json!({}));
+    let (out, bytes) = w.run(&req, CONTRACT);
+    assert_eq!(out.facts.kind, Kind::NoViolation, "{:?}", out.facts.reason);
+    let s = w.parse(&req, &bytes, antibody_rules::Mode::Activate, None);
+    let m = mac();
+    let want = ProgramKeys::new(&m, &w.program_key).seal_public().unwrap();
+    assert!(matches!(s.extra, rf::Extra::SealingKey { pk, .. } if pk.0 == want));
+    assert!(bytes.len() <= rf::MAX_FACTS_BYTES);
+}
+
+#[test]
+fn verify_gives_the_recorded_verdicts_in_v2_facts() {
+    let w = World::new();
+    let e = expected();
+    let hunter = "agent.testnet";
+    for (agent, x) in e["submissions"].as_object().unwrap() {
+        let commit = x["commit_id"].as_u64().unwrap();
+        let blob = seal(&w.program_key, hunter, agent);
+        let req = w.request("verify", Some(commit), serde_json::json!({"hunter": hunter, "blob": w.upload(&blob)}));
+        let (out, bytes) = w.run(&req, CONTRACT);
+        assert_eq!(format!("{:?}", out.facts.kind), x["kind"].as_str().unwrap(), "{agent}: {:?}", out.facts.reason);
+        let s = w.parse(&req, &bytes, antibody_rules::Mode::Verify, Some(commit));
+        let slots: Vec<u8> = s.keys.iter().map(|k| k.slot).collect();
+        let want: Vec<u8> = x["broken"].as_array().unwrap().iter().map(|b| b["slot"].as_u64().unwrap() as u8).collect();
+        assert_eq!(slots, want, "{agent}: broken slots");
+        assert!(bytes.len() <= rf::MAX_FACTS_BYTES, "{agent}: facts are {} bytes", bytes.len());
+        if out.facts.kind == Kind::Violation {
+            assert!(out.facts.wrap_d.is_some(), "{agent}: a violation carries its disclosure wrap");
+        }
+        // A second run of the same request gives the same receipt: agreement is by content.
+        let (out2, _) = w.run(&req, CONTRACT);
+        assert_eq!(out.facts.receipt_sha256, out2.facts.receipt_sha256);
+    }
+}
+
+#[test]
+fn equal_root_causes_give_equal_tags() {
+    let w = World::new();
+    let e = expected();
+    let mut tags: std::collections::BTreeMap<(u64, String, String), std::collections::BTreeSet<String>> = Default::default();
+    for (agent, x) in e["submissions"].as_object().unwrap() {
+        let commit = x["commit_id"].as_u64().unwrap();
+        let blob = seal(&w.program_key, "agent.testnet", agent);
+        let req = w.request("verify", Some(commit), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob)}));
+        let (out, _) = w.run(&req, CONTRACT);
+        for (k, b) in out.facts.keys.iter().zip(x["broken"].as_array().unwrap()) {
+            let key = (b["slot"].as_u64().unwrap(), b["target"].as_str().unwrap().to_string(), b["selector"].as_str().unwrap().to_string());
+            tags.entry(key).or_default().insert(k.tag.clone());
+        }
+    }
+    for (key, t) in tags {
+        assert_eq!(t.len(), 1, "{key:?} produced different tags");
+    }
+}
+
+#[test]
+fn failures_are_typed_and_never_forfeit_for_infrastructure() {
+    let w = World::new();
+    let blob = seal(&w.program_key, "agent.testnet", "A");
+    // Another hunter's account: the blob is bound to its sealer (InvalidPoC, the replayer's bond).
+    let req = w.request("verify", Some(1), serde_json::json!({"hunter": "mallory.testnet", "blob": w.upload(&blob)}));
+    assert_eq!(w.run(&req, CONTRACT).0.facts.kind, Kind::InvalidPoC);
+    // A blob no RPC served: InfraError, never a forfeit.
+    let req = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet",
+        "blob": {"near_tx": "near-tx:missing:agent.testnet", "sha256": hex::encode(sha256(&blob))}}));
+    assert_eq!(w.run(&req, CONTRACT).0.facts.kind, Kind::InfraError);
+    // Another caller than the program's contract: refused, and it would not hold the key anyway.
+    let req = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob)}));
+    assert_eq!(w.run(&req, "someone.testnet").0.facts.kind, Kind::InfraError);
+    // Garbage in: typed facts out.
+    assert_eq!(w.run(b"{not json", CONTRACT).0.facts.kind, Kind::InfraError);
+}
+
+#[test]
+fn release_wrap_opens_with_the_project_key_only() {
+    let w = World::new();
+    let blob = seal(&w.program_key, "agent.testnet", "A");
+    let pk = sealed::x25519_public(PROJECT_SK);
+    let req = w.request("release_wrap", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob), "project_pk": hex::encode(pk)}));
+    let (out, bytes) = w.run(&req, CONTRACT);
+    w.parse(&req, &bytes, antibody_rules::Mode::ReleaseWrap, Some(1));
+    let wrap = hex::decode(out.facts.wrap.unwrap()).unwrap();
+    let k = sealed::project_unwrap(&wrap, &x25519_dalek::StaticSecret::from(PROJECT_SK), &w.program_key).unwrap();
+    assert_eq!(k, sha256(b"content-key/A"));
+    assert!(sealed::project_unwrap(&wrap, &x25519_dalek::StaticSecret::from([5u8; 32]), &w.program_key).is_err());
+    // A low-order project key is refused, never a panic.
+    let req = w.request("release_wrap", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob), "project_pk": hex::encode([0u8; 32])}));
+    assert_eq!(w.run(&req, CONTRACT).0.facts.kind, Kind::InfraError);
+}
+
+#[test]
+fn disclosure_keys_open_the_disclosure_wraps() {
+    let w = World::new();
+    let blob = seal(&w.program_key, "agent.testnet", "A");
+    let req = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob)}));
+    let (out, _) = w.run(&req, CONTRACT);
+    let tag = out.facts.keys[0].tag.clone();
+    let req = w.request("disclose", None, serde_json::json!({"tags": [tag]}));
+    let (dout, bytes) = w.run(&req, CONTRACT);
+    w.parse(&req, &bytes, antibody_rules::Mode::Disclose, None);
+    let dk: [u8; 32] = hex::decode(&dout.facts.disclosed[0].key).unwrap().try_into().unwrap();
+    let wd = hex::decode(out.facts.wrap_d.unwrap()).unwrap();
+    let nonce: [u8; 12] = wd[..12].try_into().unwrap();
+    let k = sealed::aead_open_pub(&dk, &nonce, &wd[12..], w.program_key.as_bytes()).unwrap();
+    assert_eq!(k, sha256(b"content-key/A").to_vec(), "the disclosure key opens the content key");
+}
+
+#[test]
+fn base_and_submission_merge_into_the_same_verdict() {
+    // A submission carrying only the PoC and the full state still merges with the base (idempotent).
+    let w = World::new();
+    let bytes = std::fs::read(root().join("fixtures/acme-local/submissions/A.witness.bin")).unwrap();
+    let mut env = Envelope::decode(&bytes).unwrap();
+    let Payload::Program(p) = env.payload.clone() else { panic!() };
+    env.payload = Payload::Submission(antibody_verifier::SubmissionWitness { bundle: p.bundle, state: p.state, bytecodes: vec![] });
+    let m = mac();
+    let pk = ProgramKeys::new(&m, &w.program_key).seal_public().unwrap();
+    let k = [9u8; 32];
+    let wrap = sealed::wrap_v(&k, &pk, &w.program_key, [3u8; 32], [1u8; 12]);
+    let payload = SealedPayload { program_key: w.program_key.clone(), hunter: "agent.testnet".into(), envelope: env.encode(), report: vec![] };
+    let blob = sealed::seal(&k, &payload, &wrap, [2u8; 12]);
+    let req = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob)}));
+    let (out, _) = w.run(&req, CONTRACT);
+    assert_eq!(out.facts.kind, Kind::Violation, "{:?}", out.facts.reason);
+    let full = seal(&w.program_key, "agent.testnet", "A");
+    let req2 = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&full)}));
+    let (out2, _) = w.run(&req2, CONTRACT);
+    assert_eq!(out.facts.keys, out2.facts.keys, "same keys from the merged witness");
+    let _ = BlobRef::Inline { inline: String::new() };
 }

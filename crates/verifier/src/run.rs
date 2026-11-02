@@ -150,7 +150,9 @@ pub fn run(env: &Envelope, witness_sha256: [u8; 32], opts: &RunOptions) -> Resul
         Payload::Replay(w) => run_replay(env, w, witness_sha256, opts),
         Payload::Block(input) => run_block(env, input.clone(), witness_sha256),
         Payload::Bundle(w) => run_bundle(env, w, witness_sha256),
-        Payload::Program(_) => Err(VerifyError::Decode("program witnesses go through run_program".into())),
+        Payload::Program(_) | Payload::Base(_) | Payload::Submission(_) => {
+            Err(VerifyError::Decode("program witnesses go through run_program".into()))
+        }
     }
 }
 
@@ -158,7 +160,7 @@ pub fn run(env: &Envelope, witness_sha256: [u8; 32], opts: &RunOptions) -> Resul
 pub fn verify_only(env: &Envelope) -> Result<Checks, VerifyError> {
     match &env.payload {
         Payload::Replay(w) => verify_replay(env, w).map(|v| v.checks),
-        Payload::Block(_) | Payload::Bundle(_) | Payload::Program(_) => {
+        Payload::Block(_) | Payload::Bundle(_) | Payload::Program(_) | Payload::Base(_) | Payload::Submission(_) => {
             Err(VerifyError::Decode("verify_only: replay witnesses only".into()))
         }
     }
@@ -718,6 +720,18 @@ pub struct ProgramContext {
     pub commit_id: u64,
     /// Manifest hash committed on NEAR; the witness's manifest bytes must hash to it.
     pub expected_manifest_hash: Option<B256>,
+    /// The program's reserved invariants address (v2: derived from the program key and the anchor,
+    /// docs/spec.md §5.7); `None` uses the manifest's.
+    pub reserved: Option<Address>,
+}
+
+/// The reserved invariants address of a program: `keccak256("antibody/invariants/v2" ‖ program_key ‖
+/// anchor hash)[12..]`. Nobody holds a key for it and no CREATE path reaches it.
+pub fn reserved_address(program_key: &str, anchor_hash: B256) -> Address {
+    let mut m = b"antibody/invariants/v2".to_vec();
+    m.extend_from_slice(program_key.as_bytes());
+    m.extend_from_slice(anchor_hash.as_slice());
+    Address::from_slice(&keccak256(&m)[12..])
 }
 
 /// Chain specs for program mode: Sepolia, or a local Osaka dev chain (anvil, chain id 31337).
@@ -756,6 +770,7 @@ pub fn execute_program_witness(
     env: &Envelope,
     w: &ProgramWitness,
     expected_manifest_hash: Option<B256>,
+    reserved: Option<Address>,
 ) -> Result<ProgramExec, crate::program::ProgramError> {
     use crate::{
         facts::{Kind, ProgramAnchor, ProgramChecks},
@@ -797,6 +812,8 @@ pub fn execute_program_witness(
     // Code is re-analysed from the bytes its hash commits to: the witness's padding and jump table are
     // not trusted (revm's serde accepts both as given).
     let codes: Vec<Bytecode> = w.bytecodes.iter().map(|c| Bytecode::new_raw(c.original_bytes())).collect();
+    // Every trie node must be canonical: a relabelled node keeps the root but forges state.
+    crate::trie::validate(&w.state).map_err(|e| bad(Kind::InvalidPoC, format!("witness: {e}")))?;
     build_trie_db(&w.state, header.state_root, codes.iter(), &sealed)
         .map_err(|e| VerifyError::Witness(e.to_string()))?;
     let mut block_hashes: HashMap<u64, B256> = HashMap::default();
@@ -807,7 +824,7 @@ pub fn execute_program_witness(
     let db = StrictDb::new(&w.state, block_hashes, bytecode_by_hash);
     let spec = program_chain_spec(manifest.anchor.chain_id)?;
     let inv_code = Bytecode::new_raw(w.invariants_code.clone());
-    let run = execute_program(&header, &manifest, &inv_code, &w.bundle, spec, &db)?;
+    let run = execute_program(&header, &manifest, &inv_code, &w.bundle, spec, &db, reserved)?;
     Ok(ProgramExec {
         anchor: ProgramAnchor {
             chain_id: manifest.anchor.chain_id,
@@ -831,6 +848,57 @@ pub fn execute_program_witness(
         manifest_hash,
         run,
     })
+}
+
+/// Activation and round checks (docs/spec.md §3.1, §8.1): the witness binds to the manifest and the
+/// anchor, every proof verifies, and the program passes its checks at the anchor (with a round's
+/// overrides). Returns whether every canary succeeds.
+pub fn check_program_at_anchor(
+    env: &Envelope,
+    w: &ProgramWitness,
+    reserved: Option<Address>,
+) -> Result<bool, (crate::facts::Kind, String)> {
+    use crate::{
+        db::OverrideDb,
+        facts::Kind,
+        manifest::Manifest,
+        program::{anchor_checks, canaries_pass, ProgramError},
+    };
+    let mis = |r: String| (Kind::ProgramMisconfigured, r);
+    let from = |e: ProgramError| crate::program::classify(&e);
+    let manifest = Manifest::parse(&w.manifest_json).map_err(mis)?;
+    if env.chain_id != manifest.anchor.chain_id || env.claimed_block_hash != manifest.anchor.block_hash {
+        return Err(mis("the witness is not anchored at the program's committed block".into()));
+    }
+    if keccak256(&manifest.invariants.runtime_code) != manifest.invariants.runtime_code_hash {
+        return Err(mis("manifest invariants code does not match its hash".into()));
+    }
+    let header = Header::decode(&mut w.header_rlp.as_ref()).map_err(|e| mis(e.to_string()))?;
+    if header.hash_slow() != env.claimed_block_hash || header.number != manifest.anchor.block_number {
+        return Err(mis("the anchor header does not match".into()));
+    }
+    let mut ancestors = Vec::with_capacity(w.ancestor_headers_rlp.len());
+    for rlp in &w.ancestor_headers_rlp {
+        ancestors.push(Header::decode(&mut rlp.as_ref()).map_err(|e| mis(e.to_string()))?);
+    }
+    let sealed: Vec<SealedHeader> = once(SealedHeader::seal_slow(header.clone()))
+        .chain(ancestors.into_iter().map(SealedHeader::seal_slow))
+        .collect();
+    let codes: Vec<Bytecode> = w.bytecodes.iter().map(|c| Bytecode::new_raw(c.original_bytes())).collect();
+    crate::trie::validate(&w.state).map_err(mis)?;
+    build_trie_db(&w.state, header.state_root, codes.iter(), &sealed).map_err(|e| mis(e.to_string()))?;
+    let mut block_hashes: HashMap<u64, B256> = HashMap::default();
+    for (child, parent) in sealed.iter().tuple_windows() {
+        block_hashes.insert(parent.number(), child.parent_hash());
+    }
+    let bytecode_by_hash: HashMap<B256, &Bytecode> = codes.iter().map(|c| (c.hash_slow(), c)).collect();
+    let db = StrictDb::new(&w.state, block_hashes, bytecode_by_hash);
+    let spec = program_chain_spec(manifest.anchor.chain_id).map_err(|e| mis(e.to_string()))?;
+    let inv_code = Bytecode::new_raw(w.invariants_code.clone());
+    manifest.check_overrides().map_err(mis)?;
+    let odb = OverrideDb::new(&db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+    let anchor = anchor_checks(&header, &manifest, &inv_code, spec, &odb, reserved).map_err(from)?;
+    canaries_pass(&manifest, &anchor, &odb).map_err(from)
 }
 
 /// Program-mode entry point: always returns a receipt with a typed verdict.
@@ -867,7 +935,7 @@ pub fn run_program(
     if env.version != WITNESS_VERSION {
         return base(Kind::InvalidPoC, Some(format!("unsupported witness version {}", env.version)));
     }
-    match execute_program_witness(env, w, ctx.expected_manifest_hash) {
+    match execute_program_witness(env, w, ctx.expected_manifest_hash, ctx.reserved) {
         Ok(x) => {
             let kind = if x.run.broken_mask.is_zero() { Kind::NoViolation } else { Kind::Violation };
             ProgramReceipt {

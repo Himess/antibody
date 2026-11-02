@@ -29,7 +29,7 @@ FX = os.path.join(ROOT, "fixtures", "acme-local")
 OUT = os.path.join(FX, "round1")
 
 sys.path.insert(0, os.path.dirname(__file__))
-from acme_fixture import k_program  # noqa: E402
+import v2keys  # noqa: E402,F401
 
 # Round-0 findings re-run at the fix, with the verdict each must get there.
 EXPECTED = {
@@ -80,7 +80,6 @@ def main():
     print(f"round-1 manifest sha256 {mh}")
 
     pid = base["program_id"]
-    kp = k_program(pid)
     results = {}
     for agent, (want_kind, want_mask) in EXPECTED.items():
         e0 = base["submissions"][agent]
@@ -88,37 +87,37 @@ def main():
         r = subprocess.run([os.path.join(BIN, "antibody-witness" + EXE), "program", "--rpc", a.rpc, "--manifest", man,
                             "--invariants-code", os.path.join(FX, "invariants.hex"),
                             "--bundle", os.path.join(FX, "submissions", f"{agent}.bundle.json"),
-                            "--salt", e0["salt"], "--out", prefix], capture_output=True, text=True, cwd=ROOT)
+                            "--salt", e0["salt"], "--out", prefix, "--program-key", pid], capture_output=True, text=True, cwd=ROOT)
         if r.returncode != 0:
             sys.exit(f"[{agent}] witness build failed: {r.stderr[-2000:]}")
         env = dict(os.environ, ANTIBODY_PROGRAM_ID=pid, ANTIBODY_COMMIT_ID=str(e0["commit_id"]),
-                   ANTIBODY_EXPECTED_MANIFEST=mh, ANTIBODY_K_PROGRAM=kp.hex())
+                   ANTIBODY_EXPECTED_MANIFEST=mh)
         v = subprocess.run([os.path.join(BIN, "antibody-verify" + EXE), prefix + ".witness.bin"], capture_output=True, env=env)
         out = json.loads(v.stdout)
         open(prefix + ".native.json", "wb").write(v.stdout)
         rec, facts = out["receipt"], out["facts"]
-        same_poc = facts["poc_hash"] == e0["poc_hash"]
+        same_poc = rec["poc_hash"] == e0["poc_hash"]
         ok = rec["kind"] == want_kind and rec["broken_mask"] == want_mask and same_poc
         if want_kind == "Violation":
             # A finding that still breaks keeps exactly its round-0 key(s).
-            ok = ok and facts["fp_tags"] == e0["fp_tags"]
+            ok = ok and facts.get("keys", []) == e0["keys"]
         results[agent] = {
             "title": e0["title"], "commit_id": e0["commit_id"], "salt": e0["salt"],
             "kind": rec["kind"], "broken_mask": rec["broken_mask"],
             "broken": [{"slot": f["slot"], "name": f["name"], "severity": f["severity"], "target": f["target_name"],
                         "selector": f["selector"], "target_address": f["target"],
                         "function": next((b["function"] for b in e0["broken"] if b["slot"] == f["slot"]), None)} for f in rec["broken"]],
-            "fp_tags": facts["fp_tags"], "impact_usd": (rec.get("impact") or {}).get("impact_usd"),
+            "keys": facts.get("keys", []), "impact_usd": (rec.get("impact") or {}).get("impact_usd"),
             "evaluations": rec["evaluations"], "reason": rec["reason"],
-            "poc_hash": facts["poc_hash"], "same_poc_as_round0": same_poc,
-            "receipt_hash": facts["receipt_hash"], "witness_sha256": rec["witness_sha256"], "matches_expected": ok,
+            "poc_hash": rec["poc_hash"], "same_poc_as_round0": same_poc,
+            "receipt_hash": facts["receipt_sha256"], "witness_sha256": rec["witness_sha256"], "matches_expected": ok,
         }
         print(f"[{agent}] round 1: {rec['kind']:<12} mask={rec['broken_mask']:<4} same PoC={same_poc} {'OK' if ok else 'MISMATCH'}")
     exp = {"program_id": pid, "chain_id": base["chain_id"], "anchor": base["anchor"], "round": 1,
            "base_manifest_sha256": base["manifest_sha256"], "manifest_sha256": mh,
            "override": {"target": "AcmeLend", "address": dep["AcmeLend"], "code_hash": json.load(open(man))["overrides"][0]["code_hash"]},
            "invariants_code_hash": base["invariants_code_hash"], "invariants_address": base["invariants_address"],
-           "k_program_note": base["k_program_note"], "submissions": results}
+           "keys_note": base["keys_note"], "submissions": results}
     json.dump(exp, open(os.path.join(OUT, "expected.json"), "w"), indent=1)
     bad = [k for k, v in results.items() if not v["matches_expected"]]
     print("ALL MATCH" if not bad else f"MISMATCH: {bad}")

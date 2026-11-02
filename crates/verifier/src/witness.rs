@@ -46,6 +46,55 @@ pub enum Payload {
     Bundle(BundleWitness),
     /// v0.4 program mode: a hunter's PoC against a program's committed manifest and invariants.
     Program(ProgramWitness),
+    /// v2: the base witness a project pins at open (docs/spec.md §4.4): the round-0 manifest, the
+    /// invariants, the anchor header and the targets' state.
+    Base(BaseWitness),
+    /// v2: what a sealed submission carries: the PoC and the extra state it touches, merged with the
+    /// pinned base witness inside the verifier.
+    Submission(SubmissionWitness),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaseWitness {
+    pub manifest_json: Bytes,
+    pub invariants_code: Bytes,
+    pub header_rlp: Bytes,
+    pub ancestor_headers_rlp: Vec<Bytes>,
+    pub state: EthereumState,
+    pub bytecodes: Vec<Bytecode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmissionWitness {
+    pub bundle: crate::bundle::Bundle,
+    /// Proofs of every account and slot the PoC touches beyond the base witness (a partial trie of the
+    /// same state root).
+    pub state: EthereumState,
+    pub bytecodes: Vec<Bytecode>,
+}
+
+impl ProgramWitness {
+    /// A full program witness from the pinned base and a submission (docs/spec.md §4.4). `manifest` is
+    /// the manifest the run is judged under: the base's in round 0, the round's manifest after.
+    pub fn assemble(base: &BaseWitness, sub: &SubmissionWitness, manifest_json: Bytes) -> Result<ProgramWitness, String> {
+        let state = crate::trie::merge(&base.state, &sub.state)?;
+        let mut bytecodes = base.bytecodes.clone();
+        for c in &sub.bytecodes {
+            if !bytecodes.iter().any(|b| b.original_byte_slice() == c.original_byte_slice()) {
+                bytecodes.push(c.clone());
+            }
+        }
+        let manifest = crate::manifest::Manifest::parse(&manifest_json)?;
+        Ok(ProgramWitness {
+            manifest_json,
+            invariants_code: manifest.invariants.runtime_code.clone(),
+            header_rlp: base.header_rlp.clone(),
+            ancestor_headers_rlp: base.ancestor_headers_rlp.clone(),
+            state,
+            bytecodes,
+            bundle: sub.bundle.clone(),
+        })
+    }
 }
 
 /// Everything a program-mode run needs. `claimed_block_hash` must equal the manifest's anchor

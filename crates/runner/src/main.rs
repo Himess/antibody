@@ -72,6 +72,55 @@ impl WasiView for Host {
     }
 }
 
+/// TEST-ONLY stand-in for OutLayer's keystore (docs/spec.md §11.1): `ANTIBODY_TEST_ROOT_KEY` from the
+/// `--env` arguments, or the same published constant the native verifier uses.
+fn test_root_key(args: &[String]) -> [u8; 32] {
+    let mut i = 0;
+    while i + 1 < args.len() {
+        if args[i] == "--env" {
+            if let Some(v) = args[i + 1].strip_prefix("ANTIBODY_TEST_ROOT_KEY=") {
+                if let Ok(b) = hex::decode(v.trim_start_matches("0x")) {
+                    if let Ok(k) = <[u8; 32]>::try_from(b.as_slice()) {
+                        return k;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    Sha256::digest(b"antibody/TEST-ONLY-root/never-use-in-production").into()
+}
+
+fn hmac_sha256(key: &[u8; 32], msg: &[u8]) -> [u8; 32] {
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for i in 0..32 {
+        ipad[i] ^= key[i];
+        opad[i] ^= key[i];
+    }
+    let inner = Sha256::new().chain_update(ipad).chain_update(msg).finalize();
+    Sha256::new().chain_update(opad).chain_update(inner).finalize().into()
+}
+
+/// OutLayer's `outlayer:encryption-keys/api@0.1.0`, as the worker serves it to a component that declares
+/// the key `antibody`: `mac` is HMAC-SHA256 under a key the guest never sees (here, the TEST root key).
+fn add_encryption_keys(linker: &mut Linker<Host>, root: [u8; 32]) -> Result<()> {
+    let mut inst = linker.instance("outlayer:encryption-keys/api@0.1.0")?;
+    inst.func_wrap("mac", move |_, (path, vault, data): (String, Option<String>, Vec<u8>)| {
+        if path != "antibody" || vault.is_some() {
+            return Ok((Err::<Vec<u8>, String>(format!("undeclared encryption key {path}")),));
+        }
+        Ok((Ok(hmac_sha256(&root, &data).to_vec()),))
+    })?;
+    inst.func_wrap("encrypt", |_, (_p, _v, _m, _a): (String, Option<String>, Vec<u8>, Vec<u8>)| {
+        Ok((Err::<Vec<u8>, String>("encrypt is not used by the verifier".into()),))
+    })?;
+    inst.func_wrap("decrypt", |_, (_p, _v, _c, _a): (String, Option<String>, Vec<u8>, Vec<u8>)| {
+        Ok((Err::<Vec<u8>, String>("decrypt is not used by the verifier".into()),))
+    })?;
+    Ok(())
+}
+
 fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
 }
@@ -105,6 +154,7 @@ async fn main() -> Result<()> {
     let mut linker: Linker<Host> = Linker::new(&engine);
     wasmtime_wasi::add_to_linker_async(&mut linker)?;
     wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)?;
+    add_encryption_keys(&mut linker, test_root_key(&args))?;
 
     let stdout = MemoryOutputPipe::new(64 * 1024 * 1024);
     let stderr = MemoryOutputPipe::new(1024 * 1024);
@@ -191,7 +241,7 @@ async fn main() -> Result<()> {
             "run_ms": (run_ms * 10.0).round() / 10.0,
             "peak_linear_memory_bytes": peak.load(Ordering::Relaxed),
             "guest_metrics": guest_metrics,
-            "receipt_ok": receipt.get("schema").and_then(|s| s.as_str()) == Some("antibody.receipt.v1"),
+            "receipt_ok": receipt.get("schema").and_then(|s| s.as_str()).is_some_and(|s| s.starts_with("antibody.receipt.")),
             "failure": receipt.get("ok").map(|_| receipt.clone()),
             "stderr_tail": err.lines().rev().take(3).collect::<Vec<_>>(),
         }))?

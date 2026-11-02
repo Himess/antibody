@@ -146,27 +146,36 @@ fn env_hex32(name: &str) -> Option<[u8; 32]> {
     <[u8; 32]>::try_from(b.as_slice()).ok()
 }
 
-/// Program mode (v0.4). Context comes from the caller (in the TEE: the contract's request):
-/// ANTIBODY_PROGRAM_ID, ANTIBODY_COMMIT_ID, ANTIBODY_EXPECTED_MANIFEST (hex),
-/// ANTIBODY_K_PROGRAM (hex; TEST key for local runs — in the TEE it is derived from the protected
-/// secret), ANTIBODY_WASM_HASH. ANTIBODY_OUTPUT=facts prints only the facts (≤ 1 KB, compact);
-/// otherwise `{"receipt":…,"facts":…}`.
+/// The TEST-ONLY root key that stands in for OutLayer's host key outside the TEE (docs/spec.md §11.1):
+/// `ANTIBODY_TEST_ROOT_KEY` (hex), or a fixed published constant.
+fn test_mac() -> antibody_verifier::keys::TestMac {
+    let root = env_hex32("ANTIBODY_TEST_ROOT_KEY")
+        .unwrap_or_else(|| Sha256::digest(b"antibody/TEST-ONLY-root/never-use-in-production").into());
+    antibody_verifier::keys::TestMac(root)
+}
+
+/// Program mode, run locally. Context comes from the environment: ANTIBODY_PROGRAM_ID, ANTIBODY_COMMIT_ID,
+/// ANTIBODY_EXPECTED_MANIFEST (hex). Keys use the TEST root key. The reserved invariants address is the
+/// program's derived one. ANTIBODY_OUTPUT=facts prints only the facts; otherwise `{"receipt":…,"facts":…}`.
 fn program_output(env: &Envelope, w: &antibody_verifier::ProgramWitness, digest: [u8; 32]) -> Vec<u8> {
+    let program_id = std::env::var("ANTIBODY_PROGRAM_ID").unwrap_or_else(|_| "local".into());
     let ctx = antibody_verifier::ProgramContext {
-        program_id: std::env::var("ANTIBODY_PROGRAM_ID").unwrap_or_else(|_| "local".into()),
+        program_id: program_id.clone(),
         commit_id: std::env::var("ANTIBODY_COMMIT_ID").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
         expected_manifest_hash: env_hex32("ANTIBODY_EXPECTED_MANIFEST").map(Into::into),
+        reserved: Some(antibody_verifier::run::reserved_address(&program_id, env.claimed_block_hash)),
     };
     let receipt = antibody_verifier::run_program(env, w, digest, &ctx);
-    let k = env_hex32("ANTIBODY_K_PROGRAM");
-    let facts = receipt.facts(k.as_ref(), None, std::env::var("ANTIBODY_WASM_HASH").ok());
+    let mac = test_mac();
+    let keys = antibody_verifier::keys::ProgramKeys::new(&mac, &program_id);
+    let facts = antibody_verifier::tee::local_facts(&keys, &receipt, &w.manifest_json, &program_id, ctx.commit_id);
     if std::env::var("ANTIBODY_OUTPUT").map(|v| v == "facts").unwrap_or(false) {
         serde_json::to_vec(&facts).expect("facts serialize")
     } else {
         #[derive(serde::Serialize)]
         struct Full<'a> {
             receipt: &'a antibody_verifier::facts::ProgramReceipt,
-            facts: &'a antibody_verifier::facts::Facts,
+            facts: &'a antibody_verifier::tee::FactsOut,
         }
         serde_json::to_vec_pretty(&Full { receipt: &receipt, facts: &facts }).expect("output serialize")
     }
@@ -184,19 +193,29 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
         if let Some((hash, signer)) = fastfs::parse_location(url) {
             let network = std::env::var("NEAR_NETWORK_ID").unwrap_or_else(|_| "testnet".into());
             let body = serde_json::to_vec(&fastfs::tx_request(hash, signer)).expect("json");
-            let resp = wasi_http_client::Client::new()
-                .post(fastfs::archival_rpc(&network))
-                .header("Content-Type", "application/json")
-                .body(&body)
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .send()
-                .map_err(|e| format!("rpc request: {e}"))?;
-            if resp.status() != 200 {
-                return Err(format!("rpc HTTP {}", resp.status()));
+            let mut last = String::new();
+            for rpc in fastfs::archival_rpcs(&network) {
+                let attempt = (|| -> Result<Vec<u8>, String> {
+                    let resp = wasi_http_client::Client::new()
+                        .post(rpc)
+                        .header("Content-Type", "application/json")
+                        .body(&body)
+                        .connect_timeout(std::time::Duration::from_secs(10))
+                        .send()
+                        .map_err(|e| format!("rpc request: {e}"))?;
+                    if resp.status() != 200 {
+                        return Err(format!("rpc HTTP {}", resp.status()));
+                    }
+                    let v: serde_json::Value =
+                        serde_json::from_slice(&resp.body().map_err(|e| format!("rpc body: {e}"))?).map_err(|e| e.to_string())?;
+                    fastfs::content_from_tx_response(&v)
+                })();
+                match attempt {
+                    Ok(b) => return Ok(b),
+                    Err(e) => last = e,
+                }
             }
-            let v: serde_json::Value =
-                serde_json::from_slice(&resp.body().map_err(|e| format!("rpc body: {e}"))?).map_err(|e| e.to_string())?;
-            return fastfs::content_from_tx_response(&v);
+            return Err(last);
         }
         let resp = wasi_http_client::Client::new()
             .get(url)
@@ -221,34 +240,33 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
     }
 }
 
-/// TEE mode. Secrets come from the environment (OutLayer injects them):
-/// `PROTECTED_ANTIBODY_SEED` (hex, 32 bytes), `NEAR_PREDECESSOR_ID` (the calling contract).
+/// TEE mode (docs/spec.md §5): a request v2 in, facts v2 out, always with exit code 0 (OutLayer drops
+/// stdout on a non-zero exit, and an infrastructure failure is a fact like any other). Keys come from
+/// OutLayer's host inside the TEE, and from the TEST root key natively.
 fn tee_main(input: &[u8], t0: Instant) {
-    let seed = std::env::var("PROTECTED_ANTIBODY_SEED").ok().and_then(|v| {
-        let b = hex::decode(v.trim().trim_start_matches("0x")).ok()?;
-        <[u8; 32]>::try_from(b.as_slice()).ok()
-    });
-    let env = antibody_verifier::tee::TeeEnv {
-        seed,
-        predecessor: std::env::var("NEAR_PREDECESSOR_ID").ok(),
+    #[cfg(target_os = "wasi")]
+    let mac = antibody_verifier::keys::HostMac;
+    #[cfg(not(target_os = "wasi"))]
+    let mac = test_mac();
+    let env = antibody_verifier::tee::Env {
+        mac: &mac,
         fetch: &fetch,
-        wasm_hash: std::env::var("ANTIBODY_WASM_HASH").ok(),
+        predecessor: std::env::var("NEAR_PREDECESSOR_ID").ok(),
     };
-    match antibody_verifier::tee::handle(input, &env) {
-        Ok(out) => {
-            let mut stdout = std::io::stdout().lock();
-            stdout.write_all(&out).expect("write output");
-            stdout.flush().ok();
-            eprintln!(
-                "{{\"metrics\":{{\"total_ms\":{:.1},\"peak_heap_bytes\":{}}}}}",
-                t0.elapsed().as_secs_f64() * 1e3,
-                PEAK.load(Ordering::Relaxed)
-            );
-        }
-        Err(e) => {
-            // Non-zero exit: OutLayer delivers `null`; the contract marks the commit for a retry.
-            eprintln!("tee error: {e:?}");
-            std::process::exit(3);
-        }
-    }
+    let out = antibody_verifier::tee::handle(input, &env);
+    let mut stdout = std::io::stdout().lock();
+    serde_json::to_writer(&mut stdout, &out.facts).expect("write facts");
+    stdout.flush().ok();
+    eprintln!(
+        "{{\"metrics\":{{\"total_ms\":{:.1},\"peak_heap_bytes\":{}}}}}",
+        t0.elapsed().as_secs_f64() * 1e3,
+        PEAK.load(Ordering::Relaxed)
+    );
 }
+
+/// OutLayer reads this section from the component (it is covered by the wasm's hash): one encryption key,
+/// bound to this build and to the account that calls OutLayer, and outbound HTTPS only to NEAR RPCs.
+#[cfg(target_arch = "wasm32")]
+#[used]
+#[link_section = "outlayer.manifest"]
+static OUTLAYER_MANIFEST: [u8; include_bytes!("../outlayer.manifest.json").len()] = *include_bytes!("../outlayer.manifest.json");

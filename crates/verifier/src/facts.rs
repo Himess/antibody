@@ -21,10 +21,14 @@ pub enum Kind {
     /// prove the anchor state (the hunter's fault; bond forfeited).
     InvalidPoC,
     /// The program itself is broken at the anchor (invariants fail before any PoC, reserved
-    /// address in use, target code mismatch).
+    /// address holds code, target code mismatch, invariants fail the lint).
     ProgramMisconfigured,
-    /// Neither party's fault (verifier/EVM failure, invariant evaluation failed after the PoC).
-    ExecutionError,
+    /// `check()` reverted or ran out of gas after the PoC: handled by the manifest's committed policy
+    /// (docs/spec.md §5.4).
+    Unevaluable,
+    /// Nobody's fault (a blob no RPC served, bytes that do not match their hash, a verifier error):
+    /// never forfeited, retried (docs/spec.md §5.3).
+    InfraError,
 }
 
 /// Root cause of one broken invariant: the protocol-entry call (target + selector) at whose end
@@ -63,6 +67,9 @@ pub struct ImpactV2 {
     pub impact_usd_micro: String,
     pub impact_usd: String,
     pub accounts: Vec<AccountValue>,
+    /// Loss of the manifest's protected accounts (gap lane, docs/spec.md §7.7).
+    #[serde(default)]
+    pub protected_harm_usd_micro: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -173,6 +180,22 @@ pub fn fp_tag(k_program: &[u8; 32], slot: u8, target: Address, selector: [u8; 4]
     m.extend_from_slice(target.as_slice());
     m.extend_from_slice(&selector);
     hmac_sha256(k_program, &m)
+}
+
+/// At most this many root-cause keys per verdict (spec §5.2): facts stay under 1 KB.
+pub const MAX_KEYS: usize = 4;
+
+/// v2 tag (spec §7.2): `mac("antibody/v2/tag" ‖ program ‖ slot ‖ group)` under the program's key, where
+/// the group is a committed group's id or the entry point (target, selector).
+pub fn fp_tag_v2_group(
+    keys: &crate::keys::ProgramKeys,
+    slot: u8,
+    group: Option<u16>,
+    target: Address,
+    selector: [u8; 4],
+) -> Result<[u8; 32], String> {
+    let t: [u8; 20] = target.into_array();
+    keys.tag(slot, &crate::keys::group_bytes(group, &t, &selector))
 }
 
 pub fn parse_selector(s: &str) -> [u8; 4] {

@@ -22,6 +22,15 @@ pub fn tx_request(hash: &str, signer: &str) -> serde_json::Value {
                        "params": {"tx_hash": hash, "sender_account_id": signer, "wait_until": "INCLUDED_FINAL"}})
 }
 
+/// Archival RPCs of two operators for a NEAR network id, tried in order (docs/spec.md §4.4).
+pub fn archival_rpcs(network: &str) -> [&'static str; 2] {
+    if network == "mainnet" {
+        ["https://archival-rpc.mainnet.fastnear.com", "https://archival-rpc.mainnet.near.org"]
+    } else {
+        ["https://archival-rpc.testnet.fastnear.com", "https://archival-rpc.testnet.near.org"]
+    }
+}
+
 /// Default archival RPC for a NEAR network id (`NEAR_NETWORK_ID` inside OutLayer).
 pub fn archival_rpc(network: &str) -> &'static str {
     if network == "mainnet" {

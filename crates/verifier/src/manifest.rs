@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const MANIFEST_SCHEMA: &str = "antibody.manifest.v1";
+pub const MANIFEST_SCHEMA_V2: &str = "antibody.manifest.v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
@@ -29,6 +30,43 @@ pub struct Manifest {
     /// overridden target's `code_hash` is the override's hash; storage stays the anchor's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<CodeOverride>,
+    /// v2 (docs/spec.md §3.2). Absent fields keep their v1 meaning, so v1 manifests keep their bytes.
+    /// Committed groups of entry points (§7.2); absent: one group per (target, selector).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Group>,
+    /// Accounts whose loss counts as harm for the gap lane (§7.7): user or protocol funds only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protected_accounts: Vec<ProtectedAccount>,
+    /// Calls that must keep succeeding after a fix (§8.1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub canaries: Vec<Canary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Group {
+    pub id: u16,
+    pub name: String,
+    pub members: Vec<GroupMember>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GroupMember {
+    pub target: Address,
+    /// `0x` + 4 bytes.
+    pub selector: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProtectedAccount {
+    pub address: Address,
+    /// `user` or `protocol`.
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Canary {
+    pub to: Address,
+    pub data: Bytes,
 }
 
 fn is_zero(v: &u32) -> bool {
@@ -131,6 +169,10 @@ pub struct Capabilities {
     pub max_timestamp_delta: u64,
     /// Bound on protocol-entry calls (each one triggers an invariant evaluation).
     pub max_entry_calls: u32,
+    /// Total gas of the evaluations at entry calls (§5.5). Absent: `(max_entry_calls + 2) × gas_limit`.
+    /// The final evaluation runs with its own reserved `gas_limit`, outside this total.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_eval_gas: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -166,11 +208,47 @@ pub struct Rules {
 impl Manifest {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let m: Manifest = serde_json::from_slice(bytes).map_err(|e| format!("manifest: {e}"))?;
-        if m.schema != MANIFEST_SCHEMA {
+        if m.schema != MANIFEST_SCHEMA && m.schema != MANIFEST_SCHEMA_V2 {
             return Err(format!("manifest: unsupported schema {}", m.schema));
         }
         m.check_overrides()?;
+        m.check_v2()?;
         Ok(m)
+    }
+
+    /// v2 fields: groups name targets and unique ids; protected accounts are user or protocol funds;
+    /// the evaluation budget covers every entry call (docs/spec.md §3.3).
+    pub fn check_v2(&self) -> Result<(), String> {
+        let mut ids = std::collections::BTreeSet::new();
+        for g in &self.groups {
+            if !ids.insert(g.id) {
+                return Err(format!("manifest: duplicate group id {}", g.id));
+            }
+            for m in &g.members {
+                if !self.targets.iter().any(|t| t.address == m.target) {
+                    return Err(format!("manifest: group {} names a non-target {}", g.id, m.target));
+                }
+                let ok = m.selector.len() == 10 && m.selector.starts_with("0x") && hex::decode(&m.selector[2..]).is_ok();
+                if !ok {
+                    return Err(format!("manifest: group {} has a malformed selector {}", g.id, m.selector));
+                }
+            }
+        }
+        for a in &self.protected_accounts {
+            if a.kind != "user" && a.kind != "protocol" {
+                return Err(format!("manifest: protected account {} must be user or protocol funds", a.address));
+            }
+        }
+        let need = (self.capabilities.max_entry_calls as u64 + 2).saturating_mul(self.invariants.gas_limit);
+        if let Some(g) = self.capabilities.max_eval_gas {
+            if g < need {
+                return Err(format!("manifest: max_eval_gas {g} must be at least (max_entry_calls + 2) x gas_limit = {need}"));
+            }
+        }
+        if self.groups.len() > 64 || self.protected_accounts.len() > 64 || self.canaries.len() > 8 {
+            return Err("manifest: too many groups, protected accounts or canaries".into());
+        }
+        Ok(())
     }
 
     /// Round rules: round 0 has no overrides; a later round overrides at least one target, each
@@ -225,6 +303,18 @@ impl Manifest {
     /// Canonical encoding: compact serde JSON in struct field order.
     pub fn canonical(&self) -> Vec<u8> {
         serde_json::to_vec(self).expect("manifest serializes")
+    }
+
+    /// The committed group of an entry point, if the manifest commits groups.
+    pub fn group_of(&self, target: Address, selector: [u8; 4]) -> Option<u16> {
+        let sel = format!("0x{}", hex::encode(selector));
+        self.groups.iter().find(|g| g.members.iter().any(|m| m.target == target && m.selector.eq_ignore_ascii_case(&sel))).map(|g| g.id)
+    }
+
+    pub fn max_eval_gas(&self) -> u64 {
+        self.capabilities
+            .max_eval_gas
+            .unwrap_or_else(|| (self.capabilities.max_entry_calls as u64 + 2).saturating_mul(self.invariants.gas_limit))
     }
 
     pub fn slot(&self, bit: u8) -> Option<&Slot> {

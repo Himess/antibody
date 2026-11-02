@@ -23,8 +23,8 @@ EVM = os.path.join(ROOT, "contracts", "evm")
 BIN = os.path.join(ROOT, "target", "release")
 EXE = ".exe" if os.name == "nt" else ""
 
-# Test-only fingerprint key for local runs (in the TEE, k_program is derived from a protected secret).
-TEST_SECRET = hashlib.sha256(b"antibody/TEST-ONLY-secret/never-use-in-production").digest()
+sys.path.insert(0, os.path.dirname(__file__))
+import v2keys  # noqa: E402  TEST-ONLY v2 keys (docs/spec.md §11.2)
 
 ETHER = 10**18
 SEVERITY = {0: "critical", 1: "high", 2: "medium"}
@@ -40,22 +40,8 @@ def rpc(url, method, params):
     return out["result"]
 
 
-def hmac_sha256(key, msg):
-    import hmac
-    return hmac.new(key, msg, hashlib.sha256).digest()
-
-
-def k_program(program_id):
-    return hmac_sha256(TEST_SECRET, b"antibody/k_program/v1" + program_id.encode())
-
-
-def fp_tag(k, slot, target_hex, selector_hex):
-    return hmac_sha256(k, b"antibody/fp/v1" + bytes([slot]) + bytes.fromhex(target_hex[2:]) + bytes.fromhex(selector_hex[2:])).hex()
-
-
 def keccak_hex(data_hex):
-    out = subprocess.run([os.path.expanduser("~/.foundry/bin/cast" + EXE), "keccak", data_hex], capture_output=True, text=True, check=True)
-    return out.stdout.strip()
+    return v2keys.keccak_hex(data_hex)
 
 
 def selector(sig):
@@ -205,7 +191,9 @@ def main():
     os.makedirs(os.path.join(out_dir, "submissions"), exist_ok=True)
     blk = rpc(a.rpc, "eth_getBlockByNumber", [a.anchor if a.anchor == "latest" else hex(int(a.anchor)), False])
     anchor_n, anchor_h = int(blk["number"], 16), blk["hash"]
-    inv_addr = "0x" + keccak_hex("0x" + b"antibody/invariants/v1".hex())[-40:]
+    program_id = v2keys.PROGRAM_KEY
+    # The verifier serves the invariants at the program's own reserved address (docs/spec.md §5.7).
+    inv_addr = v2keys.reserved_address(program_id, anchor_h)
     code_hashes = {}
     for t in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeVault", "AcmeTreasury"]:
         code_hashes[t] = rpc(a.rpc, "eth_getProof", [dep[t], [], hex(anchor_n)])["codeHash"]
@@ -223,8 +211,6 @@ def main():
     manifest_hash = json.loads(r.stdout)["sha256"]
     print(f"anchor {anchor_n} {anchor_h}\nmanifest sha256 {manifest_hash}")
 
-    program_id = f"acme-{a.net}"
-    kp = k_program(program_id)
     subs = submissions(dep)
     results = {}
     for agent, (title, bundle, report) in subs.items():
@@ -237,12 +223,12 @@ def main():
         salt = "0x" + hashlib.sha256(f"antibody/demo/{program_id}/agent-{agent}".encode()).hexdigest()
         r = subprocess.run([os.path.join(BIN, "antibody-witness" + EXE), "program", "--rpc", a.rpc, "--manifest", man_path,
                             "--invariants-code", os.path.join(out_dir, "invariants.hex"), "--bundle", prefix + ".bundle.json",
-                            "--salt", salt, "--out", prefix], capture_output=True, text=True, cwd=ROOT)
+                            "--salt", salt, "--out", prefix, "--program-key", program_id], capture_output=True, text=True, cwd=ROOT)
         if r.returncode != 0:
             print(f"[{agent}] witness build FAILED: {r.stderr[-2000:]}")
             continue
         env = dict(os.environ, ANTIBODY_PROGRAM_ID=program_id, ANTIBODY_COMMIT_ID=str(COMMIT_ID[agent]),
-                   ANTIBODY_EXPECTED_MANIFEST=manifest_hash, ANTIBODY_K_PROGRAM=kp.hex())
+                   ANTIBODY_EXPECTED_MANIFEST=manifest_hash)
         v = subprocess.run([os.path.join(BIN, "antibody-verify" + EXE), prefix + ".witness.bin"], capture_output=True, env=env)
         out = json.loads(v.stdout)
         open(prefix + ".native.json", "wb").write(v.stdout)
@@ -252,27 +238,27 @@ def main():
         got_fps = [(f["slot"], f["target_name"], f["selector"]) for f in rec["broken"]]
         want_fps = [(s, t, selector(sig)) for (s, t, sig) in exp_fps]
         ok = rec["kind"] == exp_kind and rec["broken_mask"] == exp_mask and got_fps == want_fps
-        tags = {t["slot"]: t["tag"] for t in facts["fp_tags"]}
+        tags = {t["slot"]: t["tag"] for t in facts.get("keys", [])}
         for (s, t, sig) in exp_fps:  # independent recomputation of each tag
-            assert tags[s] == fp_tag(kp, s, dep_lc[t], selector(sig)), f"{agent}: fp_tag mismatch"
+            assert tags[s] == v2keys.tag(program_id, s, dep_lc[t], selector(sig)), f"{agent}: tag mismatch"
         results[agent] = {
             "title": title, "commit_id": COMMIT_ID[agent], "salt": salt,
             "kind": rec["kind"], "broken_mask": rec["broken_mask"],
             "broken": [{"slot": f["slot"], "name": f["name"], "severity": f["severity"], "target": f["target_name"],
                         "selector": f["selector"], "function": next(sig for (s, t, sig) in exp_fps if s == f["slot"]),
                         "target_address": f["target"]} for f in rec["broken"]],
-            "fp_tags": facts["fp_tags"], "impact_usd": (rec.get("impact") or {}).get("impact_usd"),
+            "keys": facts.get("keys", []), "impact_usd": (rec.get("impact") or {}).get("impact_usd"),
             "protocol_loss_usd_micro": (rec.get("impact") or {}).get("protocol_loss_usd_micro"),
             "attacker_gain_usd_micro": (rec.get("impact") or {}).get("attacker_gain_usd_micro"),
             "evaluations": rec["evaluations"], "reason": rec["reason"],
-            "poc_hash": facts["poc_hash"], "receipt_hash": facts["receipt_hash"], "witness_sha256": rec["witness_sha256"],
+            "poc_hash": rec["poc_hash"], "receipt_hash": facts["receipt_sha256"], "witness_sha256": rec["witness_sha256"],
             "facts_bytes": len(json.dumps(facts, separators=(",", ":"))), "matches_expected": ok,
         }
         print(f"[{agent}] {rec['kind']:<12} mask={rec['broken_mask']:<4} {got_fps} impact={results[agent]['impact_usd']} "
               f"evals={rec['evaluations']} {'OK' if ok else 'MISMATCH'}")
     exp = {"program_id": program_id, "chain_id": chain_id, "anchor": {"number": anchor_n, "hash": anchor_h},
            "manifest_sha256": manifest_hash, "invariants_code_hash": inv_hash, "invariants_address": inv_addr,
-           "k_program_note": "TEST-ONLY key: HMAC(sha256('antibody/TEST-ONLY-secret/never-use-in-production'), 'antibody/k_program/v1' || program_id)",
+           "keys_note": "TEST-ONLY keys: mac = HMAC(sha256('antibody/TEST-ONLY-root/never-use-in-production'), label), scripts/demo/v2keys.py",
            "submissions": results}
     json.dump(exp, open(os.path.join(out_dir, "expected.json"), "w"), indent=1)
     bad = [k for k, v in results.items() if not v["matches_expected"]]

@@ -15,7 +15,7 @@ pub const MAX_DISCLOSE: usize = 8;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct FactKey {
     pub slot: u8,
-    pub group: u16,
+    /// The root-cause key's tag. Which entry point it names stays hidden until disclosure.
     pub tag: H32,
 }
 

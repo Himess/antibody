@@ -15,7 +15,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from check_fixtures import ROOT, k_program, run_native, run_wasm  # noqa: E402
+from check_fixtures import ROOT, run_native, run_wasm  # noqa: E402
 
 
 def keys(receipt):
@@ -29,8 +29,7 @@ def main():
     fx = os.path.join(ROOT, exp["fixture"])
     honest = json.load(open(os.path.join(fx, "expected.json")))
     pid = honest["program_id"]
-    base_env = {"ANTIBODY_PROGRAM_ID": pid, "ANTIBODY_EXPECTED_MANIFEST": honest["manifest_sha256"],
-                "ANTIBODY_K_PROGRAM": k_program(pid).hex()}
+    base_env = {"ANTIBODY_PROGRAM_ID": pid, "ANTIBODY_EXPECTED_MANIFEST": honest["manifest_sha256"]}
     failures = []
     for name, c in exp["cases"].items():
         env = dict(base_env, ANTIBODY_COMMIT_ID=str(c["commit_id"]))
