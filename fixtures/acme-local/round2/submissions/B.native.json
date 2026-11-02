@@ -10,18 +10,18 @@
     },
     "program": "antibody.testnet/acme-local",
     "commit_id": 2,
-    "manifest_hash": "0x08f515c0c3c8de25668389776bde0ff900bd43b6fb134e4da6a9e45877582557",
-    "invariants_code_hash": "0xa3e1e0081a749b41e4d04d8de51d2cd6bb181a8ba8a5ac357a1dc5dd90689a00",
+    "manifest_hash": "0x0cc4742951decf4e255a3435071a2bb802d4c24335caf022f068f87eae400584",
+    "invariants_code_hash": "0x5dae18b478aa1a58b1a759eefee529a5a3dff23cc9345eaaa3338ddb7a694327",
     "anchor": {
       "chain_id": 31337,
-      "block_number": 26,
-      "block_hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434",
-      "state_root": "0xb6107c4f8ef92c455594687cfa2ddd9d61fab062a1f97ff66b6b5cdd6ce3ec70",
-      "timestamp": 1793656479,
+      "block_number": 29,
+      "block_hash": "0xb3069a702595f6ae49b709eb01cfcf5cc1995e0fd6b42aaea2a1d89ef108087c",
+      "state_root": "0xc2a2e8c7e38aa21d13c120fa9456d33b33d0f13d00cbc8c7e8b043bf59894074",
+      "timestamp": 1793658874,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "ec2e21e7458c4f76539558478b9d725502723fa332aa23a4795ea6816f70831a",
-    "poc_hash": "942447b9b41a0a6b1dc462c25c3b1b4e919fb6d5f8eafcfd37fc4e913ca88b65",
+    "witness_sha256": "3a9ee5befae697038e844c6101f2faedba7f3718cc5e2039d7e84d56f53e03eb",
+    "poc_hash": "a3ccb3fa88ad551b26922a0fa890e065aaf16e92d1d2996efcf4000e7456989d",
     "kind": "NoViolation",
     "reason": null,
     "checks": {
@@ -42,15 +42,15 @@
       {
         "index": 0,
         "sender": "0xbbb8e682b120bbacfc09912aa7909214598d6114",
-        "to": "0xa01a116339459509ba78b100ea26f4e19e69ec09",
+        "to": "0x4c1255a0adff6bbecaf8c257305065f19436ec7d",
         "success": false,
-        "gas_used": 26681,
+        "gas_used": 26720,
         "logs": 0,
         "created": null
       }
     ],
     "created_contracts": [],
-    "total_gas_used": 26681,
+    "total_gas_used": 26720,
     "evaluations": 0,
     "broken_mask": "0x0",
     "broken": [],
@@ -67,7 +67,7 @@
     "v": 2,
     "mode": "verify",
     "request_sha256": "",
-    "manifest_sha256": "08f515c0c3c8de25668389776bde0ff900bd43b6fb134e4da6a9e45877582557",
+    "manifest_sha256": "0cc4742951decf4e255a3435071a2bb802d4c24335caf022f068f87eae400584",
     "program_key": "antibody.testnet/acme-local",
     "round": 0,
     "key_epoch": "aa48e4a42e26942d",
@@ -75,6 +75,6 @@
     "run_id": 0,
     "kind": "NoViolation",
     "impact_usd_micro": "0",
-    "receipt_sha256": "3de8a827563f68113706d115b6b5c2a5f62080d19ae5c22301dd4c9333d8552b"
+    "receipt_sha256": "60c727b9086b4e7f5bb0b084e5399011a68e2354ce728b5bf4214758e248af33"
   }
 }

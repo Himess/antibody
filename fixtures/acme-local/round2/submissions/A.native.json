@@ -10,17 +10,17 @@
     },
     "program": "antibody.testnet/acme-local",
     "commit_id": 1,
-    "manifest_hash": "0x08f515c0c3c8de25668389776bde0ff900bd43b6fb134e4da6a9e45877582557",
-    "invariants_code_hash": "0xa3e1e0081a749b41e4d04d8de51d2cd6bb181a8ba8a5ac357a1dc5dd90689a00",
+    "manifest_hash": "0x0cc4742951decf4e255a3435071a2bb802d4c24335caf022f068f87eae400584",
+    "invariants_code_hash": "0x5dae18b478aa1a58b1a759eefee529a5a3dff23cc9345eaaa3338ddb7a694327",
     "anchor": {
       "chain_id": 31337,
-      "block_number": 26,
-      "block_hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434",
-      "state_root": "0xb6107c4f8ef92c455594687cfa2ddd9d61fab062a1f97ff66b6b5cdd6ce3ec70",
-      "timestamp": 1793656479,
+      "block_number": 29,
+      "block_hash": "0xb3069a702595f6ae49b709eb01cfcf5cc1995e0fd6b42aaea2a1d89ef108087c",
+      "state_root": "0xc2a2e8c7e38aa21d13c120fa9456d33b33d0f13d00cbc8c7e8b043bf59894074",
+      "timestamp": 1793658874,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "aa96e9d195a48ee1c3c39773e843d92f8e98764532666e0c9b194fdb5c971035",
+    "witness_sha256": "c8919f4b0749b14262937f86d7aed23ab46296555fafd49cd642eba33356f0bd",
     "poc_hash": "d9471594c567d9876d43b5f790ebcf5bb3eddc0708611267eed30af5610800c6",
     "kind": "NoViolation",
     "reason": null,
@@ -114,7 +114,7 @@
     "v": 2,
     "mode": "verify",
     "request_sha256": "",
-    "manifest_sha256": "08f515c0c3c8de25668389776bde0ff900bd43b6fb134e4da6a9e45877582557",
+    "manifest_sha256": "0cc4742951decf4e255a3435071a2bb802d4c24335caf022f068f87eae400584",
     "program_key": "antibody.testnet/acme-local",
     "round": 0,
     "key_epoch": "aa48e4a42e26942d",
@@ -122,6 +122,6 @@
     "run_id": 0,
     "kind": "NoViolation",
     "impact_usd_micro": "0",
-    "receipt_sha256": "59d30c9c0a6dd22280a9544da7dc9b5fbbd69de9d22d0fbaf13e83761e0037d4"
+    "receipt_sha256": "85fd62491427b7a2cac4a9c1be72929e9993a72b30f1479d17cfadabecfe7c9e"
   }
 }

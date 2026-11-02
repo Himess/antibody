@@ -1,11 +1,11 @@
 {
-  "anchor_block": 26,
-  "anchor_hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434",
+  "anchor_block": 29,
+  "anchor_hash": "0xb3069a702595f6ae49b709eb01cfcf5cc1995e0fd6b42aaea2a1d89ef108087c",
   "senders": [
     "0x9e9a617e990fed8bf5aa2c105e7f4372bd36a109"
   ],
   "trace_verdict": null,
-  "trace_ms": 75,
+  "trace_ms": 68,
   "trace_rpc_reads": 37,
   "fixpoint_passes": 1,
   "fixpoint_added": [],
@@ -21,22 +21,22 @@
       "failures_per_provider": {},
       "raw_json_differs_but_normalised_equal": 0,
       "disagreements": [],
-      "fetch_ms": 8
+      "fetch_ms": 9
     }
   ],
   "stats": {
-    "witness_bytes": 38008,
-    "witness_sha256": "9a2015864fad64c8d311b51474a5a41b7dd8c66002fa55ad4a5865643c61f150",
+    "witness_bytes": 38419,
+    "witness_sha256": "6834e4d02d880086725a93f8919b11a9995cd6a86b3b433e254241ff18a29227",
     "accounts": 12,
     "storage_slots": 25,
     "storage_tries": 12,
-    "proof_nodes_total": 83,
-    "proof_nodes_unique": 45,
-    "proof_bytes_unique": 4343,
+    "proof_nodes_total": 81,
+    "proof_nodes_unique": 43,
+    "proof_bytes_unique": 4305,
     "bytecodes": 8,
-    "bytecode_bytes": 17908,
+    "bytecode_bytes": 18204,
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 138
+  "total_ms": 129
 }
