@@ -2,12 +2,12 @@
  "program_id": "antibody.testnet/acme-local",
  "chain_id": 31337,
  "anchor": {
-  "number": 23,
-  "hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931"
+  "number": 26,
+  "hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434"
  },
- "manifest_sha256": "0x920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
- "invariants_code_hash": "0x2a760c5837f090fa641cd7f18944e40bb2142350c40c3649d871b5bd1607f78c",
- "invariants_address": "0xd61677b051b5c86e9ce3a35fd29e133c995a6ae6",
+ "manifest_sha256": "0x9c2b62519d4fbaa1049f296711ff3456b16da722347a6b44cfbb73b904af41b6",
+ "invariants_code_hash": "0xa3e1e0081a749b41e4d04d8de51d2cd6bb181a8ba8a5ac357a1dc5dd90689a00",
+ "invariants_address": "0xd5f200d6417037582eebfc471b7e9cdda46b96d8",
  "keys_note": "TEST-ONLY keys: mac = HMAC(sha256('antibody/TEST-ONLY-root/never-use-in-production'), label), scripts/demo/v2keys.py",
  "submissions": {
   "A": {
@@ -39,8 +39,8 @@
    "evaluations": 9,
    "reason": null,
    "poc_hash": "d9471594c567d9876d43b5f790ebcf5bb3eddc0708611267eed30af5610800c6",
-   "receipt_hash": "d16c06fc8f93ff9283dedefae2264bdb61f8b8b74903d27ede9385a7acd8738e",
-   "witness_sha256": "887105f74fbe159b023e1e3b9a6429b147df65c8c2ee70a0089ea933594b80f8",
+   "receipt_hash": "882dd3e08ab34db6b258805b65ea6cdb74756a49b0174676ab1e44160bae641a",
+   "witness_sha256": "bc29a5a7297994ec75d3c1726042430702dd017607b9e2298c507c4771c1f3e0",
    "facts_bytes": 468,
    "matches_expected": true
   },
@@ -58,13 +58,13 @@
      "target": "AcmeVault",
      "selector": "0x8d4b5cd2",
      "function": "sweepFees(address)",
-     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
+     "target_address": "0xa01a116339459509ba78b100ea26f4e19e69ec09"
     }
    ],
    "keys": [
     {
      "slot": 1,
-     "tag": "38595ee45668feb4b7f9ce1bf8921df2c1db3003a147ea3df652ace617b3f61f"
+     "tag": "7a5a848c97daceef746b4dab22e1f11b0ce501d0cf64e745b7c3b543e7e90ee4"
     }
    ],
    "impact_usd": "1000.00",
@@ -72,9 +72,9 @@
    "attacker_gain_usd_micro": "1000000000",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "7a346ef1eb18edf5d73d0945e21eea06b670c36c7749c8d48e13633b37f9546a",
-   "receipt_hash": "03b894d615cfced85237a2437d1cb79ad646f679c9c893fff714ed1bdc760502",
-   "witness_sha256": "206b9d69fcc0db774ad2a093dd54c0fb5f7bd4c31fcc14ae46f9b8e5f694d91b",
+   "poc_hash": "942447b9b41a0a6b1dc462c25c3b1b4e919fb6d5f8eafcfd37fc4e913ca88b65",
+   "receipt_hash": "ac89bb72a22522ebc9349d55c20076d79126f8caa8b3a7dcb7821ea4999ec556",
+   "witness_sha256": "0486f7040813ef16753552a90b064275a35feb2c77110fdf774890aab4ad5247",
    "facts_bytes": 466,
    "matches_expected": true
   },
@@ -92,8 +92,8 @@
    "evaluations": 5,
    "reason": null,
    "poc_hash": "0eea14cedd3caf52aaf3a0d7085f2933daeac6d42933542e75dfd28801c81280",
-   "receipt_hash": "499741bc1b558c3508845b22f37c9dfa7478c49627391c662d9ee3bdbd02d95e",
-   "witness_sha256": "b3743317eec0667f1b4821ceba4e0d9230a6bf3f442c4a6d9b22f76aea7f7e28",
+   "receipt_hash": "72703e7f22a530a135385446e03d546ab148b38cfddccf6c858e15c7c32fc62a",
+   "witness_sha256": "baa4c1fa7289979331f65653ea173f8bbcb8b90c8c1efc06d44ef889cac8e9b7",
    "facts_bytes": 373,
    "matches_expected": true
   },
@@ -126,8 +126,8 @@
    "evaluations": 8,
    "reason": null,
    "poc_hash": "b92526966c3e549e9f5552b9ed02b53cfab02b7cb5d8b26d96761cb73ee418ae",
-   "receipt_hash": "f9987e4e897f06d61f0b6d056a991ab1176661f641855f8d93656001589f17f1",
-   "witness_sha256": "2f81eb742031c5193908de49e56e4bb2ef78c3fce3be9d083f8dc131fbd05a87",
+   "receipt_hash": "b7ba8c71ebe12f72a3b241536e8c8912d312e431041434d71e0f91b752eb0605",
+   "witness_sha256": "bbde606f77db324acb05465de7881eedce6d7cfe367e996ec1374b7c46a4e26c",
    "facts_bytes": 466,
    "matches_expected": true
   },
@@ -145,13 +145,13 @@
      "target": "AcmeVault",
      "selector": "0x2e1a7d4d",
      "function": "withdraw(uint256)",
-     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
+     "target_address": "0xa01a116339459509ba78b100ea26f4e19e69ec09"
     }
    ],
    "keys": [
     {
      "slot": 2,
-     "tag": "ee00a6e4dd8c4b805326328a085aaffde0e6be97715aea97ef5872df8574f7a0"
+     "tag": "df2370355049a09c3d8116af5814f9b2af30aed41079673d4ec4902073c086e3"
     }
    ],
    "impact_usd": "0.00",
@@ -159,9 +159,9 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "4653e01386be297d49cb9ee65d6276ebcd450bdc56ec09b91ffeac7ac751d130",
-   "receipt_hash": "aa8b7e39f0827a29807902cb9b8168a6ac4077da74f9663b250235e217561482",
-   "witness_sha256": "bf96bf62ad8c44eb739d63ca2984e973a5cb2e408752e3a90339eae36dbba2de",
+   "poc_hash": "66a5749cc3fba9dff2ba623747b8befe42f306f3868fd2284356321b3d55382f",
+   "receipt_hash": "6896e65b4f55bf4ec4c834516d4c93d365229999629f3328780351ab1ea54d6d",
+   "witness_sha256": "9a2015864fad64c8d311b51474a5a41b7dd8c66002fa55ad4a5865643c61f150",
    "facts_bytes": 457,
    "matches_expected": true
   },
@@ -194,8 +194,8 @@
    "evaluations": 8,
    "reason": null,
    "poc_hash": "178e245a32e738f4e0e56a3177bee006b084186bae21aa942e86e9883416a89b",
-   "receipt_hash": "95416c181e5704a6b79ea906ca1c05b0de557b7469292b762043ad3dcddf82e7",
-   "witness_sha256": "d4ff1fe498e23d60929610e193b24e05f22bd67dd8de1c0ca67e68769f26a187",
+   "receipt_hash": "a52a34006684b6542a6c76769b4599575d23f7bca05aa8245b27609e60b69731",
+   "witness_sha256": "aac5042c01b64d7ae09fc9e6e53e92b1c901f3624c8c490cda609117bd7df5e1",
    "facts_bytes": 467,
    "matches_expected": true
   },
@@ -213,13 +213,13 @@
      "target": "AcmeVault",
      "selector": "0x2e1a7d4d",
      "function": "withdraw(uint256)",
-     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
+     "target_address": "0xa01a116339459509ba78b100ea26f4e19e69ec09"
     }
    ],
    "keys": [
     {
      "slot": 2,
-     "tag": "ee00a6e4dd8c4b805326328a085aaffde0e6be97715aea97ef5872df8574f7a0"
+     "tag": "df2370355049a09c3d8116af5814f9b2af30aed41079673d4ec4902073c086e3"
     }
    ],
    "impact_usd": "0.00",
@@ -227,9 +227,9 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 5,
    "reason": null,
-   "poc_hash": "051edb722d62f0e398bb8656a591b3f3231da61e1981a51a76bba3136d3c7ff3",
-   "receipt_hash": "b9ad613bc62f481d9d729db0ccdb79c69bf52e43320800300ab2e2b3b6b7aa5c",
-   "witness_sha256": "1a0422419fa887fae704cbef8aa6e1fc0197440435f889811f4a3134d43c9dda",
+   "poc_hash": "434f1f03bbf47cd5c10d1825f727db43f10ecd9786efc6bcc953da2a5e048990",
+   "receipt_hash": "6d5b94a2731cbd088556dcf1f33fea33cb897f66ea5557ea86480664712981ff",
+   "witness_sha256": "f70cd1f3200bae8029dba7e46b082a5d16835d2481c215fe19a9e96d74ad484d",
    "facts_bytes": 457,
    "matches_expected": true
   }

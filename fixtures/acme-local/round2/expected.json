@@ -1,0 +1,130 @@
+{
+ "program_id": "antibody.testnet/acme-local",
+ "chain_id": 31337,
+ "anchor": {
+  "number": 26,
+  "hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434"
+ },
+ "round": 2,
+ "base_manifest_sha256": "0x9c2b62519d4fbaa1049f296711ff3456b16da722347a6b44cfbb73b904af41b6",
+ "manifest_sha256": "0x08f515c0c3c8de25668389776bde0ff900bd43b6fb134e4da6a9e45877582557",
+ "overrides": [
+  {
+   "target": "AcmeLendImpl",
+   "contract": "AcmeLendFinal",
+   "address": "0x1EeA7b535e4D25B9BFC3eb69E3890a4B67F9B359",
+   "code_hash": "0x144069b903f9c72fbbab3d74d383bfcec406a9e01f5812867b293d80542581cd"
+  },
+  {
+   "target": "AcmeVaultImpl",
+   "contract": "AcmeVaultFixed",
+   "address": "0x9679Aa8197E82c3056F38C347d744a3A7E4e8Ca9",
+   "code_hash": "0xda03bb2e6769906b99df619601e88fb387aca27a77dfa08b010303d4b5bf8e49"
+  }
+ ],
+ "invariants_code_hash": "0xa3e1e0081a749b41e4d04d8de51d2cd6bb181a8ba8a5ac357a1dc5dd90689a00",
+ "invariants_address": "0xd5f200d6417037582eebfc471b7e9cdda46b96d8",
+ "keys_note": "TEST-ONLY keys: mac = HMAC(sha256('antibody/TEST-ONLY-root/never-use-in-production'), label), scripts/demo/v2keys.py",
+ "submissions": {
+  "A": {
+   "title": "Agent A: planted bug #1 via a swap (spot-price collateral)",
+   "commit_id": 1,
+   "salt": "0xcda30d234f4a6409e35194e121c538b2e0bff1738833986e3007adce887872c3",
+   "kind": "NoViolation",
+   "broken_mask": "0x0",
+   "broken": [],
+   "keys": [],
+   "impact_usd": "0.00",
+   "evaluations": 9,
+   "reason": null,
+   "poc_hash": "d9471594c567d9876d43b5f790ebcf5bb3eddc0708611267eed30af5610800c6",
+   "same_poc_as_round0": true,
+   "receipt_hash": "59d30c9c0a6dd22280a9544da7dc9b5fbbd69de9d22d0fbaf13e83761e0037d4",
+   "witness_sha256": "aa96e9d195a48ee1c3c39773e843d92f8e98764532666e0c9b194fdb5c971035",
+   "matches_expected": true
+  },
+  "D": {
+   "title": "Agent D: planted bug #1 via donation + sync (committed after A)",
+   "commit_id": 4,
+   "salt": "0x1c2f89977d26efaaeafcdd043bc07df0acc35675ed17e91c6f87ee73c32c0d61",
+   "kind": "NoViolation",
+   "broken_mask": "0x0",
+   "broken": [],
+   "keys": [],
+   "impact_usd": "0.00",
+   "evaluations": 8,
+   "reason": null,
+   "poc_hash": "b92526966c3e549e9f5552b9ed02b53cfab02b7cb5d8b26d96761cb73ee418ae",
+   "same_poc_as_round0": true,
+   "receipt_hash": "4004fe1f4dab901d1fec69bc3f98f0e88d62cb93e1afbc6cb83998d07c74e370",
+   "witness_sha256": "801099dac0d888f4dc4f9bcbba47fe21e185360a3c6de80af1901a85ffcdd7da",
+   "matches_expected": true
+  },
+  "B": {
+   "title": "Agent B: planted bug #2 (sweepFees has no access control)",
+   "commit_id": 2,
+   "salt": "0x66088f74d597bfb91db7d53d9b49f35e2eecf1626e9ff7b079b1ea067f9f955d",
+   "kind": "NoViolation",
+   "broken_mask": "0x0",
+   "broken": [],
+   "keys": [],
+   "impact_usd": "0.00",
+   "evaluations": 0,
+   "reason": null,
+   "poc_hash": "942447b9b41a0a6b1dc462c25c3b1b4e919fb6d5f8eafcfd37fc4e913ca88b65",
+   "same_poc_as_round0": true,
+   "receipt_hash": "3de8a827563f68113706d115b6b5c2a5f62080d19ae5c22301dd4c9333d8552b",
+   "witness_sha256": "ec2e21e7458c4f76539558478b9d725502723fa332aa23a4795ea6816f70831a",
+   "matches_expected": true
+  },
+  "F": {
+   "title": "Agent F: planted bug #3 (repay ignores transferFrom's return value)",
+   "commit_id": 6,
+   "salt": "0x1e5500ff39b8508cb2782d043ca8ac28659a7a9f0f5830052048cb7def47f996",
+   "kind": "NoViolation",
+   "broken_mask": "0x0",
+   "broken": [],
+   "keys": [],
+   "impact_usd": "0.00",
+   "evaluations": 0,
+   "reason": null,
+   "poc_hash": "178e245a32e738f4e0e56a3177bee006b084186bae21aa942e86e9883416a89b",
+   "same_poc_as_round0": true,
+   "receipt_hash": "d39c88b5ad37d43353774cc1b18018242c0be34e92a74de412035f5068f528a0",
+   "witness_sha256": "50da1a234c4a32447a4a18a0e89e2ec29c7e7075b0a68963193bf703a856f1bc",
+   "matches_expected": true
+  },
+  "KNOWN": {
+   "title": "Project at t0: declared known issue (dust withdrawals)",
+   "commit_id": 0,
+   "salt": "0x724e7f8cd509127bbeab244ed2b923b3a84bc99561f1ed6988c908cb21b005b7",
+   "kind": "Violation",
+   "broken_mask": "0x4",
+   "broken": [
+    {
+     "slot": 2,
+     "name": "share_price",
+     "severity": "medium",
+     "target": "AcmeVault",
+     "selector": "0x2e1a7d4d",
+     "target_address": "0xa01a116339459509ba78b100ea26f4e19e69ec09",
+     "function": "withdraw(uint256)"
+    }
+   ],
+   "keys": [
+    {
+     "slot": 2,
+     "tag": "df2370355049a09c3d8116af5814f9b2af30aed41079673d4ec4902073c086e3"
+    }
+   ],
+   "impact_usd": "0.00",
+   "evaluations": 5,
+   "reason": null,
+   "poc_hash": "434f1f03bbf47cd5c10d1825f727db43f10ecd9786efc6bcc953da2a5e048990",
+   "same_poc_as_round0": true,
+   "receipt_hash": "e369b3a79a54b959b2c76a57a802cfd9687f25f05135f1d0db8869eaf6855fc1",
+   "witness_sha256": "7d3c3ec2f641899ca87a0bd14a76de8700ba9c5299363d0bf1706563b4204c87",
+   "matches_expected": true
+  }
+ }
+}

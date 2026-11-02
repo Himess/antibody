@@ -10,24 +10,24 @@
     },
     "program": "antibody.testnet/acme-local",
     "commit_id": 1,
-    "manifest_hash": "0x920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
-    "invariants_code_hash": "0x2a760c5837f090fa641cd7f18944e40bb2142350c40c3649d871b5bd1607f78c",
+    "manifest_hash": "0x9c2b62519d4fbaa1049f296711ff3456b16da722347a6b44cfbb73b904af41b6",
+    "invariants_code_hash": "0xa3e1e0081a749b41e4d04d8de51d2cd6bb181a8ba8a5ac357a1dc5dd90689a00",
     "anchor": {
       "chain_id": 31337,
-      "block_number": 23,
-      "block_hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931",
-      "state_root": "0x6d9d523fa9cd814208d2a2cb8ba6efe9434abc5353e1a2df06309d4b687363be",
-      "timestamp": 1793651474,
+      "block_number": 26,
+      "block_hash": "0x64127f84178a651aff13f23510cff0c8046b4bff2f10cb5187698735e0e7c434",
+      "state_root": "0xb6107c4f8ef92c455594687cfa2ddd9d61fab062a1f97ff66b6b5cdd6ce3ec70",
+      "timestamp": 1793656479,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "887105f74fbe159b023e1e3b9a6429b147df65c8c2ee70a0089ea933594b80f8",
+    "witness_sha256": "bc29a5a7297994ec75d3c1726042430702dd017607b9e2298c507c4771c1f3e0",
     "poc_hash": "d9471594c567d9876d43b5f790ebcf5bb3eddc0708611267eed30af5610800c6",
     "kind": "Violation",
     "reason": null,
     "checks": {
       "header_hash_bound": true,
       "state_root_matches": true,
-      "storage_tries_verified": 12,
+      "storage_tries_verified": 13,
       "bytecodes_supplied": 8,
       "ancestor_headers_linked": 0,
       "reserved_address_empty": true,
@@ -125,7 +125,7 @@
     "v": 2,
     "mode": "verify",
     "request_sha256": "",
-    "manifest_sha256": "920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
+    "manifest_sha256": "9c2b62519d4fbaa1049f296711ff3456b16da722347a6b44cfbb73b904af41b6",
     "program_key": "antibody.testnet/acme-local",
     "round": 0,
     "key_epoch": "aa48e4a42e26942d",
@@ -139,6 +139,6 @@
       }
     ],
     "impact_usd_micro": "462931853867",
-    "receipt_sha256": "d16c06fc8f93ff9283dedefae2264bdb61f8b8b74903d27ede9385a7acd8738e"
+    "receipt_sha256": "882dd3e08ab34db6b258805b65ea6cdb74756a49b0174676ab1e44160bae641a"
   }
 }
