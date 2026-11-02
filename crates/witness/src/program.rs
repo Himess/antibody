@@ -14,9 +14,9 @@ use antibody_verifier::{
     execute_program_witness,
     facts::ProgramReceipt,
     manifest::Manifest,
-    program::{execute_program, ProgramError},
-    run::program_chain_spec,
-    run_program, Envelope, Payload, ProgramContext, ProgramWitness, QuorumVote, VerifyError, WITNESS_VERSION,
+    program::{anchor_checks, canaries_pass, classify, execute_program, ProgramError},
+    run::{anchor_checks_on_witness, program_chain_spec, reserved_address},
+    run_program, BaseWitness, Envelope, Payload, ProgramContext, ProgramWitness, QuorumVote, VerifyError, WITNESS_VERSION,
 };
 use eyre::{eyre, Result};
 use revm::{primitives::KECCAK_EMPTY, state::Bytecode};
@@ -161,6 +161,149 @@ pub fn build_program(
                 }
             }
             Err(ProgramError::Verify(e)) => return Err(eyre!("strict verification failed (pass {pass}): {e}")),
+        }
+    }
+    Err(eyre!("fixpoint not reached after 8 passes"))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BaseBuildMeta {
+    pub anchor_block: u64,
+    pub anchor_hash: B256,
+    pub trace_ms: u64,
+    pub trace_rpc_reads: u64,
+    pub fixpoint_passes: usize,
+    pub fixpoint_added: Vec<String>,
+    pub proof_quorum: Vec<ProofQuorumReport>,
+    pub stats: WitnessStats,
+    pub total_ms: u64,
+}
+
+/// The base witness a program pins at activation (docs/spec.md §4.4): the round-0 manifest, the
+/// invariants, the anchor header, and every account, slot and code the activation checks read (the
+/// reserved address, the targets' code hashes, `snapshot()`, `check(snapshot())`, the canaries),
+/// proven against the anchor's state root. The verifier's own activation check passes on it.
+pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
+    let t_all = Instant::now();
+    let manifest = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
+    if manifest.round != 0 {
+        return Err(eyre!("a base witness is built from the round-0 manifest"));
+    }
+    let m = manifest.anchor.block_number;
+    let header = fetch_header(pool, m)?;
+    let anchor_hash = header.hash_slow();
+    if anchor_hash != manifest.anchor.block_hash {
+        return Err(eyre!("provider header {anchor_hash} at {m} != manifest anchor {}", manifest.anchor.block_hash));
+    }
+    let spec = program_chain_spec(manifest.anchor.chain_id).map_err(|e| eyre!("{e}"))?;
+    let inv = Bytecode::new_raw(manifest.invariants.runtime_code.clone());
+    let reserved = Some(reserved_address(program_key, anchor_hash));
+
+    // Trace: the verifier's activation checks on a fetching DB record the exact access set.
+    let t_trace = Instant::now();
+    let fdb = FetchingDb::new(pool.clone(), m, Seed::default());
+    match anchor_checks(&header, &manifest, &inv, spec.clone(), &fdb, reserved).and_then(|a| canaries_pass(&manifest, &a, &fdb)) {
+        Ok(true) => {}
+        Ok(false) => return Err(eyre!("a canary fails at the anchor")),
+        Err(e) => {
+            let (kind, reason) = classify(&e);
+            return Err(eyre!("the program fails its checks at the anchor: {kind:?}: {reason}"));
+        }
+    }
+    let trace_ms = t_trace.elapsed().as_millis() as u64;
+    let rec: Recorded = fdb.rec.borrow().clone();
+    let mut access: BTreeMap<Address, BTreeSet<U256>> = BTreeMap::new();
+    for a in &rec.accounts {
+        access.entry(*a).or_default();
+    }
+    for (a, s) in &rec.slots {
+        access.entry(*a).or_default().extend(s.iter().copied());
+    }
+    let mut codes = rec.codes.clone();
+    let mut block_numbers = rec.block_numbers.clone();
+    let mut reports = Vec::new();
+    let mut added = Vec::new();
+    for pass in 1..=8usize {
+        let (proofs, qr) = fetch_proofs_quorum(pool, m, &access, min_agree.min(pool.len()))?;
+        reports.push(qr);
+        let state = EthereumState::from_proofs(header.state_root, &proofs).map_err(|e| eyre!("from_proofs: {e}"))?;
+        for p in proofs.values() {
+            if let Some(info) = &p.info {
+                let h = info.bytecode_hash.unwrap_or(KECCAK_EMPTY);
+                if h != KECCAK_EMPTY && !codes.contains_key(&h) {
+                    let v = pool[0].call("eth_getCode", json!([p.address, format!("{m:#x}")]))?;
+                    let b: Bytes = serde_json::from_value(v)?;
+                    let bc = Bytecode::new_raw(b);
+                    codes.insert(bc.hash_slow(), bc);
+                }
+            }
+        }
+        let oldest = block_numbers.iter().next().copied().unwrap_or(m).min(m);
+        let mut ancestors = Vec::new();
+        for k in (oldest..m).rev() {
+            ancestors.push(alloy_rlp::encode(fetch_header(pool, k)?).into());
+        }
+        let base = BaseWitness {
+            manifest_json: manifest_json.to_vec().into(),
+            invariants_code: manifest.invariants.runtime_code.clone(),
+            header_rlp: alloy_rlp::encode(&header).into(),
+            ancestor_headers_rlp: ancestors,
+            state,
+            bytecodes: codes.values().cloned().collect(),
+        };
+        // What the verifier checks at activation: the base as a program witness with no PoC.
+        let full = ProgramWitness {
+            manifest_json: base.manifest_json.clone(),
+            invariants_code: base.invariants_code.clone(),
+            header_rlp: base.header_rlp.clone(),
+            ancestor_headers_rlp: base.ancestor_headers_rlp.clone(),
+            state: base.state.clone(),
+            bytecodes: base.bytecodes.clone(),
+            bundle: Bundle::default(),
+        };
+        let envelope = Envelope {
+            version: WITNESS_VERSION,
+            chain_id: manifest.anchor.chain_id,
+            claimed_block_hash: anchor_hash,
+            quorum: vec![QuorumVote { source: pool[0].label.clone(), block_hash: anchor_hash }],
+            payload: Payload::Base(base),
+        };
+        match anchor_checks_on_witness(&envelope, &full, reserved) {
+            Ok(true) => {
+                let bytes = envelope.encode();
+                let meta = BaseBuildMeta {
+                    anchor_block: m,
+                    anchor_hash,
+                    trace_ms,
+                    trace_rpc_reads: rec.rpc_reads,
+                    fixpoint_passes: pass,
+                    fixpoint_added: added,
+                    proof_quorum: reports,
+                    stats: witness_stats(&envelope, &bytes, &proofs),
+                    total_ms: t_all.elapsed().as_millis() as u64,
+                };
+                return Ok((bytes, meta));
+            }
+            Ok(false) => return Err(eyre!("a canary fails on the proven anchor state")),
+            Err(ProgramError::Verify(VerifyError::Incomplete(mw))) => {
+                added.push(mw.to_string());
+                match mw {
+                    MissingWitness::Account(a) | MissingWitness::StorageTrie(a) => {
+                        access.entry(a).or_default();
+                    }
+                    MissingWitness::Slot(a, s) => {
+                        access.entry(a).or_default().insert(s);
+                    }
+                    MissingWitness::Code(h) => return Err(eyre!("code {h} missing after trace (pass {pass})")),
+                    MissingWitness::BlockHash(b) => {
+                        block_numbers.insert(b);
+                    }
+                }
+            }
+            Err(e) => {
+                let (kind, reason) = classify(&e);
+                return Err(eyre!("strict activation checks failed (pass {pass}): {kind:?}: {reason}"));
+            }
         }
     }
     Err(eyre!("fixpoint not reached after 8 passes"))
