@@ -884,3 +884,37 @@ pub fn run_program(
         }
     }
 }
+
+/// A receipt for submissions rejected before any witness could be read (TEE mode: blob hash or
+/// key-wrap mismatch, undecryptable blob, payload bound to another hunter).
+pub fn failure_receipt(
+    ctx: &ProgramContext,
+    kind: crate::facts::Kind,
+    reason: &str,
+    manifest_hash: B256,
+    witness_sha256: [u8; 32],
+) -> crate::facts::ProgramReceipt {
+    crate::facts::ProgramReceipt {
+        schema: crate::facts::RECEIPT_V2_SCHEMA,
+        verifier: verifier_info(),
+        program: ctx.program_id.clone(),
+        commit_id: ctx.commit_id,
+        manifest_hash,
+        invariants_code_hash: B256::ZERO,
+        anchor: None,
+        witness_sha256: hex::encode(witness_sha256),
+        poc_hash: String::new(),
+        kind,
+        reason: Some(reason.to_string()),
+        checks: None,
+        senders: Vec::new(),
+        endowment_wei_per_sender: "0".into(),
+        calls: Vec::new(),
+        created_contracts: Vec::new(),
+        total_gas_used: 0,
+        evaluations: 0,
+        broken_mask: "0x0".into(),
+        broken: Vec::new(),
+        impact: None,
+    }
+}

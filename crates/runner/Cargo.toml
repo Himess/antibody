@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 wasmtime = { version = "28", features = ["component-model", "async"] }
 wasmtime-wasi = "28"
+wasmtime-wasi-http = "28"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 anyhow = "1"
 sha2.workspace = true

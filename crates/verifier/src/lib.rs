@@ -5,11 +5,14 @@
 pub mod bundle;
 pub mod db;
 pub mod facts;
+pub mod fastfs;
 pub mod impact;
 pub mod manifest;
 pub mod program;
 pub mod receipt;
 pub mod run;
+pub mod sealed;
+pub mod tee;
 pub mod witness;
 
 pub use run::{

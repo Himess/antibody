@@ -6,10 +6,7 @@
 //!
 //! RPC URLs come from antibody/.env (ETH_RPC_*) plus public archive endpoints; never printed.
 
-mod build;
-mod fetchdb;
-mod program;
-mod rpc;
+use antibody_witness::{build, fetchdb, program, rpc};
 
 use std::{
     collections::{BTreeMap, BTreeSet},

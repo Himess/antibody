@@ -59,6 +59,11 @@ fn main() {
         std::process::exit(2);
     }
     let t_read = t0.elapsed();
+    // TEE mode: a JSON request from the near-antibody contract (OutLayer `input_data`).
+    if input.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'{') {
+        tee_main(&input, t0);
+        return;
+    }
     let digest: [u8; 32] = Sha256::digest(&input).into();
     let opts = RunOptions { full_diff: std::env::var("ANTIBODY_FULL_DIFF").map(|v| v == "1").unwrap_or(false) };
 
@@ -164,5 +169,86 @@ fn program_output(env: &Envelope, w: &antibody_verifier::ProgramWitness, digest:
             facts: &'a antibody_verifier::facts::Facts,
         }
         serde_json::to_vec_pretty(&Full { receipt: &receipt, facts: &facts }).expect("output serialize")
+    }
+}
+
+/// Fetches a sealed blob. In the guest: wasi:http (https, or http for local testing). Natively:
+/// `file://` paths or `$ANTIBODY_BLOB_DIR/<last path segment>`; the CLI downloads blobs itself.
+fn fetch(url: &str) -> Result<Vec<u8>, String> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return std::fs::read(path).map_err(|e| e.to_string());
+    }
+    #[cfg(target_os = "wasi")]
+    {
+        use antibody_verifier::fastfs;
+        if let Some((hash, signer)) = fastfs::parse_location(url) {
+            let network = std::env::var("NEAR_NETWORK_ID").unwrap_or_else(|_| "testnet".into());
+            let body = serde_json::to_vec(&fastfs::tx_request(hash, signer)).expect("json");
+            let resp = wasi_http_client::Client::new()
+                .post(fastfs::archival_rpc(&network))
+                .header("Content-Type", "application/json")
+                .body(&body)
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .send()
+                .map_err(|e| format!("rpc request: {e}"))?;
+            if resp.status() != 200 {
+                return Err(format!("rpc HTTP {}", resp.status()));
+            }
+            let v: serde_json::Value =
+                serde_json::from_slice(&resp.body().map_err(|e| format!("rpc body: {e}"))?).map_err(|e| e.to_string())?;
+            return fastfs::content_from_tx_response(&v);
+        }
+        let resp = wasi_http_client::Client::new()
+            .get(url)
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .send()
+            .map_err(|e| format!("request: {e}"))?;
+        let status = resp.status();
+        if !(200..300).contains(&status) {
+            return Err(format!("HTTP {status}"));
+        }
+        let body = resp.body().map_err(|e| format!("body: {e}"))?;
+        if body.len() > antibody_verifier::tee::MAX_BLOB_BYTES {
+            return Err("blob too large".into());
+        }
+        Ok(body)
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let dir = std::env::var("ANTIBODY_BLOB_DIR").map_err(|_| "native verifier: set ANTIBODY_BLOB_DIR or use file://".to_string())?;
+        let name = url.rsplit('/').next().unwrap_or_default();
+        std::fs::read(std::path::Path::new(&dir).join(name)).map_err(|e| e.to_string())
+    }
+}
+
+/// TEE mode. Secrets come from the environment (OutLayer injects them):
+/// `PROTECTED_ANTIBODY_SEED` (hex, 32 bytes), `NEAR_PREDECESSOR_ID` (the calling contract).
+fn tee_main(input: &[u8], t0: Instant) {
+    let seed = std::env::var("PROTECTED_ANTIBODY_SEED").ok().and_then(|v| {
+        let b = hex::decode(v.trim().trim_start_matches("0x")).ok()?;
+        <[u8; 32]>::try_from(b.as_slice()).ok()
+    });
+    let env = antibody_verifier::tee::TeeEnv {
+        seed,
+        predecessor: std::env::var("NEAR_PREDECESSOR_ID").ok(),
+        fetch: &fetch,
+        wasm_hash: std::env::var("ANTIBODY_WASM_HASH").ok(),
+    };
+    match antibody_verifier::tee::handle(input, &env) {
+        Ok(out) => {
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(&out).expect("write output");
+            stdout.flush().ok();
+            eprintln!(
+                "{{\"metrics\":{{\"total_ms\":{:.1},\"peak_heap_bytes\":{}}}}}",
+                t0.elapsed().as_secs_f64() * 1e3,
+                PEAK.load(Ordering::Relaxed)
+            );
+        }
+        Err(e) => {
+            // Non-zero exit: OutLayer delivers `null`; the contract marks the commit for a retry.
+            eprintln!("tee error: {e:?}");
+            std::process::exit(3);
+        }
     }
 }

@@ -85,7 +85,10 @@ fn claim_key(program: u32, slot: u8, tag: &str) -> String {
 }
 
 fn valid_sealed(s: &SealedRef) {
-    require!(s.url.starts_with("https://") && s.url.len() <= 512, "sealed.url must be https (<= 512 chars)");
+    require!(
+        (s.url.starts_with("https://") || s.url.starts_with("near-tx:")) && s.url.len() <= 512,
+        "sealed.url must be https://… or near-tx:<hash>:<signer> (<= 512 chars)"
+    );
     require!(is_hex(&s.sha256, 32), "sealed.sha256: 32-byte lowercase hex");
     require!(is_hex(&s.wrap_v, 92), "sealed.wrap_v: 92-byte lowercase hex");
 }

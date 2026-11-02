@@ -2,8 +2,11 @@
 //! (wasmtime 28, component model, async, fuel metering, epoch interruption, stdin/stdout pipes,
 //! StoreLimits), and reports instructions (fuel), wall time, peak linear memory and output.
 //!
-//!   antibody-run <verifier.wasm> <witness.bin> [--max-instructions N] [--max-memory-mb M]
+//!   antibody-run <verifier.wasm> <input> [--max-instructions N] [--max-memory-mb M]
 //!                [--timeout-s S] [--no-fuel] [--env K=V ...] [--out receipt.json]
+//!
+//! Like OutLayer's worker, the guest gets wasi:http for outbound requests (TEE mode fetches the
+//! sealed blob); WASI sockets stay disabled.
 
 use std::{
     sync::{
@@ -46,8 +49,18 @@ impl ResourceLimiter for Tracking {
 
 struct Host {
     wasi: WasiCtx,
+    http: wasmtime_wasi_http::WasiHttpCtx,
     table: ResourceTable,
     limits: Tracking,
+}
+
+impl wasmtime_wasi_http::WasiHttpView for Host {
+    fn ctx(&mut self) -> &mut wasmtime_wasi_http::WasiHttpCtx {
+        &mut self.http
+    }
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
+    }
 }
 
 impl WasiView for Host {
@@ -91,6 +104,7 @@ async fn main() -> Result<()> {
 
     let mut linker: Linker<Host> = Linker::new(&engine);
     wasmtime_wasi::add_to_linker_async(&mut linker)?;
+    wasmtime_wasi_http::add_only_http_to_linker_async(&mut linker)?;
 
     let stdout = MemoryOutputPipe::new(64 * 1024 * 1024);
     let stderr = MemoryOutputPipe::new(1024 * 1024);
@@ -114,6 +128,7 @@ async fn main() -> Result<()> {
     let peak = Arc::new(AtomicUsize::new(0));
     let host = Host {
         wasi: b.build(),
+        http: wasmtime_wasi_http::WasiHttpCtx::new(),
         table: ResourceTable::new(),
         limits: Tracking {
             inner: StoreLimitsBuilder::new().memory_size(max_mem_mb * 1024 * 1024).table_elements(1_000_000).build(),
