@@ -1,0 +1,45 @@
+{
+  "receipt": {
+    "schema": "antibody.receipt.v2",
+    "verifier": {
+      "name": "antibody-verifier",
+      "version": "0.1.0",
+      "revm": "38.0.0",
+      "reth": "v2.2.0",
+      "rsp": "5afe72eb12a2d6accd9d7fdff66785d91cbc8e72"
+    },
+    "program": "acme-local",
+    "commit_id": 2,
+    "manifest_hash": "0xf13bf172cee10359a7d34cc0d0820171652827dd4feca933ace13c756ac71ea9",
+    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "anchor": null,
+    "witness_sha256": "85b4049977eb8a550bca7943eb47bf20d99ffb6d5e952a7685512319260c82d9",
+    "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
+    "kind": "ProgramMisconfigured",
+    "reason": "snapshot() failed at the anchor",
+    "checks": null,
+    "senders": [],
+    "endowment_wei_per_sender": "1000000000000000000",
+    "calls": [],
+    "created_contracts": [],
+    "total_gas_used": 0,
+    "evaluations": 0,
+    "broken_mask": "0x0",
+    "broken": [],
+    "impact": null
+  },
+  "facts": {
+    "v": 1,
+    "program": "acme-local",
+    "commit_id": 2,
+    "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
+    "kind": "ProgramMisconfigured",
+    "broken_mask": "0x0",
+    "fp_tags": [],
+    "impact_usd_micro": "0",
+    "project_wrap": null,
+    "receipt_hash": "4f1fd6756127b69f04d4130ee72efcaa847924b88bc4d7de17db3605ed82d765",
+    "manifest_hash": "f13bf172cee10359a7d34cc0d0820171652827dd4feca933ace13c756ac71ea9",
+    "wasm_hash": null
+  }
+}

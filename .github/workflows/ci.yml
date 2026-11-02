@@ -72,6 +72,8 @@ jobs:
         run: |
           python3 scripts/demo/check_fixtures.py fixtures/acme-local
           python3 scripts/demo/check_fixtures.py fixtures/acme-local/round1
+      - name: self-attack regressions (inputs that once broke the verifier)
+        run: python3 scripts/demo/check_regressions.py
 
   near:
     name: NEAR contracts (unit tests + wasm)

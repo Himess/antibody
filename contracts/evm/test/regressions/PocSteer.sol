@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-// REVIEW EXPERIMENT (local branch review/mec1-steering, never pushed). Tests whether the verifier's
-// root-cause fingerprint can be steered: the fixture's declared known issue (AcmeVault.withdraw
-// rounding) is broken as usual, the share price is restored inside a frame that reverts, and then any
-// call with any selector is made. A sound fingerprint keeps (share_price, AcmeVault.withdraw).
+// SELF-ATTACK REGRESSION SA-1 (fingerprint steering). A test of Antibody's own verifier, run only
+// against the fictional Acme Lend fixture. It breaks the fixture's declared known issue (AcmeVault.withdraw
+// rounding) as usual, restores the share price inside a frame that reverts, then makes a call with an
+// unrelated selector. A sound fingerprint keeps (share_price, AcmeVault.withdraw), so the verdict matches
+// the known issue instead of minting a new key. Checked in CI by scripts/demo/check_regressions.py.
 
 import {AcmeVault} from "../../src/acme/AcmeVault.sol";
 

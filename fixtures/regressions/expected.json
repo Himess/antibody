@@ -1,0 +1,27 @@
+{
+  "note": "Self-attack regressions: inputs that once broke Antibody's own verifier. Each case pins the verdict and the root-cause keys only, so the check survives receipt-format changes. Program and manifest are the acme-local fixture's.",
+  "fixture": "fixtures/acme-local",
+  "cases": {
+    "SA-1 steering": {
+      "witness": "steering.witness.bin",
+      "commit_id": 99,
+      "kind": "Violation",
+      "broken": [{"slot": 2, "target": "AcmeVault", "selector": "0x2e1a7d4d"}],
+      "same_key_as": "KNOWN",
+      "before_fix": "steering.before-fix.json"
+    },
+    "SA-2 jump table (KNOWN)": {
+      "witness": "jump-table-KNOWN.witness.bin",
+      "commit_id": 0,
+      "kind": "Violation",
+      "same_verdict_as": "KNOWN"
+    },
+    "SA-2 jump table (B)": {
+      "witness": "jump-table-B.witness.bin",
+      "commit_id": 2,
+      "kind": "Violation",
+      "same_verdict_as": "B",
+      "before_fix": "jump-table-B.before-fix.json"
+    }
+  }
+}
