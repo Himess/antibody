@@ -393,7 +393,7 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
         .iter()
         .map(|(proxy, fix)| json!({"proxy": dep[*proxy], "implementation": dep[*fix], "code_hash": dep[format!("codehash{fix}")]}))
         .collect();
-    let proposed = cmd::round_propose(acme, pid, &manifest, &rel, true)?;
+    let proposed = cmd::round_propose(acme, pid, &manifest, &rel, None, true)?;
     let check = proposed["run_id"].as_u64().unwrap_or_default();
     wait_t1(acme, check)?;
     let rc = cmd::run(acme, check)?["outcome"]["Answered"]["facts"]["extra"]["RoundCheck"].clone();

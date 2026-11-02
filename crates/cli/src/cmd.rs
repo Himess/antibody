@@ -691,7 +691,7 @@ pub fn parse_release(s: &str) -> Result<Value> {
 /// Proposes the next round: the round manifest (the fix as code overrides at the anchor) goes up with
 /// FastFS, with the releases a passed gate will permit. near-antibody asks the TEE to check the round,
 /// releases included (check_round); it counts once T1-confirmed.
-pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], wait: bool) -> Result<Value> {
+pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], base_witness: Option<&Path>, wait: bool) -> Result<Value> {
     let signer = ctx.signer()?;
     let bytes = std::fs::read(manifest)?;
     let m: Value = serde_json::from_slice(&bytes)?;
@@ -699,8 +699,14 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     let overrides = hex::encode(sha256(&serde_json::to_vec(&m["overrides"])?));
     let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
     // The round's base witness: what its own checks read at the anchor (new invariants, fixed code).
-    let key = ctx.program(program)?["key"].as_str().unwrap_or_default().to_string();
-    let (rbase, _) = build_round_base(ctx, &program_manifest_at(ctx, program, 0)?, &bytes, &key)?;
+    // Built here, or earlier (`antibody round base`) while the anchor was within the RPC's proof window.
+    let rbase = match base_witness {
+        Some(f) => std::fs::read(f)?,
+        None => {
+            let key = ctx.program(program)?["key"].as_str().unwrap_or_default().to_string();
+            build_round_base(ctx, &program_manifest_at(ctx, program, 0)?, &bytes, &key)?.0
+        }
+    };
     let rsha = hex::encode(sha256(&rbase));
     let rup = blob::upload(ctx, &signer, &format!("antibody/base/{rsha}.bin"), &rbase)?;
     ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;

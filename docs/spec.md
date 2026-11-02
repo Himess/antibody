@@ -494,7 +494,11 @@ anything else. A `check_round` run (TEE) verifies:
 - the **new slots** the proposal will price are exactly the ones the round manifest adds, at their
   severities;
 - every proposed **release** names a target that is an ERC-1967 proxy at the anchor, and the code hash of
-  the override that replaces that proxy's implementation. A release permit can then only install code
+  the override that replaces that proxy's implementation.
+
+The proposal brings the round's **base witness**: the anchor state that the round-0 checks and the round's
+own checks read (an added invariant, a fix), proven against the anchor. It must carry the program's
+round-0 manifest. near-antibody uses it for the round's check, its re-runs and the round's later runs. A release permit can then only install code
   the round's re-runs ran. Base witnesses prove every target's implementation slot for this.
 
 ### 8.2 Immune memory

@@ -39,7 +39,10 @@ near-antibody sends both to the TEE as a `check_round` run, which verifies:
   override that replaces that proxy's implementation. Base witnesses prove every target's
   implementation slot for this.
 
-The proposal counts once the check is T1-confirmed.
+The command also builds the round's **base witness**: the anchor state both the round-0 checks and the
+round's own checks read (an added invariant, the fixed code), proven against the anchor. It needs an RPC
+that serves `eth_getProof` at the anchor block, which is an archive endpoint once the anchor is older than
+the provider's proof window. The proposal counts once the check is T1-confirmed.
 
 ## Immune memory: re-runs
 

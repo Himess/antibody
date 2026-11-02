@@ -62,8 +62,20 @@ enum RoundCmd {
         manifest: PathBuf,
         #[arg(long = "release")]
         releases: Vec<String>,
+        /// A round base witness built earlier (`antibody round base`); default: build it now
+        #[arg(long)]
+        base_witness: Option<PathBuf>,
         #[arg(long)]
         no_wait: bool,
+    },
+    /// Build a round's base witness now (needs an RPC that serves proofs at the anchor), for later
+    Base {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Re-run a commit at the proposed fix (permissionless; the requester pays)
     Rerun {
@@ -518,9 +530,16 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
         Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
         Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
-        Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, no_wait } } => {
+        Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, ref base_witness, no_wait } } => {
             let releases = releases.iter().map(|r| cmd::parse_release(r)).collect::<eyre::Result<Vec<_>>>()?;
-            cmd::round_propose(&mk()?, program, manifest, &releases, !no_wait)
+            cmd::round_propose(&mk()?, program, manifest, &releases, base_witness.as_deref(), !no_wait)
+        }
+        Cmd::Round { cmd: RoundCmd::Base { program, ref manifest, ref out } } => {
+            let c = mk()?;
+            let key = c.program(program)?["key"].as_str().unwrap_or_default().to_string();
+            let (bytes, meta) = cmd::build_round_base(&c, &cmd::program_manifest_at(&c, program, 0)?, &std::fs::read(manifest)?, &key)?;
+            std::fs::write(out, &bytes)?;
+            Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
         Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
