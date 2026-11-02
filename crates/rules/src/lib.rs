@@ -7,6 +7,7 @@
 //!
 //! Money is conserved at every step; [`audit`] returns both sides of every equation of spec §7.10.
 
+pub mod arith;
 pub mod audit;
 pub mod engine;
 pub mod facts;
@@ -14,6 +15,9 @@ pub mod settlement;
 pub mod state;
 pub mod store;
 pub mod types;
+
+#[cfg(kani)]
+mod proofs;
 
 pub use engine::{Ctx, Effect, Engine, Error};
 pub use facts::{Facts, FactsSummary};

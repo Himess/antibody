@@ -21,19 +21,38 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
    `scripts/formal/replay.sh` runs it: 600 traces, 27,600 steps, no divergence.
 3. **The code on its own.** Scenario tests mirror the model's scenarios (`crates/rules/tests/scenarios.rs`).
    After each scenario, `audit()` checks every conservation equation.
+4. **The arithmetic.** Kani proves the payout formulas and every movement of a program's escrow
+   (`crates/rules/src/proofs.rs`, 41 proofs, `cargo kani -p antibody-rules`). The engine calls exactly
+   these functions (`crates/rules/src/arith.rs` and the `Ledger` methods), so the proofs cover the code
+   that runs. The inputs are everything the program bounds allow (spec §3.3). No step overflows or
+   panics, and:
+   - the protocol fee is never more than is available, and a rate of a bounded amount is exact;
+   - the impact bonus stays within its cap for every token precision from 0 to 24 decimals, and the
+     nominal payout cannot overflow;
+   - a slot never pays past its budget; an instant window never pays past its budget or above the cap,
+     and a new window starts empty;
+   - a claim's reservation and its debt add up to the claim, nothing is reserved while earlier debts
+     wait, and a debt stays unfunded only when nothing is available;
+   - every ledger movement (deposit, forfeit, award, reserve, release, payment, fee, return) keeps
+     `funded = available + reserved + paid + fees + returned`.
+
+   Three facts need 128-bit multiplication and division that the solver does not finish in 20 minutes:
+   a rate is never above its base, the protocol fee is at most a fifth of the payout, and a larger
+   impact never earns a smaller bonus. Property tests check them instead (`crates/rules/tests/arith.rs`:
+   10,000 random cases each over the whole range, plus every boundary value).
 
 ## The properties
 
-| # | Property | Model invariant | Scenarios (model / code) |
+| # | Property | Model invariant | Scenarios (model / code); Kani proofs |
 |---|---|---|---|
-| 1 | **Escrow conservation.** Per program, `funded = available + reserved + paid + fees + returned`, and `reserved` is the sum of the commits' reservations. For the contract, `tokens held = escrow + credits + locked bonds + locked challenge bonds` | `p1_escrow`, `p1_tokens` | every scenario; `audit()` after every replayed step |
-| 2 | **At most one payout per key per round, within each invariant's budget** | `p2_onePerKey`, `p2_budget` | `appealPromotesDistinctBugTest` / `per_invariant_budget_and_distinct_top_up` |
+| 1 | **Escrow conservation.** Per program, `funded = available + reserved + paid + fees + returned`, and `reserved` is the sum of the commits' reservations. For the contract, `tokens held = escrow + credits + locked bonds + locked challenge bonds` | `p1_escrow`, `p1_tokens` | every scenario; `audit()` after every replayed step; Kani: every ledger movement |
+| 2 | **At most one payout per key per round, within each invariant's budget** | `p2_onePerKey`, `p2_budget` | `appealPromotesDistinctBugTest` / `per_invariant_budget_and_distinct_top_up`; Kani: `a_slot_never_pays_past_its_budget` |
 | 3 | **Payment goes to the earliest valid commit once the reveal windows close**: a duplicate always duplicates an earlier holder, and no holder is later than a duplicate of its key | `p3_priority` | `challengeTimeoutKeepsPriorityTest` / `challenge_timeout_keeps_priority` |
 | 4 | **Duplicates are never paid, except through the one-way appeal**: a promotion needs a released key and a re-run that still breaks it | `p4_dups` | `appealPromotesDistinctBugTest`, `confirmedDuplicateReleasesReservationTest` |
 | 5 | **A round never removes a payment or an invariant** | `p5_monotone` | `gapLanePromotedTest` / `gap_lane_promoted` |
 | 6 | **Every in-flight state reaches a terminal state**: the exit is never blocked after the deadline and its grace, and after it nothing is in flight or locked | `p6_exit` | `exitSettlesEverythingTest` / `exit_settles_everything` |
 | 7 | **Bonds are never lost**: each one is refunded or forfeited to the program's escrow | `p7_bonds` | `t0WaitsWindowTest`, `disagreeingSecondRunVoidsTest` / `infra_error_keeps_priority_then_refunds` |
-| 8 | **Instant payments happen only with T1, below the cap, and within the budget of their window** | `p8_instant` | `instantPayoutTest`, `instantBudgetTest`, `aboveCapNeedsSecondRunTest` / `instant_payout`, `instant_budget_exhausted_waits_window`, `above_cap_needs_second_run` |
+| 8 | **Instant payments happen only with T1, below the cap, and within the budget of their window** | `p8_instant` | `instantPayoutTest`, `instantBudgetTest`, `aboveCapNeedsSecondRunTest` / `instant_payout`, `instant_budget_exhausted_waits_window`, `above_cap_needs_second_run`; Kani: `the_instant_budget_holds_in_every_window` |
 | 9 | **No known issue is added after open, and known issues stay within their cap** | `p9_known` | `knownIssueTest` / `known_issue_needs_t1_cap_and_setup` |
 | 10 | **Disclosure cannot be blocked once its condition holds**: the condition depends on nobody's consent, and once true it stays true | `p10_disclosure` | `disclosure_needs_condition_and_t1` |
 | 11 | **Permits follow the committed policy**: pause tickets only for T1 holders of policy keys, at most one per round; release permits only when the release gate holds | `p11_permits` | `releaseGateBlocksUnfixedTest`, `canariesBlockReleaseTest`, `unexaminedDuplicateBlocksReleaseTest` / `release_gate_blocks_unfixed`, `unexamined_duplicate_blocks_release` |
@@ -58,3 +77,5 @@ second run answering after its verdict was voided.
   It has one key per verdict; multi-key verdicts are covered by the engine's own tests.
 - Apalache checks bounded depths; the random simulations go deeper but are not exhaustive.
 - Liveness is checked as safety: the exit's guard is time alone, and after the exit nothing is in flight.
+- Kani proves the formulas and single ledger movements. Whole engine methods, and the contract-wide
+  equation, are covered by the replay and `audit()`, not by Kani.

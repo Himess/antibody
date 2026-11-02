@@ -54,9 +54,68 @@ pub struct Ledger {
     pub returned: Amount,
 }
 
+/// Every movement of a program's escrow is one of these methods, and each keeps
+/// `funded() == accounted()` (Kani: `proofs.rs`). Callers keep the preconditions: `reserve` and
+/// `charge` take at most `available`, `unreserve` and `pay` at most `reserved`.
 impl Ledger {
+    /// What came in: `deposits + forfeits + challenge_bonds`.
     pub fn funded(&self) -> Amount {
         self.deposits + self.forfeits + self.challenge_bonds
+    }
+
+    /// Where it is: `available + reserved + paid + fees + returned`.
+    pub fn accounted(&self) -> Amount {
+        self.available + self.reserved + self.paid + self.fees + self.returned
+    }
+
+    /// The initial escrow or a top-up.
+    pub fn deposit(&mut self, amount: Amount) {
+        self.deposits += amount;
+        self.available += amount;
+    }
+
+    /// A bond forfeited to the escrow (spec §12.2).
+    pub fn forfeit(&mut self, amount: Amount) {
+        self.forfeits += amount;
+        self.available += amount;
+    }
+
+    /// A challenge bond awarded to the escrow.
+    pub fn award(&mut self, amount: Amount) {
+        self.challenge_bonds += amount;
+        self.available += amount;
+    }
+
+    /// available → reserved, for a claim.
+    pub fn reserve(&mut self, amount: Amount) {
+        self.available -= amount;
+        self.reserved += amount;
+    }
+
+    /// reserved → available.
+    pub fn unreserve(&mut self, amount: Amount) {
+        self.reserved -= amount;
+        self.available += amount;
+    }
+
+    /// reserved → paid out to a claimant.
+    pub fn pay(&mut self, amount: Amount) {
+        self.reserved -= amount;
+        self.paid += amount;
+    }
+
+    /// available → fees (the protocol fee, the release fee).
+    pub fn charge(&mut self, fee: Amount) {
+        self.available -= fee;
+        self.fees += fee;
+    }
+
+    /// Returns everything still available to the project; the amount returned.
+    pub fn return_available(&mut self) -> Amount {
+        let amount = self.available;
+        self.available = 0;
+        self.returned += amount;
+        amount
     }
 }
 

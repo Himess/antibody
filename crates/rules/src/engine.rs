@@ -2,6 +2,7 @@
 //! returns the effects to carry out, or an error and changes nothing that it has not already
 //! validated: checks come before writes.
 
+use crate::arith;
 use crate::facts::{self, Expect, Extra, FactsSummary};
 use crate::state::*;
 use crate::store::{IdKind, Store};
@@ -144,21 +145,8 @@ impl<S: Store> Engine<S> {
         Ok(())
     }
 
-    /// Moves escrow into a commit's reservation (available → reserved).
-    fn reserve(&mut self, p: &mut Program, amount: Amount) {
-        p.ledger.available -= amount;
-        p.ledger.reserved += amount;
-    }
-
-    /// Releases a reservation back to available. Callers then fund the debt queue (`fund_debts`).
-    fn unreserve(&mut self, p: &mut Program, amount: Amount) {
-        p.ledger.reserved -= amount;
-        p.ledger.available += amount;
-    }
-
-    /// Adds funds to a program's escrow (forfeits, awarded challenge bonds, top-ups).
-    fn escrow_in(&mut self, p: &mut Program, amount: Amount) {
-        p.ledger.available += amount;
+    /// The contract-wide escrow total, beside a program's ledger (`Ledger::deposit`, `forfeit`, `award`).
+    fn escrow_in(&mut self, amount: Amount) {
         let mut t = self.store.totals();
         t.escrow += amount;
         self.store.put_totals(&t);
@@ -186,8 +174,8 @@ impl<S: Store> Engine<S> {
     /// A bond goes to the program's escrow (spec §12.2).
     fn forfeit_bond(&mut self, p: &mut Program, c: &Commit) {
         self.bonds_locked(0, c.bond);
-        p.ledger.forfeits += c.bond;
-        self.escrow_in(p, c.bond);
+        p.ledger.forfeit(c.bond);
+        self.escrow_in(c.bond);
         self.agent_bond_settled(c, true);
     }
 
@@ -371,7 +359,11 @@ impl<S: Store> Engine<S> {
             known: vec![],
             known_runs: vec![],
             // Held at once; usable only after the anchor check (phase gating).
-            ledger: Ledger { deposits: np.escrow, available: np.escrow, ..Default::default() },
+            ledger: {
+                let mut l = Ledger::default();
+                l.deposit(np.escrow);
+                l
+            },
             instant: InstantWindow::default(),
             commits: 0,
             cursor: 0,
@@ -417,9 +409,7 @@ impl<S: Store> Engine<S> {
             Some(false) => {
                 // Contradicted: reject and return the escrow to the project.
                 if p.phase == Phase::Pending {
-                    let e = p.ledger.available;
-                    p.ledger.available = 0;
-                    p.ledger.returned = e;
+                    let e = p.ledger.return_available();
                     p.phase = Phase::Rejected;
                     p.anchor = AnchorStatus::Unconfirmed;
                     self.escrow_out(e);
@@ -527,8 +517,8 @@ impl<S: Store> Engine<S> {
         let mut t = self.store.totals();
         t.tokens_in += amount;
         self.store.put_totals(&t);
-        p.ledger.deposits += amount;
-        self.escrow_in(&mut p, amount);
+        p.ledger.deposit(amount);
+        self.escrow_in(amount);
         self.store.put_program(&p);
         Ok(vec![ev("top_up", serde_json::json!({"program_id": program, "amount": amount.to_string()}))])
     }
@@ -922,7 +912,7 @@ impl<S: Store> Engine<S> {
         }
         let severity = f.keys.iter().filter_map(|k| p.params.slot(k.slot)).map(|s| s.severity).max().unwrap_or(Severity::Low);
         let share: Amount = p.known.iter().map(|k| p.params.base(k.severity)).sum::<Amount>() + p.params.base(severity);
-        let cap = p.ledger.deposits.saturating_mul(p.params.known_max_share_bps as u128) / 10_000;
+        let cap = arith::bps_of(p.ledger.deposits, p.params.known_max_share_bps);
         if share > cap {
             return Ok(vec![ev("known_issue_rejected", serde_json::json!({"program_id": p.id, "run_id": r.id, "reason": "over the known-issue cap"}))]);
         }
@@ -1047,8 +1037,8 @@ impl<S: Store> Engine<S> {
             c.second_agrees = true;
             if ch.by == c.hunter || ch.by == c.beneficiary {
                 // The hunter challenged their own adverse verdict and lost: the bond goes to escrow.
-                p.ledger.challenge_bonds += ch.bond;
-                self.escrow_in(p, ch.bond);
+                p.ledger.award(ch.bond);
+                self.escrow_in(ch.bond);
             } else {
                 self.credit_tokens(&c.beneficiary.clone(), ch.bond);
             }
@@ -1223,8 +1213,8 @@ impl<S: Store> Engine<S> {
                             }
                         }
                     }
-                    let reserved = if blocked { 0 } else { want.min(p.ledger.available) };
-                    self.reserve(p, reserved);
+                    let (reserved, _) = arith::cover(want, p.ledger.available, blocked);
+                    p.ledger.reserve(reserved);
                     c.state = CommitState::Duplicate { of, amount: want, reserved };
                     return Ok(vec![ev("duplicate", serde_json::json!({"commit_id": cid, "of": of, "reserved": reserved.to_string()}))]);
                 }
@@ -1232,7 +1222,7 @@ impl<S: Store> Engine<S> {
                 let slot = slot.unwrap();
                 let budget = p.params.slot(slot).map(|s| s.budget).unwrap_or(0);
                 let spent = self.store.spent(p.id, c.round, slot);
-                let amount = nominal.min(budget.saturating_sub(spent));
+                let amount = arith::within_budget(nominal, budget, spent);
                 self.store.set_spent(p.id, c.round, slot, spent + amount);
                 for t in &new_keys {
                     self.store.set_holder(p.id, c.round, t, Some(cid));
@@ -1247,9 +1237,8 @@ impl<S: Store> Engine<S> {
                     c.state = CommitState::Done(End::Exhausted);
                     return Ok(vec![ev("holder", serde_json::json!({"commit_id": cid, "amount": "0", "exhausted": true}))]);
                 }
-                let reserved = if blocked { 0 } else { amount.min(p.ledger.available) };
-                self.reserve(p, reserved);
-                let debt = amount - reserved;
+                let (reserved, debt) = arith::cover(amount, p.ledger.available, blocked);
+                p.ledger.reserve(reserved);
                 if debt > 0 {
                     p.debtors.push(cid);
                 }
@@ -1263,8 +1252,8 @@ impl<S: Store> Engine<S> {
                 if let Some(g) = p.params.gap.clone() {
                     if f.protected_harm_usd_micro > g.threshold_usd_micro {
                         self.refund_bond(c);
-                        let reserved = if blocked { 0 } else { g.claim_amount.min(p.ledger.available) };
-                        self.reserve(p, reserved);
+                        let (reserved, _) = arith::cover(g.claim_amount, p.ledger.available, blocked);
+                        p.ledger.reserve(reserved);
                         c.state = CommitState::GapClaim { amount: g.claim_amount, reserved };
                         return Ok(vec![ev("gap_claim", serde_json::json!({"commit_id": cid, "harm_usd_micro": f.protected_harm_usd_micro.to_string()}))]);
                     }
@@ -1287,9 +1276,8 @@ impl<S: Store> Engine<S> {
                 UnevaluablePolicy::Violation { severity } => {
                     self.refund_bond(c);
                     let amount = p.params.base(severity);
-                    let reserved = if blocked { 0 } else { amount.min(p.ledger.available) };
-                    self.reserve(p, reserved);
-                    let debt = amount - reserved;
+                    let (reserved, debt) = arith::cover(amount, p.ledger.available, blocked);
+                    p.ledger.reserve(reserved);
                     if debt > 0 {
                         p.debtors.push(cid);
                     }
@@ -1318,8 +1306,8 @@ impl<S: Store> Engine<S> {
             }
             n += 1;
             let mut c = self.get_commit(cid)?;
-            let m = c.state.debt().min(p.ledger.available);
-            self.reserve(p, m);
+            let (m, _) = arith::cover(c.state.debt(), p.ledger.available, false);
+            p.ledger.reserve(m);
             match &mut c.state {
                 CommitState::Holder { reserved, debt, .. } | CommitState::Promoted { reserved, debt, .. } => {
                     *reserved += m;
@@ -1357,22 +1345,24 @@ impl<S: Store> Engine<S> {
             let r = self.get_run(c.run.unwrap())?;
             let (at, tier) = (r.answered_at().unwrap(), r.tier().unwrap());
             let window_ok = ctx.now > at + p.params.windows.challenge;
-            let idx = ctx.now / p.params.instant_window;
-            let spent_now = if idx == p.instant.index { p.instant.spent } else { 0 };
-            let instant_ok = tier == Tier::T1 && amount <= p.params.instant_cap && spent_now + amount <= p.params.instant_budget;
-            if !(instant_ok || window_ok) {
+            let pp = &p.params;
+            let next = if tier == Tier::T1 {
+                let index = arith::window_index(ctx.now, pp.instant_window);
+                arith::instant(index, &p.instant, amount, pp.instant_cap, pp.instant_budget)
+            } else {
+                None
+            };
+            if next.is_none() && !window_ok {
                 return Err(Error::State("waits its window: no T1, above the cap, or the instant budget is spent"));
             }
-            if instant_ok && !window_ok {
+            if let (Some(w), false) = (next, window_ok) {
                 instant = true;
-                p.instant = InstantWindow { index: idx, spent: spent_now + amount };
+                p.instant = w;
             }
         }
-        let fee = (amount.saturating_mul(p.params.protocol_fee_bps as u128) / 10_000).min(p.ledger.available);
-        p.ledger.reserved -= amount;
-        p.ledger.paid += amount;
-        p.ledger.available -= fee;
-        p.ledger.fees += fee;
+        let fee = arith::protocol_fee(amount, p.params.protocol_fee_bps, p.ledger.available);
+        p.ledger.pay(amount);
+        p.ledger.charge(fee);
         self.escrow_out(amount + fee);
         if let Some(opened) = p.opened_at {
             if ctx.now <= opened + 3600 {
@@ -1722,11 +1712,11 @@ impl<S: Store> Engine<S> {
                 let slot = slot.unwrap();
                 let budget = self.slots_for(&p, r1).iter().find(|s| s.slot == slot).map(|s| s.budget).unwrap_or(0);
                 let spent = self.store.spent(program, r1, slot);
-                let amt = nominal.min(amount.max(nominal)).min(budget.saturating_sub(spent));
+                // Never above the duplicate's own amount, within the new round's budget.
+                let amt = arith::within_budget(nominal.min(amount), budget, spent);
                 self.store.set_spent(program, r1, slot, spent + amt);
-                let use_ = reserved.min(amt);
-                self.unreserve(&mut p, reserved - use_);
-                let debt = amt - use_;
+                let (use_, released, debt) = arith::refit(reserved, amt);
+                p.ledger.unreserve(released);
                 if debt > 0 {
                     p.debtors.push(cid);
                 }
@@ -1737,7 +1727,7 @@ impl<S: Store> Engine<S> {
                 promoted.push(cid);
                 fx.push(ev("promoted", serde_json::json!({"commit_id": cid, "round": r1, "amount": amt.to_string()})));
             } else {
-                self.unreserve(&mut p, reserved);
+                p.ledger.unreserve(reserved);
                 c.state = CommitState::Done(End::DuplicateConfirmed);
                 fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid})));
             }
@@ -1749,8 +1739,8 @@ impl<S: Store> Engine<S> {
             let CommitState::GapClaim { amount, reserved } = c.state.clone() else { continue };
             match self.rerun_breaks_new_slot(&p, &c) {
                 Some(true) => {
-                    let use_ = reserved.min(amount);
-                    let debt = amount - use_;
+                    let (use_, released, debt) = arith::refit(reserved, amount);
+                    p.ledger.unreserve(released);
                     if debt > 0 {
                         p.debtors.push(cid);
                     }
@@ -1760,7 +1750,7 @@ impl<S: Store> Engine<S> {
                     fx.push(ev("gap_promoted", serde_json::json!({"commit_id": cid, "round": r1})));
                 }
                 _ => {
-                    self.unreserve(&mut p, reserved);
+                    p.ledger.unreserve(reserved);
                     c.state = CommitState::Done(End::GapOpen);
                 }
             }
@@ -1801,8 +1791,7 @@ impl<S: Store> Engine<S> {
         if gate {
             // The release fee comes from the escrow, if available, to the treasury.
             let fee = p.params.release_fee.min(p.ledger.available);
-            p.ledger.available -= fee;
-            p.ledger.fees += fee;
+            p.ledger.charge(fee);
             self.escrow_out(fee);
             self.credit_tokens(TREASURY, fee);
             p.release_permits += 1;
@@ -1881,8 +1870,7 @@ impl<S: Store> Engine<S> {
                 CommitState::Holder { amount, reserved, debt, .. } | CommitState::Promoted { amount, reserved, debt, .. } => {
                     if debt == 0 && reserved == amount {
                         // Owed and funded: paid.
-                        p.ledger.reserved -= amount;
-                        p.ledger.paid += amount;
+                        p.ledger.pay(amount);
                         self.escrow_out(amount);
                         let b = c.beneficiary.clone();
                         self.credit_tokens(&b, amount);
@@ -1890,8 +1878,7 @@ impl<S: Store> Engine<S> {
                     } else {
                         // Pay what is reserved; the rest is recorded as defaulted. Never a pro-rata
                         // cut among claims: earlier debtors were funded first.
-                        p.ledger.reserved -= reserved;
-                        p.ledger.paid += reserved;
+                        p.ledger.pay(reserved);
                         self.escrow_out(reserved);
                         let b = c.beneficiary.clone();
                         self.credit_tokens(&b, reserved);
@@ -1900,11 +1887,11 @@ impl<S: Store> Engine<S> {
                     }
                 }
                 CommitState::Duplicate { reserved, .. } => {
-                    self.unreserve(&mut p, reserved);
+                    p.ledger.unreserve(reserved);
                     c.state = CommitState::Done(End::DuplicateConfirmed);
                 }
                 CommitState::GapClaim { reserved, .. } => {
-                    self.unreserve(&mut p, reserved);
+                    p.ledger.unreserve(reserved);
                     c.state = CommitState::Done(End::GapOpen);
                 }
                 CommitState::Done(_) => {}
@@ -1913,9 +1900,7 @@ impl<S: Store> Engine<S> {
         }
         p.debtors.clear();
         p.cursor = p.commits;
-        let ret = p.ledger.available;
-        p.ledger.available = 0;
-        p.ledger.returned += ret;
+        let ret = p.ledger.return_available();
         self.escrow_out(ret);
         let proj = p.project.clone();
         self.credit_tokens(&proj, ret);
@@ -1986,9 +1971,8 @@ impl<S: Store> Engine<S> {
         }
         let f = self.get_run(c.run.ok_or(Error::State("no verdict"))?)?.facts().cloned().ok_or(Error::State("no verdict"))?;
         let (amount, _) = self.nominal(p, &f, None);
-        let reserved = if p.debtors.is_empty() { amount.min(p.ledger.available) } else { 0 };
-        self.reserve(p, reserved);
-        let debt = amount - reserved;
+        let (reserved, debt) = arith::cover(amount, p.ledger.available, !p.debtors.is_empty());
+        p.ledger.reserve(reserved);
         if debt > 0 {
             p.debtors.push(cid);
         }

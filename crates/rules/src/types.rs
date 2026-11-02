@@ -221,15 +221,7 @@ impl Params {
 
     /// Impact bonus in token units: `impact × impact_bps / 10⁴`, capped. Impacts are micro-USD.
     pub fn impact_bonus(&self, impact_usd_micro: Amount) -> Amount {
-        if self.impact_bps == 0 {
-            return 0;
-        }
-        let units = if self.decimals >= 6 {
-            impact_usd_micro.saturating_mul(10u128.saturating_pow((self.decimals - 6) as u32))
-        } else {
-            impact_usd_micro / 10u128.pow((6 - self.decimals) as u32)
-        };
-        (units.saturating_mul(self.impact_bps as u128) / 10_000).min(self.impact_cap)
+        crate::arith::impact_bonus(impact_usd_micro, self.impact_bps, self.impact_cap, self.decimals)
     }
 }
 
