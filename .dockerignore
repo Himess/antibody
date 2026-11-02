@@ -1,0 +1,26 @@
+# Never in the image: secrets, local state, build output.
+.env
+.env.*
+!.env.example
+.secrets/
+*.key
+*.pem
+.antibody/
+.antibody-services/
+target/
+contracts/near-antibody/target/
+contracts/near-guardian/target/
+contracts/evm/out/
+contracts/evm/cache/
+contracts/evm/broadcast/
+.tools/
+fixtures/local/
+research/
+report/
+reports/
+measurements/
+arena-private/
+third_party/*
+!third_party/patches/
+**/node_modules/
+.git/

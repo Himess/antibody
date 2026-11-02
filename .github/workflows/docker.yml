@@ -1,0 +1,28 @@
+name: docker demo
+
+# The containerised offline demo (Dockerfile): built and run on demand, and whenever the image
+# definition changes. The regular `ci` workflow runs the same demo natively on every push.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker.yml
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    name: docker build + offline demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: build the image
+        run: docker build --platform linux/amd64 -t antibody-demo .
+      - name: run the demo (fixtures, rule tests, sandbox end to end)
+        run: docker run --rm --platform linux/amd64 antibody-demo

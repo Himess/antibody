@@ -6,8 +6,8 @@
 //! runs the real verifier in TEE mode with a TEST seed. Unlike OutLayer, nothing here is attested.
 
 use near_sdk::{
-    env, json_types::U128, near, require, serde_json::{json, Value}, store::IterableMap, AccountId, Gas, GasWeight,
-    PanicOnDefault, Promise, PromiseResult,
+    env, json_types::U128, near, require, serde_json::{json, Value}, store::{IterableMap, LookupMap}, AccountId, Gas,
+    GasWeight, PanicOnDefault, Promise, PromiseResult,
 };
 
 #[near(serializers = [borsh, json])]
@@ -30,6 +30,10 @@ pub struct MockOutLayer {
     next: u64,
     pending: IterableMap<u64, Pending>,
     resolved: u64,
+    /// Outputs waiting for their callback. As OutLayer does with `submit_execution_output`, the output
+    /// is kept in state and the yield is resumed with a small marker: `promise_yield_resume` carries at
+    /// most 1,024 bytes, and a disclosure run's output is larger than that.
+    outputs: LookupMap<u64, String>,
 }
 
 fn emit(event: &str, data: Value) {
@@ -41,7 +45,7 @@ fn emit(event: &str, data: Value) {
 impl MockOutLayer {
     #[init]
     pub fn new(worker: AccountId) -> Self {
-        Self { worker, next: 0, pending: IterableMap::new(b"p"), resolved: 0 }
+        Self { worker, next: 0, pending: IterableMap::new(b"p"), resolved: 0, outputs: LookupMap::new(b"o") }
     }
 
     #[payable]
@@ -101,15 +105,18 @@ impl MockOutLayer {
         for (i, b) in data_id.iter_mut().enumerate() {
             *b = u8::from_str_radix(&p.data_id[2 * i..2 * i + 2], 16).unwrap();
         }
-        require!(env::promise_yield_resume(&data_id, payload.as_bytes()), "the request already timed out");
+        let bytes = payload.len();
+        self.outputs.insert(request_id, payload);
+        require!(env::promise_yield_resume(&data_id, b"{}"), "the request already timed out");
         self.resolved += 1;
-        emit("execution_resolved", json!({"request_id": request_id, "bytes": payload.len()}));
+        emit("execution_resolved", json!({"request_id": request_id, "bytes": bytes}));
     }
 
     #[private]
     pub fn on_execution_response(&mut self, request_id: u64) {
+        let stored = self.outputs.remove(&request_id);
         let out = match env::promise_result(0) {
-            PromiseResult::Successful(b) => b,
+            PromiseResult::Successful(_) => stored.map(String::into_bytes).unwrap_or_else(|| b"null".to_vec()),
             PromiseResult::Failed => {
                 self.pending.remove(&request_id);
                 b"null".to_vec()
