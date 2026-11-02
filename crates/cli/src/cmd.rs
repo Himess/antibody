@@ -657,7 +657,81 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
             Err(e) => steps.push(json!({"settle_debts_stopped": e.to_string()})),
         }
     }
+    steps.extend(round_reruns(ctx, program)?);
     Ok(json!({"program": program, "steps": steps}))
+}
+
+// ------------------------------------------------------------------------- rounds (docs/rounds.md)
+
+/// A release: the proxy to upgrade, the implementation to install, and the code hash that
+/// implementation must have (the round's override for the proxy's current implementation).
+pub fn parse_release(s: &str) -> Result<Value> {
+    let parts: Vec<&str> = s.split(':').collect();
+    let [proxy, implementation, code_hash] = parts[..] else {
+        return Err(eyre!("a release is <proxy>:<implementation>:<code hash>"));
+    };
+    Ok(json!({"proxy": proxy, "implementation": implementation, "code_hash": code_hash}))
+}
+
+/// Proposes the next round: the round manifest (the fix as code overrides at the anchor) goes up with
+/// FastFS, with the releases a passed gate will permit. near-antibody asks the TEE to check the round,
+/// releases included (check_round); it counts once T1-confirmed.
+pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], wait: bool) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let bytes = std::fs::read(manifest)?;
+    let m: Value = serde_json::from_slice(&bytes)?;
+    let sha = hex::encode(sha256(&bytes));
+    let overrides = hex::encode(sha256(&serde_json::to_vec(&m["overrides"])?));
+    let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
+    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let args = json!({"program_id": program, "manifest": {"location": up["near_tx"], "sha256": sha}, "overrides_sha256": overrides,
+                      "new_slots": [], "releases": releases});
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "propose_round", args, RUN_TGAS, 0)?;
+    let s = ensure_ok(ctx, &out, "propose_round")?;
+    let run_id = run_of(&s)?;
+    let mut res = json!({"program": program, "round": m["round"], "manifest_sha256": sha, "run_id": run_id, "upload": up, "tx": s});
+    if wait {
+        res["result"] = wait_run(ctx, run_id, 240)?;
+    }
+    Ok(res)
+}
+
+/// Re-runs a commit at the proposed fix (immune memory, spec §8.2). Anyone may ask; the requester pays.
+pub fn round_rerun(ctx: &Ctx, commit_id: u64) -> Result<Value> {
+    ensure_near_credit(ctx, &ctx.signer()?, MIN_NEAR_CREDIT)?;
+    let s = call(ctx, "request_rerun", json!({"commit_id": commit_id, "blob": null}), RUN_TGAS)?;
+    Ok(json!({"commit_id": commit_id, "run_id": run_of(&s)?, "tx": s}))
+}
+
+/// Opens the next round once its minimum duration and re-run window have passed (permissionless). The
+/// `round_opened` event says whether the release gate held.
+pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
+    let s = call(ctx, "open_round", json!({"program_id": program}), RUN_TGAS)?;
+    Ok(json!({"program": program, "round_opened": event(&s, "round_opened"), "tx": s}))
+}
+
+/// The keeper's part of immune memory: while a round is proposed, every commit that may be re-run at the
+/// fix is (paid PoCs and key holders from any round, the round's duplicates and gap claims).
+/// near-antibody refuses the rest, and commits already re-run at this fix.
+fn round_reruns(ctx: &Ctx, program: u32) -> Result<Vec<Value>> {
+    let p = ctx.program(program)?;
+    let Some(round) = p["proposal"]["round"].as_u64() else { return Ok(vec![]) };
+    let mut steps = Vec::new();
+    for c in list_commits(ctx, program)? {
+        let st = state_label(&c["state"]);
+        let candidate = matches!(st.as_str(), "Holder" | "Duplicate" | "GapClaim" | "Promoted" | "Done:Paid" | "Done:Exhausted");
+        let done = match c["rerun"].as_u64() {
+            Some(r) => ctx.view("get_run", json!({"run_id": r}))?["round"].as_u64() == Some(round),
+            None => false,
+        };
+        if candidate && !done {
+            match round_rerun(ctx, c["id"].as_u64().unwrap_or_default()) {
+                Ok(r) => steps.push(json!({"rerun": c["id"], "run_id": r["run_id"]})),
+                Err(e) => steps.push(json!({"not_rerun": c["id"], "why": e.to_string()})),
+            }
+        }
+    }
+    Ok(steps)
 }
 
 // ------------------------------------------------------------------------- init

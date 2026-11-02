@@ -52,6 +52,32 @@ enum KeygenKind {
 }
 
 #[derive(Subcommand)]
+enum RoundCmd {
+    /// Propose the next round: a round manifest (`antibody manifest-round`) and the releases a passed
+    /// release gate will permit, each <proxy>:<implementation>:<code hash>; the TEE checks both
+    Propose {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        manifest: PathBuf,
+        #[arg(long = "release")]
+        releases: Vec<String>,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Re-run a commit at the proposed fix (permissionless; the requester pays)
+    Rerun {
+        #[arg(long)]
+        commit: u64,
+    },
+    /// Open the next round once its minimum duration and re-run window have passed (permissionless)
+    Open {
+        #[arg(long)]
+        program: u32,
+    },
+}
+
+#[derive(Subcommand)]
 enum ProgramCmd {
     /// Create a program: upload the manifest (v2), escrow tUSD and commit the manifest hash (one
     /// transaction); NEAR credit for storage is added first if needed
@@ -329,6 +355,11 @@ enum Cmd {
         #[arg(long)]
         program: u32,
     },
+    /// Rounds: propose a fix, re-run PoCs at it, open the next round (docs/rounds.md)
+    Round {
+        #[command(subcommand)]
+        cmd: RoundCmd,
+    },
     /// Permissionless: an unrevealed commit past its reveal window forfeits its bond
     Expire {
         #[arg(long)]
@@ -475,6 +506,12 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
         Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
         Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
+        Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, no_wait } } => {
+            let releases = releases.iter().map(|r| cmd::parse_release(r)).collect::<eyre::Result<Vec<_>>>()?;
+            cmd::round_propose(&mk()?, program, manifest, &releases, !no_wait)
+        }
+        Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
+        Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
         Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
         Cmd::TimeOut { commit } => cmd::call(&mk()?, "time_out", json!({"commit_id": commit}), 30),
         Cmd::Agent { cmd: AgentCmd::Register { ref agent, ref budget, ref per_commit_cap } } => cmd::agent_register(&mk()?, agent, budget, per_commit_cap),

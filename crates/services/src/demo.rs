@@ -215,7 +215,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
     let a = |k: &str| -> Result<alloy_primitives::Address> { Ok(dep[k].as_str().ok_or_else(|| eyre!("deployment {k}"))?.parse()?) };
     let code: alloy_primitives::Bytes = dep["invariantsRuntimeCode"].as_str().unwrap_or_default().parse()?;
     let mut targets = Vec::new();
-    for n in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeTreasury"] {
+    for n in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeVaultImpl", "AcmeTreasury"] {
         targets.push(Target { name: n.into(), address: a(n)?, code_hash: code_hash(evm, dep[n].as_str().unwrap(), anchor_n)? });
     }
     let inv_addr = alloy_primitives::Address::from_slice(&keccak256(b"antibody/invariants/v1")[12..]);
@@ -345,6 +345,53 @@ fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
     Ok(last)
 }
 
+/// One round of a fix (docs/rounds.md). The round manifest is the program's own with code overrides read
+/// from the deployed fixes. The project proposes it with its releases; the TEE checks both (check_round).
+/// The keeper re-runs every eligible commit at the fix, then opens the round once its windows pass.
+#[allow(clippy::too_many_arguments)]
+fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, round: u32, base: &Path, dep: &Value, evm: &Evm,
+             overrides: &[(&str, &str)], releases: &[(&str, &str)]) -> Result<Value> {
+    let t = Instant::now();
+    let dir = a.work.join(format!("round{round}"));
+    std::fs::create_dir_all(&dir)?;
+    let mut flags = Vec::new();
+    for (target, fix) in overrides {
+        let file = dir.join(format!("{fix}.runtime.hex"));
+        std::fs::write(&file, evm.call("eth_getCode", json!([dep[*fix], "latest"]))?.as_str().unwrap_or_default())?;
+        flags.push(format!("{}={}", dep[*target].as_str().unwrap_or_default(), file.display()));
+    }
+    let manifest = dir.join("manifest.json");
+    cmd::manifest_round(base, round, &flags, &manifest)?;
+    let rel: Vec<Value> = releases
+        .iter()
+        .map(|(proxy, fix)| json!({"proxy": dep[*proxy], "implementation": dep[*fix], "code_hash": dep[format!("codehash{fix}")]}))
+        .collect();
+    let proposed = cmd::round_propose(acme, pid, &manifest, &rel, true)?;
+    let check = proposed["run_id"].as_u64().unwrap_or_default();
+    wait_t1(acme, check)?;
+    let proposal = acme.program(pid)?["proposal"].clone();
+    if proposal["accepted_at"].is_null() {
+        return Err(eyre!("round {round}: the TEE did not accept the proposal (run {check})"));
+    }
+    let k = cmd::keeper(keeper, pid)?;
+    let runs: Vec<u64> = k["steps"].as_array().into_iter().flatten().filter_map(|s| s["run_id"].as_u64()).collect();
+    for r in &runs {
+        wait_t1(acme, *r)?;
+    }
+    let mut reruns = Vec::new();
+    for r in &runs {
+        let v = cmd::run_view(&cmd::run(acme, *r)?);
+        reruns.push(json!({"commit": v["commit_id"], "run": r, "kind": v["kind"], "tier": v["tier"]}));
+    }
+    // The round's minimum duration and re-run window are block time.
+    near.call("sandbox_fast_forward", json!({"delta_height": 200}))?;
+    let opened = cmd::round_open(keeper, pid)?["round_opened"].clone();
+    let summary = format!("{} re-runs ({} fixed), release gate {}, {} keys released, {} carried",
+        reruns.len(), reruns.iter().filter(|r| r["kind"] == "NoViolation").count(), opened["release_gate"], opened["released"], opened["carried"]);
+    Ok(json!({"round": round, "manifest_sha256": proposed["manifest_sha256"], "check_round_run": check, "canaries_ok": proposal["canaries_ok"],
+              "releases": rel, "reruns": reruns, "opened": opened, "summary": summary, "seconds": t.elapsed().as_secs_f64()}))
+}
+
 pub fn run(a: DemoArgs) -> Result<Value> {
     let t_all = Instant::now();
     std::fs::create_dir_all(&a.work)?;
@@ -361,7 +408,9 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     // No pauser yet: the program's adapter becomes the pauser once it exists.
     let dep_a = deploy_acme(&a, "http://127.0.0.1:8545", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31337.json"))?;
     let dep_b = deploy_acme(&a, "http://127.0.0.1:8546", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31338.json"))?;
-    let same = ["AcmeGuard", "AcmeLend", "AcmeLendImpl", "AcmeLendFixed"].iter().all(|k| dep_a[k] == dep_b[k]);
+    let same = ["AcmeGuard", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeVaultImpl", "AcmeLendFixed", "AcmeLendFinal", "AcmeVaultFixed"]
+        .iter()
+        .all(|k| dep_a[k] == dep_b[k]);
     println!("same addresses on both chains: {same}");
     let evm_a = Evm::new("http://127.0.0.1:8545");
     let anchor = evm_a.call("eth_getBlockByNumber", json!(["latest", false]))?;
@@ -516,8 +565,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
         return Err(eyre!("the adapter's address differs between chains"));
     }
-    let proxy = dep_a["AcmeLend"].as_str().unwrap_or_default().to_lowercase();
-    let chains = json!([{"chain_id": 31337, "adapter": adapter, "proxies": [proxy]}, {"chain_id": 31338, "adapter": adapter, "proxies": [proxy]}]);
+    let proxies: Vec<String> = ["AcmeLend", "AcmeVault"].iter().map(|k| dep_a[*k].as_str().unwrap_or_default().to_lowercase()).collect();
+    let chains = json!([{"chain_id": 31337, "adapter": adapter, "proxies": proxies}, {"chain_id": 31338, "adapter": adapter, "proxies": proxies}]);
     let reg = acme.near.function_call(&acme.signer()?, &acct("guardian"), "register", json!({"program_key": program_key, "chains": chains}), 60,
         100_000_000_000_000_000_000_000)?;
     let pinned = near.view(&acct("guardian"), "get_program", json!({"program_key": program_key, "project": acct("acme")}))?;
@@ -525,7 +574,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     if pinned["address"].as_str().map(|x| x.eq_ignore_ascii_case(&guardian_evm)) != Some(true) {
         return Err(eyre!("near-guardian pinned {} for the program, not the adapter's {guardian_evm}", pinned["address"]));
     }
-    results["guardian"] = json!({"adapter": adapter, "proxy": proxy, "guardian_address": pinned["address"], "register_tx": cmd::event(&json!({"events": antibody_cli::near::events(&reg)}), "program_registered")});
+    results["guardian"] = json!({"adapter": adapter, "proxies": proxies, "guardian_address": pinned["address"], "register_tx": cmd::event(&json!({"events": antibody_cli::near::events(&reg)}), "program_registered")});
 
     step("Activation: the base witness is pinned; the program's sealing key counts once T1-confirmed");
     let t = Instant::now();
@@ -633,6 +682,41 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let after = cmd::u128_of(&root_ctx.near.view(&acct("tusd"), "ft_balance_of", json!({"account_id": acct("agent-b")}))?);
     results["keeper"] = last_keeper;
     results["withdrawal"] = json!({"account": acct("agent-b"), "wallet_before": cmd::fmt_tusd(before), "wallet_after": cmd::fmt_tusd(after)});
+
+    step("Round 1, a partial fix (AcmeLendFixed, bug #1): the keeper re-runs every paid PoC at it; B and F still break, so no release");
+    let keeper = ctx_of("keeper");
+    let r1 = run_round(&a, &acme, &keeper, &near, pid, 1, &manifest_path, &dep_a, &evm_a, &[("AcmeLendImpl", "AcmeLendFixed")],
+                       &[("AcmeLend", "AcmeLendFixed")])?;
+    println!("round 1: {}", r1["summary"]);
+    step("Round 2, the final fix (AcmeLendFinal, AcmeVaultFixed): every paid PoC is fixed, so the release gate holds");
+    let r2 = run_round(&a, &acme, &keeper, &near, pid, 2, &manifest_path, &dep_a, &evm_a,
+                       &[("AcmeLendImpl", "AcmeLendFinal"), ("AcmeVaultImpl", "AcmeVaultFixed")],
+                       &[("AcmeLend", "AcmeLendFinal"), ("AcmeVault", "AcmeVaultFixed")])?;
+    println!("round 2: {}", r2["summary"]);
+    step("Release: the guardian signs a permit per proxy and chain; the relayer upgrades both proxies on both chains");
+    let t = Instant::now();
+    wait_for("4 releases confirmed", Duration::from_secs(180), || {
+        let st: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        st.values().filter(|v| v["kind"] == "release" && v["status"] == "confirmed").count() == 4
+    })?;
+    let mut released = Vec::new();
+    for (chain, rpc, dep) in [(31337, "http://127.0.0.1:8545", &dep_a), (31338, "http://127.0.0.1:8546", &dep_b)] {
+        let evm = Evm::new(rpc);
+        for (proxy, fix) in [("AcmeLend", "AcmeLendFinal"), ("AcmeVault", "AcmeVaultFixed")] {
+            let word = evm.call("eth_getStorageAt", json!([dep[proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
+            let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
+            released.push(json!({"chain_id": chain, "proxy": proxy, "implementation": now, "expected": dep[fix],
+                                 "ok": now.eq_ignore_ascii_case(dep[fix].as_str().unwrap_or_default())}));
+        }
+        // B's exploit, the unguarded fee sweep, against the released code.
+        let sweep = format!("0x{}{}", hex::encode(&keccak256(b"sweepFees(address)")[..4]), "00".repeat(12) + "000000000000000000000000000000000000beef");
+        let reverts = evm.call("eth_call", json!([{"from": "0x000000000000000000000000000000000000beef", "to": dep["AcmeVault"], "data": sweep}, "latest"])).is_err();
+        released.push(json!({"chain_id": chain, "b_exploit_reverts": reverts}));
+    }
+    let releases_ok = released.iter().all(|r| r["ok"] != json!(false) && r["b_exploit_reverts"] != json!(false));
+    println!("released on both chains in {:.1}s: {}", t.elapsed().as_secs_f64(), if releases_ok { "both proxies run the final fix; B's exploit reverts" } else { "MISMATCH" });
+    results["rounds"] = json!([r1, r2]);
+    results["release"] = json!({"checks": released, "ok": releases_ok, "seconds": t.elapsed().as_secs_f64()});
     stop.store(true, Ordering::Relaxed);
     for h in handles {
         let _ = h.join();
@@ -643,13 +727,18 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         ("A (MCP)", ("Violation", "Done:Paid", 10_000 * ONE_TUSD)),
         ("B", ("Violation", "Done:Paid", 3_000 * ONE_TUSD)),
         ("C", ("NoViolation", "Done:Forfeited", 0)),
-        ("D", ("Violation", "Duplicate", 0)),
+        ("D", ("Violation", "Done:DuplicateConfirmed", 0)),
         ("E", ("Violation", "Done:Known", 0)),
         ("F", ("Violation", "Done:Paid", 10_000 * ONE_TUSD)),
     ]);
     let mut table = Vec::new();
     let one = &results["one_moment"];
     let mut ok = known_n == 1 && after == before + 3_000 * ONE_TUSD && same && one["paused_both"] == json!(true) && one["instant"] == json!(true);
+    // Round 1 is shut (B and F carried), round 2 releases them both.
+    let gate = |r: &Value| r["opened"]["release_gate"].as_bool();
+    ok &= gate(&results["rounds"][0]) == Some(false) && results["rounds"][0]["opened"]["carried"] == json!(2);
+    ok &= gate(&results["rounds"][1]) == Some(true) && results["rounds"][1]["opened"]["released"] == json!(2);
+    ok &= results["release"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     for (agent, id, secs) in &rows {
         let c = root_ctx.commit(*id)?;
