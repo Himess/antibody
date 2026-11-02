@@ -148,6 +148,46 @@ enum ProgramCmd {
 }
 
 #[derive(Subcommand)]
+enum PracticeCmd {
+    /// Deploy the vending contract on --account (its own account) and add the public vend key
+    Deploy {
+        #[arg(long)]
+        wasm: PathBuf,
+        /// Who funds it and may change its terms
+        #[arg(long)]
+        owner: String,
+        #[arg(long)]
+        program: u32,
+        #[arg(long, default_value_t = 24)]
+        vaults: u32,
+        /// NEAR each practice account gets for its gas, and its key's allowance
+        #[arg(long, default_value = "0.05")]
+        gas_funds: String,
+        #[arg(long, default_value = "0.05")]
+        allowance: String,
+        /// Bonds a practice account may have locked, and per commit (tokens)
+        #[arg(long)]
+        bond_budget: String,
+        #[arg(long)]
+        per_commit_cap: String,
+        #[arg(long, default_value_t = 6)]
+        per_hour: u32,
+        /// The public vend key's allowance (NEAR)
+        #[arg(long, default_value = "0.2")]
+        vend_allowance: String,
+    },
+    /// Fund the vending contract (as its owner): NEAR credit at near-antibody, and tokens for bonds
+    Fund {
+        #[arg(long)]
+        vending: String,
+        #[arg(long, default_value = "0")]
+        near: String,
+        #[arg(long, default_value = "0")]
+        tokens: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum AgentCmd {
     /// Register one of your sub-accounts as an agent: its bonds come from your credit, within the
     /// budget and the per-commit cap; payouts go to you
@@ -373,6 +413,24 @@ enum Cmd {
         #[arg(long)]
         program: u32,
     },
+    /// The practice program (a tutorial, docs/practice.md): vend a practice account, prove its vault with
+    /// the public tutorial proof, and settle. Needs no account: without --account the public vend key
+    /// calls `vend`
+    Try {
+        /// The vending contract (e.g. practice.antibody.testnet)
+        #[arg(long)]
+        vending: String,
+        #[arg(long)]
+        program: u32,
+        /// Your practice account's name: <name>.<vending>
+        #[arg(long)]
+        name: String,
+    },
+    /// The practice program's operator: deploy and fund the vending contract
+    Practice {
+        #[command(subcommand)]
+        cmd: PracticeCmd,
+    },
     /// Rounds: propose a fix, re-run PoCs at it, open the next round (docs/rounds.md)
     Round {
         #[command(subcommand)]
@@ -542,6 +600,22 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
+        Cmd::Try { ref vending, program, ref name } => antibody_cli::practice::try_it(&mk()?, vending, program, name),
+        Cmd::Practice {
+            cmd: PracticeCmd::Deploy { ref wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance },
+        } => {
+            let terms = antibody_cli::practice::Terms {
+                gas_funds: cmd::parse_near(gas_funds)?,
+                allowance: cmd::parse_near(allowance)?,
+                bond_budget: cmd::parse_tusd(bond_budget)?,
+                per_commit_cap: cmd::parse_tusd(per_commit_cap)?,
+                per_hour,
+            };
+            antibody_cli::practice::deploy(&mk()?, wasm, owner, program, vaults, &terms, cmd::parse_near(vend_allowance)?)
+        }
+        Cmd::Practice { cmd: PracticeCmd::Fund { ref vending, ref near, ref tokens } } => {
+            antibody_cli::practice::fund(&mk()?, vending, cmd::parse_near(near)?, cmd::parse_tusd(tokens)?)
+        }
         Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
         Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
         Cmd::TimeOut { commit } => cmd::call(&mk()?, "time_out", json!({"commit_id": commit}), 30),

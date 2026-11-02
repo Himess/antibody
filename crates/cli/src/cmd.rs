@@ -56,7 +56,7 @@ fn tx_summary(ctx: &Ctx, out: &Value) -> Value {
     json!({"tx": h, "explorer": ctx.near.explorer_tx(&h), "failures": near::failures(out), "events": near::events(out)})
 }
 
-fn ensure_ok(ctx: &Ctx, out: &Value, what: &str) -> Result<Value> {
+pub fn ensure_ok(ctx: &Ctx, out: &Value, what: &str) -> Result<Value> {
     let s = tx_summary(ctx, out);
     let f = near::failures(out);
     if !f.is_empty() {

@@ -155,6 +155,11 @@ impl Signer {
                "private_key": format!("ed25519:{}", bs58::encode(full).into_string())})
     }
 
+    /// A key from a known seed (the practice program's deliberately public vend key).
+    pub fn from_seed(account_id: String, seed: [u8; 32]) -> Self {
+        Self { account_id, key: SigningKey::from_bytes(&seed) }
+    }
+
     pub fn generate(account_id: Option<String>) -> Result<Self> {
         let mut seed = [0u8; 32];
         getrandom::getrandom(&mut seed).map_err(|e| eyre!("rng: {e}"))?;

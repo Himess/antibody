@@ -7,4 +7,5 @@ pub mod ctx;
 pub mod draft;
 pub mod mcp;
 pub mod near;
+pub mod practice;
 pub mod tee;
