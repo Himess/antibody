@@ -6,9 +6,8 @@ use std::path::Path;
 use alloy_primitives::B256;
 use antibody_verifier::{
     facts::{sha256, ProgramReceipt},
-    manifest::Manifest,
-    run::{run_program, ProgramContext},
-    sealed, Envelope, Payload,
+    manifest::{Manifest, MANIFEST_SCHEMA_V2},
+    sealed,
 };
 use antibody_witness::build::{parse_bundle, BundleFile};
 use eyre::{eyre, Result};
@@ -20,9 +19,13 @@ use crate::{
     near::{self, Action, Permission, Signer, ONE_NEAR, ONE_YOCTO, TGAS},
 };
 
-/// Gas for `submit` / `submit_known`: OutLayer call (100) + verdict callback (160, incl. the guardian pause) + margin.
-pub const SUBMIT_TGAS: u64 = 290;
+/// Gas for calls that start a verifier run: the method, OutLayer (100) and the answer's callback (60).
+pub const RUN_TGAS: u64 = 300;
 pub const TUSD_DECIMALS: u32 = 6;
+/// Larger sealed blobs go through FastFS: near-antibody keeps every request within OutLayer's free input.
+pub const MAX_INLINE_BLOB: usize = 15 * 1024;
+/// NEAR credit kept for storage and verification runs (NEP-145 style; unused credit is withdrawable).
+pub const MIN_NEAR_CREDIT: u128 = ONE_NEAR / 4;
 
 pub fn parse_tusd(s: &str) -> Result<u128> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
@@ -36,7 +39,7 @@ pub fn fmt_tusd(raw: u128) -> String {
     format!("{}.{:06}", raw / 1_000_000, raw % 1_000_000)
 }
 
-fn u128_of(v: &Value) -> u128 {
+pub fn u128_of(v: &Value) -> u128 {
     v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_u64().map(|x| x as u128)).unwrap_or(0)
 }
 
@@ -56,11 +59,20 @@ fn tx_summary(ctx: &Ctx, out: &Value) -> Value {
 fn ensure_ok(ctx: &Ctx, out: &Value, what: &str) -> Result<Value> {
     let s = tx_summary(ctx, out);
     let f = near::failures(out);
-    // `__fastdata_fastfs` uploads fail by design; everything else must succeed.
     if !f.is_empty() {
         return Err(eyre!("{what} failed: {} ({})", f.join("; "), s["explorer"].as_str().unwrap_or_default()));
     }
     Ok(s)
+}
+
+/// The data of the first event `name` in a transaction summary.
+pub fn event(summary: &Value, name: &str) -> Option<Value> {
+    summary["events"].as_array().into_iter().flatten().find(|e| e["event"] == name).map(|e| e["data"][0].clone())
+}
+
+/// The run a transaction started (near-antibody's `run_requested` event).
+pub fn run_of(summary: &Value) -> Result<u64> {
+    event(summary, "run_requested").and_then(|d| d["run_id"].as_u64()).ok_or_else(|| eyre!("the transaction started no run"))
 }
 
 fn ft_transfer_call(ctx: &Ctx, signer: &Signer, amount: u128, msg: Value) -> Result<Value> {
@@ -72,6 +84,11 @@ fn ft_transfer_call(ctx: &Ctx, signer: &Signer, amount: u128, msg: Value) -> Res
         300,
         ONE_YOCTO,
     )
+}
+
+pub fn call(ctx: &Ctx, method: &str, args: Value, tgas: u64) -> Result<Value> {
+    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, method, args, tgas, 0)?;
+    ensure_ok(ctx, &out, method)
 }
 
 // ------------------------------------------------------------------------- keys
@@ -89,16 +106,65 @@ pub fn keygen_near(account: Option<String>, out: &Path) -> Result<Value> {
     Ok(json!({"account_id": s.account_id, "public_key": s.public_key_str(), "file": out}))
 }
 
-fn project_secret(path: &Path) -> Result<[u8; 32]> {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
-    hex::decode(v["secret_key"].as_str().ok_or_else(|| eyre!("no secret_key in {}", path.display()))?)?
-        .try_into()
-        .map_err(|_| eyre!("x25519 secret must be 32 bytes"))
-}
-
 fn project_public(path: &Path) -> Result<String> {
     let v: Value = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     Ok(v["public_key"].as_str().ok_or_else(|| eyre!("no public_key in {}", path.display()))?.to_string())
+}
+
+// ------------------------------------------------------------------------ views
+
+pub fn meta(ctx: &Ctx, program: u32) -> Result<Value> {
+    let m = ctx.view("get_program_meta", json!({"program_id": program}))?;
+    if m.is_null() {
+        return Err(eyre!("program {program} does not exist on {}", ctx.dep.antibody));
+    }
+    Ok(m)
+}
+
+pub fn run(ctx: &Ctx, id: u64) -> Result<Value> {
+    let r = ctx.view("get_run", json!({"run_id": id}))?;
+    if r.is_null() {
+        return Err(eyre!("run {id} does not exist on {}", ctx.dep.antibody));
+    }
+    Ok(r)
+}
+
+pub fn account(ctx: &Ctx, account: &str) -> Result<Value> {
+    ctx.view("get_account", json!({"account_id": account}))
+}
+
+/// A run's verdict in one object: kind, keys, impact and tier, or its failure.
+pub fn run_view(r: &Value) -> Value {
+    let o = &r["outcome"];
+    if let Some(a) = o.get("Answered") {
+        let f = &a["facts"];
+        json!({"run_id": r["id"], "mode": r["mode"], "commit_id": r["commit"], "kind": f["kind"], "keys": f["keys"],
+               "impact_usd_micro": f["impact_usd_micro"], "protected_harm_usd_micro": f["protected_harm_usd_micro"],
+               "reason": f["reason"], "receipt_sha256": f["receipt_sha256"], "tier": a["tier"], "answered_at": a["at"]})
+    } else if let Some(f) = o.get("Failed") {
+        json!({"run_id": r["id"], "mode": r["mode"], "commit_id": r["commit"], "failed": f["reason"]})
+    } else {
+        json!({"run_id": r["id"], "mode": r["mode"], "commit_id": r["commit"], "pending": true})
+    }
+}
+
+/// A commit state's name (`Holder`, `Done:Paid`, …).
+pub fn state_label(s: &Value) -> String {
+    match s {
+        Value::String(x) => x.clone(),
+        Value::Object(m) => match m.iter().next() {
+            Some((k, Value::Object(inner))) if k == "Done" => format!("Done:{}", inner.keys().next().cloned().unwrap_or_default()),
+            Some((k, Value::String(inner))) if k == "Done" => format!("Done:{inner}"),
+            Some((k, _)) => k.clone(),
+            None => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+/// Amount paid to a commit (0 unless `Done:Paid`).
+pub fn paid_of(c: &Value) -> u128 {
+    u128_of(&c["state"]["Done"]["Paid"]["amount"])
 }
 
 // ---------------------------------------------------------------------- program
@@ -109,93 +175,152 @@ pub fn manifest_compile(toml: &Path, out: &Path) -> Result<Value> {
     Ok(json!({"manifest": out, "bytes": bytes.len(), "sha256": format!("{hash:#x}")}))
 }
 
-/// The manifest hash committed for `round` (0: the program's own manifest).
-pub fn round_manifest_hash(p: &Value, round: u64) -> String {
-    match round {
-        0 => p["manifest_hash"].as_str().unwrap_or_default().to_string(),
-        r => p["rounds"][(r - 1) as usize]["manifest_hash"].as_str().unwrap_or_default().to_string(),
-    }
-}
-
-/// Fetches the manifest of the program's current round (new commits verify against it) and
-/// checks it against the committed hash.
-pub fn program_manifest(ctx: &Ctx, p: &Value) -> Result<Vec<u8>> {
-    program_manifest_at(ctx, p, p["round"].as_u64().unwrap_or(0))
-}
-
-pub fn program_manifest_at(ctx: &Ctx, p: &Value, round: u64) -> Result<Vec<u8>> {
-    let url = match round {
-        0 => p["manifest_url"].as_str().unwrap_or_default().to_string(),
-        r => p["rounds"][(r - 1) as usize]["manifest_url"].as_str().unwrap_or_default().to_string(),
+/// The manifest of `round` (0: the program's own), fetched from its committed location and checked
+/// against the committed hash.
+pub fn program_manifest_at(ctx: &Ctx, program: u32, round: u32) -> Result<Vec<u8>> {
+    let p = ctx.program(program)?;
+    let m = meta(ctx, program)?;
+    let (location, want) = match round {
+        0 => (m["manifest_url"].as_str().unwrap_or_default().to_string(), p["manifest_sha256"].as_str().unwrap_or_default().to_string()),
+        r => {
+            let i = (r - 1) as usize;
+            (m["round_manifests"][i]["location"].as_str().unwrap_or_default().to_string(), p["round_manifests"][i].as_str().unwrap_or_default().to_string())
+        }
     };
-    let expected = round_manifest_hash(p, round);
-    let bytes = blob::fetch(&ctx.near, &url)?;
+    let bytes = blob::fetch(&ctx.near, &location)?;
     let h = hex::encode(sha256(&bytes));
-    if h != expected {
-        return Err(eyre!("round {round} manifest at {url} hashes to {h}, not the committed {expected}"));
+    if h != want {
+        return Err(eyre!("round {round} manifest at {location} hashes to {h}, not the committed {want}"));
     }
     Ok(bytes)
 }
 
-pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Path, guardian: Option<String>, manifest_url: Option<String>) -> Result<Value> {
+/// The manifest new commits are judged under: the current round's.
+pub fn program_manifest(ctx: &Ctx, program: u32) -> Result<Vec<u8>> {
+    let round = ctx.program(program)?["round"].as_u64().unwrap_or(0) as u32;
+    program_manifest_at(ctx, program, round)
+}
+
+pub fn storage_deposit(ctx: &Ctx, near_amount: &str) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "storage_deposit", json!({}), 30, parse_near(near_amount)?)?;
+    let s = ensure_ok(ctx, &out, "storage_deposit")?;
+    Ok(json!({"account": signer.account_id, "credit": account(ctx, &signer.account_id)?["near"], "tx": s}))
+}
+
+/// Tops the signer's NEAR credit up to `want` yoctoNEAR (storage and verification are paid from it).
+fn ensure_near_credit(ctx: &Ctx, signer: &Signer, want: u128) -> Result<Option<Value>> {
+    let have = u128_of(&account(ctx, &signer.account_id)?["near"]);
+    if have >= want {
+        return Ok(None);
+    }
+    let out = ctx.near.function_call(signer, &ctx.dep.antibody, "storage_deposit", json!({}), 30, want - have)?;
+    Ok(Some(ensure_ok(ctx, &out, "storage_deposit")?))
+}
+
+pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Path, manifest_url: Option<String>) -> Result<Value> {
     let signer = ctx.signer()?;
     let bytes = std::fs::read(manifest)?;
     let m = Manifest::parse(&bytes).map_err(|e| eyre!(e))?;
+    if m.schema != MANIFEST_SCHEMA_V2 {
+        return Err(eyre!("near-antibody v2 takes {MANIFEST_SCHEMA_V2} manifests (with a settlement section)"));
+    }
     if m.program.project != signer.account_id {
         return Err(eyre!("manifest.program.project is {}, but you sign as {}", m.program.project, signer.account_id));
     }
-    let manifest_str = String::from_utf8(bytes.clone())?;
     let upload = match manifest_url {
         Some(u) => json!({"location": u}),
         None => blob::upload(ctx, &signer, &format!("antibody/manifests/{}.json", hex::encode(sha256(&bytes))), &bytes)?,
     };
-    let msg = json!({"create_program": {"manifest": manifest_str, "manifest_url": upload["location"],
-                     "project_pubkey": project_public(project_key)?, "guardian": guardian}});
+    let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let msg = json!({"create_program": {"manifest": String::from_utf8(bytes.clone())?, "manifest_url": upload["location"],
+                     "project_pk": project_public(project_key)?}});
     let out = ft_transfer_call(ctx, &signer, parse_tusd(escrow)?, msg)?;
     let s = ensure_ok(ctx, &out, "create_program")?;
-    let created = s["events"].as_array().into_iter().flatten().find(|e| e["event"] == "program_created").cloned();
-    let anchor = s["events"].as_array().into_iter().flatten().find(|e| e["event"] == "anchor_checked" || e["event"] == "program_rejected").cloned();
-    Ok(json!({"program": created.map(|e| e["data"][0].clone()), "anchor": anchor.map(|e| e["data"][0].clone()),
-              "manifest_upload": upload, "manifest_sha256": hex::encode(sha256(&bytes)), "tx": s}))
+    let created = event(&s, "program_created").ok_or_else(|| eyre!("no program_created event"))?;
+    Ok(json!({"program": created, "anchor": event(&s, "anchor_checked").or_else(|| event(&s, "program_rejected")),
+              "manifest_upload": upload, "manifest_sha256": hex::encode(sha256(&bytes)), "storage_deposit": credit, "tx": s}))
+}
+
+/// The program's base witness (docs/spec.md §4.4): the anchor header, the invariants, and every
+/// account and slot the activation checks read at the anchor, proven against its state root. The
+/// verifier's own activation check passes on it.
+pub fn build_base(ctx: &Ctx, manifest_json: &[u8], program_key: &str) -> Result<(Vec<u8>, Value)> {
+    let pool = ctx.eth_pool()?;
+    let (bytes, meta) = antibody_witness::program::build_base(&pool, manifest_json, 1, program_key)?;
+    Ok((bytes, serde_json::to_value(&meta)?))
+}
+
+/// Pins the base witness and asks the verifier for the program's sealing key (T1 makes it count).
+pub fn program_activate(ctx: &Ctx, program: u32, wait: bool) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let p = ctx.program(program)?;
+    let key = p["key"].as_str().unwrap_or_default().to_string();
+    let manifest_json = program_manifest_at(ctx, program, 0)?;
+    let (base, built) = build_base(ctx, &manifest_json, &key)?;
+    let sha = hex::encode(sha256(&base));
+    let up = blob::upload(ctx, &signer, &format!("antibody/base/{sha}.bin"), &base)?;
+    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let loc = json!({"location": up["near_tx"], "sha256": sha});
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "activate", json!({"program_id": program, "base": loc}), RUN_TGAS, 0)?;
+    let s = ensure_ok(ctx, &out, "activate")?;
+    let run_id = run_of(&s)?;
+    let mut res = json!({"program": program, "run_id": run_id, "base": {"bytes": base.len(), "sha256": sha, "upload": up,
+                         "fixpoint_passes": built["fixpoint_passes"]}, "tx": s});
+    if wait {
+        res["result"] = wait_run(ctx, run_id, 240)?;
+    }
+    Ok(res)
 }
 
 pub fn program_open(ctx: &Ctx, program: u32) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "open_program", json!({"program_id": program}), 30, 0)?;
-    ensure_ok(ctx, &out, "open_program")
-}
-
-pub fn program_simple(ctx: &Ctx, method: &str, args: Value, tgas: u64) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, method, args, tgas, 0)?;
-    ensure_ok(ctx, &out, method)
+    call(ctx, "open_program", json!({"program_id": program}), 30)
 }
 
 pub fn programs(ctx: &Ctx, from: u32, limit: u32) -> Result<Value> {
     let ps = ctx.view("list_programs", json!({"from": from, "limit": limit}))?;
-    let rows: Vec<Value> = ps
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|p| {
-            json!({"id": p["id"], "name": p["name"], "project": p["project"], "status": p["status"],
-                   "anchor": p["anchor"], "anchor_trust": p["anchor_trust"], "escrow_tusd": fmt_tusd(u128_of(&p["escrow"])),
-                   "paid_tusd": fmt_tusd(u128_of(&p["paid"])), "commits": p["commits"].as_array().map(|c| c.len())})
-        })
-        .collect();
+    let mut rows = Vec::new();
+    for p in ps.as_array().into_iter().flatten() {
+        let id = p["id"].as_u64().unwrap_or_default() as u32;
+        let m = meta(ctx, id)?;
+        let l = &p["ledger"];
+        rows.push(json!({"id": id, "key": p["key"], "name": m["name"], "project": p["project"], "phase": p["phase"], "anchor": p["anchor"],
+                         "round": p["round"], "commits": p["commits"], "escrow_tusd": fmt_tusd(u128_of(&l["available"]) + u128_of(&l["reserved"])),
+                         "paid_tusd": fmt_tusd(u128_of(&l["paid"]))}));
+    }
     Ok(json!({"contract": ctx.dep.antibody, "programs": rows, "stats": ctx.view("get_stats", json!({}))?}))
+}
+
+pub fn list_commits(ctx: &Ctx, program: u32) -> Result<Vec<Value>> {
+    let mut out = Vec::new();
+    loop {
+        let page = ctx.view("list_commits", json!({"program_id": program, "from": out.len(), "limit": 50}))?;
+        let page = page.as_array().cloned().unwrap_or_default();
+        if page.is_empty() {
+            return Ok(out);
+        }
+        out.extend(page);
+    }
 }
 
 pub fn program_show(ctx: &Ctx, program: u32) -> Result<Value> {
     let p = ctx.program(program)?;
-    let keys = ctx.view("get_keys", json!({"program_id": program}))?;
-    let commits = ctx.view("list_commits", json!({"program_id": program, "from": 0, "limit": 100}))?;
-    let rows: Vec<Value> = commits
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(|c| json!({"id": c["id"], "hunter": c["hunter"], "height": c["height"], "known_issue": c["known_issue"],
-                        "status": c["status"], "kind": c["verdict"]["kind"], "outcome": c["outcome"]}))
-        .collect();
-    Ok(json!({"program": p, "claimed_keys": keys, "commits": rows}))
+    let mut rows = Vec::new();
+    for c in list_commits(ctx, program)? {
+        let verdict = match c["run"].as_u64() {
+            Some(r) => run_view(&run(ctx, r)?),
+            None => Value::Null,
+        };
+        rows.push(json!({"id": c["id"], "index": c["index"], "round": c["round"], "hunter": c["hunter"], "state": state_label(&c["state"]),
+                         "paid_tusd": fmt_tusd(paid_of(&c)), "verdict": verdict}));
+    }
+    Ok(json!({"program": p, "meta": meta(ctx, program)?, "record": ctx.view("program_record", json!({"program_id": program}))?,
+              "audit": ctx.view("audit", json!({"program_id": program}))?, "commits": rows}))
+}
+
+pub fn top_up(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
+    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tusd(amount)?, json!({"top_up": {"program_id": program}}))?;
+    ensure_ok(ctx, &out, "top_up")
 }
 
 // ------------------------------------------------------------------ witnesses
@@ -227,7 +352,7 @@ fn verdict_view(r: &ProgramReceipt) -> Value {
 pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &Path, salt: Option<B256>) -> Result<Value> {
     let manifest_json = match (program, manifest) {
         (_, Some(m)) => std::fs::read(m)?,
-        (Some(p), None) => program_manifest(ctx, &ctx.program(p)?)?,
+        (Some(p), None) => program_manifest(ctx, p)?,
         _ => return Err(eyre!("pass --program or --manifest")),
     };
     let key = match program {
@@ -242,9 +367,14 @@ pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &
 
 // --------------------------------------------------------------------- hunting
 
+/// Tokens into your credit at near-antibody (bonds, and an agent's bonds, are taken from it).
 pub fn deposit(ctx: &Ctx, amount: &str) -> Result<Value> {
-    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tusd(amount)?, json!({"deposit": {}}))?;
-    ensure_ok(ctx, &out, "deposit")
+    let signer = ctx.signer()?;
+    let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let out = ft_transfer_call(ctx, &signer, parse_tusd(amount)?, json!("deposit"))?;
+    let mut s = ensure_ok(ctx, &out, "deposit")?;
+    s["storage_deposit"] = credit.unwrap_or(Value::Null);
+    Ok(s)
 }
 
 pub fn faucet(ctx: &Ctx) -> Result<Value> {
@@ -252,63 +382,113 @@ pub fn faucet(ctx: &Ctx) -> Result<Value> {
     ensure_ok(ctx, &out, "faucet")
 }
 
+/// Credit, then withdraw (one yoctoNEAR: only a full-access key withdraws).
 pub fn withdraw(ctx: &Ctx, amount: &str) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "withdraw", json!({"amount": parse_tusd(amount)?.to_string()}), 60, 0)?;
+    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "withdraw", json!({"amount": parse_tusd(amount)?.to_string()}), 60, ONE_YOCTO)?;
     ensure_ok(ctx, &out, "withdraw")
 }
 
-pub fn commitment(program_key: &str, hunter: &str, sha: &str) -> String {
-    hex::encode(sha256(format!("antibody/commit/v1|{program_key}|{hunter}|{sha}").as_bytes()))
+/// `SHA-256("antibody/commit/v2" ‖ u32_be(len) ‖ program_key ‖ u32_be(round) ‖ u32_be(len) ‖ hunter ‖ blob_sha256)`,
+/// as near-antibody computes it: the commitment binds the hunter and the round.
+pub fn commitment(program_key: &str, round: u32, hunter: &str, blob_sha256: &[u8; 32]) -> [u8; 32] {
+    let mut m = b"antibody/commit/v2".to_vec();
+    m.extend((program_key.len() as u32).to_be_bytes());
+    m.extend(program_key.as_bytes());
+    m.extend(round.to_be_bytes());
+    m.extend((hunter.len() as u32).to_be_bytes());
+    m.extend(hunter.as_bytes());
+    m.extend(blob_sha256);
+    sha256(&m)
 }
 
-/// Builds the witness, seals it, and commits (the blob stays private until `reveal`).
+fn sealing_pk(p: &Value) -> Result<String> {
+    p["sealing_pk"].as_str().map(String::from).ok_or_else(|| eyre!("program {} is not activated yet: it has no sealing key", p["id"]))
+}
+
+/// A blob argument for near-antibody: inline up to 15 KB, otherwise a FastFS upload.
+fn blob_arg(ctx: &Ctx, signer: &Signer, blob_bytes: &[u8], dir: &str) -> Result<(Value, Value)> {
+    let sha = hex::encode(sha256(blob_bytes));
+    if blob_bytes.len() <= MAX_INLINE_BLOB {
+        return Ok((json!({"inline": hex::encode(blob_bytes)}), json!({"inline_bytes": blob_bytes.len()})));
+    }
+    let up = blob::upload(ctx, signer, &format!("antibody/{dir}/{sha}.bin"), blob_bytes)?;
+    Ok((json!({"near_tx": {"location": up["near_tx"], "sha256": sha}}), up))
+}
+
+/// Builds the witness, seals it to the program's key, and commits with the bond (the blob stays
+/// private until `reveal`). An agent's bond comes from its owner's credit; anyone else's from their
+/// credit when it covers the bond, otherwise it is attached with `ft_transfer_call`.
 pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>) -> Result<Value> {
     let signer = ctx.signer()?;
     let p = ctx.program(program)?;
-    let manifest_json = program_manifest(ctx, &p)?;
+    let round = p["round"].as_u64().unwrap_or(0) as u32;
     let key = p["key"].as_str().unwrap_or_default().to_string();
+    let pk = sealing_pk(&p)?;
+    let manifest_json = program_manifest(ctx, program)?;
     let (envelope, _meta, local, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
-    let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
         None => Vec::new(),
     };
-    let s = blob::seal(pubkey, &key, &signer.account_id, envelope, report)?;
-    let ch = commitment(&key, &signer.account_id, &s.sha256);
-    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "commit", json!({"program_id": program, "commit_hash": ch}), 30, 0)?;
-    let summary = ensure_ok(ctx, &out, "commit")?;
-    let commit_id = near::return_value(&out).and_then(|v| v.as_u64()).ok_or_else(|| eyre!("commit returned no id"))?;
+    let s = blob::seal(&pk, &key, &signer.account_id, envelope, report)?;
+    let blob_sha = sha256(&s.blob);
+    let cm = hex::encode(commitment(&key, round, &signer.account_id, &blob_sha));
+    let terms = meta(ctx, program)?["terms_sha256"].clone();
+    let bond = u128_of(&p["params"]["bond"]);
+    let me = account(ctx, &signer.account_id)?;
+    let agent = !me["agent"].is_null();
+    let from_credit = agent || u128_of(&me["tokens"]) >= bond;
+    let (commit_id, summary) = if from_credit {
+        let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "commit",
+            json!({"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}), 30, 0)?;
+        let summary = ensure_ok(ctx, &out, "commit")?;
+        let id = near::return_value(&out).and_then(|v| v.as_u64()).ok_or_else(|| {
+            eyre!("containment: the commit was refused (the bond is over this agent's cap or remaining budget)")
+        })?;
+        (id, summary)
+    } else {
+        ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+        let msg = json!({"commit": {"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}});
+        let out = ft_transfer_call(ctx, &signer, bond, msg)?;
+        let summary = ensure_ok(ctx, &out, "commit")?;
+        let id = event(&summary, "commit").and_then(|d| d["commit_id"].as_u64()).ok_or_else(|| eyre!("no commit event"))?;
+        (id, summary)
+    };
     let blob_path = ctx.state_dir.join("blobs").join(format!("{}.bin", s.sha256));
     std::fs::create_dir_all(blob_path.parent().unwrap())?;
     std::fs::write(&blob_path, &s.blob)?;
-    let record = json!({"program": program, "program_key": key, "commit_id": commit_id, "hunter": signer.account_id,
-                        "commit_hash": ch, "sha256": s.sha256, "wrap_v": s.wrap_v, "blob": blob_path,
-                        "content_key": hex::encode(s.content_key), "salt": format!("{salt:#x}"),
-                        "local_verdict": verdict_view(&local), "commit_tx": summary["tx"]});
+    let record = json!({"program": program, "program_key": key, "round": round, "commit_id": commit_id, "hunter": signer.account_id,
+                        "commitment": cm, "sha256": s.sha256, "blob": blob_path, "content_key": hex::encode(s.content_key),
+                        "salt": format!("{salt:#x}"), "local_verdict": verdict_view(&local), "commit_tx": summary["tx"]});
     write_json(&ctx.record_path(program, commit_id), &record)?;
-    Ok(json!({"commit_id": commit_id, "commit_hash": ch, "local_verdict": verdict_view(&local),
-              "record": ctx.record_path(program, commit_id), "tx": summary,
-              "note": "the content key and salt are in the local record (.antibody/): keep it private until disclosure"}))
+    Ok(json!({"commit_id": commit_id, "commitment": cm, "bond_from_credit": from_credit,
+              "local_verdict": verdict_view(&local), "record": ctx.record_path(program, commit_id), "tx": summary,
+              "note": "the content key and salt are in the local record (.antibody/): keep it private"}))
 }
 
-/// Uploads the sealed blob and reveals it: the contract asks OutLayer to verify it.
+/// Reveals the sealed blob (inline, or uploaded with FastFS): near-antibody asks OutLayer to verify it.
 pub fn reveal(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Value> {
     let signer = ctx.signer()?;
-    let rec: Value = serde_json::from_str(&std::fs::read_to_string(ctx.record_path(program, commit_id))?)?;
+    let path = ctx.record_path(program, commit_id);
+    let mut rec: Value = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
     let blob_bytes = std::fs::read(rec["blob"].as_str().unwrap_or_default())?;
-    let sha = rec["sha256"].as_str().unwrap_or_default();
-    let up = blob::upload(ctx, &signer, &format!("antibody/sealed/{sha}.bin"), &blob_bytes)?;
-    let sealed_ref = json!({"url": up["location"], "sha256": sha, "wrap_v": rec["wrap_v"]});
-    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "submit", json!({"commit_id": commit_id, "sealed": sealed_ref}), SUBMIT_TGAS, 0)?;
-    let s = ensure_ok(ctx, &out, "submit")?;
-    let mut res = json!({"commit_id": commit_id, "upload": up, "submit": s});
+    let (arg, up) = blob_arg(ctx, &signer, &blob_bytes, "sealed")?;
+    if account(ctx, &signer.account_id)?["agent"].is_null() {
+        ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    }
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "reveal", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS, 0)?;
+    let s = ensure_ok(ctx, &out, "reveal")?;
+    // Retries of an inline blob pass it again: keep the argument with the record.
+    rec["blob_arg"] = arg;
+    write_json(&path, &rec)?;
+    let mut res = json!({"commit_id": commit_id, "run_id": run_of(&s)?, "upload": up, "tx": s});
     if wait {
         res["result"] = wait_verdict(ctx, commit_id, 240)?;
     }
     Ok(res)
 }
 
-/// One step for agents: build, seal, commit, upload, reveal, and wait for the verdict.
+/// One step for agents: build, seal, commit, reveal, and wait for the verdict.
 pub fn submit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>, wait: bool) -> Result<Value> {
     let c = commit(ctx, program, bundle, salt, report)?;
     let id = c["commit_id"].as_u64().unwrap();
@@ -316,81 +496,153 @@ pub fn submit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
     Ok(json!({"commit": c, "reveal": r}))
 }
 
-pub fn submit_known(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>, wait: bool) -> Result<Value> {
-    let signer = ctx.signer()?;
-    let p = ctx.program(program)?;
-    let manifest_json = program_manifest(ctx, &p)?;
-    let key = p["key"].as_str().unwrap_or_default().to_string();
-    let (envelope, _, local, _) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
-    let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
-    let report = match report {
-        Some(r) => std::fs::read(r)?,
-        None => Vec::new(),
+/// A new verification attempt after an infrastructure failure (the hunter, within the grace period).
+pub fn retry(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Value> {
+    let rec: Value = serde_json::from_str(&std::fs::read_to_string(ctx.record_path(program, commit_id))?)?;
+    let blob = match &rec["blob_arg"] {
+        a if a.get("inline").is_some() => a.clone(),
+        _ => Value::Null,
     };
-    let s = blob::seal(pubkey, &key, &signer.account_id, envelope, report)?;
-    let up = blob::upload(ctx, &signer, &format!("antibody/sealed/{}.bin", s.sha256), &s.blob)?;
-    let sealed_ref = json!({"url": up["location"], "sha256": s.sha256, "wrap_v": s.wrap_v});
-    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "submit_known", json!({"program_id": program, "sealed": sealed_ref}), SUBMIT_TGAS, 0)?;
-    let summary = ensure_ok(ctx, &out, "submit_known")?;
-    let id = summary["events"].as_array().into_iter().flatten().find(|e| e["event"] == "known_issue_submitted")
-        .and_then(|e| e["data"][0]["commit_id"].as_u64()).ok_or_else(|| eyre!("no known_issue_submitted event"))?;
-    write_json(&ctx.record_path(program, id), &json!({"program": program, "program_key": key, "commit_id": id, "hunter": signer.account_id,
-        "sha256": s.sha256, "wrap_v": s.wrap_v, "content_key": hex::encode(s.content_key), "known_issue": true}))?;
-    let mut res = json!({"commit_id": id, "local_verdict": verdict_view(&local), "upload": up, "tx": summary});
+    let s = call(ctx, "retry", json!({"commit_id": commit_id, "blob": blob}), RUN_TGAS)?;
+    let mut res = json!({"commit_id": commit_id, "run_id": run_of(&s)?, "tx": s});
     if wait {
-        res["result"] = wait_verdict(ctx, id, 240)?;
+        res["result"] = wait_verdict(ctx, commit_id, 240)?;
     }
     Ok(res)
 }
 
-pub fn wait_verdict(ctx: &Ctx, commit_id: u64, timeout_s: u64) -> Result<Value> {
+/// The independent second run a verdict above the instant cap needs before it is final (docs/spec.md
+/// §6.2). The requester pays; anyone may ask.
+pub fn second(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Value> {
+    let blob = std::fs::read_to_string(ctx.record_path(program, commit_id))
+        .ok()
+        .and_then(|r| serde_json::from_str::<Value>(&r).ok())
+        .map(|r| r["blob_arg"].clone())
+        .filter(|a| a.get("inline").is_some())
+        .unwrap_or(Value::Null);
+    let signer = ctx.signer()?;
+    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let s = call(ctx, "request_second", json!({"commit_id": commit_id, "blob": blob}), RUN_TGAS)?;
+    let run_id = run_of(&s)?;
+    let mut res = json!({"commit_id": commit_id, "run_id": run_id, "tx": s});
+    if wait {
+        res["result"] = wait_run(ctx, run_id, 240)?;
+    }
+    Ok(res)
+}
+
+/// The project declares a known issue before open: a sealed PoC verified like a submission, which
+/// counts once T1-confirmed (docs/spec.md §7.6).
+pub fn submit_known(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>, wait: bool) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let p = ctx.program(program)?;
+    let key = p["key"].as_str().unwrap_or_default().to_string();
+    let pk = sealing_pk(&p)?;
+    let manifest_json = program_manifest_at(ctx, program, 0)?;
+    let (envelope, _, local, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
+    let report = match report {
+        Some(r) => std::fs::read(r)?,
+        None => Vec::new(),
+    };
+    let s = blob::seal(&pk, &key, &signer.account_id, envelope, report)?;
+    let (arg, up) = blob_arg(ctx, &signer, &s.blob, "known")?;
+    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "submit_known", json!({"program_id": program, "blob": arg}), RUN_TGAS, 0)?;
+    let summary = ensure_ok(ctx, &out, "submit_known")?;
+    let run_id = run_of(&summary)?;
+    write_json(&ctx.state_dir.join("known").join(format!("{program}-{run_id}.json")),
+        &json!({"program": program, "program_key": key, "run_id": run_id, "hunter": signer.account_id, "sha256": s.sha256,
+                "content_key": hex::encode(s.content_key), "salt": format!("{salt:#x}")}))?;
+    let mut res = json!({"run_id": run_id, "local_verdict": verdict_view(&local), "upload": up, "tx": summary});
+    if wait {
+        res["result"] = wait_run(ctx, run_id, 240)?;
+    }
+    Ok(res)
+}
+
+/// Waits until OutLayer answered run `run_id` (or the call failed).
+pub fn wait_run(ctx: &Ctx, run_id: u64, timeout_s: u64) -> Result<Value> {
     let t0 = std::time::Instant::now();
     loop {
-        let c = ctx.commit(commit_id)?;
-        let st = c["status"].as_str().unwrap_or_default().to_string();
-        if st != "Verifying" {
-            return Ok(json!({"status": st, "verdict": c["verdict"], "outcome": c["outcome"], "seconds": t0.elapsed().as_secs()}));
+        let r = run(ctx, run_id)?;
+        if r["outcome"] != json!("Pending") {
+            let mut v = run_view(&r);
+            v["seconds"] = t0.elapsed().as_secs().into();
+            return Ok(v);
         }
         if t0.elapsed().as_secs() > timeout_s {
-            return Ok(json!({"status": "Verifying", "note": "still verifying; check `antibody status --commit`"}));
+            return Ok(json!({"run_id": run_id, "pending": true, "note": "still verifying; check `antibody status --run`"}));
         }
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
 }
 
-pub fn status(ctx: &Ctx, commit: Option<u64>, program: Option<u32>, account: Option<String>) -> Result<Value> {
+pub fn wait_verdict(ctx: &Ctx, commit_id: u64, timeout_s: u64) -> Result<Value> {
+    let c = ctx.commit(commit_id)?;
+    let r = c["run"].as_u64().ok_or_else(|| eyre!("commit {commit_id} has no verification run yet"))?;
+    wait_run(ctx, r, timeout_s)
+}
+
+pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Option<u32>, of: Option<String>) -> Result<Value> {
     let mut out = json!({});
     if let Some(c) = commit {
         let cv = ctx.commit(c)?;
-        out["commit"] = cv.clone();
-        if matches!(cv["outcome"].as_object().map(|o| o.contains_key("Duplicate") || o.contains_key("Known")), Some(true)) {
-            out["duplicate_proof"] = ctx.view("get_duplicate_proof", json!({"commit_id": c}))?;
+        out["commit"] = json!({"state": state_label(&cv["state"]), "paid_tusd": fmt_tusd(paid_of(&cv)), "raw": cv});
+        if let Some(r) = cv["run"].as_u64() {
+            out["verdict"] = run_view(&run(ctx, r)?);
         }
+    }
+    if let Some(r) = run_id {
+        out["run"] = run_view(&run(ctx, r)?);
     }
     if let Some(p) = program {
         out["program"] = program_show(ctx, p)?;
     }
-    let acct = account.or_else(|| ctx.account.clone());
-    if let Some(a) = acct {
-        out["account"] = json!({"id": a, "internal_balance_tusd": fmt_tusd(u128_of(&ctx.view("get_balance", json!({"account_id": a}))?)),
-                                "reputation": ctx.view("get_reputation", json!({"account_id": a}))?,
+    if let Some(a) = of.or_else(|| ctx.account.clone()) {
+        let acc = account(ctx, &a)?;
+        out["account"] = json!({"id": a, "credit_tusd": fmt_tusd(u128_of(&acc["tokens"])), "near_credit": acc["near"],
+                                "agent": ctx.view("agent_statement", json!({"agent": a}))?,
                                 "tusd_balance": fmt_tusd(u128_of(&ctx.near.view(&ctx.dep.tusd, "ft_balance_of", json!({"account_id": a}))?))});
     }
     Ok(out)
 }
 
-pub fn leaderboard(ctx: &Ctx, limit: u32) -> Result<Value> {
-    ctx.view("leaderboard", json!({"limit": limit}))
-}
+// ---------------------------------------------------------------------- keeper
 
-pub fn top_up(ctx: &Ctx, commit_id: u64, amount: &str, note: Option<String>) -> Result<Value> {
-    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tusd(amount)?, json!({"top_up": {"commit_id": commit_id, "note": note}}))?;
-    ensure_ok(ctx, &out, "top_up")
-}
-
-pub fn fund(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
-    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tusd(amount)?, json!({"fund_program": {"program_id": program}}))?;
-    ensure_ok(ctx, &out, "fund_program")
+/// The permissionless steps that move money once verdicts are final (docs/spec.md §7): allocate in
+/// commit order, pay every funded claim whose window allows, and fund the debt queue.
+pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
+    let mut steps = Vec::new();
+    loop {
+        match call(ctx, "allocate", json!({"program_id": program, "max": 20}), 150) {
+            Ok(s) => steps.push(json!({"allocate": s["tx"], "events": s["events"].as_array().map(|e| e.len())})),
+            Err(e) => {
+                let e = e.to_string();
+                if !e.contains("nothing to allocate") {
+                    steps.push(json!({"allocate_stopped": e}));
+                }
+                break;
+            }
+        }
+    }
+    for c in list_commits(ctx, program)? {
+        let st = state_label(&c["state"]);
+        let claim = &c["state"][st.as_str()];
+        let funded = u128_of(&claim["debt"]) == 0 && u128_of(&claim["reserved"]) >= u128_of(&claim["amount"]);
+        if (st == "Holder" || st == "Promoted") && funded {
+            match call(ctx, "pay", json!({"commit_id": c["id"]}), 60) {
+                Ok(s) => steps.push(json!({"paid": c["id"], "event": event(&s, "paid"), "tx": s["tx"]})),
+                Err(e) => steps.push(json!({"not_paid": c["id"], "why": e.to_string()})),
+            }
+        }
+    }
+    if ctx.program(program)?["debtors"].as_array().is_some_and(|d| !d.is_empty()) {
+        match call(ctx, "settle_debts", json!({"program_id": program}), 100) {
+            Ok(s) => steps.push(json!({"settle_debts": s["tx"]})),
+            Err(e) => steps.push(json!({"settle_debts_stopped": e.to_string()})),
+        }
+    }
+    Ok(json!({"program": program, "steps": steps}))
 }
 
 // ------------------------------------------------------------------------- init
@@ -398,7 +650,7 @@ pub fn fund(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
 const INIT_TOML: &str = r#"# Antibody program manifest: your bounty terms as code. Its sha256 is what you commit on NEAR.
 # Fill every <...>, then:  antibody manifest antibody.toml --out manifest.json
 # A complete example: fixtures/acme-local/antibody.toml in the Antibody repository.
-schema = "antibody.manifest.v1"
+schema = "antibody.manifest.v2"
 
 [program]
 name = "<program name>"
@@ -407,7 +659,7 @@ description = "<one line: what is in scope>"
 
 [anchor]
 # A finalized block of your staging deployment. Create the program within about 7 days of it so that
-# NEAR's Ethereum light client can confirm its hash (otherwise it is labelled project-attested).
+# NEAR's Ethereum light client can confirm its hash (otherwise the anchor is recorded as unconfirmed).
 # `antibody anchor-check --block <n>` shows what the light client has for it.
 chain_id = <CHAIN_ID>
 block_number = 0
@@ -422,7 +674,7 @@ address = "0x<address>"
 code_hash = "0x<code hash>"
 
 [invariants]
-# Reserved address where the verifier injects your invariants; keep it as is.
+# The verifier serves your invariants at a reserved address derived from the program; keep this one.
 address = "0xe88d533fa3f57c4d6fa6489a13e3430d30003596"
 # Runtime code of your IAntibodyInvariants contract (with your addresses as immutables), and its hash.
 # `antibody invariants draft --source <your contracts> --out draft/` writes a first draft.
@@ -457,28 +709,56 @@ max_blocks = 1
 max_timestamp_delta = 0
 max_entry_calls = 256
 
-[payout]
-# Raw units of the payout token (tUSD has 6 decimals: 10000000000 = 10,000 tUSD).
-token = "tusd.antibody-hq.testnet"
-decimals = 6
+# Everything near-antibody enforces. Amounts are raw units of the payout token (tUSD: 6 decimals,
+# 10000000000 = 10,000 tUSD); windows are seconds.
+[settlement]
+bond = "25000000"
+challenge_bond = "100000000"
+unevaluable = "refund"
+terms_sha256 = "<sha256 of your terms text, 64 hex>"
+
+[settlement.payouts]
 critical = "10000000000"
 high = "3000000000"
 medium = "1000000000"
 low = "0"
 impact_bps = 0
 impact_cap = "0"
+decimals = 6
 
-[rules]
-bond = "25000000"
-reveal_window_blocks = 300
-disclosure_after_secs = 86400
-deadline_unix = <DEADLINE>
-instant_payout_cap = "5000000000"
-challenge_delay_secs = 259200
+[settlement.instant]
+# Paid in seconds when T1 and at most `cap`; larger payouts wait the challenge window.
+cap = "5000000000"
+budget = "10000000000"
+window_secs = 86400
+
+[settlement.fees]
+protocol_bps = 0
+release = "0"
+
+[settlement.windows]
+reveal = 3600
+challenge = 259200
+resolve = 86400
+infra_grace = 86400
+run_timeout = 900
+round_min = 86400
+rerun_window = 259200
+disclosure_max_delay = 2592000
+deadline = <DEADLINE>
+exit_grace = 604800
+
+[settlement.known]
+max_count = 4
+max_share_bps = 5000
+
+[settlement.pause]
+slots = [0]
+min_impact_usd_micro = "0"
 "#;
 
-/// Scaffolds a program workspace: an annotated antibody.toml, the project's X25519 key (findings are
-/// re-encrypted to it), and the next steps.
+/// Scaffolds a program workspace: an annotated antibody.toml, the project's X25519 key (released
+/// findings are wrapped to it), and the next steps.
 pub fn init(out: &Path, project: &str, chain_id: u64, days: u64) -> Result<Value> {
     std::fs::create_dir_all(out)?;
     let toml_path = out.join("antibody.toml");
@@ -499,8 +779,8 @@ pub fn init(out: &Path, project: &str, chain_id: u64, days: u64) -> Result<Value
          2. Deploy to staging, pick a finalized anchor block (`antibody anchor-check --block <n>`), and fill `antibody.toml`.\n\
          3. `antibody manifest antibody.toml --out manifest.json`, then `antibody check --manifest manifest.json --bundle draft/noop.bundle.json` must say NoViolation.\n\
          4. `antibody --account {project} program create --manifest manifest.json --escrow <tUSD> --project-key project.x25519.json`.\n\
-         5. Declare known issues (`program known`), then `program open`.\n\n\
-         Keep `project.x25519.json` secret: it decrypts every valid finding.\n"
+         5. `program activate` (pins the base witness; the program's sealing key counts once T1-confirmed), declare known issues (`program known`), then `program open`.\n\n\
+         Keep `project.x25519.json` secret: findings released to you are wrapped to it.\n"
     );
     std::fs::write(out.join("NEXT_STEPS.md"), steps)?;
     Ok(json!({"out": out, "manifest_template": toml_path, "project_key": k, "deadline_unix": deadline,
@@ -512,7 +792,7 @@ pub fn init(out: &Path, project: &str, chain_id: u64, days: u64) -> Result<Value
 /// Read-only: compares a Sepolia block's header hash with NEAR's Ethereum light client, the check
 /// near-antibody runs when a program is created. With `forge`, it also shows that a forged header
 /// (one bit of the state root flipped) disagrees with the light client, so a program anchored on it
-/// would be rejected and its escrow refunded (`on_anchor_checked`).
+/// would be rejected and its escrow returned.
 pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
     let lc = ctx.dep.light_client.clone().ok_or_else(|| eyre!("the deployments file names no light client"))?;
     let pool = ctx.eth_pool()?;
@@ -529,8 +809,8 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
         "matches": client == Some(real),
         "verdict": match client {
             Some(h) if h == real => "light-client: create_program would accept this anchor",
-            Some(_) => "mismatch: create_program would reject this anchor and refund the escrow",
-            None => "outside the light-client window: the program would be labelled project-attested",
+            Some(_) => "mismatch: create_program would reject this anchor and return the escrow",
+            None => "outside the light-client window: the anchor would be recorded as unconfirmed",
         },
     });
     if forge {
@@ -542,7 +822,7 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
             "forged_hash": format!("{fh:#x}"),
             "matches_light_client": client == Some(fh),
             "verdict": if client.is_some() && client != Some(fh) {
-                "rejected: a program anchored on the forged header is refunded (near-antibody on_anchor_checked)"
+                "rejected: a program anchored on the forged header is rejected and its escrow returned"
             } else {
                 "not checkable: the block is outside the light-client window"
             },
@@ -571,192 +851,30 @@ pub fn manifest_round(base: &Path, round: u32, overrides: &[String], out: &Path)
               "overrides": r.overrides.iter().map(|o| json!({"address": o.address, "code_hash": o.code_hash})).collect::<Vec<_>>()}))
 }
 
-/// The project commits its fix: uploads the round manifest and proposes the round on NEAR.
-pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path) -> Result<Value> {
+// -------------------------------------------------------------------- agents
+
+/// Methods an agent's function-call key may call on near-antibody (and FastFS uploads). No
+/// withdrawal, transfer or deposit: those need the owner's full-access key and one yoctoNEAR.
+pub const AGENT_METHODS: &[&str] = &["commit", "reveal", "retry", "__fastdata_fastfs"];
+
+/// The owner registers its sub-account as an agent: bonds come from the owner's credit, within the
+/// budget and the per-commit cap; payouts go to the owner (docs/spec.md §13).
+pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str) -> Result<Value> {
     let signer = ctx.signer()?;
-    let p = ctx.program(program)?;
-    let base = program_manifest_at(ctx, &p, 0)?;
-    let bytes = std::fs::read(manifest)?;
-    let m = Manifest::parse(&bytes).map_err(|e| eyre!(e))?;
-    let up = blob::upload(ctx, &signer, &format!("antibody/manifests/{}.json", hex::encode(sha256(&bytes))), &bytes)?;
+    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
     let out = ctx.near.function_call(
         &signer,
         &ctx.dep.antibody,
-        "propose_round",
-        json!({"program_id": program, "base_manifest": String::from_utf8(base)?, "manifest": String::from_utf8(bytes.clone())?,
-               "manifest_url": up["location"]}),
-        150,
-        0,
+        "register_agent",
+        json!({"agent": agent, "bond_budget": parse_tusd(budget)?.to_string(), "per_commit_cap": parse_tusd(per_commit_cap)?.to_string()}),
+        30,
+        ONE_YOCTO,
     )?;
-    let s = ensure_ok(ctx, &out, "propose_round")?;
-    Ok(json!({"program": program, "round": m.round, "manifest_sha256": hex::encode(sha256(&bytes)), "upload": up, "tx": s}))
+    ensure_ok(ctx, &out, "register_agent")
 }
 
-/// Re-runs a claimed finding against the proposed round's fix: recovers the PoC (the project from
-/// its key wrap, the finder from the local record, anyone after disclosure), builds a fresh witness
-/// of the same bundle at the round manifest, seals it to the verifier and asks near-antibody to run
-/// it in the TEE.
-pub fn round_rerun(ctx: &Ctx, commit_id: u64, project_key: Option<&Path>, wait: bool) -> Result<Value> {
-    let signer = ctx.signer()?;
-    let c = ctx.commit(commit_id)?;
-    let p = ctx.program(c["program"].as_u64().unwrap_or_default() as u32)?;
-    let key = p["key"].as_str().unwrap_or_default().to_string();
-    let round = p["round"].as_u64().unwrap_or(0);
-    if round == 0 || round != p["open_round"].as_u64().unwrap_or(0) + 1 {
-        return Err(eyre!("no proposed round is waiting for re-runs"));
-    }
-    let (k, source) = match project_key {
-        Some(pk) => {
-            let wrap = hex::decode(c["verdict"]["project_wrap"].as_str().ok_or_else(|| eyre!("commit {commit_id} has no project wrap"))?)?;
-            let sk = x25519_dalek::StaticSecret::from(project_secret(pk)?);
-            (sealed::project_unwrap(&wrap, &sk, &key).map_err(|e| eyre!("{e}"))?, "project wrap")
-        }
-        None => content_key_for(ctx, &p, commit_id)?,
-    };
-    let blob_bytes = blob::fetch(&ctx.near, c["sealed"]["url"].as_str().unwrap_or_default())?;
-    let payload = sealed::open_with_key(&blob_bytes, &k, &key).map_err(|e| eyre!("{e}"))?;
-    let env = Envelope::decode(&payload.envelope).map_err(|e| eyre!(e))?;
-    let Payload::Program(w) = env.payload else { return Err(eyre!("not a program witness")) };
-    let manifest_json = program_manifest_at(ctx, &p, round)?;
-    let m = Manifest::parse(&manifest_json).map_err(|e| eyre!(e))?;
-    let pool = ctx.eth_pool()?;
-    let (envelope, _meta, local) = antibody_witness::program::build_program(&pool, &manifest_json, &m.invariants.runtime_code, w.bundle, 1, &key)?;
-    let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
-    let hunter = c["hunter"].as_str().unwrap_or_default();
-    let s = blob::seal(pubkey, &key, hunter, envelope, Vec::new())?;
-    let up = blob::upload(ctx, &signer, &format!("antibody/reruns/{}.bin", s.sha256), &s.blob)?;
-    let sealed_ref = json!({"url": up["location"], "sha256": s.sha256, "wrap_v": s.wrap_v});
-    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "request_rerun", json!({"commit_id": commit_id, "sealed": sealed_ref}), SUBMIT_TGAS, 0)?;
-    let tx = ensure_ok(ctx, &out, "request_rerun")?;
-    let mut res = json!({"commit_id": commit_id, "round": round, "key_source": source, "local_verdict": verdict_view(&local),
-                         "upload": up, "tx": tx});
-    if wait {
-        res["result"] = wait_rerun(ctx, commit_id, round, 240)?;
-    }
-    Ok(res)
-}
-
-pub fn wait_rerun(ctx: &Ctx, commit_id: u64, round: u64, timeout_s: u64) -> Result<Value> {
-    let t = std::time::Instant::now();
-    loop {
-        let c = ctx.commit(commit_id)?;
-        if let Some(r) = c["reruns"].as_array().into_iter().flatten().find(|r| r["round"].as_u64() == Some(round)) {
-            if r["status"] != json!("Requested") {
-                return Ok(r.clone());
-            }
-        }
-        if t.elapsed().as_secs() > timeout_s {
-            return Err(eyre!("no re-run result for commit {commit_id} after {timeout_s}s"));
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    }
-}
-
-/// Opens the proposed round: released keys become claimable again; the rest carry over.
-pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "open_round", json!({"program_id": program}), 200, 0)?;
-    let s = ensure_ok(ctx, &out, "open_round")?;
-    let p = ctx.program(program)?;
-    let keys = ctx.view("get_keys", json!({"program_id": program}))?;
-    Ok(json!({"program": program, "open_round": p["open_round"], "round": p["rounds"][p["open_round"].as_u64().unwrap_or(1) as usize - 1],
-              "keys": keys, "tx": s}))
-}
-
-// --------------------------------------------------------------- verification
-
-fn content_key_for(ctx: &Ctx, program: &Value, commit_id: u64) -> Result<([u8; 32], &'static str)> {
-    if let Some(k) = program["disclosure"]["keys"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|k| k["commit_id"].as_u64() == Some(commit_id) && k["round"].is_null())
-    {
-        let k: [u8; 32] = hex::decode(k["content_key"].as_str().unwrap_or_default())?.try_into().map_err(|_| eyre!("bad key"))?;
-        return Ok((k, "disclosure"));
-    }
-    let id = program["id"].as_u64().unwrap_or_default() as u32;
-    if let Ok(s) = std::fs::read_to_string(ctx.record_path(id, commit_id)) {
-        let rec: Value = serde_json::from_str(&s)?;
-        let k: [u8; 32] = hex::decode(rec["content_key"].as_str().unwrap_or_default())?.try_into().map_err(|_| eyre!("bad key"))?;
-        return Ok((k, "local record"));
-    }
-    Err(eyre!("commit {commit_id} is still sealed (no disclosure yet and no local record)"))
-}
-
-/// Re-runs one commit's verification locally from its sealed blob and compares with the chain.
-fn reverify(ctx: &Ctx, program: &Value, c: &Value, k: &[u8; 32]) -> Result<Value> {
-    let id = c["id"].as_u64().unwrap_or_default();
-    let key = program["key"].as_str().unwrap_or_default();
-    let url = c["sealed"]["url"].as_str().ok_or_else(|| eyre!("commit {id} has no revealed blob"))?;
-    let blob_bytes = blob::fetch(&ctx.near, url)?;
-    let sha_ok = hex::encode(sha256(&blob_bytes)) == c["sealed"]["sha256"].as_str().unwrap_or_default();
-    let payload = sealed::open_with_key(&blob_bytes, k, key).map_err(|e| eyre!("{e}"))?;
-    let env = Envelope::decode(&payload.envelope).map_err(|e| eyre!(e))?;
-    let Payload::Program(w) = &env.payload else { return Err(eyre!("not a program witness")) };
-    let mh = B256::from_slice(&hex::decode(round_manifest_hash(program, c["round"].as_u64().unwrap_or(0)))?);
-    let receipt = run_program(&env, w, sha256(&payload.envelope), &ProgramContext { program_id: key.into(), commit_id: id, expected_manifest_hash: Some(mh), reserved: None });
-    let rh = hex::encode(receipt.hash());
-    let onchain_rh = c["verdict"]["receipt_hash"].as_str().unwrap_or_default();
-    let kp = program["disclosure"]["k_program"].as_str().and_then(|s| hex::decode(s).ok()).and_then(|b| <[u8; 32]>::try_from(b).ok());
-    let tags_match = kp.map(|kp| {
-        let f = receipt.facts(Some(&kp), None, None);
-        let onchain: Vec<(u64, String)> = c["verdict"]["keys"].as_array().into_iter().flatten()
-            .map(|k| (k["slot"].as_u64().unwrap_or(0), k["tag"].as_str().unwrap_or_default().to_string())).collect();
-        let mine: Vec<(u64, String)> = f.fp_tags.iter().map(|t| (t.slot as u64, t.tag.clone())).collect();
-        mine == onchain
-    });
-    Ok(json!({"commit_id": id, "hunter": payload.hunter, "blob_sha256_matches": sha_ok, "receipt_hash": rh,
-              "receipt_hash_matches_chain": rh == onchain_rh, "fp_tags_match_chain": tags_match,
-              "verdict": verdict_view(&receipt), "report_bytes": payload.report.len(), "committed_at_height": c["height"]}))
-}
-
-/// After disclosure (or with your own local record): re-verify a commit and, for a duplicate or a
-/// known issue, the earlier claim too — "same rule, same function, committed earlier".
-pub fn verify(ctx: &Ctx, commit_id: u64) -> Result<Value> {
-    let c = ctx.commit(commit_id)?;
-    let p = ctx.program(c["program"].as_u64().unwrap_or_default() as u32)?;
-    let (k, source) = content_key_for(ctx, &p, commit_id)?;
-    let mine = reverify(ctx, &p, &c, &k)?;
-    let mut out = json!({"commit": mine, "key_source": source, "outcome": c["outcome"]});
-    let earlier = c["outcome"]["Duplicate"]["of"].as_u64().or(c["outcome"]["Known"]["of"].as_u64());
-    if let Some(e) = earlier {
-        let ec = ctx.commit(e)?;
-        let (ek, esrc) = content_key_for(ctx, &p, e)?;
-        let theirs = reverify(ctx, &p, &ec, &ek)?;
-        let same_keys = c["verdict"]["keys"] == ec["verdict"]["keys"];
-        out["earlier"] = theirs;
-        out["earlier_key_source"] = esrc.into();
-        out["same_rule_same_function"] = same_keys.into();
-        out["committed_earlier"] = (ec["height"].as_u64() <= c["height"].as_u64() && e < commit_id).into();
-    }
-    Ok(out)
-}
-
-/// The project reads a valid finding: unwrap `project_wrap`, decrypt, re-run, write the PoC out.
-pub fn decrypt(ctx: &Ctx, commit_id: u64, project_key: &Path, out_dir: &Path) -> Result<Value> {
-    let c = ctx.commit(commit_id)?;
-    let p = ctx.program(c["program"].as_u64().unwrap_or_default() as u32)?;
-    let wrap = hex::decode(c["verdict"]["project_wrap"].as_str().ok_or_else(|| eyre!("no project wrap: only Violations are readable before disclosure"))?)?;
-    let sk = x25519_dalek::StaticSecret::from(project_secret(project_key)?);
-    let key = p["key"].as_str().unwrap_or_default();
-    let k = sealed::project_unwrap(&wrap, &sk, key).map_err(|e| eyre!("{e}"))?;
-    let blob_bytes = blob::fetch(&ctx.near, c["sealed"]["url"].as_str().unwrap_or_default())?;
-    let payload = sealed::open_with_key(&blob_bytes, &k, key).map_err(|e| eyre!("{e}"))?;
-    std::fs::create_dir_all(out_dir)?;
-    std::fs::write(out_dir.join("witness.bin"), &payload.envelope)?;
-    std::fs::write(out_dir.join("report.md"), &payload.report)?;
-    let r = reverify(ctx, &p, &c, &k)?;
-    write_json(&out_dir.join("reverify.json"), &r)?;
-    Ok(json!({"commit_id": commit_id, "hunter": payload.hunter, "out": out_dir, "reverify": r}))
-}
-
-// -------------------------------------------------------------------- agents
-
-pub const AGENT_METHODS: &[&str] = &["commit", "submit", "__fastdata_fastfs"];
-
-/// Adds a function-call access key that can only commit/submit (and upload blobs) on near-antibody,
-/// with a NEAR gas allowance. It cannot attach deposits or withdraw: bonds come from the owner's
-/// internal balance and payouts go to the owner account.
+/// Adds a function-call access key limited to [`AGENT_METHODS`] on near-antibody, with a NEAR gas
+/// allowance, to the signer's account (the agent's own sub-account).
 pub fn agent_key_add(ctx: &Ctx, allowance_near: f64, out: &Path) -> Result<Value> {
     let owner = ctx.signer()?;
     let agent = Signer::generate(Some(owner.account_id.clone()))?;
@@ -776,13 +894,13 @@ pub fn agent_key_add(ctx: &Ctx, allowance_near: f64, out: &Path) -> Result<Value
     )?;
     let s = ensure_ok(ctx, &res, "add_key")?;
     write_json(out, &agent.to_file_json())?;
-    Ok(json!({"owner": owner.account_id, "agent_public_key": agent.public_key_str(), "key_file": out,
+    Ok(json!({"account": owner.account_id, "agent_public_key": agent.public_key_str(), "key_file": out,
               "receiver": ctx.dep.antibody, "methods": AGENT_METHODS, "allowance_near": allowance_near, "tx": s}))
 }
 
 pub fn pull(ctx: &Ctx, program: u32, out: &Path) -> Result<Value> {
     let p = ctx.program(program)?;
-    let manifest_json = program_manifest(ctx, &p)?;
+    let manifest_json = program_manifest(ctx, program)?;
     let m = Manifest::parse(&manifest_json).map_err(|e| eyre!(e))?;
     std::fs::create_dir_all(out)?;
     std::fs::write(out.join("manifest.json"), &manifest_json)?;
@@ -797,9 +915,9 @@ pub fn pull(ctx: &Ctx, program: u32, out: &Path) -> Result<Value> {
     });
     write_json(&out.join("bundle.template.json"), &template)?;
     let mut readme = format!(
-        "# {name}\n\nProgram `{key}` on `{contract}`. Anchor: chain {chain}, block {block} `{hash}` ({trust}).\n\n",
+        "# {name}\n\nProgram `{key}` on `{contract}`. Anchor: chain {chain}, block {block} `{hash}` ({anchor}).\n\n",
         name = m.program.name, key = p["key"].as_str().unwrap_or_default(), contract = ctx.dep.antibody,
-        chain = m.anchor.chain_id, block = m.anchor.block_number, hash = m.anchor.block_hash, trust = p["anchor_trust"]
+        chain = m.anchor.chain_id, block = m.anchor.block_number, hash = m.anchor.block_hash, anchor = p["anchor"]
     );
     readme += "## Fork the anchor\n\n```bash\nanvil --fork-url \"$SEPOLIA_RPC\" --fork-block-number ";
     readme += &format!("{} --chain-id {}\n```\n\n", m.anchor.block_number, m.anchor.chain_id);
@@ -823,7 +941,7 @@ pub fn pull(ctx: &Ctx, program: u32, out: &Path) -> Result<Value> {
 
 // --------------------------------------------------------------------- admin
 
-fn parse_near(s: &str) -> Result<u128> {
+pub fn parse_near(s: &str) -> Result<u128> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
     if f.len() > 24 || i.is_empty() || !i.chars().chain(f.chars()).all(|c| c.is_ascii_digit()) {
         return Err(eyre!("bad NEAR amount {s:?}"));
@@ -894,35 +1012,6 @@ pub fn admin_call(ctx: &Ctx, contract: &str, method: &str, args: &str, deposit_y
 pub fn admin_send_near(ctx: &Ctx, to: &str, amount_near: &str) -> Result<Value> {
     let out = ctx.near.send(&ctx.signer()?, to, vec![Action::Transfer(parse_near(amount_near)?)], "EXECUTED_OPTIMISTIC")?;
     ensure_ok(ctx, &out, "transfer")
-}
-
-/// Creates the verifier seed as a `PROTECTED_` secret inside OutLayer's keystore (generated in its TEE;
-/// nobody sees the value) and stores the row so that only the verifier build `wasm_hash`, called by
-/// `contract`, can read it: `And[WasmHash{h}, Predecessor{Whitelist[contract]}]`.
-pub fn admin_outlayer_secret(ctx: &Ctx, api: &str, outlayer: &str, wasm_hash: &str, profile: &str, contract: &str) -> Result<Value> {
-    let signer = ctx.signer()?;
-    let body = json!({"accessor": {"type": "WasmHash", "hash": wasm_hash}, "owner": signer.account_id, "profile": profile,
-                      "encrypted_secrets_base64": null,
-                      "new_secrets": [{"name": "PROTECTED_ANTIBODY_SEED", "generation_type": "hex32"}]});
-    let r = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build()?
-        .post(format!("{api}/secrets/add_generated_secret")).json(&body).send()?;
-    let status = r.status();
-    let v: Value = r.json().unwrap_or(Value::Null);
-    if !status.is_success() {
-        return Err(eyre!("add_generated_secret: HTTP {status}: {v}"));
-    }
-    let ct = v["encrypted_data_base64"].as_str().ok_or_else(|| eyre!("add_generated_secret: no ciphertext in the response"))?.to_string();
-    let access = json!({"Logic": {"operator": "And", "conditions": [
-        {"WasmHash": {"hash": wasm_hash}},
-        {"Predecessor": {"condition": {"Whitelist": {"accounts": [contract]}}}}]}});
-    // 1e19 yocto per stored byte; the contract refunds any excess.
-    let deposit = (ct.len() as u128 + 2048) * 10_000_000_000_000_000_000;
-    let out = ctx.near.function_call(&signer, outlayer, "store_secrets",
-        json!({"accessor": {"WasmHash": {"hash": wasm_hash}}, "profile": profile, "encrypted_secrets_base64": ct,
-               "access": access, "vault_id": null}), 100, deposit)?;
-    let s = ensure_ok(ctx, &out, "store_secrets")?;
-    Ok(json!({"owner": signer.account_id, "profile": profile, "wasm_hash": wasm_hash, "keys": v["all_keys"],
-              "access": access, "tx": s}))
 }
 
 pub fn tx(ctx: &Ctx, hash: &str, signer: &str) -> Result<Value> {

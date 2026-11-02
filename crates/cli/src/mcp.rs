@@ -1,7 +1,7 @@
 //! `antibody mcp`: a Model Context Protocol server (JSON-RPC 2.0 over stdio, one message per line)
 //! exposing the CLI library to AI agents. Agents hunt with their own tools; this server only lets
-//! them read programs, check a PoC locally, commit/submit sealed PoCs and verify receipts. Run it
-//! with a function-call access key limited to commit/submit (`antibody agent-key add`).
+//! them read programs, check a PoC locally, and commit and reveal sealed PoCs. Run it as a registered
+//! agent with a function-call key limited to commit/reveal/retry (`antibody agent key add`).
 
 use std::{
     io::{BufRead, Write},
@@ -20,22 +20,20 @@ fn tools() -> Value {
     let int = |d: &str| json!({"type": "integer", "minimum": 0, "description": d});
     let s = |d: &str| json!({"type": "string", "description": d});
     json!([
-        {"name": "list_programs", "description": "List bounty programs on near-antibody (escrow, anchor, status) and global stats.",
+        {"name": "list_programs", "description": "List bounty programs on near-antibody (escrow, anchor, phase, round) and global stats.",
          "inputSchema": {"type": "object", "properties": {"from": int("first program id"), "limit": int("max programs")}}},
-        {"name": "get_program", "description": "One program: committed rules (invariants, severities, payouts, bond, windows), anchor and its light-client status, claimed keys and the sealed submissions feed.",
+        {"name": "get_program", "description": "One program: its parameters (payouts, bond, windows, budgets), anchor status, record, audit, and every commit with its verdict.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id")}, "required": ["program_id"]}},
         {"name": "fetch_env", "description": "Write a hunting workspace for a program: the hash-checked manifest, invariants code, targets, a bundle template and the anvil fork command for the anchor block.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "out_dir": s("directory to write")}, "required": ["program_id"]}},
         {"name": "check_poc", "description": "Run the verifier locally on a PoC bundle against the proven anchor state (no keys, nothing sent). Returns the verdict: which invariants break, where, and the impact.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "bundle_path": s("bundle JSON file"), "salt": s("optional 0x 32-byte sender salt")}, "required": ["program_id", "bundle_path"]}},
-        {"name": "commit", "description": "Seal the PoC to the TEE's key and commit its hash on NEAR (sets priority, locks the bond). The blob stays private until `submit`.",
+        {"name": "commit", "description": "Seal the PoC to the program's key and commit its hash on NEAR with the bond (sets priority). The blob stays private until `submit`. An agent's bond comes from its owner's credit, within its cap.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "bundle_path": s("bundle JSON file"), "report_path": s("optional report (never read by the verifier)"), "salt": s("optional 0x salt")}, "required": ["program_id", "bundle_path"]}},
-        {"name": "submit", "description": "Reveal a committed PoC (commit_id), or commit+reveal a bundle in one step; the contract has OutLayer verify it and applies the committed rules. Waits for the verdict.",
+        {"name": "submit", "description": "Reveal a committed PoC (commit_id), or commit+reveal a bundle in one step; near-antibody has OutLayer verify it. Waits for the verdict (kind, keys, tier).",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "commit_id": int("an existing commit to reveal"), "bundle_path": s("bundle JSON (commit + reveal)"), "report_path": s("optional report"), "wait": {"type": "boolean"}}, "required": ["program_id"]}},
-        {"name": "status", "description": "A commit (verdict, outcome, duplicate proof), a program summary, and/or an account's balances and reputation.",
-         "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id"), "program_id": int("program id"), "account": s("NEAR account")}}},
-        {"name": "verify_receipt", "description": "Re-run a commit's verification locally from its sealed blob (after disclosure, or with your own local record) and compare receipt hash and fingerprint tags with the chain; for a duplicate also re-verify the earlier claim.",
-         "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id")}, "required": ["commit_id"]}}
+        {"name": "status", "description": "A commit (state, verdict), a run, a program summary, and/or an account's credit and agent statement.",
+         "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id"), "run_id": int("run id"), "program_id": int("program id"), "account": s("NEAR account")}}}
     ])
 }
 
@@ -77,8 +75,7 @@ fn call(ctx: &Ctx, name: &str, a: &Value) -> Result<Value> {
                 }
             }
         }
-        "status" => cmd::status(ctx, a["commit_id"].as_u64(), a["program_id"].as_u64().map(|x| x as u32), a["account"].as_str().map(String::from)),
-        "verify_receipt" => cmd::verify(ctx, arg_u64(a, "commit_id")?),
+        "status" => cmd::status(ctx, a["commit_id"].as_u64(), a["run_id"].as_u64(), a["program_id"].as_u64().map(|x| x as u32), a["account"].as_str().map(String::from)),
         other => Err(eyre!("unknown tool {other}")),
     }
 }

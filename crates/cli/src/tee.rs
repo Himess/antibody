@@ -327,26 +327,26 @@ pub fn check(ctx: &Ctx, api: &str, verifier: &str, request_id: u64, source: &str
     }))
 }
 
-/// Relays the quote of a commit's verification (or its round-`round` re-run) to near-antibody.
-pub fn confirm(ctx: &Ctx, api: &str, commit_id: u64, round: Option<u32>, request_id: u64, source: &str) -> Result<Value> {
-    let signer = ctx.signer()?;
-    let cfg = ctx.view("get_tee_config", json!({}))?;
-    let verifier = cfg["verifier"].as_str().ok_or_else(|| eyre!("near-antibody has no DCAP verifier configured"))?.to_string();
-    let a = fetch_attestation(api, request_id)?;
-    let quote = base64::engine::general_purpose::STANDARD.decode(a["tdx_quote"].as_str().unwrap_or_default())?;
-    let (collateral, collateral_from, _) = choose_collateral(&ctx.near, &verifier, &quote, source)?;
-    let att = json!({
+/// The attestation fields near-antibody takes (`confirm_tee`), from OutLayer's attestation record.
+pub fn attestation_args(a: &Value) -> Value {
+    json!({
         "task_type": a["task_type"], "task_id": a["task_id"], "repo": a["repo"], "commit": a["commit"],
         "build_target": a["build_target"], "wasm_hash": a["wasm_hash"], "input_hash": a["input_hash"],
         "output_hash": a["output_hash"], "block_height": a["block_height"], "caller_account_id": a["caller_account_id"],
         "project_id": a["project_id"], "secrets_ref": a["secrets_ref"], "timestamp": a["timestamp"], "attached_usd": a["attached_usd"],
-    });
+    })
+}
+
+/// Calls `confirm_tee` for run `run_id`: near-antibody checks that the attestation describes the run
+/// it requested, has the program's pinned DCAP verifier check the quote, and accepts only the
+/// program's worker images.
+fn relay(ctx: &Ctx, run_id: u64, attestation: Value, quote: &[u8], collateral: &[u8]) -> Result<Value> {
     let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
     let out = ctx.near.function_call(
-        &signer,
+        &ctx.signer()?,
         &ctx.dep.antibody,
         "confirm_tee",
-        json!({"commit_id": commit_id, "round": round, "attestation": att, "quote": b64(&quote), "collateral": b64(&collateral)}),
+        json!({"run_id": run_id, "attestation": attestation, "quote": b64(quote), "collateral": b64(collateral)}),
         300,
         0,
     )?;
@@ -355,9 +355,42 @@ pub fn confirm(ctx: &Ctx, api: &str, commit_id: u64, round: Option<u32>, request
         return Err(eyre!("confirm_tee failed: {}", failures.join("; ")));
     }
     let events = crate::near::events(&out);
-    let confirmed = events.iter().any(|e| e["event"] == "tee_confirmed");
-    Ok(json!({"commit_id": commit_id, "round": round, "request_id": request_id, "confirmed": confirmed, "collateral": collateral_from,
-              "events": events, "tx": ctx.near.explorer_tx(out["transaction"]["hash"].as_str().unwrap_or_default())}))
+    let confirmed = events.iter().any(|e| e["event"] == "t1_confirmed");
+    let rejected = events.iter().find(|e| e["event"] == "tee_rejected").map(|e| e["data"][0]["reason"].clone());
+    Ok(json!({"run_id": run_id, "confirmed": confirmed, "rejected": rejected, "events": events,
+              "tx": ctx.near.explorer_tx(out["transaction"]["hash"].as_str().unwrap_or_default())}))
+}
+
+/// Relays OutLayer's TDX quote for run `run_id` (OutLayer request `request_id`) to near-antibody.
+pub fn confirm(ctx: &Ctx, api: &str, run_id: u64, request_id: u64, source: &str) -> Result<Value> {
+    let r = ctx.view("get_run", json!({"run_id": run_id}))?;
+    let program = r["program"].as_u64().ok_or_else(|| eyre!("run {run_id} does not exist"))?;
+    let pins = ctx.view("get_pins", json!({"program_id": program}))?;
+    let verifier = pins["dcap_verifier"].as_str().ok_or_else(|| eyre!("program {program} has no pinned DCAP verifier"))?.to_string();
+    let a = fetch_attestation(api, request_id)?;
+    let quote = base64::engine::general_purpose::STANDARD.decode(a["tdx_quote"].as_str().unwrap_or_default())?;
+    let (collateral, collateral_from, _) = choose_collateral(&ctx.near, &verifier, &quote, source)?;
+    let mut v = relay(ctx, run_id, attestation_args(&a), &quote, &collateral)?;
+    v["request_id"] = request_id.into();
+    v["collateral"] = collateral_from.into();
+    Ok(v)
+}
+
+/// Sandbox only: relays the MOCK attestation that `mock-outlayer` recorded for the run (its MOCK quote
+/// verifies only against `mock-dcap`). near-antibody runs the same checks as on testnet.
+pub fn confirm_mock(ctx: &Ctx, mock_outlayer: &str, run_id: u64) -> Result<Value> {
+    let r = ctx.view("get_run", json!({"run_id": run_id}))?;
+    let input_hash = r["request_sha256"].as_str().ok_or_else(|| eyre!("run {run_id} does not exist"))?;
+    let at = ctx.near.view(mock_outlayer, "find_attestation", json!({"input_hash": input_hash}))?;
+    if at.is_null() {
+        return Err(eyre!("no MOCK attestation for run {run_id} yet"));
+    }
+    let a: Value = serde_json::from_str(at["attestation"].as_str().unwrap_or("{}"))?;
+    let quote = base64::engine::general_purpose::STANDARD.decode(at["quote"].as_str().unwrap_or_default())?;
+    let mut v = relay(ctx, run_id, attestation_args(&a), &quote, &[])?;
+    v["request_id"] = at["request_id"].clone();
+    v["mock"] = true.into();
+    Ok(v)
 }
 
 #[cfg(test)]

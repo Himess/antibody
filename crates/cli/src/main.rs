@@ -53,7 +53,8 @@ enum KeygenKind {
 
 #[derive(Subcommand)]
 enum ProgramCmd {
-    /// Open a program: upload the manifest, escrow tUSD, commit the manifest hash (one transaction)
+    /// Create a program: upload the manifest (v2), escrow tUSD and commit the manifest hash (one
+    /// transaction); NEAR credit for storage is added first if needed
     Create {
         #[arg(long)]
         manifest: PathBuf,
@@ -62,13 +63,18 @@ enum ProgramCmd {
         escrow: String,
         #[arg(long)]
         project_key: PathBuf,
-        #[arg(long)]
-        guardian: Option<String>,
         /// Use an already-hosted manifest instead of uploading it with FastFS
         #[arg(long)]
         manifest_url: Option<String>,
     },
-    /// Declare a known issue before opening (verified by the same TEE; claims its keys at t0)
+    /// Pin the base witness and request the program's sealing key (it counts once T1-confirmed)
+    Activate {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Declare a known issue before opening (verified by the same TEE; counts once T1-confirmed)
     Known {
         #[arg(long)]
         program: u32,
@@ -81,30 +87,8 @@ enum ProgramCmd {
         #[arg(long)]
         no_wait: bool,
     },
-    /// End the known-issues phase; hunters can commit
+    /// Open round 0: hunters can commit
     Open {
-        #[arg(long)]
-        program: u32,
-    },
-    /// Rounds: commit a fix (round manifest from `antibody manifest-round`); new commits verify
-    /// against it at once, and claimed findings can be re-run against it
-    RoundPropose {
-        #[arg(long)]
-        program: u32,
-        #[arg(long)]
-        manifest: PathBuf,
-    },
-    /// Re-run a claimed finding against the proposed fix (project: --project-key; finder: local record)
-    RoundRerun {
-        #[arg(long)]
-        commit: u64,
-        #[arg(long)]
-        project_key: Option<PathBuf>,
-        #[arg(long)]
-        no_wait: bool,
-    },
-    /// Open the proposed round: keys whose PoCs no longer break are released, the rest carry over
-    RoundOpen {
         #[arg(long)]
         program: u32,
     },
@@ -112,26 +96,42 @@ enum ProgramCmd {
         program: u32,
     },
     /// Add escrow
-    Fund {
+    TopUp {
         #[arg(long)]
         program: u32,
         #[arg(long)]
         amount: String,
     },
-    /// After deadline + disclosure delay: publish every content key and k_program (TEE run)
-    Disclose {
-        #[arg(long)]
-        program: u32,
-    },
-    WithdrawEscrow {
+    /// After the deadline and the exit grace: pay what is reserved, return the rest to the project
+    Exit {
         #[arg(long)]
         program: u32,
     },
 }
 
 #[derive(Subcommand)]
+enum AgentCmd {
+    /// Register one of your sub-accounts as an agent: its bonds come from your credit, within the
+    /// budget and the per-commit cap; payouts go to you
+    Register {
+        #[arg(long)]
+        agent: String,
+        /// Total bonds the agent may have locked at once (tUSD)
+        #[arg(long)]
+        budget: String,
+        #[arg(long)]
+        per_commit_cap: String,
+    },
+    /// Add a function-call key to the agent's account, limited to commit/reveal/retry on near-antibody
+    Key {
+        #[command(subcommand)]
+        cmd: AgentKeyCmd,
+    },
+}
+
+#[derive(Subcommand)]
 enum AgentKeyCmd {
-    /// Add a function-call key limited to commit/submit on near-antibody, with a gas allowance
+    /// Add a function-call key limited to commit/reveal/retry on near-antibody, with a gas allowance
     Add {
         #[arg(long, default_value_t = 1.0)]
         allowance_near: f64,
@@ -186,20 +186,6 @@ enum AdminCmd {
         hash: String,
         #[arg(long)]
         signer: String,
-    },
-    /// Generate the verifier seed as a PROTECTED_ secret in OutLayer's keystore, readable only by
-    /// the given verifier build when called by the given contract
-    OutlayerSecret {
-        #[arg(long)]
-        wasm_hash: String,
-        #[arg(long, default_value = "antibody-v1")]
-        profile: String,
-        #[arg(long)]
-        contract: String,
-        #[arg(long, default_value = "outlayer.testnet")]
-        outlayer: String,
-        #[arg(long, default_value = "https://testnet-api.outlayer.ai")]
-        api: String,
     },
 }
 
@@ -260,18 +246,24 @@ enum Cmd {
         #[arg(long)]
         salt: Option<B256>,
     },
-    /// Move tUSD into your internal balance (bonds are locked from it)
+    /// NEAR credit at near-antibody for storage and verification runs (NEP-145 style)
+    StorageDeposit {
+        #[arg(long, default_value = "0.5")]
+        near: String,
+    },
+    /// Move tUSD into your credit at near-antibody (bonds, and your agents' bonds, come from it)
     Deposit {
         #[arg(long)]
         amount: String,
     },
     /// 500 tUSD per day (testnet token, no value)
     Faucet,
+    /// Withdraw tUSD credit (payouts, returned bonds) to your wallet
     Withdraw {
         #[arg(long)]
         amount: String,
     },
-    /// Seal + commit (priority); the blob stays local until `reveal`
+    /// Seal to the program's key and commit with the bond; the blob stays local until `reveal`
     Commit {
         #[arg(long)]
         program: u32,
@@ -282,7 +274,7 @@ enum Cmd {
         #[arg(long)]
         report: Option<PathBuf>,
     },
-    /// Upload the sealed blob and reveal it (OutLayer verifies it)
+    /// Reveal the sealed blob (inline up to 15 KB, else FastFS): OutLayer verifies it
     Reveal {
         #[arg(long)]
         program: u32,
@@ -291,7 +283,7 @@ enum Cmd {
         #[arg(long)]
         no_wait: bool,
     },
-    /// Commit + upload + reveal in one go, then wait for the verdict
+    /// Commit + reveal in one go, then wait for the verdict
     Submit {
         #[arg(long)]
         program: u32,
@@ -304,71 +296,52 @@ enum Cmd {
         #[arg(long)]
         no_wait: bool,
     },
+    /// Verify again after an infrastructure failure (within the grace period)
+    Retry {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        commit: u64,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// The second run a verdict above the instant cap needs (the requester pays; anyone may ask)
+    Second {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        commit: u64,
+        #[arg(long)]
+        no_wait: bool,
+    },
     Status {
         #[arg(long)]
         commit: Option<u64>,
+        #[arg(long)]
+        run: Option<u64>,
         #[arg(long)]
         program: Option<u32>,
         #[arg(long)]
         of: Option<String>,
     },
-    Leaderboard {
-        #[arg(long, default_value_t = 20)]
-        limit: u32,
-    },
-    /// Apply priority and pay (after the reveal windows of earlier commits)
-    Finalize {
+    /// Permissionless: allocate final verdicts in commit order, pay funded claims, settle debts
+    Keeper {
         #[arg(long)]
-        commit: u64,
+        program: u32,
     },
-    /// Pay a T0-delayed payout after its challenge window
-    Release {
-        #[arg(long)]
-        commit: u64,
-    },
-    /// Forfeit an unrevealed commit's bond after its window
+    /// Permissionless: an unrevealed commit past its reveal window forfeits its bond
     Expire {
         #[arg(long)]
         commit: u64,
     },
-    /// Re-request verification after OutLayer returned no result
-    Retry {
+    /// Permissionless: a commit whose verification never completed within the grace is refunded
+    TimeOut {
         #[arg(long)]
         commit: u64,
     },
-    /// Freeze a delayed payout for the arbiter (your local re-run disagrees)
-    Challenge {
-        #[arg(long)]
-        commit: u64,
-        #[arg(long)]
-        reason: String,
-    },
-    /// Projects can pay more, never less
-    TopUp {
-        #[arg(long)]
-        commit: u64,
-        #[arg(long)]
-        amount: String,
-        #[arg(long)]
-        note: Option<String>,
-    },
-    /// Re-run a commit's verification locally and compare with the chain (after disclosure)
-    Verify {
-        #[arg(long)]
-        commit: u64,
-    },
-    /// Project: read a valid finding (unwrap the project wrap, decrypt, re-run)
-    Decrypt {
-        #[arg(long)]
-        commit: u64,
-        #[arg(long)]
-        project_key: PathBuf,
-        #[arg(long)]
-        out: PathBuf,
-    },
-    AgentKey {
+    Agent {
         #[command(subcommand)]
-        cmd: AgentKeyCmd,
+        cmd: AgentCmd,
     },
     /// Scaffold a program workspace: annotated antibody.toml, project key, next steps
     Init {
@@ -442,13 +415,10 @@ enum TeeCmd {
         #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
         collateral: String,
     },
-    /// Relay the quote of a commit's verification (or, with --round, its re-run) to near-antibody,
-    /// which repeats every check on chain and marks the verdict T1
+    /// Relay a run's quote to near-antibody, which repeats every check on chain: the run becomes T1
     Confirm {
         #[arg(long)]
-        commit: u64,
-        #[arg(long)]
-        round: Option<u32>,
+        run: u64,
         /// OutLayer request id (or give the requesting transaction with --tx and --tx-signer)
         #[arg(long)]
         request_id: Option<u64>,
@@ -460,6 +430,13 @@ enum TeeCmd {
         api: String,
         #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
         collateral: String,
+    },
+    /// Sandbox only: relay the MOCK attestation that mock-outlayer recorded for a run
+    ConfirmMock {
+        #[arg(long)]
+        run: u64,
+        #[arg(long)]
+        mock_outlayer: String,
     },
 }
 
@@ -473,40 +450,35 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Program { ref cmd } => {
             let c = mk()?;
             match cmd {
-                ProgramCmd::Create { manifest, escrow, project_key, guardian, manifest_url } => {
-                    cmd::program_create(&c, manifest, escrow, project_key, guardian.clone(), manifest_url.clone())
+                ProgramCmd::Create { manifest, escrow, project_key, manifest_url } => {
+                    cmd::program_create(&c, manifest, escrow, project_key, manifest_url.clone())
                 }
+                ProgramCmd::Activate { program, no_wait } => cmd::program_activate(&c, *program, !no_wait),
                 ProgramCmd::Known { program, bundle, salt, report, no_wait } => cmd::submit_known(&c, *program, bundle, *salt, report.as_deref(), !no_wait),
                 ProgramCmd::Open { program } => cmd::program_open(&c, *program),
-                ProgramCmd::RoundPropose { program, manifest } => cmd::round_propose(&c, *program, manifest),
-                ProgramCmd::RoundRerun { commit, project_key, no_wait } => cmd::round_rerun(&c, *commit, project_key.as_deref(), !no_wait),
-                ProgramCmd::RoundOpen { program } => cmd::round_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
-                ProgramCmd::Fund { program, amount } => cmd::fund(&c, *program, amount),
-                ProgramCmd::Disclose { program } => cmd::program_simple(&c, "disclose", json!({"program_id": program}), 300),
-                ProgramCmd::WithdrawEscrow { program } => cmd::program_simple(&c, "withdraw_escrow", json!({"program_id": program}), 60),
+                ProgramCmd::TopUp { program, amount } => cmd::top_up(&c, *program, amount),
+                ProgramCmd::Exit { program } => cmd::call(&c, "exit", json!({"program_id": program}), 100),
             }
         }
         Cmd::Programs { from, limit } => cmd::programs(&mk()?, from, limit),
         Cmd::Pull { program, ref out } => cmd::pull(&mk()?, program, &out.clone().unwrap_or_else(|| PathBuf::from(format!("antibody-program-{program}")))),
         Cmd::Check { program, ref manifest, ref bundle, salt } => cmd::check(&mk()?, program, manifest.as_deref(), bundle, salt),
+        Cmd::StorageDeposit { ref near } => cmd::storage_deposit(&mk()?, near),
         Cmd::Deposit { ref amount } => cmd::deposit(&mk()?, amount),
         Cmd::Faucet => cmd::faucet(&mk()?),
         Cmd::Withdraw { ref amount } => cmd::withdraw(&mk()?, amount),
         Cmd::Commit { program, ref bundle, salt, ref report } => cmd::commit(&mk()?, program, bundle, salt, report.as_deref()),
         Cmd::Reveal { program, commit, no_wait } => cmd::reveal(&mk()?, program, commit, !no_wait),
         Cmd::Submit { program, ref bundle, salt, ref report, no_wait } => cmd::submit(&mk()?, program, bundle, salt, report.as_deref(), !no_wait),
-        Cmd::Status { commit, program, ref of } => cmd::status(&mk()?, commit, program, of.clone()),
-        Cmd::Leaderboard { limit } => cmd::leaderboard(&mk()?, limit),
-        Cmd::Finalize { commit } => cmd::program_simple(&mk()?, "finalize", json!({"commit_id": commit}), 60),
-        Cmd::Release { commit } => cmd::program_simple(&mk()?, "release", json!({"commit_id": commit}), 60),
-        Cmd::Expire { commit } => cmd::program_simple(&mk()?, "expire", json!({"commit_id": commit}), 30),
-        Cmd::Retry { commit } => cmd::program_simple(&mk()?, "retry_verify", json!({"commit_id": commit}), cmd::SUBMIT_TGAS),
-        Cmd::Challenge { commit, ref reason } => cmd::program_simple(&mk()?, "challenge", json!({"commit_id": commit, "reason": reason}), 30),
-        Cmd::TopUp { commit, ref amount, ref note } => cmd::top_up(&mk()?, commit, amount, note.clone()),
-        Cmd::Verify { commit } => cmd::verify(&mk()?, commit),
-        Cmd::Decrypt { commit, ref project_key, ref out } => cmd::decrypt(&mk()?, commit, project_key, out),
-        Cmd::AgentKey { cmd: AgentKeyCmd::Add { allowance_near, ref out } } => cmd::agent_key_add(&mk()?, allowance_near, out),
+        Cmd::Retry { program, commit, no_wait } => cmd::retry(&mk()?, program, commit, !no_wait),
+        Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
+        Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
+        Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
+        Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
+        Cmd::TimeOut { commit } => cmd::call(&mk()?, "time_out", json!({"commit_id": commit}), 30),
+        Cmd::Agent { cmd: AgentCmd::Register { ref agent, ref budget, ref per_commit_cap } } => cmd::agent_register(&mk()?, agent, budget, per_commit_cap),
+        Cmd::Agent { cmd: AgentCmd::Key { cmd: AgentKeyCmd::Add { allowance_near, ref out } } } => cmd::agent_key_add(&mk()?, allowance_near, out),
         Cmd::Admin { ref cmd } => {
             let c = mk()?;
             match cmd {
@@ -517,9 +489,6 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Call { contract, method, args, deposit_yocto, gas_tgas } => cmd::admin_call(&c, contract, method, args, *deposit_yocto, *gas_tgas),
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
-                AdminCmd::OutlayerSecret { wasm_hash, profile, contract, outlayer, api } => {
-                    cmd::admin_outlayer_secret(&c, api, outlayer, wasm_hash, profile, contract)
-                }
             }
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
@@ -531,14 +500,15 @@ fn run(cli: Cli) -> Result<Value> {
             let c = mk()?;
             match cmd {
                 TeeCmd::Check { request_id, api, verifier, collateral } => antibody_cli::tee::check(&c, api, verifier, *request_id, collateral),
-                TeeCmd::Confirm { commit, round, request_id, tx, tx_signer, api, collateral } => {
+                TeeCmd::Confirm { run, request_id, tx, tx_signer, api, collateral } => {
                     let id = match (request_id, tx, tx_signer) {
                         (Some(id), _, _) => *id,
                         (None, Some(tx), Some(signer)) => antibody_cli::tee::request_id_from_tx(&c, tx, signer)?,
                         _ => return Err(eyre::eyre!("pass --request-id, or --tx with --tx-signer")),
                     };
-                    antibody_cli::tee::confirm(&c, api, *commit, *round, id, collateral)
+                    antibody_cli::tee::confirm(&c, api, *run, id, collateral)
                 }
+                TeeCmd::ConfirmMock { run, mock_outlayer } => antibody_cli::tee::confirm_mock(&c, mock_outlayer, *run),
             }
         }
         Cmd::Mcp => {
@@ -574,10 +544,12 @@ mod tests {
     }
 
     #[test]
-    fn commitment_matches_the_contract_formula() {
-        // contracts/near-antibody: SHA-256("antibody/commit/v1|program|hunter|sha256(blob)")
-        let c = cmd::commitment("bounty.testnet/0", "agent-a.testnet", &"ab".repeat(32));
-        assert_eq!(c.len(), 64);
+    fn commitment_binds_round_and_hunter() {
+        // The same formula as near-antibody's `commitment_for` (pinned in contracts/near-antibody tests).
+        let c = cmd::commitment("bounty.testnet/0", 0, "agent-a.testnet", &[0xab; 32]);
+        assert_ne!(c, cmd::commitment("bounty.testnet/0", 1, "agent-a.testnet", &[0xab; 32]));
+        assert_ne!(c, cmd::commitment("bounty.testnet/0", 0, "agent-b.testnet", &[0xab; 32]));
+        assert_eq!(hex::encode(c), "e0b01b170a5e2d10a922e1e6e722dddf3dba94f8b02c06eb5051543dbfff3141");
     }
 
     #[test]
