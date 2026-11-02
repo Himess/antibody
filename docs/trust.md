@@ -10,7 +10,7 @@ MOCK badge. No mainnet transactions are sent.
 | State at the anchor | MPT proofs verified inside the verifier | Same | Nothing (hashes) | `antibody check` / `antibody verify` re-run it |
 | EVM semantics | revm 38 + reth v2.2.0 under the program's committed `evm_spec` (Osaka) | Same | That the pinned EVM matches the committed rules | Native and wasm runs are byte-identical; the receipt hash is reproducible |
 | Who runs the verifier | OutLayer TEE worker, wasm pinned by sha256 (`WasmUrl`) | Same | **T0:** the OutLayer operator delivers the worker's output. **T1:** the run's Intel TDX quote, verified on NEAR (below). **T2:** zk (roadmap) | Above the instant cap: `challenge()` during the delay. `antibody tee check --request-id N` for any run. After disclosure: recompute every verdict |
-| Verifier key (sealed PoCs) | OutLayer keystore `PROTECTED_ANTIBODY_SEED`, bound to the wasm hash and to near-antibody as caller | Same | The keystore TEE and its governance (see OutLayer's documentation) | The reproducible build shows the key is never printed; `pubkey` mode output |
+| Verifier key (sealed PoCs) | OutLayer keystore `PROTECTED_ANTIBODY_SEED`, bound to the wasm hash and to near-antibody as caller | Same | The keystore TEE and its governance (see OutLayer's documentation) | The verifier source (`crates/verifier/src/tee.rs`) never outputs the seed; `pubkey` mode output. The wasm build is not yet bit-for-bit reproducible (it embeds build paths) |
 | Fallback key (if the keystore is unavailable) | Manual secret known to the deployer, labelled **weaker** | — | The deployer | — |
 | PoC confidentiality | TEE until disclosure; the project sees Violations only | Same | TEE + keystore | Disclosure publishes every content key; check that nothing leaked earlier |
 | Settlement rules | near-antibody (immutable per program) | Same, with NEAR Intents payouts | NEAR consensus | Read the contract, call `get_program` |
@@ -32,7 +32,8 @@ collateral)`. near-antibody accepts it only if:
 1. the attestation describes exactly the run near-antibody requested:
    - the program's pinned wasm hash;
    - SHA-256 of the input it sent and of the bytes it received, both recorded when the run happened;
-   - itself as the caller;
+   - as the caller, the signer of the transaction that requested the run (near-antibody records it),
+     or near-antibody itself for a relayed meta-transaction: OutLayer attests the transaction's signer;
    - the program's secrets;
 2. `tee-verifier-2026-07-22.testnet.verify_quote` (NEAR's DCAP verifier) returns `Verified` with an
    accepted TCB status;
