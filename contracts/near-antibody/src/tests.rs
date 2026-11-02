@@ -18,13 +18,8 @@ fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
 }
 
-thread_local! {
-    /// The contract's own account (the T1 test stands in for a recorded OutLayer caller).
-    static CONTRACT: std::cell::RefCell<String> = std::cell::RefCell::new("antibody.testnet".into());
-}
-
 fn contract_id() -> AccountId {
-    CONTRACT.with(|c| acc(&c.borrow()))
+    acc("antibody.testnet")
 }
 fn token() -> AccountId {
     acc("tusd.antibody-hq.testnet")
@@ -739,14 +734,16 @@ const T1_VERIFY_RESULT: &[u8] = include_bytes!("../../../fixtures/t1/verify_quot
 const T1_MEASUREMENT: &str = include_str!("../../../fixtures/t1/approved-measurement-109.json");
 
 /// Recorded public data: OutLayer's attestation for request 6496 and what the testnet DCAP verifier
-/// (`tee-verifier-2026-07-22.testnet.verify_quote`) returned for its quote. The test contract
-/// stands in for that request's caller, so every binding check runs on real values.
+/// (`tee-verifier-2026-07-22.testnet.verify_quote`) returned for its quote. OutLayer attests the
+/// signer of the requesting transaction, so the hunter here is that request's signer, and every
+/// binding check runs on real values.
 #[test]
 fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
     use near_sdk::borsh::BorshDeserialize;
     use near_sdk::json_types::Base64VecU8;
     let att: Value = serde_json::from_str(T1_ATTESTATION).unwrap();
-    CONTRACT.with(|c| *c.borrow_mut() = att["caller_account_id"].as_str().unwrap().into());
+    let signer = acc(att["caller_account_id"].as_str().unwrap());
+    assert_ne!(signer, contract_id(), "the attested caller is the signer, not near-antibody");
     let mut v = verifier();
     v.wasm_hash = att["wasm_hash"].as_str().unwrap().into();
     let (so, sp) = att["secrets_ref"].as_str().unwrap().split_once('/').unwrap();
@@ -760,8 +757,9 @@ fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
     w.verdict(0, w.facts(0, Kind::Violation, &tags_of("KNOWN"), 0));
     w.ctx(project());
     w.c.open_program(0);
-    w.deposit(&hunter("A"), 100 * ONE_TUSD);
-    let a = w.commit_and_submit(&hunter("A"), 1);
+    w.deposit(&signer, 100 * ONE_TUSD);
+    let a = w.commit_and_submit(&signer, 1);
+    assert_eq!(w.c.get_commit(a).unwrap().run_signer, Some(signer.clone()), "near-antibody records who requested the run");
     w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
     w.advance(w.c.get_program(0).unwrap().reveal_window_blocks + 1);
     w.finalize(a);
@@ -795,6 +793,19 @@ fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
     assert!(panics(|| {
         let _ = w.c.confirm_tee(a, None, other_wasm.clone(), quote.clone(), collateral.clone());
     }), "only the pinned verifier build");
+    let mut other_caller = a_in.clone();
+    other_caller.caller_account_id = Some("mallory.testnet".into());
+    w.ctx(acc("relayer.testnet"));
+    assert!(panics(|| {
+        let _ = w.c.confirm_tee(a, None, other_caller.clone(), quote.clone(), collateral.clone());
+    }), "a run someone else requested");
+    // A relayed meta-transaction: OutLayer attests the predecessor of `request_execution`, which is
+    // near-antibody itself. (Only the caller rule is exercised here: this quote's report_data binds
+    // the signer, so the DCAP step would refuse it.)
+    let mut relayed = a_in.clone();
+    relayed.caller_account_id = Some(contract_id().to_string());
+    w.ctx(acc("relayer.testnet"));
+    let _ = w.c.confirm_tee(a, None, relayed, quote.clone(), collateral.clone());
     w.ctx(acc("relayer.testnet"));
     let _ = w.c.confirm_tee(a, None, a_in.clone(), quote.clone(), collateral);
 
@@ -829,7 +840,6 @@ fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
     w.ctx(acc("anyone.testnet"));
     let _ = w.c.resolve_challenge_t1(a);
     assert!(matches!(w.outcome(a), Outcome::Paid { severity: Severity::Critical, .. }));
-    CONTRACT.with(|c| *c.borrow_mut() = "antibody.testnet".into());
 }
 
 #[test]

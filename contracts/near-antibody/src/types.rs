@@ -253,6 +253,8 @@ pub struct Rerun {
     pub height: u64,
     pub input_sha256: Option<String>,
     pub output_sha256: Option<String>,
+    /// Signer of the transaction that requested this re-run: OutLayer attests it as the caller.
+    pub signer: Option<AccountId>,
     pub tee: Option<TeeConfirmation>,
 }
 
@@ -355,6 +357,9 @@ pub struct Commit {
     /// values a TDX quote's report_data must bind for a T1 confirmation.
     pub run_input_sha256: Option<String>,
     pub run_output_sha256: Option<String>,
+    /// Signer of the transaction that requested the latest verification run: OutLayer attests the
+    /// transaction's signer as the caller (and the predecessor, near-antibody, for a meta-transaction).
+    pub run_signer: Option<AccountId>,
     pub tee: Option<TeeConfirmation>,
 }
 

@@ -475,6 +475,7 @@ impl Antibody {
             reruns: Vec::new(),
             run_input_sha256: None,
             run_output_sha256: None,
+            run_signer: None,
             tee: None,
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
@@ -533,6 +534,7 @@ impl Antibody {
             reruns: Vec::new(),
             run_input_sha256: None,
             run_output_sha256: None,
+            run_signer: None,
             tee: None,
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
@@ -610,7 +612,11 @@ impl Antibody {
             "project_pubkey": p.project_pubkey,
         })
         .to_string();
-        self.commit_mut(commit_id).run_input_sha256 = Some(hex(&env::sha256(input.as_bytes())));
+        {
+            let cm = self.commit_mut(commit_id);
+            cm.run_input_sha256 = Some(hex(&env::sha256(input.as_bytes())));
+            cm.run_signer = Some(env::signer_account_id());
+        }
         self.outlayer_request(&p.verifier, input).then(
             Self::ext(env::current_account_id()).with_static_gas(VERIFY_CB_GAS).on_verified(commit_id),
         )
@@ -1021,6 +1027,7 @@ impl Antibody {
             height: env::block_height(),
             input_sha256: None,
             output_sha256: None,
+            signer: Some(env::signer_account_id()),
             tee: None,
         };
         {
@@ -1189,15 +1196,15 @@ impl Antibody {
         let c = self.load_commit(commit_id);
         let p = self.load_program(c.program);
         let verifier = self.tee.verifier.clone().unwrap_or_else(|| env::panic_str("no DCAP verifier configured (set_tee_config)"));
-        let (input_sha, output_sha, confirmed) = match round {
+        let (input_sha, output_sha, signer, confirmed) = match round {
             None => {
                 require!(c.verdict.is_some(), "commit has no verdict");
-                (c.run_input_sha256.clone(), c.run_output_sha256.clone(), c.tee.is_some())
+                (c.run_input_sha256.clone(), c.run_output_sha256.clone(), c.run_signer.clone(), c.tee.is_some())
             }
             Some(r) => {
                 let rr = c.reruns.iter().find(|x| x.round == r && x.status == RerunStatus::Done);
                 let rr = rr.unwrap_or_else(|| env::panic_str("no completed re-run for this round"));
-                (rr.input_sha256.clone(), rr.output_sha256.clone(), rr.tee.is_some())
+                (rr.input_sha256.clone(), rr.output_sha256.clone(), rr.signer.clone(), rr.tee.is_some())
             }
         };
         require!(!confirmed, "already T1-confirmed");
@@ -1207,7 +1214,13 @@ impl Antibody {
         require!(a.wasm_hash.as_deref() == Some(p.verifier.wasm_hash.as_str()), "attestation: not the program's pinned verifier");
         require!(input_sha.is_some() && a.input_hash == input_sha, "attestation: input differs from what near-antibody sent");
         require!(output_sha.as_deref() == Some(a.output_hash.as_str()), "attestation: output differs from what near-antibody received");
-        require!(a.caller_account_id.as_deref() == Some(env::current_account_id().as_str()), "attestation: another caller");
+        // OutLayer attests the signer of the transaction that requested the run; for a relayed
+        // meta-transaction it attests the predecessor of `request_execution`, near-antibody itself.
+        let caller = a.caller_account_id.as_deref();
+        require!(
+            caller.is_some() && (caller == signer.as_ref().map(|s| s.as_str()) || caller == Some(env::current_account_id().as_str())),
+            "attestation: another caller"
+        );
         let sref = match (&p.verifier.secrets_owner, &p.verifier.secrets_profile) {
             (Some(o), Some(pr)) => Some(format!("{o}/{pr}")),
             _ => None,
