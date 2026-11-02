@@ -52,8 +52,12 @@ approved measurements. `fixtures/t1/` records that data, and the contract test
 `on_tee_verified`, accepting it only for the run it binds.
 
 **Limits.**
-- **Collateral expiry.** OutLayer's newest on-chain collateral expires on 2026-11-08 (`nextUpdate`).
-  After that, the relayer must fetch fresh collateral from Intel PCS.
+- **Collateral freshness.** OutLayer's newest on-chain collateral expires on 2026-11-08 (`nextUpdate`).
+  `tee check`, `tee confirm` and the T1 relayer then fetch fresh collateral from Intel PCS: the TCB
+  info, QE identity and CRLs for the FMSPC in the quote's PCK certificate, signed by Intel.
+  `--collateral auto` (the default) tries OutLayer's copies first, then PCS. On 2026-11-02, PCS
+  collateral (TCB info issued that day, next update 2026-12-02) verified request 6496's quote as
+  `Verified` / `UpToDate`.
 - **Settlement timing.** T1 for Antibody's own runs needs the live OutLayer deployment, and a T0
   verdict settles before a relayer can confirm it.
 

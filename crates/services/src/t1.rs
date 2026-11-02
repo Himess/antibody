@@ -67,7 +67,7 @@ impl T1Relayer {
             }
             let Some((tx, signer)) = requested.get(&key) else { continue };
             let res = tee::request_id_from_tx(&self.ctx, tx, signer)
-                .and_then(|rid| tee::confirm(&self.ctx, &self.api, key.0, key.1.map(|r| r as u32), rid));
+                .and_then(|rid| tee::confirm(&self.ctx, &self.api, key.0, key.1.map(|r| r as u32), rid, "auto"));
             let row = match res {
                 Ok(v) => json!({"attempts": attempts + 1, "confirmed": v["confirmed"], "request_id": v["request_id"], "tx": v["tx"]}),
                 Err(e) => json!({"attempts": attempts + 1, "confirmed": false, "error": e.to_string()}),

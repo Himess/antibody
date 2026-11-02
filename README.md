@@ -156,7 +156,7 @@ Full table: [docs/trust.md](docs/trust.md).
 | Tier | Who vouches for a verdict | Status |
 |---|---|---|
 | **T0** | OutLayer's operator delivers the TEE worker's output. Above the instant cap, payouts wait a challenge window; anyone may `challenge()` | Implemented. Live run pending (see Deployment) |
-| **T1** | The run's TDX quote, verified on NEAR (`confirm_tee`). Its `report_data` must bind the exact input and output that near-antibody recorded, the pinned wasm, the caller and the secrets. The worker image must be pinned | Implemented and tested with a real quote from a third-party OutLayer run (request 6496). On 2026-11-02, `antibody tee check --request-id 6496` verified it live with a free view call: `Verified`, `UpToDate`. OutLayer's on-chain collateral expires on 2026-11-08; `fixtures/t1/` keeps the recorded answer |
+| **T1** | The run's TDX quote, verified on NEAR (`confirm_tee`). Its `report_data` must bind the exact input and output that near-antibody recorded, the pinned wasm, the caller and the secrets. The worker image must be pinned | Implemented and tested with a real quote from a third-party OutLayer run (request 6496). On 2026-11-02, `antibody tee check --request-id 6496` verified it live with a free view call: `Verified`, `UpToDate`. When OutLayer's on-chain collateral expires (2026-11-08), fresh collateral comes from Intel PCS (`--collateral pcs`, verified the same day); `fixtures/t1/` keeps the recorded answer |
 | **T2** | zk proof of the same execution | Roadmap |
 
 **What is mock:**
@@ -208,8 +208,8 @@ Transaction links, latency and cost from the live run will be listed here when i
   `top_up` pays more, never less.
 - **Duplicates are judged by (invariant, function).** Two bugs inside the same function count as one
   until the first is fixed (rounds).
-- **Trust in the OutLayer operator** is handled by tiers. T1 needs fresh DCAP collateral: OutLayer's
-  newest on-chain collateral expires on 2026-11-08.
+- **Trust in the OutLayer operator** is handled by tiers. T1 needs fresh DCAP collateral, which comes
+  from Intel PCS once OutLayer's on-chain copy expires (2026-11-08).
 - **Verification covers Ethereum L1** (Sepolia). Base Sepolia is pause-only.
 - **One block.** A PoC runs in the anchor block's environment: no time travel and no multi-block attacks.
 - **The testnet light client** has a single trusted relayer. Anchors it cannot confirm are labelled

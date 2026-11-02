@@ -438,6 +438,9 @@ enum TeeCmd {
         api: String,
         #[arg(long, default_value = antibody_cli::tee::DEFAULT_VERIFIER)]
         verifier: String,
+        /// DCAP collateral: OutLayer's on-chain copies, fresh Intel PCS collateral, or both (auto)
+        #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
+        collateral: String,
     },
     /// Relay the quote of a commit's verification (or, with --round, its re-run) to near-antibody,
     /// which repeats every check on chain and marks the verdict T1
@@ -455,6 +458,8 @@ enum TeeCmd {
         tx_signer: Option<String>,
         #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
         api: String,
+        #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
+        collateral: String,
     },
 }
 
@@ -525,14 +530,14 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Tee { ref cmd } => {
             let c = mk()?;
             match cmd {
-                TeeCmd::Check { request_id, api, verifier } => antibody_cli::tee::check(&c, api, verifier, *request_id),
-                TeeCmd::Confirm { commit, round, request_id, tx, tx_signer, api } => {
+                TeeCmd::Check { request_id, api, verifier, collateral } => antibody_cli::tee::check(&c, api, verifier, *request_id, collateral),
+                TeeCmd::Confirm { commit, round, request_id, tx, tx_signer, api, collateral } => {
                     let id = match (request_id, tx, tx_signer) {
                         (Some(id), _, _) => *id,
                         (None, Some(tx), Some(signer)) => antibody_cli::tee::request_id_from_tx(&c, tx, signer)?,
                         _ => return Err(eyre::eyre!("pass --request-id, or --tx with --tx-signer")),
                     };
-                    antibody_cli::tee::confirm(&c, api, *commit, *round, id)
+                    antibody_cli::tee::confirm(&c, api, *commit, *round, id, collateral)
                 }
             }
         }
