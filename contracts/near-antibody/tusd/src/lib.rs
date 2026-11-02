@@ -12,7 +12,7 @@ use near_sdk::{
     log, near, require,
     serde_json::json,
     store::LookupMap,
-    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseOrValue, PromiseResult,
+    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseResult,
 };
 
 pub const GAS_FOR_RESOLVE: Gas = Gas::from_tgas(5);

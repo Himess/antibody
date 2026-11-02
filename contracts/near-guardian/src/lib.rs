@@ -18,7 +18,7 @@ use near_sdk::{
     Promise, PromiseError,
 };
 
-pub const SIGN_GAS: Gas = Gas::from_tgas(50);
+pub const SIGN_GAS: Gas = Gas::from_tgas(40);
 pub const CALLBACK_GAS: Gas = Gas::from_tgas(20);
 /// `pause()` selector.
 pub const PAUSE_CALLDATA: &str = "0x8456cb59";

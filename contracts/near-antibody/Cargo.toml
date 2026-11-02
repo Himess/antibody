@@ -17,7 +17,7 @@ near-sdk = { version = "=5.9.0", features = ["unstable", "unit-testing"] }
 
 [workspace]
 resolver = "3"
-members = [".", "tusd"]
+members = [".", "tusd", "mock-outlayer", "mock-mpc"]
 
 [profile.release]
 codegen-units = 1

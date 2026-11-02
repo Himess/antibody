@@ -20,8 +20,8 @@ use crate::{
     near::{self, Action, Permission, Signer, ONE_NEAR, ONE_YOCTO, TGAS},
 };
 
-/// Gas for `submit` / `submit_known`: OutLayer call (100) + verdict callback (200, incl. the guardian) + margin.
-pub const SUBMIT_TGAS: u64 = 330;
+/// Gas for `submit` / `submit_known`: OutLayer call (100) + verdict callback (160, incl. the guardian pause) + margin.
+pub const SUBMIT_TGAS: u64 = 290;
 pub const TUSD_DECIMALS: u32 = 6;
 
 pub fn parse_tusd(s: &str) -> Result<u128> {

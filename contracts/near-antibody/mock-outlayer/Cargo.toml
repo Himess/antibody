@@ -1,0 +1,13 @@
+[package]
+name = "antibody-mock-outlayer"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "MOCK for the offline sandbox demo only (never deployed to testnet)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { version = "=5.9.0", features = ["unstable"] }

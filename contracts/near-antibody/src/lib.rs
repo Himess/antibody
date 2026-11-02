@@ -43,8 +43,9 @@ use near_sdk::{
 use types::*;
 
 pub const OUTLAYER_GAS: Gas = Gas::from_tgas(100);
-pub const PAUSE_GAS: Gas = Gas::from_tgas(160);
-pub const VERIFY_CB_GAS: Gas = Gas::from_tgas(200);
+/// Guardian `pause_all` for two chains: 2 x (MPC sign 40 + callback 20) + its own execution.
+pub const PAUSE_GAS: Gas = Gas::from_tgas(130);
+pub const VERIFY_CB_GAS: Gas = Gas::from_tgas(160);
 pub const SMALL_CB_GAS: Gas = Gas::from_tgas(20);
 pub const FT_GAS: Gas = Gas::from_tgas(15);
 pub const LC_GAS: Gas = Gas::from_tgas(15);
@@ -475,7 +476,7 @@ impl Antibody {
     }
 
     /// Reveals the sealed submission of `commit_id` and requests verification.
-    /// Callable with a function-call access key; attach ~320 Tgas.
+    /// Callable with a function-call access key; attach 290 Tgas (fits the 300 Tgas cap too).
     pub fn submit(&mut self, commit_id: u64, sealed: SealedRef) -> Promise {
         let c = self.load_commit(commit_id);
         require!(env::predecessor_account_id() == c.hunter, "only the committing account");
