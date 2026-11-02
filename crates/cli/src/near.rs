@@ -16,6 +16,9 @@ pub struct Near {
     pub rpc: String,
     pub network: String,
     client: reqwest::blocking::Client,
+    /// Last nonce used per (account, public key), shared by clones: back-to-back and concurrent
+    /// transactions from one key must not reuse a nonce read from a lagging view.
+    nonces: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, u64>>>,
 }
 
 /// A NEAR account and one of its keys (full access or function call).
@@ -175,6 +178,7 @@ impl Near {
                 .user_agent("antibody-cli/0.4")
                 .build()
                 .expect("http client"),
+            nonces: Default::default(),
         }
     }
 
@@ -239,19 +243,41 @@ impl Near {
     /// Signs and sends `actions` to `receiver`, waiting for `wait_until` ("EXECUTED_OPTIMISTIC", "FINAL").
     pub fn send(&self, signer: &Signer, receiver: &str, actions: Vec<Action>, wait_until: &str) -> Result<Value> {
         let pk = signer.public_key();
+        let key = format!("{}:{}", signer.account_id, signer.public_key_str());
         let ak = self.call(
             "query",
-            json!({"request_type": "view_access_key", "finality": "final", "account_id": signer.account_id,
+            json!({"request_type": "view_access_key", "finality": "optimistic", "account_id": signer.account_id,
                    "public_key": signer.public_key_str()}),
         )?;
-        let nonce = ak["nonce"].as_u64().ok_or_else(|| eyre!("access key not found for {}", signer.account_id))? + 1;
         let block_hash: [u8; 32] = bs58::decode(ak["block_hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))?;
-        let tx = encode_tx(&signer.account_id, &pk, nonce, receiver, &block_hash, &actions);
-        let (signed, _) = sign_tx(&tx, &signer.key);
-        self.call(
-            "send_tx",
-            json!({"signed_tx_base64": base64::engine::general_purpose::STANDARD.encode(&signed), "wait_until": wait_until}),
-        )
+        let mut nonce = ak["nonce"].as_u64().ok_or_else(|| eyre!("access key not found for {}", signer.account_id))? + 1;
+        for attempt in 0..3 {
+            {
+                let mut m = self.nonces.lock().expect("nonce cache");
+                if let Some(&last) = m.get(&key) {
+                    nonce = nonce.max(last + 1);
+                }
+                m.insert(key.clone(), nonce);
+            }
+            let tx = encode_tx(&signer.account_id, &pk, nonce, receiver, &block_hash, &actions);
+            let (signed, _) = sign_tx(&tx, &signer.key);
+            match self.call(
+                "send_tx",
+                json!({"signed_tx_base64": base64::engine::general_purpose::STANDARD.encode(&signed), "wait_until": wait_until}),
+            ) {
+                Err(e) if attempt < 2 && e.to_string().contains("InvalidNonce") => {
+                    // The node tells us the key's current nonce: continue from there.
+                    let s = e.to_string();
+                    if let Some(n) = s.split("\"ak_nonce\":").nth(1).and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|d| d.parse::<u64>().ok()) {
+                        nonce = n + 1;
+                    } else {
+                        nonce += 1;
+                    }
+                }
+                other => return other,
+            }
+        }
+        Err(eyre!("send_tx: nonce conflict for {}", signer.account_id))
     }
 
     pub fn function_call(&self, signer: &Signer, receiver: &str, method: &str, args: Value, gas_tgas: u64, deposit: u128) -> Result<Value> {

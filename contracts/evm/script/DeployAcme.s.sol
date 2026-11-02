@@ -46,6 +46,9 @@ contract DeployAcme {
         else vm.startBroadcast(key);
         AcmeSetup.Deployment memory d = AcmeSetup.deploy(admin);
         if (guardian != address(0)) d.guard.setPauser(guardian, true);
+        // The guardian address pays for its own pause() transactions.
+        uint256 fund = vm.envOr("GUARDIAN_FUND_WEI", uint256(0));
+        if (guardian != address(0) && fund > 0) payable(guardian).transfer(fund);
         if (seed) AcmeSetup.seed(d, admin);
         vm.stopBroadcast();
 

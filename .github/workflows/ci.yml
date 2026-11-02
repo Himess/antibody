@@ -60,6 +60,8 @@ jobs:
       - name: toolchain from rust-toolchain.toml
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - name: unit and integration tests (verifier, TEE mode on the fixture, CLI)
         run: cargo test --release -p antibody-verifier -p antibody-cli
       - name: build (native)
@@ -109,6 +111,7 @@ jobs:
           rustup toolchain install 1.85.0 --profile minimal --target wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             . -> target
             contracts/near-antibody

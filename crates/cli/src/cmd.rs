@@ -601,6 +601,35 @@ pub fn admin_send_near(ctx: &Ctx, to: &str, amount_near: &str) -> Result<Value> 
     ensure_ok(ctx, &out, "transfer")
 }
 
+/// Creates the verifier seed as a `PROTECTED_` secret inside OutLayer's keystore (generated in its TEE;
+/// nobody sees the value) and stores the row so that only the verifier build `wasm_hash`, called by
+/// `contract`, can read it: `And[WasmHash{h}, Predecessor{Whitelist[contract]}]`.
+pub fn admin_outlayer_secret(ctx: &Ctx, api: &str, outlayer: &str, wasm_hash: &str, profile: &str, contract: &str) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let body = json!({"accessor": {"type": "WasmHash", "hash": wasm_hash}, "owner": signer.account_id, "profile": profile,
+                      "encrypted_secrets_base64": null,
+                      "new_secrets": [{"name": "PROTECTED_ANTIBODY_SEED", "generation_type": "hex32"}]});
+    let r = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build()?
+        .post(format!("{api}/secrets/add_generated_secret")).json(&body).send()?;
+    let status = r.status();
+    let v: Value = r.json().unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(eyre!("add_generated_secret: HTTP {status}: {v}"));
+    }
+    let ct = v["encrypted_data_base64"].as_str().ok_or_else(|| eyre!("add_generated_secret: no ciphertext in the response"))?.to_string();
+    let access = json!({"Logic": {"operator": "And", "conditions": [
+        {"WasmHash": {"hash": wasm_hash}},
+        {"Predecessor": {"condition": {"Whitelist": {"accounts": [contract]}}}}]}});
+    // 1e19 yocto per stored byte; the contract refunds any excess.
+    let deposit = (ct.len() as u128 + 2048) * 10_000_000_000_000_000_000;
+    let out = ctx.near.function_call(&signer, outlayer, "store_secrets",
+        json!({"accessor": {"WasmHash": {"hash": wasm_hash}}, "profile": profile, "encrypted_secrets_base64": ct,
+               "access": access, "vault_id": null}), 100, deposit)?;
+    let s = ensure_ok(ctx, &out, "store_secrets")?;
+    Ok(json!({"owner": signer.account_id, "profile": profile, "wasm_hash": wasm_hash, "keys": v["all_keys"],
+              "access": access, "tx": s}))
+}
+
 pub fn tx(ctx: &Ctx, hash: &str, signer: &str) -> Result<Value> {
     let out = ctx.near.tx_status(hash, signer)?;
     Ok(json!({"explorer": ctx.near.explorer_tx(hash), "failures": near::failures(&out), "events": near::events(&out),

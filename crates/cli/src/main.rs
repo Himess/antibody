@@ -165,6 +165,20 @@ enum AdminCmd {
         #[arg(long)]
         signer: String,
     },
+    /// Generate the verifier seed as a PROTECTED_ secret in OutLayer's keystore, readable only by
+    /// the given verifier build when called by the given contract
+    OutlayerSecret {
+        #[arg(long)]
+        wasm_hash: String,
+        #[arg(long, default_value = "antibody-v1")]
+        profile: String,
+        #[arg(long)]
+        contract: String,
+        #[arg(long, default_value = "outlayer.testnet")]
+        outlayer: String,
+        #[arg(long, default_value = "https://testnet-api.outlayer.ai")]
+        api: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -376,6 +390,9 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Call { contract, method, args, deposit_yocto, gas_tgas } => cmd::admin_call(&c, contract, method, args, *deposit_yocto, *gas_tgas),
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
+                AdminCmd::OutlayerSecret { wasm_hash, profile, contract, outlayer, api } => {
+                    cmd::admin_outlayer_secret(&c, api, outlayer, wasm_hash, profile, contract)
+                }
             }
         }
         Cmd::Mcp => {
