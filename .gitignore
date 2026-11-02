@@ -15,6 +15,11 @@ research/
 report/
 reports/
 measurements/
+# Briefs, milestone/daily reports and their tooling stay private (outside the repository).
+brief*.md
+*_brief*.md
+daily/
+scripts/report_to_html.py
 # Arena: hidden-bug PoCs live in a separate private location, never in this repository.
 arena-private/
 **/arena-private/

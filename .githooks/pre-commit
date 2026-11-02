@@ -19,7 +19,7 @@ fi
 "$GL" git --pre-commit --staged --redact --no-banner --config .gitleaks.toml
 
 # Paths that must never be published, even if .gitignore is bypassed with `git add -f`.
-blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|\.env$|\.env\.)' | grep -v '^\.env\.example$' || true)
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|(.*/)?brief[^/]*\.md$|(.*/)?[^/]*_brief[^/]*\.md$|daily/|scripts/report_to_html\.py$|\.env$|\.env\.)' | grep -v '^\.env\.example$' || true)
 if [ -n "$blocked" ]; then
   echo "pre-commit: refusing never-public paths:" >&2
   echo "$blocked" >&2
