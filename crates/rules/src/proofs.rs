@@ -154,8 +154,11 @@ fn a_refitted_reservation_conserves_both_amounts() {
 }
 
 // ---------------------------------------------------------------------------------- the ledger
+// New escrow changes both sides of the equation at once; Kissat proves those in minutes where the
+// default solver takes a quarter of an hour.
 
 #[kani::proof]
+#[kani::solver(kissat)]
 fn a_deposit_keeps_the_ledger_balanced() {
     let mut l = ledger();
     l.deposit(kani::any_where(|a: &Amount| *a <= SUPPLY));
@@ -163,6 +166,7 @@ fn a_deposit_keeps_the_ledger_balanced() {
 }
 
 #[kani::proof]
+#[kani::solver(kissat)]
 fn a_forfeit_keeps_the_ledger_balanced() {
     let mut l = ledger();
     l.forfeit(kani::any_where(|a: &Amount| *a <= SUPPLY));
@@ -170,6 +174,7 @@ fn a_forfeit_keeps_the_ledger_balanced() {
 }
 
 #[kani::proof]
+#[kani::solver(kissat)]
 fn an_award_keeps_the_ledger_balanced() {
     let mut l = ledger();
     l.award(kani::any_where(|a: &Amount| *a <= SUPPLY));
