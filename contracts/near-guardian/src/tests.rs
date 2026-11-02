@@ -129,6 +129,30 @@ fn releases_only_for_registered_proxies() {
     assert_eq!(g.issue_release(PROGRAM.into(), acc("acme.testnet"), 1, r), 1);
 }
 
+/// A round that releases two proxies on two chains needs four signatures, more than a call from
+/// near-antibody (200 Tgas) has gas for: the rest are queued, and anyone's `issue_pending` asks for them.
+#[test]
+fn permits_beyond_one_calls_gas_are_queued_then_issued() {
+    let mut g = registered();
+    ctx("acme.testnet", 0);
+    let both = vec![PROXY.to_string(), "0x00000000000000000000000000000000000000bb".to_string()];
+    g.set_chains(PROGRAM.into(), vec![
+        ChainAdapter { chain_id: 11155111, adapter: ADAPTER.into(), proxies: both.clone() },
+        ChainAdapter { chain_id: 84532, adapter: ADAPTER.into(), proxies: both.clone() },
+    ]);
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("guardian.testnet")).predecessor_account_id(acc("antibody.testnet")).prepaid_gas(Gas::from_tgas(200));
+    testing_env!(b.build());
+    let r: Vec<ReleaseIn> = both.iter().map(|p| ReleaseIn { proxy: p.clone(), code_hash: "cd".repeat(32) }).collect();
+    let first = g.issue_release(PROGRAM.into(), acc("acme.testnet"), 2, r) as usize;
+    assert!((1..4).contains(&first), "one call signs some, not all");
+    assert_eq!(first + g.pending_permits().len(), 4, "nothing is dropped");
+    ctx("keeper.testnet", 0);
+    assert_eq!(g.issue_pending() as usize, 4 - first);
+    assert!(g.pending_permits().is_empty());
+    assert_eq!(g.get_program(PROGRAM.into(), acc("acme.testnet")).unwrap().permits, 4);
+}
+
 #[test]
 fn a_signature_is_kept_only_if_it_recovers_to_the_programs_address() {
     let mut g = registered();

@@ -107,6 +107,17 @@ pub struct SignatureResponse {
     pub recovery_id: u8,
 }
 
+/// A permit that did not fit in the gas of the call that asked for it, waiting for `issue_pending`.
+#[near(serializers = [json, borsh])]
+#[derive(Clone, Debug)]
+pub struct Pending {
+    pub program_key: String,
+    pub project: AccountId,
+    pub chain_id: u64,
+    pub round: u32,
+    pub body: PermitBody,
+}
+
 /// A release named by near-antibody: upgrade `proxy` to an implementation with this code hash.
 #[near(serializers = [json])]
 #[derive(Clone, Debug)]
@@ -126,6 +137,9 @@ pub struct Guardian {
     permits: LookupMap<u64, SignedPermit>,
     next_permit: u64,
     failures: u64,
+    /// Permits queued for `issue_pending`, oldest first. Each signature needs its own gas, so one call
+    /// signs at most three; a round that releases two proxies on two chains needs four.
+    pending: Vec<Pending>,
 }
 
 pub fn hex_bytes(s: &str) -> Option<Vec<u8>> {
@@ -199,7 +213,7 @@ pub fn address_of(xy: &[u8]) -> String {
 impl Guardian {
     #[init]
     pub fn new(owner: AccountId, mpc: AccountId, antibody: AccountId) -> Self {
-        Self { owner, mpc, antibody, programs: LookupMap::new(b"p"), permits: LookupMap::new(b"s"), next_permit: 0, failures: 0 }
+        Self { owner, mpc, antibody, programs: LookupMap::new(b"p"), permits: LookupMap::new(b"s"), next_permit: 0, failures: 0, pending: Vec::new() }
     }
 
     /// The project registers its program; the deposit pays MPC fees. The guardian asks the MPC network
@@ -302,10 +316,9 @@ impl Guardian {
     /// Asks the MPC network to sign one permit; false (logged) if the program cannot pay, has no key, or
     /// this call has too little gas left for another signature.
     fn request(&mut self, program_key: &str, project: &AccountId, c: &ChainAdapter, round: u32, body: PermitBody) -> bool {
-        let left = env::prepaid_gas().as_gas().saturating_sub(env::used_gas().as_gas());
-        if left < SIGN_GAS.as_gas() + SIGN_CB_GAS.as_gas() + Gas::from_tgas(5).as_gas() {
-            self.failures += 1;
-            self.emit("permit_skipped", json!({"program_key": program_key, "chain_id": c.chain_id, "reason": "not enough gas left in this call"}));
+        if !Self::gas_for_one() {
+            self.emit("permit_queued", json!({"program_key": program_key, "chain_id": c.chain_id, "round": round}));
+            self.pending.push(Pending { program_key: program_key.to_string(), project: project.clone(), chain_id: c.chain_id, round, body });
             return false;
         }
         let key = (program_key.to_string(), project.clone());
@@ -347,6 +360,23 @@ impl Guardian {
                 .then(Self::ext(env::current_account_id()).with_static_gas(SIGN_CB_GAS).on_signed(stub)),
         );
         true
+    }
+
+    fn gas_for_one() -> bool {
+        let left = env::prepaid_gas().as_gas().saturating_sub(env::used_gas().as_gas());
+        left >= SIGN_GAS.as_gas() + SIGN_CB_GAS.as_gas() + Gas::from_tgas(5).as_gas()
+    }
+
+    /// Anyone: asks the MPC network for queued permits, oldest first, as many as this call's gas allows.
+    /// The program's own MPC credit pays, as for the call that queued them.
+    pub fn issue_pending(&mut self) -> u32 {
+        let mut n = 0;
+        while !self.pending.is_empty() && Self::gas_for_one() {
+            let q = self.pending.remove(0);
+            let Some(c) = self.guard(&q.program_key, &q.project).chains.into_iter().find(|c| c.chain_id == q.chain_id) else { continue };
+            n += self.request(&q.program_key, &q.project, &c, q.round, q.body) as u32;
+        }
+        n
     }
 
     #[private]
@@ -406,6 +436,10 @@ impl Guardian {
     pub fn list_permits(&self, from: Option<u64>, limit: Option<u64>) -> Vec<SignedPermit> {
         let from = from.unwrap_or(0);
         (from..self.next_permit.min(from + limit.unwrap_or(50).min(100))).filter_map(|i| self.permits.get(&i).cloned()).collect()
+    }
+
+    pub fn pending_permits(&self) -> Vec<Pending> {
+        self.pending.clone()
     }
 
     pub fn get_config(&self) -> near_sdk::serde_json::Value {

@@ -658,6 +658,14 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
         }
     }
     steps.extend(round_reruns(ctx, program)?);
+    // Permits that did not fit in one call's gas wait at near-guardian; anyone asks for them.
+    if let Some(g) = &ctx.dep.guardian {
+        if ctx.near.view(g, "pending_permits", json!({}))?.as_array().is_some_and(|p| !p.is_empty()) {
+            let out = ctx.near.function_call(&ctx.signer()?, g, "issue_pending", json!({}), 300, 0)?;
+            let s = ensure_ok(ctx, &out, "issue_pending")?;
+            steps.push(json!({"issue_pending": s["tx"]}));
+        }
+    }
     Ok(json!({"program": program, "steps": steps}))
 }
 
