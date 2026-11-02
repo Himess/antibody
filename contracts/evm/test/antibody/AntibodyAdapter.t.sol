@@ -10,6 +10,7 @@ interface Vm {
     function expectRevert(bytes4) external;
     function warp(uint256) external;
     function chainId(uint256) external;
+    function etch(address, bytes calldata) external;
 }
 
 /// An implementation behind the proxy: one storage slot, read by `value()`.
@@ -172,5 +173,32 @@ contract AntibodyAdapterTest {
         (uint8 v, bytes32 r, bytes32 s) = _sign(GUARDIAN_KEY, adapter.releaseDigest(p));
         vm.expectRevert(AntibodyAdapter.NotAProxy.selector);
         adapter.release(p, address(v2), v, r, s);
+    }
+
+    /// The same digests near-guardian computes (contracts/near-guardian `digests_match_the_adapter`):
+    /// the adapter's code at the vector's address, chain 31337, program "antibody.testnet/0".
+    function test_digestsMatchTheGuardian() public {
+        address at = 0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f;
+        address[] memory none = new address[](0);
+        AntibodyAdapter a = new AntibodyAdapter(vm.addr(GUARDIAN_KEY), PROGRAM, none, none);
+        vm.etch(at, address(a).code);
+        vm.chainId(31337);
+        AntibodyAdapter.PausePermit memory p =
+            AntibodyAdapter.PausePermit({program: PROGRAM, round: 1, ticket: 7, deadline: 1_800_000_600});
+        require(
+            AntibodyAdapter(at).pauseDigest(p) == 0x44a11a91a91f7ecaa83ec2bccee5ee7930b1d7e6ac43a64a57aa33599fad2cf6,
+            "pause digest"
+        );
+        AntibodyAdapter.ReleasePermit memory r = AntibodyAdapter.ReleasePermit({
+            program: PROGRAM,
+            round: 2,
+            proxy: address(0xaa),
+            codeHash: 0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd,
+            deadline: 1_800_000_600
+        });
+        require(
+            AntibodyAdapter(at).releaseDigest(r) == 0x2fb89742e62ff6246b32da341ad8a57667a3938dd15b403c3aee01e88e32b487,
+            "release digest"
+        );
     }
 }

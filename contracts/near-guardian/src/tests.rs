@@ -1,5 +1,5 @@
 use k256::ecdsa::SigningKey;
-use near_sdk::{json_types::U128, test_utils::VMContextBuilder, testing_env, AccountId, Gas, PromiseError};
+use near_sdk::{test_utils::get_logs, test_utils::VMContextBuilder, testing_env, AccountId, Gas, NearToken, PromiseError};
 
 use super::*;
 
@@ -7,119 +7,175 @@ fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
 }
 
-fn ctx(pred: &str) {
+fn ctx(pred: &str, deposit: u128) {
     let mut b = VMContextBuilder::new();
     b.current_account_id(acc("guardian.testnet"))
         .predecessor_account_id(acc(pred))
-        .block_index(77)
-        .prepaid_gas(Gas::from_tgas(1000));
+        .attached_deposit(NearToken::from_yoctonear(deposit))
+        .block_timestamp(1_800_000_000 * 1_000_000_000)
+        .prepaid_gas(Gas::from_tgas(300));
     testing_env!(b.build());
 }
 
-/// Deterministic test key standing in for the MPC network.
+/// Deterministic test key standing in for the MPC network's derived key.
 fn test_key() -> SigningKey {
     SigningKey::from_bytes(&[7u8; 32].into()).unwrap()
 }
 
-fn address_of(k: &SigningKey) -> String {
+fn derived(k: &SigningKey) -> String {
     let pt = k.verifying_key().to_encoded_point(false);
-    format!("0x{}", to_hex(&env::keccak256(&pt.as_bytes()[1..])[12..]))
+    format!("secp256k1:{}", bs58::encode(&pt.as_bytes()[1..]).into_string())
 }
 
-fn target(chain_id: u64, name: &str) -> ChainTarget {
-    ChainTarget {
-        chain_id,
-        name: name.into(),
-        to: "0x53ED61ba0bC2CF14DF82d0bDE82C4e8ac2A82462".into(),
-        calldata: PAUSE_CALLDATA.into(),
-        gas_limit: 80_000,
-        max_fee_per_gas: U128(30_000_000_000),
-        max_priority_fee_per_gas: U128(2_000_000_000),
-        next_nonce: 0,
-        explorer: "https://example.org/tx/".into(),
-    }
+const ADAPTER: &str = "0x5615deb798bb3e4dfa0139dfa1b3d433cc23b72f";
+const PROXY: &str = "0x00000000000000000000000000000000000000aa";
+const PROGRAM: &str = "antibody.testnet/0";
+
+fn chains() -> Vec<ChainAdapter> {
+    vec![
+        ChainAdapter { chain_id: 11155111, adapter: ADAPTER.into(), proxies: vec![PROXY.into()] },
+        ChainAdapter { chain_id: 84532, adapter: ADAPTER.into(), proxies: vec![] },
+    ]
 }
 
-fn guardian() -> Guardian {
-    ctx("owner.testnet");
-    let mut g = Guardian::new(acc("owner.testnet"), acc("v1.signer-prod.testnet"), "guardian/acme".into(), address_of(&test_key()));
-    g.set_chain(target(11155111, "sepolia"));
-    g.set_chain(target(84532, "base-sepolia"));
-    g.set_authorized(acc("bounty.testnet"), true);
+/// A guardian with acme's program registered and its derived key pinned.
+fn registered() -> Guardian {
+    ctx("owner.testnet", 0);
+    let mut g = Guardian::new(acc("owner.testnet"), acc("v1.signer-prod.testnet"), acc("antibody.testnet"));
+    ctx("acme.testnet", 1_000);
+    let _ = g.register(PROGRAM.into(), chains());
+    ctx("guardian.testnet", 0);
+    let address = g.on_key(PROGRAM.into(), acc("acme.testnet"), Ok(derived(&test_key()))).unwrap();
+    assert_eq!(g.get_program(PROGRAM.into(), acc("acme.testnet")).unwrap().address, Some(address));
     g
 }
 
-/// What the MPC network returns: big_r = compressed R (parity from recovery id), s, recovery id.
-fn mpc_sign(payload_hex: &str) -> SignatureResponse {
-    let hash = hex_to_bytes(payload_hex).unwrap();
-    let (sig, recid) = test_key().sign_prehash_recoverable(&hash).unwrap();
+fn sign(digest: &str, k: &SigningKey) -> SignatureResponse {
+    let d = hex::decode(digest).unwrap();
+    let (sig, recid) = k.sign_prehash_recoverable(&d).unwrap();
     let (r, s) = sig.split_bytes();
     let parity = recid.is_y_odd() as u8;
     SignatureResponse {
-        big_r: BigR { affine_point: format!("{:02x}{}", 2 + parity, to_hex(&r)) },
-        s: Scalar { scalar: to_hex(&s) },
+        big_r: BigR { affine_point: format!("{:02x}{}", 2 + parity, hex::encode(r)) },
+        s: Scalar { scalar: hex::encode(s) },
         recovery_id: parity,
     }
 }
 
-#[test]
-fn pause_all_signs_every_chain_with_its_own_nonce() {
-    let mut g = guardian();
-    let p0_sep = g.preview(11155111, 0);
-    let p0_base = g.preview(84532, 0);
-    assert_ne!(p0_sep, p0_base, "chain id is part of the signed payload");
-    ctx("bounty.testnet");
-    assert_eq!(g.pause_all("bounty.testnet/0".into(), 1), vec![0, 1], "one sign request per chain");
-    let chains = g.get_chains();
-    assert!(chains.iter().all(|c| c.next_nonce == 1));
-    ctx("guardian.testnet");
-    let out = g
-        .on_signed(Ok(mpc_sign(&p0_sep)), 0, 11155111, 0, p0_sep.clone(), "bounty.testnet/0#1".into(), 77)
-        .expect("signature accepted");
-    assert_eq!(out.recovered_address, address_of(&test_key()));
-    assert!(out.signed_tx.starts_with("0x02"), "EIP-1559 typed transaction");
-    assert_eq!(out.tx_hash, format!("0x{}", to_hex(&env::keccak256(&hex_to_bytes(&out.signed_tx).unwrap()))));
-    let out_b = g.on_signed(Ok(mpc_sign(&p0_base)), 1, 84532, 0, p0_base, "bounty.testnet/0#1".into(), 77).unwrap();
-    assert_ne!(out.signed_tx, out_b.signed_tx);
-    assert_eq!(g.get_latest(84532).unwrap().request_id, 1);
-    // Printed for the external check with `cast decode-transaction` (scripts/demo/check_guardian_tx.sh).
-    println!("GUARDIAN_ADDRESS={}", address_of(&test_key()));
-    println!("SIGNED_SEPOLIA={}", out.signed_tx);
-    println!("SIGNED_BASE={}", out_b.signed_tx);
+fn stub(body: PermitBody) -> SignedPermit {
+    let deadline = 1_800_000_000 + PERMIT_TTL_SECS;
+    SignedPermit {
+        id: 0,
+        program_key: PROGRAM.into(),
+        project: acc("acme.testnet"),
+        chain_id: 11155111,
+        adapter: ADAPTER.into(),
+        round: 0,
+        digest: hex::encode(permit_digest(11155111, ADAPTER, PROGRAM, 0, &body, deadline)),
+        body,
+        deadline,
+        v: 0,
+        r: String::new(),
+        s: String::new(),
+        requested_ns: 0,
+        signed_ns: 0,
+    }
 }
 
 #[test]
-fn only_owner_and_authorized_callers_can_pause() {
-    let mut g = guardian();
-    ctx("mallory.testnet");
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = g.pause_all("x".into(), 0);
-    }))
-    .is_err());
-    ctx("mallory.testnet");
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g.set_chain(target(1, "mainnet")))).is_err());
+fn digests_match_the_adapter() {
+    // Computed with `cast` from AntibodyAdapter's type strings; contracts/evm pins the same values.
+    ctx("x.testnet", 0);
+    let pause = permit_digest(31337, ADAPTER, PROGRAM, 1, &PermitBody::Pause { ticket: 7 }, 1_800_000_600);
+    assert_eq!(hex::encode(pause), "44a11a91a91f7ecaa83ec2bccee5ee7930b1d7e6ac43a64a57aa33599fad2cf6");
+    let release = permit_digest(31337, ADAPTER, PROGRAM, 2, &PermitBody::Release { proxy: PROXY.into(), code_hash: "cd".repeat(32) }, 1_800_000_600);
+    assert_eq!(hex::encode(release), "2fb89742e62ff6246b32da341ad8a57667a3938dd15b403c3aee01e88e32b487");
 }
 
 #[test]
-fn signatures_from_another_key_or_mpc_failures_are_rejected() {
-    let mut g = guardian();
-    let payload = g.preview(11155111, 0);
-    ctx("bounty.testnet");
-    let _ = g.pause_all("bounty.testnet/0".into(), 1);
-    ctx("guardian.testnet");
+fn only_near_antibody_asks_and_each_chain_gets_a_permit() {
+    let mut g = registered();
+    ctx("antibody.testnet", 0);
+    assert_eq!(g.issue_pause(PROGRAM.into(), acc("acme.testnet"), 0, 3), 2);
+    assert_eq!(g.get_program(PROGRAM.into(), acc("acme.testnet")).unwrap().credit.0, 1_000 - 2 * SIGN_FEE);
+}
+
+#[test]
+#[should_panic(expected = "only near-antibody asks for permits")]
+fn nobody_else_asks() {
+    let mut g = registered();
+    ctx("acme.testnet", 0);
+    g.issue_pause(PROGRAM.into(), acc("acme.testnet"), 0, 3);
+}
+
+#[test]
+#[should_panic(expected = "no guardian registration")]
+fn a_registration_by_another_account_is_never_used() {
+    // eve registers acme's program key; near-antibody asks for acme's: eve's entry does not count.
+    ctx("owner.testnet", 0);
+    let mut g = Guardian::new(acc("owner.testnet"), acc("mpc.testnet"), acc("antibody.testnet"));
+    ctx("eve.testnet", 1_000);
+    let _ = g.register(PROGRAM.into(), chains());
+    ctx("antibody.testnet", 0);
+    g.issue_pause(PROGRAM.into(), acc("acme.testnet"), 0, 3);
+}
+
+#[test]
+fn releases_only_for_registered_proxies() {
+    let mut g = registered();
+    ctx("antibody.testnet", 0);
+    let r = vec![ReleaseIn { proxy: PROXY.into(), code_hash: "cd".repeat(32) }, ReleaseIn { proxy: ADAPTER.into(), code_hash: "cd".repeat(32) }];
+    // One registered proxy, on one chain.
+    assert_eq!(g.issue_release(PROGRAM.into(), acc("acme.testnet"), 1, r), 1);
+}
+
+#[test]
+fn a_signature_is_kept_only_if_it_recovers_to_the_programs_address() {
+    let mut g = registered();
+    ctx("guardian.testnet", 0);
+    let s = stub(PermitBody::Pause { ticket: 3 });
+    let id = g.on_signed(s.clone(), Ok(sign(&s.digest, &test_key()))).expect("kept");
+    let p = g.get_permit(id).unwrap();
+    assert!(p.v == 27 || p.v == 28);
+    assert!(hex::decode(&p.s).unwrap().as_slice() <= &HALF_N[..], "low-s form");
+    // A signature by another key is dropped.
     let other = SigningKey::from_bytes(&[9u8; 32].into()).unwrap();
-    let (sig, recid) = other.sign_prehash_recoverable(&hex_to_bytes(&payload).unwrap()).unwrap();
-    let (r, s) = sig.split_bytes();
-    let forged = SignatureResponse {
-        big_r: BigR { affine_point: format!("{:02x}{}", 2 + recid.is_y_odd() as u8, to_hex(&r)) },
-        s: Scalar { scalar: to_hex(&s) },
-        recovery_id: recid.is_y_odd() as u8,
-    };
-    assert!(g.on_signed(Ok(forged), 0, 11155111, 0, payload.clone(), "r".into(), 77).is_none());
-    assert!(g.on_signed(Err(PromiseError::Failed), 1, 84532, 0, payload, "r".into(), 77).is_none());
-    assert_eq!(g.get_config()["failures"], near_sdk::serde_json::json!(2));
+    assert_eq!(g.on_signed(s.clone(), Ok(sign(&s.digest, &other))), None);
+    assert!(get_logs().iter().any(|l| l.contains("permit_failed")));
+    // The MPC network failing is a typed failure, not a panic.
+    assert_eq!(g.on_signed(s, Err(PromiseError::Failed)), None);
 }
 
+#[test]
+fn a_high_s_signature_is_normalised() {
+    let mut g = registered();
+    ctx("guardian.testnet", 0);
+    let s = stub(PermitBody::Pause { ticket: 4 });
+    let mut sig = sign(&s.digest, &test_key());
+    // The malleable twin: n - s with the other parity recovers the same key.
+    let s32: [u8; 32] = hex::decode(&sig.s.scalar).unwrap().try_into().unwrap();
+    sig.s.scalar = hex::encode(neg_mod_n(&s32));
+    sig.recovery_id ^= 1;
+    let id = g.on_signed(s, Ok(sig)).expect("normalised and kept");
+    assert!(hex::decode(&g.get_permit(id).unwrap().s).unwrap().as_slice() <= &HALF_N[..]);
+}
+
+#[test]
+fn no_permit_without_a_derived_key_or_credit() {
+    ctx("owner.testnet", 0);
+    let mut g = Guardian::new(acc("owner.testnet"), acc("mpc.testnet"), acc("antibody.testnet"));
+    ctx("acme.testnet", 0);
+    let _ = g.register(PROGRAM.into(), chains());
+    ctx("antibody.testnet", 0);
+    assert_eq!(g.issue_pause(PROGRAM.into(), acc("acme.testnet"), 0, 3), 0, "the key is not pinned yet");
+    ctx("guardian.testnet", 0);
+    g.on_key(PROGRAM.into(), acc("acme.testnet"), Ok(derived(&test_key())));
+    ctx("antibody.testnet", 0);
+    assert_eq!(g.issue_pause(PROGRAM.into(), acc("acme.testnet"), 0, 3), 0, "no MPC credit");
+}
+
+// near-sdk 5.9's mocked blockchain does not implement yield/resume; the MSVC linker wants the
+// symbols anyway (never called).
 #[cfg(windows)]
 #[no_mangle]
 pub extern "C" fn promise_yield_create(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> u64 {
