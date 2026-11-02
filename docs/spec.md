@@ -543,15 +543,17 @@ A round's fix may ship only if, at opening:
 4. the canaries pass;
 5. every holder of a Critical or High key, from any round, was re-run at this fix and shows no violation.
 
-When the gate holds, near-antibody asks the guardian for a **release permit**, which pays `release_fee`:
+When the gate holds, near-antibody asks the guardian for a **release permit** per proxy and chain, which
+pays `release_fee`:
 
 ```
-Release(project, program, round, chainId, proxy, implementation, codeHash, nonce, validUntil)
+ReleasePermit(bytes32 program, uint32 round, address proxy, bytes32 codeHash, uint256 deadline)
 ```
 
-It is EIP-712, signed by MPC under the project's key (§10.2). The project's proxy upgrades only to an
-implementation whose code hash equals `codeHash`, and only with a valid permit, so **only code that
-survived is shipped**.
+It is EIP-712 (domain in §10.2), signed by Chain Signatures under the project's path. The program's adapter
+upgrades `proxy` only to an implementation whose on-chain code hash equals `codeHash`, once per round and
+proxy, so **only code that survived is shipped**. Each signature needs its own gas; permits beyond one
+call's are queued at the guardian, and anyone's `issue_pending` asks for them.
 
 The program record shows "survived N days, X at stake, N verified attempts", plus rule strength
 (§19.3). It never says "secure".
@@ -574,21 +576,25 @@ program per round.
 The guardian (`contracts/near-guardian`) asks the MPC to sign
 
 ```
-Pause(project, program, round, ticketId, chainId, adapter, targetsHash, validUntil)
+PausePermit(bytes32 program, uint32 round, uint64 ticket, uint256 deadline)
 ```
 
-as an EIP-712 digest. The domain is `("Antibody", "2", chainId, adapter)`, and the derivation path is
-`pause/v2/<project account>`. The project's adapter on each chain trusts that path's address. The
-guardian holds no other path and has no other calldata: `pause()` is fixed in code.
+as an EIP-712 digest under the domain `{name "Antibody", version "1", chainId, verifyingContract = adapter}`.
+The derivation path is `antibody/<project account>/<program key>`, so each program of each project has its
+own guardian address; the guardian pins it when the project registers, and the program's adapter trusts
+only it. The guardian holds no other path and has no other calldata: `pause()` is fixed in code.
 
 ### 10.3 Adapter
 
-`AntibodyPermitAdapter`, deployed with CREATE2 per project per chain. It:
-- checks the signature (`ecrecover`), `validUntil`, and that `ticketId` was never used (replay is keyed on
-  the ticket, not the signature);
-- for each target: if `extcodehash(target)` equals the committed code hash (**the live-code guard**),
-  calls `pause()` with try/catch and emits a result per target (**best effort per target**);
-- verifies a release permit and authorizes exactly one upgrade.
+`AntibodyAdapter` (`contracts/evm/src/antibody/AntibodyAdapter.sol`), deployed with CREATE2 per program
+(salt `keccak256(program key)`), so it has the same address on every chain. It:
+- checks the program, the deadline and the signature (`ecrecover` against the pinned guardian address;
+  low-s only), and uses each replay key once: `("pause", round, ticket)` or `("release", round, proxy)`.
+  Replay is keyed on the permit's meaning, not the signature;
+- `pause`: calls `pause()` on each target fixed at deployment and emits a result per target (**best
+  effort per target**);
+- `release`: upgrades a registered `AntibodyProxy` (ERC-1967) to an implementation whose runtime code
+  hash is the permit's.
 
 The adapter can never unpause; that stays with the project.
 

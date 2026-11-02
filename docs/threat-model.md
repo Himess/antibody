@@ -90,7 +90,7 @@ is how anyone can verify it.
 | I5 | Runs that never answer | `time_out`, void, retry with priority, then refund | Liveness depends on OutLayer |
 | I6 | Blob or witness unavailability | Inline blobs; at least two RPCs in the guest; unavailability is `InfraError` | — |
 | I7 | Nobody relays a permit | Antibody's relayer by default; relaying is permissionless | A permit needs a funded sender per chain |
-| I8 | A pause without cause | Tickets: T1, policy slots, minimum impact, one per round; adapter live-code guard; no unpause power | MPC threshold |
+| I8 | A pause without cause | Tickets: T1, policy slots, minimum impact, one per round; the adapter only calls `pause()` on targets fixed at its deployment; no unpause power | MPC threshold |
 | I9 | A stale or censored light client | BLS-verified updates; `recheck_anchor`; unconfirmed anchors labelled | Liveness |
 | I10 | EVM rule drift (Sepolia's Glamsterdam) | Rules pinned per program; every receipt carries its label | PoCs depending on newer rules are judged under the pinned ones |
 | I11 | Storage spam | Requester-paid storage | — |
