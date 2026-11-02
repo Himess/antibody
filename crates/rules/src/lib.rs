@@ -10,6 +10,7 @@
 pub mod audit;
 pub mod engine;
 pub mod facts;
+pub mod settlement;
 pub mod state;
 pub mod store;
 pub mod types;

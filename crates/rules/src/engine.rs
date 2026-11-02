@@ -207,6 +207,7 @@ impl<S: Store> Engine<S> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_run(&mut self, program: &Program, commit: Option<CommitId>, mode: Mode, round: u32, spec: &RunSpec, ctx: &Ctx, payer: &str) -> Run {
         let id = self.store.next_id(IdKind::Run);
         let r = Run {
@@ -536,6 +537,7 @@ impl<S: Store> Engine<S> {
 
     /// A commit with its bond (spec §4.1). `bond_from_credit`: an agent's (or hunter's) bond comes from
     /// the beneficiary's token credit; otherwise it arrived with the call.
+    #[allow(clippy::too_many_arguments)]
     pub fn commit(&mut self, ctx: &Ctx, program: ProgramId, round: u32, commitment: H32, terms_ok: bool, bond_paid: Amount, bond_from_credit: bool) -> R<(CommitId, Vec<Effect>)> {
         let mut p = self.get_program(program)?;
         if p.phase != Phase::Open {
@@ -873,13 +875,11 @@ impl<S: Store> Engine<S> {
         let facts = r.facts().cloned().unwrap();
         let mut fx = vec![];
         match r.mode {
-            Mode::Activate => {
-                if p.activation_run == Some(r.id) && p.sealing_pk.is_none() {
-                    if let Extra::SealingKey { pk, epoch } = facts.extra {
-                        p.sealing_pk = Some(pk);
-                        p.key_epoch = epoch.clone();
-                        fx.push(ev("program_activated", serde_json::json!({"program_id": p.id, "sealing_pk": pk, "key_epoch": epoch})));
-                    }
+            Mode::Activate if p.activation_run == Some(r.id) && p.sealing_pk.is_none() => {
+                if let Extra::SealingKey { pk, epoch } = facts.extra {
+                    p.sealing_pk = Some(pk);
+                    p.key_epoch = epoch.clone();
+                    fx.push(ev("program_activated", serde_json::json!({"program_id": p.id, "sealing_pk": pk, "key_epoch": epoch})));
                 }
             }
             Mode::Verify | Mode::Second => {

@@ -163,7 +163,7 @@ pub fn parse(bytes: &[u8], ex: &Expect) -> Result<FactsSummary, String> {
         }
     }
     let violation_like = matches!(ex.mode, Mode::Verify | Mode::Second | Mode::Rerun);
-    if violation_like && (f.kind == Kind::Violation) != !f.keys.is_empty() {
+    if violation_like && (f.kind == Kind::Violation) == f.keys.is_empty() {
         return Err("keys must be present exactly for a Violation".into());
     }
     if let Some(r) = &f.reason {
