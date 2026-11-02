@@ -180,6 +180,26 @@ fn verify_gives_the_recorded_verdicts_in_v2_facts() {
 }
 
 #[test]
+fn a_known_issue_is_verified_without_a_commit() {
+    // submit_known: the project's sealed PoC, no commit. Same verdict and keys; no disclosure wrap.
+    let w = World::new();
+    let e = expected();
+    let (agent, x) = e["submissions"].as_object().unwrap().iter().find(|(_, x)| x["kind"] == "Violation").unwrap();
+    let project = "acme.testnet";
+    let blob = seal(&w.program_key, project, agent);
+    let req = w.request("verify", None, serde_json::json!({"hunter": project, "blob": w.upload(&blob)}));
+    let (out, bytes) = w.run(&req, CONTRACT);
+    assert_eq!(format!("{:?}", out.facts.kind), x["kind"].as_str().unwrap(), "{:?}", out.facts.reason);
+    assert!(out.facts.wrap_d.is_none(), "no commit, no disclosure wrap");
+    let s = w.parse(&req, &bytes, antibody_rules::Mode::Verify, None);
+    assert!(!s.keys.is_empty(), "the rule core accepts the facts and their keys");
+    // A second run without a commit is refused as an infrastructure error, never a verdict.
+    let req2 = w.request("second", None, serde_json::json!({"hunter": project, "blob": w.upload(&blob)}));
+    let (out2, _) = w.run(&req2, CONTRACT);
+    assert_eq!(out2.facts.kind, Kind::InfraError);
+}
+
+#[test]
 fn equal_root_causes_give_equal_tags() {
     let w = World::new();
     let e = expected();

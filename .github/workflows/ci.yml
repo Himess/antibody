@@ -122,7 +122,7 @@ jobs:
         working-directory: contracts/near-antibody
         run: |
           cargo test --lib -p near-antibody -p antibody-tusd
-          cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap
+          cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap -p antibody-mock-lc
 
   e2e:
     name: sandbox end-to-end (near-sandbox + anvil, MOCK OutLayer/DCAP)

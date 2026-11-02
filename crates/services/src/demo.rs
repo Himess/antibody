@@ -304,7 +304,8 @@ fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
     let mut last = Value::Null;
     wait_for(&format!("T1 for run {run_id}"), Duration::from_secs(120), || {
         last = cmd::run(ctx, run_id).map(|r| cmd::run_view(&r)).unwrap_or(Value::Null);
-        last["tier"] == json!("T1") || last.get("failed").is_some()
+        // An infrastructure error is never confirmed: stop at once with its reason.
+        last["tier"] == json!("T1") || last.get("failed").is_some() || last["kind"] == json!("InfraError")
     })?;
     if last["tier"] != json!("T1") {
         return Err(eyre!("run {run_id} failed: {last}"));

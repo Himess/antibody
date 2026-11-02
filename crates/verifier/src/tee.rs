@@ -20,6 +20,9 @@ use crate::{
 };
 
 pub const MAX_BLOB_BYTES: usize = 16 * 1024 * 1024;
+/// The commit id a known issue's receipt names: known issues are declared by the project before open
+/// and have no commit.
+pub const KNOWN_ISSUE_COMMIT: u64 = u64::MAX;
 /// Inline blobs travel in near-antibody's request (spec §4.2).
 pub const MAX_INLINE_BYTES: usize = 32 * 1024;
 
@@ -423,7 +426,13 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
             Ok(())
         }
         Mode::Verify | Mode::Second | Mode::Rerun => {
-            let commit_id = req.commit_id.ok_or_else(|| infra("no commit"))?;
+            // A known issue (spec §7.6) is verified like a submission but has no commit: its receipt
+            // names KNOWN_ISSUE_COMMIT, and it carries no disclosure wrap.
+            let commit_id = match (req.mode, req.commit_id) {
+                (_, Some(c)) => c,
+                (Mode::Verify, None) => KNOWN_ISSUE_COMMIT,
+                _ => return Err(infra("no commit")),
+            };
             let hunter = req.hunter.as_deref().ok_or_else(|| infra("no hunter"))?;
             let (_, base) = base_witness(env, req)?;
             let manifest = manifest_for(env, req, &base)?;
@@ -448,7 +457,7 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
                 }
             }
             facts.receipt_sha256 = hex::encode(v.receipt.hash());
-            if req.mode != Mode::Rerun {
+            if req.mode != Mode::Rerun && req.commit_id.is_some() {
                 if let Some(t) = v.primary {
                     facts.wrap_d = Some(wrap_d(&keys, &req.program_key, commit_id, &t, &k)?);
                 }

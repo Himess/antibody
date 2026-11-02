@@ -16,7 +16,7 @@ build: contracts verifier
 contracts:
 	rustup toolchain install $(NEAR_TOOLCHAIN) --profile minimal --target wasm32-unknown-unknown
 	cd contracts/near-antibody && cargo build --release --target wasm32-unknown-unknown \
-		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap
+		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap -p antibody-mock-lc
 	cd contracts/near-guardian && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/evm && forge build
 
