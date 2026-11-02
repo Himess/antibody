@@ -499,7 +499,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     // Permissionless: near-antibody copies the (MOCK) approved worker images before any program exists.
     cmd::call(&ctx_of("keeper"), "sync_images", json!({}), 60)?;
     cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct("acme"), "amount": (50_000 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
-    for x in ["a", "b", "c", "d", "e", "f"] {
+    for x in ["a", "b", "c", "d", "e", "f", "g"] {
         cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct(&format!("agent-{x}")), "amount": (200 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
     }
     results["deployment"] = json!({"near_antibody": acct("bounty"), "verifier_wasm_sha256": verifier_hash, "images": near.view(&acct("bounty"), "get_images", json!({}))?});
