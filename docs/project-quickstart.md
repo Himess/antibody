@@ -1,5 +1,9 @@
 # Project quickstart
 
+> **Testnet status.** The testnet deployment is not live yet; the commands below need it. To scaffold a
+> workspace, run `antibody init --out my-program --project <you>.testnet`. The whole flow can be
+> rehearsed on the local sandbox (`antibody-services demo --keep`).
+
 Open a program before a launch or an upgrade. Your invariants are your bounty terms: a submission is paid
 only if it breaks one of them, at the severity you committed.
 
@@ -12,8 +16,8 @@ too. The verifier injects its runtime code at a reserved address in its own fork
 - `snapshot()` returns what `check()` compares against, read at the anchor.
 - `check(pre)` returns a bitmask: bit *i* = invariant *i* broken.
 
-`contracts/evm/src/acme/AcmeInvariants.sol` is a complete example (solvency at reference prices, fees never
-decrease, share price never falls).
+`contracts/evm/src/acme/AcmeInvariants.sol` is a complete example: solvency at reference prices; accrued
+fees plus the treasury balance never decrease; the share price never falls.
 
 To start from a draft, run `antibody invariants draft --source <your contracts> --out draft/`. Add `--ai`
 for Claude's extension. Review the draft, edit it and approve it (docs/invariants-drafting.md).

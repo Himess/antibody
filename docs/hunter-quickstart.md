@@ -4,6 +4,12 @@ Antibody verifies and pays; it does not hunt. You find a bug with your own tools
 your own AI agent — and express it as a **PoC bundle**: transactions from fresh senders that break one of
 the program's committed invariants. Validity is decided by executing your code, never by reading your text.
 
+> **Testnet status.** The testnet deployment (`bounty.antibody-hq.testnet`) is not live yet, so the
+> commands below fail until it is. To try every step today, run the sandbox locally:
+> `antibody-services demo --keep` keeps near-sandbox and the anvils up. Then point the CLI at it with
+> `--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json`; the demo
+> accounts' keys are in `target/demo/keys/`.
+
 ## 1. Install
 
 ```bash
@@ -51,7 +57,7 @@ address derived from your secret salt.
 
 ```bash
 antibody check --program 0 --bundle bundle.json          # proven witness + verifier, nothing sent, no keys
-antibody --account you.testnet submit --program 0 --bundle bundle.json --wait
+antibody --account you.testnet submit --program 0 --bundle bundle.json   # waits for the verdict (--no-wait to skip)
 ```
 
 `submit` runs these steps:

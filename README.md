@@ -25,7 +25,9 @@ When reports are cheap to produce, judging text does not scale.
   - bonds deter slop: refunded on any Violation, forfeited on NoViolation or InvalidPoC;
   - a Critical makes Chain Signatures pause the protocol on every chain where it runs.
 
-No LLM and no person decides who gets paid. Report text is never read; only the PoC's code runs.
+No LLM decides who gets paid. Report text is never read; only the PoC's code runs. The one human step is
+the T0 arbiter: a payout above the instant cap that someone challenges is resolved by the contract owner,
+unless a T1 confirmation resolves it first.
 
 ## Run it (offline, one command)
 
@@ -33,8 +35,18 @@ No LLM and no person decides who gets paid. Report text is never read; only the 
 make demo
 ```
 
-`make demo` needs Linux x86_64 or macOS arm64, with Rust, Foundry and Python 3. On any other OS, use
-Docker: `docker build --platform linux/amd64 -t antibody-demo . && docker run --rm --platform linux/amd64 antibody-demo`.
+Prerequisites:
+- **OS:** Linux x86_64 with glibc 2.38 or newer (Ubuntu 24.04+, Debian 13), which near-sandbox 2.14.0
+  requires. macOS arm64 is supported by near-sandbox but is not tested in CI.
+- **Tools:** Rust (rustup), Foundry, Python 3 and a C compiler (clang or gcc).
+- **Network:** the first build downloads toolchains, crates, Foundry components and near-sandbox.
+
+Anywhere else, use Docker:
+
+```bash
+docker build --platform linux/amd64 -t antibody-demo .
+docker run --rm --platform linux/amd64 antibody-demo
+```
 
 It needs no keys and no funds. It builds everything, then:
 1. checks the recorded fixtures natively and as wasm;
@@ -42,7 +54,12 @@ It needs no keys and no funds. It builds everything, then:
 3. plays the whole flow on near-sandbox with two anvils, using MOCK OutLayer and MOCK MPC driven by the
    real verifier, and asserts every outcome.
 
-CI runs the same demo on every push (job `e2e`).
+CI runs these steps on every push to `main` and on pull requests:
+- fixtures: job `verifier`;
+- rule tests: jobs `evm` and `near`;
+- sandbox end to end: job `e2e`.
+
+The `docker demo` workflow runs the container.
 
 | Step in the demo | What happens | Asserted |
 |---|---|---|
@@ -61,7 +78,7 @@ Results are written to `target/demo/results.json`. One CI run's numbers are in
 
 `contracts/evm/src/acme/` is a fictional lending protocol with **four bugs planted on purpose**
 (DELIBERATELY VULNERABLE TEST FIXTURE: never deploy it to mainnet). Its invariants define three rules:
-solvency at a committed reference price, fees reaching the treasury, and a share price that never
+solvency at a committed reference price, accrued fees plus the treasury balance never decreasing, and a share price that never
 falls.
 
 | Submission | Verdict | Key (invariant, function) | Outcome |
@@ -105,7 +122,8 @@ flowchart LR
     fingerprint);
   - measures the impact as min(protocol loss, attacker gain) at committed prices.
 
-  The same build runs natively, under wasmtime, and on OutLayer.
+  The same build runs natively and under wasmtime with OutLayer's engine configuration, byte for byte.
+  The run on OutLayer itself is part of the pending live deployment.
 - **Sealed submissions** ([docs/crypto-spec.md](docs/crypto-spec.md)):
   - X25519 + HKDF-SHA256 + ChaCha20-Poly1305 to a verifier key derived inside the TEE from a
     `PROTECTED_` secret, bound to the wasm hash and to near-antibody as the caller;
@@ -127,7 +145,7 @@ flowchart LR
   transactions are public, so anyone can relay them.
 - **Agents.** `antibody mcp` exposes 8 tools over stdio: list and get programs, fetch the environment,
   check a PoC locally, commit, submit, status, verify a receipt. An agent gets a NEAR function-call key
-  that can only commit and submit: it cannot attach deposits or withdraw.
+  that can only commit, submit and upload its sealed blob: it cannot attach deposits or withdraw.
 - **Backend** (`crates/services`, [docs/api.md](docs/api.md)): indexer, read-only API, pause relayer,
   T1 relayer and notifier.
 
@@ -138,13 +156,13 @@ Full table: [docs/trust.md](docs/trust.md).
 | Tier | Who vouches for a verdict | Status |
 |---|---|---|
 | **T0** | OutLayer's operator delivers the TEE worker's output. Above the instant cap, payouts wait a challenge window; anyone may `challenge()` | Implemented. Live run pending (see Deployment) |
-| **T1** | The run's TDX quote, verified on NEAR (`confirm_tee`). Its `report_data` must bind the exact input and output that near-antibody recorded, the pinned wasm, the caller and the secrets. The worker image must be pinned | Implemented and tested with a real OutLayer quote. `antibody tee check --request-id 6496` verifies live via a free view call: `Verified`, `UpToDate` |
+| **T1** | The run's TDX quote, verified on NEAR (`confirm_tee`). Its `report_data` must bind the exact input and output that near-antibody recorded, the pinned wasm, the caller and the secrets. The worker image must be pinned | Implemented and tested with a real quote from a third-party OutLayer run (request 6496). On 2026-11-02, `antibody tee check --request-id 6496` verified it live with a free view call: `Verified`, `UpToDate`. OutLayer's on-chain collateral expires on 2026-11-08; `fixtures/t1/` keeps the recorded answer |
 | **T2** | zk proof of the same execution | Roadmap |
 
 **What is mock:**
 - **The mainnet view** (`/v1/mock/mainnet`, `"mock": true`). It is recorded or synthetic data only. No
-  mainnet transaction is ever sent, and the mainnet light-client figures come from recorded v0.3
-  evidence.
+  mainnet transaction is ever sent. The mainnet light-client figures come from the previous prototype's
+  recorded results (`fixtures/mock-mainnet/v03-evidence.json`).
 - **The sandbox demo.** It uses MOCK OutLayer and MOCK MPC contracts, resolved by the real verifier with
   a TEST seed and a TEST secp256k1 key.
 - **The fixture keys.** The fixtures' `k_program` is a TEST key.
