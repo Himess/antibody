@@ -10,7 +10,9 @@ import {AcmeLend} from "./AcmeLend.sol";
 
 /// @title AcmeVault — lender vault: deposit acUSD, receive shares; the vault supplies AcmeLend.
 /// @notice A 0.10% deposit fee accrues to `accruedFees` (held as idle acUSD in the vault) and
-/// belongs to the treasury. Shares are non-transferable (fixture simplification).
+/// belongs to the treasury. Shares are non-transferable (fixture simplification). Users reach it
+/// through an AntibodyProxy, so a passed release gate can ship a fix; its constructor sets immutables
+/// only, and `approveLend` is the proxy's initializer.
 contract AcmeVault is GuardPausable {
     uint256 public constant DEPOSIT_FEE_BPS = 10;
 
@@ -38,7 +40,12 @@ contract AcmeVault is GuardPausable {
         lend = lend_;
         treasury = treasury_;
         admin = admin_;
-        acUSD_.approve(address(lend_), type(uint256).max);
+    }
+
+    /// @notice Lets AcmeLend pull the vault's acUSD. Run through the proxy at deployment; repeating it
+    /// changes nothing.
+    function approveLend() external {
+        acUSD.approve(address(lend), type(uint256).max);
     }
 
     /// @notice Assets backing the shares: what the vault has supplied to AcmeLend.
@@ -89,7 +96,7 @@ contract AcmeVault is GuardPausable {
 
     /// @notice Emergency fee rescue, meant for the admin only.
     /// PLANTED BUG #2 (High): missing access control — anyone can send the fees anywhere.
-    function sweepFees(address to) external {
+    function sweepFees(address to) external virtual {
         uint256 amount = accruedFees;
         accruedFees = 0;
         if (!acUSD.transfer(to, amount)) revert TransferFailed();

@@ -11,6 +11,7 @@ import {AcmeInvariants} from "../../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../../src/acme/AcmeTokens.sol";
 import {AcmeGuard, GuardPausable} from "../../src/acme/AcmeGuard.sol";
 import {AcmeLendFixed} from "../../src/acme/AcmeLendFixed.sol";
+import {AcmeLendFinal, AcmeVaultFixed} from "../../src/acme/AcmeFinalFix.sol";
 import {AntibodyAdapter, AntibodyProxy} from "../../src/antibody/AntibodyAdapter.sol";
 import {
     PocA_SpotPriceBorrow,
@@ -198,6 +199,98 @@ contract AcmeFixtureTest {
             inv.check(pre) == inv.SOLVENCY() | inv.SHARE_PRICE() | inv.FEES_TO_TREASURY(),
             "B and the known issue still break their invariants"
         );
+    }
+
+    // ------------------------------------------------------------ the final fix (round 2)
+
+    function _finalLend() internal returns (AcmeLendFinal) {
+        return new AcmeLendFinal(d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF);
+    }
+
+    function _fixedVault() internal returns (AcmeVaultFixed) {
+        return new AcmeVaultFixed(d.guard, IAcmeToken(address(d.usd)), d.lend, address(d.treasury), address(this));
+    }
+
+    /// The round-2 code overrides: both implementations replaced at their own addresses.
+    function _installFinalFix() internal {
+        vm.etch(address(d.lendImpl), address(_finalLend()).code);
+        vm.etch(address(d.vaultImpl), address(_fixedVault()).code);
+    }
+
+    function test_final_fix_keepsAnchorInvariants() public {
+        _installFinalFix();
+        require(inv.check(pre) == 0, "the fix changes no state");
+    }
+
+    function test_final_fix_stopsA() public {
+        _installFinalFix();
+        vm.deal(hunter, 100 ether);
+        vm.prank(hunter, hunter);
+        try new PocA_SpotPriceBorrow{value: 100 ether}(d.eth, d.usd, d.pool, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "A no longer breaks solvency");
+    }
+
+    function test_final_fix_stopsB() public {
+        _installFinalFix();
+        vm.prank(hunter, hunter);
+        vm.expectRevert(AcmeVaultFixed.NotAdmin.selector);
+        d.vault.sweepFees(hunter);
+        require(inv.check(pre) == 0, "B no longer breaks fees_to_treasury");
+    }
+
+    function test_final_fix_stopsD() public {
+        _installFinalFix();
+        vm.deal(hunter, 100 ether);
+        vm.prank(hunter, hunter);
+        try new PocD_DonationSyncBorrow{value: 100 ether}(d.eth, d.usd, d.pool, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "D no longer breaks solvency");
+    }
+
+    function test_final_fix_stopsF() public {
+        _installFinalFix();
+        vm.deal(hunter, 10 ether);
+        vm.prank(hunter, hunter);
+        try new PocF_UncheckedRepay{value: 10 ether}(d.eth, d.usd, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "F no longer breaks solvency");
+    }
+
+    function test_final_fix_leavesTheKnownIssue() public {
+        _installFinalFix();
+        vm.prank(address(0x7E57), address(0x7E57));
+        new PocKnown_DustWithdrawals(d.vault, 5);
+        require(inv.check(pre) == inv.SHARE_PRICE(), "the declared known issue is not part of the fix");
+    }
+
+    /// The final fix shipped the way a passed release gate ships it: one release permit per proxy, each
+    /// to its new implementation's exact code.
+    function test_final_release_permits_upgrade_both_proxies() public {
+        uint256 guardianKey = 0xA11CE;
+        bytes32 program = keccak256("antibody.testnet/0");
+        address[] memory targets = new address[](1);
+        targets[0] = address(d.guard);
+        address[] memory proxies = new address[](2);
+        proxies[0] = address(d.lend);
+        proxies[1] = address(d.vault);
+        AntibodyAdapter adapter = new AntibodyAdapter(vm.addr(guardianKey), program, targets, proxies);
+        AntibodyProxy(payable(address(d.lend))).changeAdmin(address(adapter));
+        AntibodyProxy(payable(address(d.vault))).changeAdmin(address(adapter));
+        address[2] memory impls = [address(_finalLend()), address(_fixedVault())];
+        for (uint256 i = 0; i < 2; i++) {
+            AntibodyAdapter.ReleasePermit memory p = AntibodyAdapter.ReleasePermit({
+                program: program,
+                round: 2,
+                proxy: proxies[i],
+                codeHash: impls[i].codehash,
+                deadline: block.timestamp + 600
+            });
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(guardianKey, adapter.releaseDigest(p));
+            adapter.release(p, impls[i], v, r, s);
+        }
+        require(d.lend.collateralPrice() == AcmeSetup.P_REF, "AcmeLend runs the final fix");
+        require(inv.check(pre) == 0, "the upgrades keep every invariant at the anchor state");
+        vm.prank(hunter, hunter);
+        vm.expectRevert(AcmeVaultFixed.NotAdmin.selector);
+        d.vault.sweepFees(hunter);
     }
 
     function test_onlyPauserCanPause() public {

@@ -53,7 +53,9 @@ library AcmeSetup {
         /// The implementation behind the proxy.
         AcmeLend lendImpl;
         AcmeTreasury treasury;
+        /// AcmeVault as users reach it: an AntibodyProxy, like AcmeLend.
         AcmeVault vault;
+        AcmeVault vaultImpl;
         AcmeDemoBorrower borrower1;
         AcmeDemoBorrower borrower2;
     }
@@ -68,7 +70,10 @@ library AcmeSetup {
         // its admin until the program's adapter exists (`changeAdmin`).
         d.lend = AcmeLend(address(new AntibodyProxy{salt: SALT}(address(d.lendImpl), admin, "")));
         d.treasury = new AcmeTreasury{salt: SALT}(admin);
-        d.vault = new AcmeVault{salt: SALT}(d.guard, IAcmeToken(address(d.usd)), d.lend, address(d.treasury), admin);
+        d.vaultImpl = new AcmeVault{salt: SALT}(d.guard, IAcmeToken(address(d.usd)), d.lend, address(d.treasury), admin);
+        d.vault = AcmeVault(
+            address(new AntibodyProxy{salt: SALT}(address(d.vaultImpl), admin, abi.encodeCall(AcmeVault.approveLend, ())))
+        );
         d.borrower1 = new AcmeDemoBorrower{salt: keccak256(abi.encode(SALT, 1))}(admin);
         d.borrower2 = new AcmeDemoBorrower{salt: keccak256(abi.encode(SALT, 2))}(admin);
     }

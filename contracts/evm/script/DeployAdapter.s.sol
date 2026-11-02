@@ -2,8 +2,9 @@
 pragma solidity 0.8.28;
 
 // Deploys a program's AntibodyAdapter with CREATE2 (the same address on every chain for the same
-// arguments), then, as the Acme admin, makes it the guard's pauser and hands the AcmeLend proxy to it.
-// From then on only permits signed by the program's guardian key can pause Acme or upgrade AcmeLend.
+// arguments), then, as the Acme admin, makes it the guard's pauser and hands the AcmeLend and AcmeVault
+// proxies to it. From then on only permits signed by the program's guardian key can pause Acme or
+// upgrade either proxy.
 //
 //   GUARDIAN_ADDRESS=0x.. PROGRAM_KEY=<near-antibody>/<id> ACME=deployments/<chain>.json \
 //   forge script script/DeployAdapter.s.sol --rpc-url <url> --broadcast [--unlocked --sender <admin>]
@@ -39,12 +40,14 @@ contract DeployAdapter {
         string memory acme = vm.readFile(vm.envString("ACME"));
         AcmeGuard guard = AcmeGuard(vm.parseJsonAddress(acme, ".AcmeGuard"));
         address lend = vm.parseJsonAddress(acme, ".AcmeLend");
+        address vault = vm.parseJsonAddress(acme, ".AcmeVault");
         bytes32 program = keccak256(bytes(programKey));
 
         address[] memory targets = new address[](1);
         targets[0] = address(guard);
-        address[] memory proxies = new address[](1);
+        address[] memory proxies = new address[](2);
         proxies[0] = lend;
+        proxies[1] = vault;
 
         uint256 key = vm.envOr("DEPLOYER_KEY", uint256(0));
         if (key == 0) vm.startBroadcast();
@@ -52,6 +55,7 @@ contract DeployAdapter {
         AntibodyAdapter adapter = new AntibodyAdapter{salt: program}(guardian, program, targets, proxies);
         guard.setPauser(address(adapter), true);
         AntibodyProxy(payable(lend)).changeAdmin(address(adapter));
+        AntibodyProxy(payable(vault)).changeAdmin(address(adapter));
         vm.stopBroadcast();
 
         string memory o = "adapter";
@@ -61,6 +65,7 @@ contract DeployAdapter {
         vm.serializeAddress(o, "guardian", guardian);
         vm.serializeAddress(o, "pauseTarget", address(guard));
         vm.serializeAddress(o, "proxy", lend);
+        vm.serializeAddress(o, "vaultProxy", vault);
         string memory json = vm.serializeAddress(o, "adapter", address(adapter));
         string memory def = string.concat("deployments/adapter-", vm.toString(block.chainid), ".json");
         vm.writeJson(json, vm.envOr("ADAPTER_OUT", def));

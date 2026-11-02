@@ -84,7 +84,7 @@ contract AcmeLend is GuardPausable {
         emit Borrowed(msg.sender, amount);
     }
 
-    function repay(uint256 amount) external whenNotPaused {
+    function repay(uint256 amount) external virtual whenNotPaused {
         // PLANTED BUG #3 (Critical): the return value of transferFrom is ignored. acUSD returns
         // false instead of reverting, so a payment that never happened still clears the debt.
         acUSD.transferFrom(msg.sender, address(this), amount);
