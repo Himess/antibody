@@ -67,7 +67,7 @@ def toml_str(v):
 
 def write_toml(path, dep, chain_id, anchor_n, anchor_h, inv_addr, inv_code, inv_hash, code_hashes, net):
     deadline = int(datetime.datetime(2026, 11, 14, 23, 59, 59, tzinfo=datetime.timezone.utc).timestamp())
-    targets = ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeVault", "AcmeTreasury"]
+    targets = ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeTreasury"]
     L = []
     L.append("# Antibody program manifest — rules as code. Compiled to canonical JSON; its sha256 is committed on NEAR.")
     L.append("# DELIBERATELY VULNERABLE TEST FIXTURE — never deploy to mainnet.")
@@ -195,7 +195,7 @@ def main():
     # The verifier serves the invariants at the program's own reserved address (docs/spec.md §5.7).
     inv_addr = v2keys.reserved_address(program_id, anchor_h)
     code_hashes = {}
-    for t in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeVault", "AcmeTreasury"]:
+    for t in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeTreasury"]:
         code_hashes[t] = rpc(a.rpc, "eth_getProof", [dep[t], [], hex(anchor_n)])["codeHash"]
     inv_code = dep["invariantsRuntimeCode"]
     inv_hash = dep["invariantsCodeHash"]

@@ -4,7 +4,8 @@
   python scripts/demo/acme_round1.py --rpc http://127.0.0.1:8545
 
 Round 1 is the project's fix for planted bug #1, committed as a code override at the same anchor
-(docs/rounds.md): AcmeLendFixed's runtime code replaces AcmeLend's. The script
+(docs/rounds.md): AcmeLendFixed's runtime code replaces the code of AcmeLend's implementation (the
+proxy keeps its storage; a passed release gate upgrades the proxy to the same code). The script
 
   1. computes that runtime code with a read-only eth_call of the creation code (no transaction),
   2. derives fixtures/acme-local/round1/manifest.json with `antibody manifest-round`,
@@ -72,7 +73,7 @@ def main():
 
     man = os.path.join(OUT, "manifest.json")
     r = subprocess.run([os.path.join(BIN, "antibody" + EXE), "manifest-round", "--base", os.path.join(FX, "manifest.json"),
-                        "--round", "1", "--override", f"{dep['AcmeLend']}={code_file}", "--out", man],
+                        "--round", "1", "--override", f"{dep['AcmeLendImpl']}={code_file}", "--out", man],
                        capture_output=True, text=True, cwd=ROOT)
     if r.returncode != 0:
         sys.exit(r.stderr)
@@ -115,7 +116,7 @@ def main():
         print(f"[{agent}] round 1: {rec['kind']:<12} mask={rec['broken_mask']:<4} same PoC={same_poc} {'OK' if ok else 'MISMATCH'}")
     exp = {"program_id": pid, "chain_id": base["chain_id"], "anchor": base["anchor"], "round": 1,
            "base_manifest_sha256": base["manifest_sha256"], "manifest_sha256": mh,
-           "override": {"target": "AcmeLend", "address": dep["AcmeLend"], "code_hash": json.load(open(man))["overrides"][0]["code_hash"]},
+           "override": {"target": "AcmeLendImpl", "address": dep["AcmeLendImpl"], "code_hash": json.load(open(man))["overrides"][0]["code_hash"]},
            "invariants_code_hash": base["invariants_code_hash"], "invariants_address": base["invariants_address"],
            "keys_note": base["keys_note"], "submissions": results}
     json.dump(exp, open(os.path.join(OUT, "expected.json"), "w"), indent=1)

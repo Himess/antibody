@@ -120,7 +120,9 @@ contract AntibodyAdapter {
 }
 
 /// @title AntibodyProxy: an ERC-1967 proxy whose implementation only the program's adapter replaces.
-/// @notice A release permit names the new implementation's code hash; nobody else can upgrade.
+/// @notice A release permit names the new implementation's code hash; nobody else can upgrade. The
+/// deployer is admin until it hands the proxy to the adapter, which exists only once the program does
+/// (`changeAdmin`, once the adapter is deployed).
 contract AntibodyProxy {
     /// bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)
     bytes32 private constant IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -128,6 +130,7 @@ contract AntibodyProxy {
     bytes32 private constant ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
 
     event Upgraded(address indexed implementation);
+    event AdminChanged(address previousAdmin, address newAdmin);
 
     error NotAdmin();
 
@@ -147,12 +150,24 @@ contract AntibodyProxy {
         }
     }
 
-    function upgradeTo(address implementation) external {
-        address admin;
+    function _admin() private view returns (address a) {
         assembly {
-            admin := sload(ADMIN_SLOT)
+            a := sload(ADMIN_SLOT)
         }
+    }
+
+    /// The admin hands the proxy to a new admin (the program's adapter).
+    function changeAdmin(address newAdmin) external {
+        address admin = _admin();
         if (msg.sender != admin) revert NotAdmin();
+        assembly {
+            sstore(ADMIN_SLOT, newAdmin)
+        }
+        emit AdminChanged(admin, newAdmin);
+    }
+
+    function upgradeTo(address implementation) external {
+        if (msg.sender != _admin()) revert NotAdmin();
         assembly {
             sstore(IMPLEMENTATION_SLOT, implementation)
         }

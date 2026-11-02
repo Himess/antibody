@@ -11,6 +11,7 @@ import {AcmeInvariants} from "../../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../../src/acme/AcmeTokens.sol";
 import {AcmeGuard, GuardPausable} from "../../src/acme/AcmeGuard.sol";
 import {AcmeLendFixed} from "../../src/acme/AcmeLendFixed.sol";
+import {AntibodyAdapter, AntibodyProxy} from "../../src/antibody/AntibodyAdapter.sol";
 import {
     PocA_SpotPriceBorrow,
     PocC_PoolArbitrage,
@@ -25,6 +26,8 @@ interface Vm {
     function prank(address) external;
     function expectRevert(bytes4) external;
     function etch(address, bytes calldata) external;
+    function addr(uint256) external pure returns (address);
+    function sign(uint256, bytes32) external pure returns (uint8, bytes32, bytes32);
 }
 
 contract AcmeFixtureTest {
@@ -116,14 +119,48 @@ contract AcmeFixtureTest {
         d.vault.withdraw(1);
     }
 
-    // ---- round 1: the project's fix for bug #1 as a code override at AcmeLend's address ----
+    // ---- round 1: the project's fix for bug #1 as a code override at the implementation's address,
+    // which is what the verifier judges a round under (the proxy keeps its storage) ----
+
+    function _fixedLend() internal returns (AcmeLendFixed) {
+        return new AcmeLendFixed(d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF);
+    }
 
     function _installRound1Fix() internal {
-        AcmeLendFixed fixedLend = new AcmeLendFixed(
-            d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF
-        );
-        vm.etch(address(d.lend), address(fixedLend).code);
+        vm.etch(address(d.lendImpl), address(_fixedLend()).code);
         require(d.lend.collateralPrice() == AcmeSetup.P_REF, "fix: spot 2,080 is capped at the reference");
+    }
+
+    /// The same fix shipped the way a passed release gate ships it: a release permit, signed by the
+    /// program's guardian key, upgrades the proxy through the adapter to AcmeLendFixed's exact code.
+    function test_round1_release_permit_upgrades_the_proxy_and_stops_A() public {
+        uint256 guardianKey = 0xA11CE;
+        bytes32 program = keccak256("antibody.testnet/0");
+        address[] memory targets = new address[](1);
+        targets[0] = address(d.guard);
+        address[] memory proxies = new address[](1);
+        proxies[0] = address(d.lend);
+        AntibodyAdapter adapter = new AntibodyAdapter(vm.addr(guardianKey), program, targets, proxies);
+        AntibodyProxy(payable(address(d.lend))).changeAdmin(address(adapter));
+        AcmeLendFixed fixedLend = _fixedLend();
+        AntibodyAdapter.ReleasePermit memory p = AntibodyAdapter.ReleasePermit({
+            program: program,
+            round: 1,
+            proxy: address(d.lend),
+            codeHash: address(fixedLend).codehash,
+            deadline: block.timestamp + 600
+        });
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(guardianKey, adapter.releaseDigest(p));
+        adapter.release(p, address(fixedLend), v, r, s);
+        require(d.lend.collateralPrice() == AcmeSetup.P_REF, "the proxy runs the fix");
+        require(inv.check(pre) == 0, "the upgrade keeps every invariant at the anchor state");
+        vm.deal(hunter, 100 ether);
+        vm.prank(hunter, hunter);
+        try new PocA_SpotPriceBorrow{value: 100 ether}(d.eth, d.usd, d.pool, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "A no longer breaks solvency");
+        // Nobody else can upgrade it any more, not even the deployer.
+        vm.expectRevert(AntibodyProxy.NotAdmin.selector);
+        AntibodyProxy(payable(address(d.lend))).upgradeTo(address(d.lendImpl));
     }
 
     function test_round1_fix_keepsAnchorInvariants() public {

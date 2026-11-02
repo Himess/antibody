@@ -3,9 +3,10 @@ pragma solidity 0.8.28;
 
 // DELIBERATELY VULNERABLE TEST FIXTURE — never deploy to mainnet.
 // Deploys the fictional "Acme Lend" fixture with CREATE2 (same addresses and code hashes on every
-// chain for the same deployer), optionally seeds it, registers the guardian as pauser, and writes
-// deployments/<chainId>.json including the invariants' runtime bytecode. The invariants contract
-// is only instantiated in the local simulation: it is never broadcast.
+// chain for the same deployer), AcmeLend behind an AntibodyProxy, optionally seeds it, registers the
+// pauser, deploys the round-1 fix's implementation, and writes deployments/<chainId>.json including
+// the invariants' runtime bytecode. The invariants contract is only instantiated in the local
+// simulation: it is never broadcast.
 //
 //   DEPLOYER_KEY=<env> GUARDIAN_ADDRESS=0x.. SEED=true forge script script/DeployAcme.s.sol --rpc-url <url> --broadcast
 // Local chains can skip the key: `--unlocked --sender <anvil account>` (DEPLOYER_KEY unset).
@@ -51,15 +52,16 @@ contract DeployAcme {
         uint256 fund = vm.envOr("GUARDIAN_FUND_WEI", uint256(0));
         if (guardian != address(0) && fund > 0) payable(guardian).transfer(fund);
         if (seed) AcmeSetup.seed(d, admin);
-        vm.stopBroadcast();
-
-        // Local simulation only: compute the runtime bytecode the program commits to, and the
-        // runtime code of the project's round-1 fix (a code override at AcmeLend's address).
-        AcmeInvariants inv =
-            new AcmeInvariants(d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF);
-        AcmeLendFixed fixedLend = new AcmeLendFixed(
+        // The project's round-1 fix, deployed where a passed release gate upgrades the proxy to. A round
+        // judges it as a code override at the implementation's address (AcmeLendImpl).
+        AcmeLendFixed fixedLend = new AcmeLendFixed{salt: AcmeSetup.SALT}(
             d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF
         );
+        vm.stopBroadcast();
+
+        // Local simulation only: the runtime bytecode of the invariants the program commits to.
+        AcmeInvariants inv =
+            new AcmeInvariants(d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF);
 
         string memory o = "deployment";
         vm.serializeUint(o, "chainId", block.chainid);
@@ -71,12 +73,15 @@ contract DeployAcme {
         vm.serializeAddress(o, "acETH", address(d.eth));
         vm.serializeAddress(o, "AcmePool", address(d.pool));
         vm.serializeAddress(o, "AcmeLend", address(d.lend));
+        vm.serializeAddress(o, "AcmeLendImpl", address(d.lendImpl));
+        vm.serializeAddress(o, "AcmeLendFixed", address(fixedLend));
         vm.serializeAddress(o, "AcmeTreasury", address(d.treasury));
         vm.serializeAddress(o, "AcmeVault", address(d.vault));
         vm.serializeAddress(o, "borrower1", address(d.borrower1));
         vm.serializeAddress(o, "borrower2", address(d.borrower2));
         vm.serializeUint(o, "pRef", AcmeSetup.P_REF);
         vm.serializeBytes32(o, "codehashAcmeLend", address(d.lend).codehash);
+        vm.serializeBytes32(o, "codehashAcmeLendImpl", address(d.lendImpl).codehash);
         vm.serializeBytes32(o, "codehashAcmeVault", address(d.vault).codehash);
         vm.serializeBytes32(o, "codehashAcmePool", address(d.pool).codehash);
         vm.serializeBytes32(o, "codehashAcmeGuard", address(d.guard).codehash);

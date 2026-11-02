@@ -10,6 +10,7 @@ import {AcmeUSD, AcmeETH, IAcmeToken} from "./AcmeTokens.sol";
 import {AcmePool} from "./AcmePool.sol";
 import {AcmeLend} from "./AcmeLend.sol";
 import {AcmeVault, AcmeTreasury} from "./AcmeVault.sol";
+import {AntibodyProxy} from "../antibody/AntibodyAdapter.sol";
 
 /// @notice A seeded borrower position owned by the project (keeps the market realistic).
 contract AcmeDemoBorrower {
@@ -47,7 +48,10 @@ library AcmeSetup {
         AcmeUSD usd;
         AcmeETH eth;
         AcmePool pool;
+        /// AcmeLend as users reach it: an AntibodyProxy (a passed release gate upgrades it).
         AcmeLend lend;
+        /// The implementation behind the proxy.
+        AcmeLend lendImpl;
         AcmeTreasury treasury;
         AcmeVault vault;
         AcmeDemoBorrower borrower1;
@@ -59,7 +63,10 @@ library AcmeSetup {
         d.usd = new AcmeUSD{salt: SALT}(d.guard, admin);
         d.eth = new AcmeETH{salt: SALT}(d.guard, admin);
         d.pool = new AcmePool{salt: SALT}(d.guard, IAcmeToken(address(d.eth)), IAcmeToken(address(d.usd)), admin);
-        d.lend = new AcmeLend{salt: SALT}(d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool);
+        d.lendImpl = new AcmeLend{salt: SALT}(d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool);
+        // AcmeLend's constructor sets immutables only, so the proxy needs no initializer. The deployer is
+        // its admin until the program's adapter exists (`changeAdmin`).
+        d.lend = AcmeLend(address(new AntibodyProxy{salt: SALT}(address(d.lendImpl), admin, "")));
         d.treasury = new AcmeTreasury{salt: SALT}(admin);
         d.vault = new AcmeVault{salt: SALT}(d.guard, IAcmeToken(address(d.usd)), d.lend, address(d.treasury), admin);
         d.borrower1 = new AcmeDemoBorrower{salt: keccak256(abi.encode(SALT, 1))}(admin);

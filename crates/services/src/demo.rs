@@ -183,7 +183,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
     let a = |k: &str| -> Result<alloy_primitives::Address> { Ok(dep[k].as_str().ok_or_else(|| eyre!("deployment {k}"))?.parse()?) };
     let code: alloy_primitives::Bytes = dep["invariantsRuntimeCode"].as_str().unwrap_or_default().parse()?;
     let mut targets = Vec::new();
-    for n in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeVault", "AcmeTreasury"] {
+    for n in ["AcmeGuard", "acUSD", "acETH", "AcmePool", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeTreasury"] {
         targets.push(Target { name: n.into(), address: a(n)?, code_hash: code_hash(evm, dep[n].as_str().unwrap(), anchor_n)? });
     }
     let inv_addr = alloy_primitives::Address::from_slice(&keccak256(b"antibody/invariants/v1")[12..]);
