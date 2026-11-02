@@ -64,6 +64,7 @@ fn defaults(hash: &str) -> Defaults {
         accepted_tcb: vec!["UpToDate".into()],
         image_delay_secs: 7 * 86_400,
         light_client: None,
+        light_client_chain_id: 11155111,
         guardian: None,
         treasury: acc("treasury.testnet"),
         image_registry: acc("worker.outlayer.testnet"),

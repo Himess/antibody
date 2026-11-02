@@ -3,7 +3,8 @@
 //! Same request and response shape as `v1.signer-prod.testnet`: the request yields, a signer resolves
 //! it with `{big_r: {affine_point}, s: {scalar}, recovery_id}`, and a timeout fails the promise. The
 //! mock signer (`antibody-services signer-mock`) signs with a single TEST secp256k1 key instead of a
-//! threshold network, so there is no key derivation per path.
+//! threshold network, so there is no key derivation per path: `derived_public_key` returns that key for
+//! every path.
 
 use near_sdk::{
     env, near, require,
@@ -34,6 +35,8 @@ pub struct PendingSign {
 #[derive(PanicOnDefault)]
 pub struct MockMpc {
     signer: AccountId,
+    /// The TEST key, as the real contract formats derived keys: `secp256k1:<base58 of x ‖ y>`.
+    public_key: String,
     next: u64,
     pending: IterableMap<u64, PendingSign>,
 }
@@ -41,8 +44,14 @@ pub struct MockMpc {
 #[near]
 impl MockMpc {
     #[init]
-    pub fn new(signer: AccountId) -> Self {
-        Self { signer, next: 0, pending: IterableMap::new(b"p") }
+    pub fn new(signer: AccountId, public_key: String) -> Self {
+        Self { signer, public_key, next: 0, pending: IterableMap::new(b"p") }
+    }
+
+    /// The same key for every path and caller (one TEST key, no derivation).
+    pub fn derived_public_key(&self, path: String, predecessor: Option<AccountId>, domain_id: Option<u32>) -> String {
+        let _ = (path, predecessor, domain_id);
+        self.public_key.clone()
     }
 
     #[payable]

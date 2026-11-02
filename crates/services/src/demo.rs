@@ -366,7 +366,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         "verifier": {"wasm_url": "https://github.com/Himess/antibody/releases/download/sandbox/antibody-verify.wasm", "wasm_hash": verifier_hash,
                      "max_instructions": 5_000_000_000u64, "max_memory_mb": 512, "max_execution_seconds": 60, "deposit": "10000000000000000000000"},
         "outlayer": acct("outlayer"), "dcap_verifier": acct("dcap"), "accepted_tcb": ["UpToDate"], "image_delay_secs": 3_600,
-        "light_client": null, "guardian": null, "treasury": "test.near", "image_registry": acct("outlayer"),
+        "light_client": null, "light_client_chain_id": 11155111, "guardian": null, "treasury": "test.near", "image_registry": acct("outlayer"),
     });
     cmd::admin_deploy(&ctx_of("bounty"), &rel.join("near_antibody.wasm"), Some("new".into()),
         Some(json!({"owner": "test.near", "token": acct("tusd"), "defaults": defaults}).to_string()))?;

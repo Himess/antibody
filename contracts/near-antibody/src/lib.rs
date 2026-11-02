@@ -40,11 +40,11 @@ pub const RUN_CB_GAS: Gas = Gas::from_tgas(60);
 pub const SMALL_CB_GAS: Gas = Gas::from_tgas(20);
 pub const FT_GAS: Gas = Gas::from_tgas(15);
 pub const LC_GAS: Gas = Gas::from_tgas(15);
-pub const GUARDIAN_GAS: Gas = Gas::from_tgas(120);
+/// The guardian signs one permit per chain (an MPC call and its callback, about 60 Tgas each).
+pub const GUARDIAN_GAS: Gas = Gas::from_tgas(200);
 /// DCAP `verify_quote` burns about 176 Tgas on testnet (docs/measurements.md).
 pub const TEE_VERIFY_GAS: Gas = Gas::from_tgas(200);
 pub const TEE_CB_GAS: Gas = Gas::from_tgas(30);
-pub const SEPOLIA: u64 = 11155111;
 /// Kept from each run's charge to pay for the storage its answer adds (about 1 KB).
 pub const RUN_STORAGE_ALLOWANCE: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR
 /// OutLayer holds extra deposit for `input_data` beyond 32 KB: requests stay within that.
@@ -79,6 +79,8 @@ pub struct Pins {
     /// Images approved later count only after this delay (longer than any challenge window).
     pub image_delay_secs: u64,
     pub light_client: Option<AccountId>,
+    /// The chain the light client follows: only anchors on it can be checked.
+    pub light_client_chain_id: u64,
     pub guardian: Option<AccountId>,
 }
 
@@ -91,6 +93,7 @@ pub struct Defaults {
     pub accepted_tcb: Vec<String>,
     pub image_delay_secs: u64,
     pub light_client: Option<AccountId>,
+    pub light_client_chain_id: u64,
     pub guardian: Option<AccountId>,
     /// Receives the protocol fees (`withdraw_fees`).
     pub treasury: AccountId,
@@ -115,6 +118,22 @@ pub enum BlobIn {
     NearTx(Loc),
 }
 
+/// What a round's release permits allow: upgrading `proxy` to an implementation with this code hash.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Release {
+    /// 0x-prefixed EVM address of the proxy.
+    pub proxy: String,
+    /// keccak256 of the new implementation's runtime code (hex).
+    pub code_hash: String,
+}
+
+fn valid_release(r: &Release) {
+    let p = r.proxy.strip_prefix("0x").unwrap_or("");
+    require!(p.len() == 40 && p.bytes().all(|b| b.is_ascii_hexdigit()), "a release names a 0x-prefixed proxy address");
+    require!(hex32(&r.code_hash).is_some(), "a release names a 32-byte code hash");
+}
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProgramMeta {
@@ -134,6 +153,9 @@ pub struct ProgramMeta {
     /// The manifest of each round after the first.
     pub round_manifests: Vec<Loc>,
     pub proposal_manifest: Option<Loc>,
+    /// The releases of each round after the first, and of the proposal.
+    pub round_releases: Vec<Vec<Release>>,
+    pub proposal_releases: Vec<Release>,
 }
 
 #[near(serializers = [json])]
@@ -389,7 +411,7 @@ impl Contract {
         let m = &parsed.manifest;
         require!(m.program.project == ctx.caller, "the manifest's project must create the program");
         let manifest_sha256 = H32(env::sha256_array(c.manifest.as_bytes()));
-        let checkable = m.anchor.chain_id == SEPOLIA && d.light_client.is_some();
+        let checkable = m.anchor.chain_id == d.light_client_chain_id && d.light_client.is_some();
         let images = self.images.iter().map(|k| k.m.clone()).filter(|m| !self.vetoed.contains(m)).collect();
         let pins = Pins {
             verifier: d.verifier.clone(),
@@ -399,6 +421,7 @@ impl Contract {
             images,
             image_delay_secs: d.image_delay_secs,
             light_client: d.light_client.clone(),
+            light_client_chain_id: d.light_client_chain_id,
             guardian: d.guardian.clone(),
         };
         let meta = ProgramMeta {
@@ -415,6 +438,8 @@ impl Contract {
             base: None,
             round_manifests: vec![],
             proposal_manifest: None,
+            round_releases: vec![],
+            proposal_releases: vec![],
         };
         let np = NewProgram {
             project: ctx.caller.clone(),
@@ -503,11 +528,15 @@ impl Contract {
         events::emit("project_key_rotated", json!({"program_id": program_id}));
     }
 
-    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, overrides_sha256: String, new_slots: Vec<SlotIn>) {
+    /// A fix as a round (spec §8.1). `releases` are the upgrades a passed release gate will permit.
+    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, overrides_sha256: String, new_slots: Vec<SlotIn>, releases: Vec<Release>) {
         valid_loc(&manifest);
+        require!(releases.len() <= 4, "at most 4 releases per round");
+        releases.iter().for_each(valid_release);
         let p = self.load_program(program_id);
         let mut meta = self.meta.get(&program_id).unwrap().clone();
         meta.proposal_manifest = Some(manifest.clone());
+        meta.proposal_releases = releases;
         self.meta.insert(program_id, meta);
         let manifest_sha = hex32(&manifest.sha256).unwrap();
         let overrides = hex32(&overrides_sha256).unwrap_or_else(|| env::panic_str("overrides_sha256: 32 bytes of hex"));
@@ -530,6 +559,7 @@ impl Contract {
             let mut meta = self.meta.get(&program_id).unwrap().clone();
             if let Some(m) = meta.proposal_manifest.take() {
                 meta.round_manifests.push(m);
+                meta.round_releases.push(std::mem::take(&mut meta.proposal_releases));
             }
             self.meta.insert(program_id, meta);
         }
@@ -1010,12 +1040,15 @@ impl Contract {
             log!("{method}: program {program} has no guardian");
             return;
         };
-        Promise::new(g).function_call(
-            method.into(),
-            json!({"program_key": p.key, "project": p.project, "round": round, "ticket": ticket}).to_string().into_bytes(),
-            NearToken::from_yoctonear(0),
-            GUARDIAN_GAS,
-        );
+        let args = match ticket {
+            Some(t) => json!({"program_key": p.key, "project": p.project, "round": round, "ticket": t}),
+            None => {
+                let releases = self.meta.get(&program).and_then(|m| m.round_releases.get(round as usize - 1).cloned()).unwrap_or_default();
+                json!({"program_key": p.key, "project": p.project, "round": round, "releases": releases})
+            }
+        };
+        events::emit("permit_requested", json!({"program_id": program, "guardian": g, "method": method, "round": round, "ticket": ticket}));
+        Promise::new(g).function_call(method.into(), args.to_string().into_bytes(), NearToken::from_yoctonear(0), GUARDIAN_GAS);
     }
 
     // ---------------------------------------------------------------- views

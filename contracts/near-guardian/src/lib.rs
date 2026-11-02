@@ -299,8 +299,15 @@ impl Guardian {
         self.programs.get(&(program_key.to_string(), project.clone())).cloned().unwrap_or_else(|| env::panic_str("the program has no guardian registration"))
     }
 
-    /// Asks the MPC network to sign one permit; false (logged) if the program cannot pay or has no key.
+    /// Asks the MPC network to sign one permit; false (logged) if the program cannot pay, has no key, or
+    /// this call has too little gas left for another signature.
     fn request(&mut self, program_key: &str, project: &AccountId, c: &ChainAdapter, round: u32, body: PermitBody) -> bool {
+        let left = env::prepaid_gas().as_gas().saturating_sub(env::used_gas().as_gas());
+        if left < SIGN_GAS.as_gas() + SIGN_CB_GAS.as_gas() + Gas::from_tgas(5).as_gas() {
+            self.failures += 1;
+            self.emit("permit_skipped", json!({"program_key": program_key, "chain_id": c.chain_id, "reason": "not enough gas left in this call"}));
+            return false;
+        }
         let key = (program_key.to_string(), project.clone());
         let mut g = self.programs.get(&key).cloned().unwrap();
         if g.address.is_none() || g.credit.0 < SIGN_FEE {
