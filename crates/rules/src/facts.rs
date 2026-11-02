@@ -82,7 +82,9 @@ pub struct Facts {
 pub struct FactsSummary {
     pub kind: Kind,
     pub keys: Vec<FactKey>,
+    #[serde(with = "crate::types::amount")]
     pub impact_usd_micro: Amount,
+    #[serde(with = "crate::types::amount")]
     pub protected_harm_usd_micro: Amount,
     pub receipt_sha256: H32,
     pub reason: Option<String>,

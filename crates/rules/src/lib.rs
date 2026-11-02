@@ -17,5 +17,5 @@ pub mod types;
 pub use engine::{Ctx, Effect, Engine, Error};
 pub use facts::{Facts, FactsSummary};
 pub use state::*;
-pub use store::{MemStore, Store};
+pub use store::{IdKind, MemStore, Store};
 pub use types::*;

@@ -27,6 +27,65 @@ pub trait Store {
     fn totals(&self) -> Totals;
     fn put_totals(&mut self, t: &Totals);
     fn next_id(&mut self, kind: IdKind) -> u64;
+    /// The id `next_id` will return: the adapter builds a run's request (which names the run) first.
+    fn peek_id(&self, kind: IdKind) -> u64;
+}
+
+impl<T: Store + ?Sized> Store for &mut T {
+    fn program(&self, id: ProgramId) -> Option<Program> {
+        (**self).program(id)
+    }
+    fn put_program(&mut self, p: &Program) {
+        (**self).put_program(p)
+    }
+    fn commit(&self, id: CommitId) -> Option<Commit> {
+        (**self).commit(id)
+    }
+    fn put_commit(&mut self, c: &Commit) {
+        (**self).put_commit(c)
+    }
+    fn commit_at(&self, program: ProgramId, index: u32) -> Option<CommitId> {
+        (**self).commit_at(program, index)
+    }
+    fn set_commit_at(&mut self, program: ProgramId, index: u32, id: CommitId) {
+        (**self).set_commit_at(program, index, id)
+    }
+    fn run(&self, id: RunId) -> Option<Run> {
+        (**self).run(id)
+    }
+    fn put_run(&mut self, r: &Run) {
+        (**self).put_run(r)
+    }
+    fn holder(&self, program: ProgramId, round: u32, tag: &H32) -> Option<CommitId> {
+        (**self).holder(program, round, tag)
+    }
+    fn set_holder(&mut self, program: ProgramId, round: u32, tag: &H32, holder: Option<CommitId>) {
+        (**self).set_holder(program, round, tag, holder)
+    }
+    fn spent(&self, program: ProgramId, round: u32, slot: u8) -> Amount {
+        (**self).spent(program, round, slot)
+    }
+    fn set_spent(&mut self, program: ProgramId, round: u32, slot: u8, v: Amount) {
+        (**self).set_spent(program, round, slot, v)
+    }
+    fn account(&self, id: &str) -> Account {
+        (**self).account(id)
+    }
+    fn put_account(&mut self, id: &str, a: &Account) {
+        (**self).put_account(id, a)
+    }
+    fn totals(&self) -> Totals {
+        (**self).totals()
+    }
+    fn put_totals(&mut self, t: &Totals) {
+        (**self).put_totals(t)
+    }
+    fn next_id(&mut self, kind: IdKind) -> u64 {
+        (**self).next_id(kind)
+    }
+    fn peek_id(&self, kind: IdKind) -> u64 {
+        (**self).peek_id(kind)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -110,5 +169,8 @@ impl Store for MemStore {
         let id = *e;
         *e += 1;
         id
+    }
+    fn peek_id(&self, kind: IdKind) -> u64 {
+        self.ids.get(&kind).copied().unwrap_or(0)
     }
 }

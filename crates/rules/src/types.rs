@@ -12,6 +12,39 @@ pub type Amount = u128;
 /// Seconds (NEAR block timestamp / 1e9).
 pub type Time = u64;
 
+/// Amounts in JSON are decimal strings, like NEAR's `U128`: JavaScript numbers lose precision above
+/// 2^53. Numbers are accepted on input.
+pub mod amount {
+    use super::Amount;
+
+    pub fn serialize<S: serde::Serializer>(v: &Amount, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&v.to_string())
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Amount, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = Amount;
+            fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("a decimal amount")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Amount, E> {
+                if s.is_empty() || s.len() > 39 || !s.bytes().all(|b| b.is_ascii_digit()) {
+                    return Err(E::custom("not a decimal amount"));
+                }
+                s.parse().map_err(E::custom)
+            }
+            fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<Amount, E> {
+                Ok(n as Amount)
+            }
+            fn visit_u128<E: serde::de::Error>(self, n: u128) -> Result<Amount, E> {
+                Ok(n)
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
 /// A 32-byte value (tag, hash, key) serialised as lowercase hex.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, BorshSerialize, BorshDeserialize)]
 pub struct H32(pub [u8; 32]);
@@ -93,6 +126,7 @@ pub struct SlotRule {
     pub slot: u8,
     pub severity: Severity,
     /// Total payable per round for keys of this slot.
+    #[serde(with = "crate::types::amount")]
     pub budget: Amount,
 }
 
@@ -107,7 +141,9 @@ pub enum UnevaluablePolicy {
 /// The gap lane (spec §7.7).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct GapLane {
+    #[serde(with = "crate::types::amount")]
     pub threshold_usd_micro: Amount,
+    #[serde(with = "crate::types::amount")]
     pub claim_amount: Amount,
 }
 
@@ -130,20 +166,30 @@ pub struct Windows {
 /// The parameters of a program the rules enforce. The verifier enforces the rest of the manifest.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Params {
+    #[serde(with = "crate::types::amount")]
     pub critical: Amount,
+    #[serde(with = "crate::types::amount")]
     pub high: Amount,
+    #[serde(with = "crate::types::amount")]
     pub medium: Amount,
+    #[serde(with = "crate::types::amount")]
     pub low: Amount,
     pub impact_bps: u32,
+    #[serde(with = "crate::types::amount")]
     pub impact_cap: Amount,
     /// Decimals of the payout token; impacts are micro-USD.
     pub decimals: u8,
+    #[serde(with = "crate::types::amount")]
     pub instant_cap: Amount,
+    #[serde(with = "crate::types::amount")]
     pub instant_budget: Amount,
     pub instant_window: Time,
     pub protocol_fee_bps: u32,
+    #[serde(with = "crate::types::amount")]
     pub release_fee: Amount,
+    #[serde(with = "crate::types::amount")]
     pub bond: Amount,
+    #[serde(with = "crate::types::amount")]
     pub challenge_bond: Amount,
     pub windows: Windows,
     pub slots: Vec<SlotRule>,
@@ -152,8 +198,10 @@ pub struct Params {
     pub known_max_count: u32,
     pub known_max_share_bps: u32,
     pub pause_slots: Vec<u8>,
+    #[serde(with = "crate::types::amount")]
     pub pause_min_impact_usd_micro: Amount,
     /// Verification deposit attached to each run, in yoctoNEAR (OutLayer refunds the unused part).
+    #[serde(with = "crate::types::amount")]
     pub run_deposit: Amount,
 }
 

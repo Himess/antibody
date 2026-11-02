@@ -28,8 +28,6 @@ pub enum Effect {
     TransferTokens { to: AccountId, amount: Amount },
     /// Transfer NEAR out (`withdraw_near`).
     TransferNear { to: AccountId, amount: Amount },
-    /// Refund tokens received with `ft_transfer_call` (`ft_on_transfer` returns them unused).
-    RefundTransfer { amount: Amount },
     /// Ask the guardian for a pause permit (spec §10).
     PausePermit { program: ProgramId, round: u32, ticket: CommitId },
     /// Ask the guardian for a release permit (spec §9).
@@ -255,6 +253,21 @@ impl<S: Store> Engine<S> {
         }
         self.debit_near(&ctx.caller, amount)?;
         Ok(vec![Effect::TransferNear { to: ctx.caller.clone(), amount }])
+    }
+
+    /// Storage a call added, paid from the account's NEAR credit (spec §12.1). Unlike verification, it
+    /// is not an agent's verification spend.
+    pub fn charge_storage(&mut self, account: &str, amount: Amount) -> R<()> {
+        let mut a = self.store.account(account);
+        if a.near < amount {
+            return Err(Error::State("not enough NEAR credit for storage (storage_deposit)"));
+        }
+        a.near -= amount;
+        self.store.put_account(account, &a);
+        let mut t = self.store.totals();
+        t.near_credits -= amount;
+        self.store.put_totals(&t);
+        Ok(())
     }
 
     /// Tokens received for an account's credit (bonds for agents, challenge bonds).

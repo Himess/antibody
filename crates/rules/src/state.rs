@@ -34,15 +34,23 @@ pub enum Phase {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Ledger {
     /// Initial escrow and top-ups.
+    #[serde(with = "crate::types::amount")]
     pub deposits: Amount,
     /// Bonds forfeited to the escrow.
+    #[serde(with = "crate::types::amount")]
     pub forfeits: Amount,
     /// Challenge bonds awarded to the escrow.
+    #[serde(with = "crate::types::amount")]
     pub challenge_bonds: Amount,
+    #[serde(with = "crate::types::amount")]
     pub available: Amount,
+    #[serde(with = "crate::types::amount")]
     pub reserved: Amount,
+    #[serde(with = "crate::types::amount")]
     pub paid: Amount,
+    #[serde(with = "crate::types::amount")]
     pub fees: Amount,
+    #[serde(with = "crate::types::amount")]
     pub returned: Amount,
 }
 
@@ -56,6 +64,7 @@ impl Ledger {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct InstantWindow {
     pub index: u64,
+    #[serde(with = "crate::types::amount")]
     pub spent: Amount,
 }
 
@@ -65,6 +74,7 @@ pub struct KnownIssue {
     pub tags: Vec<H32>,
     pub slots: Vec<u8>,
     pub severity: Severity,
+    #[serde(with = "crate::types::amount")]
     pub impact_usd_micro: Amount,
     /// Set when a round's re-run showed it fixed: its tags no longer block.
     pub fixed: bool,
@@ -141,7 +151,9 @@ pub struct Program {
     pub disclosed: Vec<(H32, H32)>,
     /// Bait metrics: time of the first claim, and paid within the first hour.
     pub first_claim_at: Option<Time>,
+    #[serde(with = "crate::types::amount")]
     pub paid_first_hour: Amount,
+    #[serde(with = "crate::types::amount")]
     pub defaulted: Amount,
 }
 
@@ -171,13 +183,40 @@ pub enum CommitState {
     /// A verification run is in flight, or answered and not yet allocated (see the run).
     Verifying,
     /// Allocated: the earliest final proof of at least one key (spec §7.3).
-    Holder { amount: Amount, reserved: Amount, debt: Amount, new_keys: Vec<H32> },
+    Holder {
+        #[serde(with = "crate::types::amount")]
+        amount: Amount,
+        #[serde(with = "crate::types::amount")]
+        reserved: Amount,
+        #[serde(with = "crate::types::amount")]
+        debt: Amount,
+        new_keys: Vec<H32>,
+    },
     /// Every key was held: nothing paid; a promotion reservation is kept (spec §8.4).
-    Duplicate { of: CommitId, amount: Amount, reserved: Amount },
+    Duplicate {
+        of: CommitId,
+        #[serde(with = "crate::types::amount")]
+        amount: Amount,
+        #[serde(with = "crate::types::amount")]
+        reserved: Amount,
+    },
     /// Gap lane (spec §7.7).
-    GapClaim { amount: Amount, reserved: Amount },
+    GapClaim {
+        #[serde(with = "crate::types::amount")]
+        amount: Amount,
+        #[serde(with = "crate::types::amount")]
+        reserved: Amount,
+    },
     /// A duplicate or gap claim promoted at a round; paid once funded.
-    Promoted { round: u32, amount: Amount, reserved: Amount, debt: Amount },
+    Promoted {
+        round: u32,
+        #[serde(with = "crate::types::amount")]
+        amount: Amount,
+        #[serde(with = "crate::types::amount")]
+        reserved: Amount,
+        #[serde(with = "crate::types::amount")]
+        debt: Amount,
+    },
     Done(End),
 }
 
@@ -205,7 +244,12 @@ impl CommitState {
 /// How a commit ended.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum End {
-    Paid { amount: Amount, instant: bool, at: Time },
+    Paid {
+        #[serde(with = "crate::types::amount")]
+        amount: Amount,
+        instant: bool,
+        at: Time,
+    },
     /// A final `NoViolation` or `InvalidPoC`: bond to the escrow.
     Forfeited,
     /// Not revealed in time: bond to the escrow.
@@ -221,13 +265,17 @@ pub enum End {
     /// A gap claim no round promoted.
     GapOpen,
     /// A valid claim the escrow never covered (at exit).
-    Defaulted { owed: Amount },
+    Defaulted {
+        #[serde(with = "crate::types::amount")]
+        owed: Amount,
+    },
 }
 
 /// A challenge (spec §6.4).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Challenge {
     pub by: AccountId,
+    #[serde(with = "crate::types::amount")]
     pub bond: Amount,
     pub at: Time,
     pub run: Option<RunId>,
@@ -244,6 +292,7 @@ pub struct Commit {
     pub beneficiary: AccountId,
     pub commitment: H32,
     pub blob_sha256: Option<H32>,
+    #[serde(with = "crate::types::amount")]
     pub bond: Amount,
     pub committed_at: Time,
     pub state: CommitState,
@@ -310,12 +359,19 @@ impl Run {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Agent {
     pub owner: AccountId,
+    #[serde(with = "crate::types::amount")]
     pub bond_budget: Amount,
+    #[serde(with = "crate::types::amount")]
     pub per_commit_cap: Amount,
+    #[serde(with = "crate::types::amount")]
     pub bonds_locked: Amount,
+    #[serde(with = "crate::types::amount")]
     pub bonds_lost: Amount,
+    #[serde(with = "crate::types::amount")]
     pub bonds_returned: Amount,
+    #[serde(with = "crate::types::amount")]
     pub paid: Amount,
+    #[serde(with = "crate::types::amount")]
     pub verification_spent: Amount,
     pub commits: u32,
     pub containment_events: u32,
@@ -325,8 +381,10 @@ pub struct Agent {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Account {
     /// Tokens credited and withdrawable (payouts, refunds, returned escrow, fees).
+    #[serde(with = "crate::types::amount")]
     pub tokens: Amount,
     /// yoctoNEAR credit for verification and storage.
+    #[serde(with = "crate::types::amount")]
     pub near: Amount,
     pub agent: Option<Agent>,
 }
@@ -335,16 +393,23 @@ pub struct Account {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Totals {
     /// Tokens received (escrow, top-ups, bonds, challenge bonds, deposits).
+    #[serde(with = "crate::types::amount")]
     pub tokens_in: Amount,
     /// Tokens sent out by withdrawals.
+    #[serde(with = "crate::types::amount")]
     pub tokens_out: Amount,
     /// Σ (available + reserved) over programs.
+    #[serde(with = "crate::types::amount")]
     pub escrow: Amount,
     /// Σ token credits.
+    #[serde(with = "crate::types::amount")]
     pub credits: Amount,
+    #[serde(with = "crate::types::amount")]
     pub bonds_locked: Amount,
+    #[serde(with = "crate::types::amount")]
     pub challenge_bonds_locked: Amount,
     /// NEAR credits held for accounts.
+    #[serde(with = "crate::types::amount")]
     pub near_credits: Amount,
     pub programs: u32,
     pub runs: u64,
