@@ -953,6 +953,12 @@ impl Contract {
                 let req = req.unwrap_or_else(|| env::panic_str("a run without its request"));
                 require!(req.len() <= OUTLAYER_FREE_INPUT, "the request is over OutLayer's 32 KB of free input: upload the blob with FastFS");
                 let r = self.store.run(run).unwrap();
+                // Relayers find a run's OutLayer request from the transaction that carries this event.
+                events::emit(
+                    "run_requested",
+                    json!({"run_id": run, "program_id": r.program, "commit_id": r.commit, "mode": r.mode,
+                           "request_sha256": r.request_sha256, "payer": payer}),
+                );
                 let pins = self.pins.get(&r.program).unwrap().clone();
                 let attached = deposit.saturating_sub(RUN_STORAGE_ALLOWANCE).min(pins.verifier.deposit.0);
                 let args = json!({
@@ -1028,6 +1034,12 @@ impl Contract {
 
     pub fn get_token(&self) -> AccountId {
         self.token.clone()
+    }
+
+    /// Contract-wide totals and the next ids (runs are numbered from 0).
+    pub fn get_stats(&self) -> Value {
+        json!({"totals": self.store.totals(), "next_program": self.store.peek_id(IdKind::Program),
+               "next_commit": self.store.peek_id(IdKind::Commit), "next_run": self.store.peek_id(IdKind::Run)})
     }
 
     pub fn get_defaults(&self) -> Defaults {

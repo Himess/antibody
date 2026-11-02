@@ -413,6 +413,9 @@ fn a_run_request_names_its_run_and_is_hashed_into_it() {
     assert_eq!(req["run_id"], json!(run));
     assert_eq!(req["commit_id"], Value::Null);
     assert_eq!(req["base"], json!({"near_tx": base().location, "sha256": base().sha256}));
+    let ev = &w.events("run_requested")[0];
+    assert_eq!((ev["run_id"].clone(), ev["mode"].clone(), ev["payer"].clone()), (json!(run), json!("activate"), json!(project())));
+    assert_eq!(w.c.get_stats()["next_run"], json!(run + 1));
     let left = w.c.get_account(project()).near;
     w.call(&project());
     assert!(left < NEAR - RUN_DEPOSIT - RUN_STORAGE_ALLOWANCE, "the requester paid the run");
@@ -726,6 +729,8 @@ fn the_commitment_binds_the_hunter() {
     let h = H32([1; 32]);
     assert_ne!(commitment_for("antibody.testnet/0", 0, "alice.testnet", &h), commitment_for("antibody.testnet/0", 0, "bob.testnet", &h));
     assert_ne!(commitment_for("antibody.testnet/0", 0, "alice.testnet", &h), commitment_for("antibody.testnet/0", 1, "alice.testnet", &h));
+    // The CLI pins the same vector (crates/cli/src/main.rs).
+    assert_eq!(commitment_for("bounty.testnet/0", 0, "agent-a.testnet", &H32([0xab; 32])).hex(), "e0b01b170a5e2d10a922e1e6e722dddf3dba94f8b02c06eb5051543dbfff3141");
     drop(w);
 }
 

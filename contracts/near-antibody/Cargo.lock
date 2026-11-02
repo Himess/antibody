@@ -24,6 +24,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "antibody-mock-dcap"
+version = "0.5.0"
+dependencies = [
+ "near-sdk",
+]
+
+[[package]]
 name = "antibody-mock-mpc"
 version = "0.4.0"
 dependencies = [
