@@ -98,7 +98,7 @@ contract AcmeLend is GuardPausable {
     /// @notice acUSD per acETH, 1e18-scaled.
     /// PLANTED BUG #1 (Critical): collateral is valued at AcmePool's instantaneous spot price,
     /// which any trade or donation in the thin pool moves.
-    function collateralPrice() public view returns (uint256) {
+    function collateralPrice() public view virtual returns (uint256) {
         return pool.spotPrice();
     }
 

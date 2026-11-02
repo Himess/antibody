@@ -98,6 +98,9 @@ fn deploy_acme(a: &DemoArgs, rpc: &str, guardian: &str, out: &Path) -> Result<Va
         .args(["script", "script/DeployAcme.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER, "--slow"])
         .env("GUARDIAN_ADDRESS", guardian)
         .env("SEED", "true")
+        // 0.1 ETH so the guardian address pays for its own pause(); a real transfer before the
+        // anchor (anvil_setBalance would rewrite the anchor block's state in place).
+        .env("GUARDIAN_FUND_WEI", "100000000000000000")
         .env("DEPLOYMENTS_OUT", out)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -210,6 +213,8 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
             instant_payout_cap: (5_000 * ONE_TUSD).to_string(),
             challenge_delay_secs: 8,
         },
+        round: 0,
+        overrides: Vec::new(),
     })
 }
 
@@ -278,6 +283,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let anchor = evm_a.call("eth_getBlockByNumber", json!(["latest", false]))?;
     let anchor_n = crate::evm::hex_u64(&anchor["number"])?;
     let anchor_h: B256 = anchor["hash"].as_str().unwrap_or_default().parse()?;
+    // The anchor must never be anvil's mutable head: later blocks build on it, its state is fixed.
+    evm_a.call("evm_mine", json!([]))?;
 
     step("NEAR: sandbox, accounts and contracts (tUSD, near-antibody, near-guardian, MOCK OutLayer, MOCK MPC)");
     let (sandbox, root) = start_sandbox(&a, &a.work.join("near"), &a.work.join("sandbox.log"))?;
@@ -328,10 +335,6 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         cmd::admin_call(&root_ctx, &acct("guardian"), "set_chain", &target.to_string(), 0, 30)?;
     }
     cmd::admin_call(&root_ctx, &acct("guardian"), "set_authorized", &json!({"account_id": acct("bounty"), "enabled": true}).to_string(), 0, 30)?;
-    // Fund the guardian address on both chains so it can pay for pause().
-    for port in [8545, 8546] {
-        Evm::new(&format!("http://127.0.0.1:{port}")).call("anvil_setBalance", json!([guardian_evm, "0x16345785D8A0000"]))?;
-    }
     cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct("acme"), "amount": (30_000 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
     for x in ["a", "b", "c", "d", "e", "f"] {
         cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct(&format!("agent-{x}")), "amount": (200 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;

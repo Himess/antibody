@@ -34,7 +34,7 @@ use rsp_client_executor::custom::{CustomCrypto, CustomEvmFactory};
 
 use crate::{
     bundle::{sender_address, Bundle, CallOutcome, MAX_CALL_GAS},
-    db::MissingTracker,
+    db::{MissingTracker, OverrideDb},
     facts::{AccountValue, Fingerprint, ImpactV2, Kind},
     impact::{self, PROBE_CALLER},
     manifest::{parse_u128, usd_to_micro, Manifest, Severity},
@@ -289,9 +289,29 @@ fn missing_or<T: MissingTracker + ?Sized>(db: &T, e: impl std::fmt::Display) -> 
 }
 
 /// Runs the PoC of `bundle` against the program `manifest` on the anchored state `db` (the
-/// post-state of `header`, already proven by the caller).
-#[allow(clippy::too_many_arguments)]
+/// post-state of `header`, already proven by the caller). In a round > 0 the manifest's code
+/// overrides (the project's fix) replace the anchor's code at their target addresses.
 pub fn execute_program<D>(
+    header: &Header,
+    manifest: &Manifest,
+    inv_code: &Bytecode,
+    bundle: &Bundle,
+    chain_spec: std::sync::Arc<reth_chainspec::ChainSpec>,
+    db: &D,
+) -> Result<ProgramRun, ProgramError>
+where
+    D: DatabaseRef + MissingTracker + std::fmt::Debug,
+    D::Error: DBErrorMarker + std::error::Error + Send + Sync + 'static,
+{
+    manifest.check_overrides().map_err(|e| verdict(Kind::ProgramMisconfigured, e))?;
+    if manifest.overrides.iter().any(|o| o.address == manifest.invariants.address) {
+        return Err(verdict(Kind::ProgramMisconfigured, "an override targets the reserved invariants address"));
+    }
+    let odb = OverrideDb::new(db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+    execute_on(header, manifest, inv_code, bundle, chain_spec, &odb)
+}
+
+fn execute_on<D>(
     header: &Header,
     manifest: &Manifest,
     inv_code: &Bytecode,

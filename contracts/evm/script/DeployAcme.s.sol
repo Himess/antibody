@@ -14,6 +14,7 @@ pragma solidity 0.8.28;
 import {AcmeSetup} from "../src/acme/AcmeSetup.sol";
 import {AcmeInvariants} from "../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../src/acme/AcmeTokens.sol";
+import {AcmeLendFixed} from "../src/acme/AcmeLendFixed.sol";
 
 interface Vm {
     function envOr(string calldata, address) external view returns (address);
@@ -52,9 +53,13 @@ contract DeployAcme {
         if (seed) AcmeSetup.seed(d, admin);
         vm.stopBroadcast();
 
-        // Local simulation only: compute the runtime bytecode the program commits to.
+        // Local simulation only: compute the runtime bytecode the program commits to, and the
+        // runtime code of the project's round-1 fix (a code override at AcmeLend's address).
         AcmeInvariants inv =
             new AcmeInvariants(d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF);
+        AcmeLendFixed fixedLend = new AcmeLendFixed(
+            d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF
+        );
 
         string memory o = "deployment";
         vm.serializeUint(o, "chainId", block.chainid);
@@ -76,6 +81,8 @@ contract DeployAcme {
         vm.serializeBytes32(o, "codehashAcmePool", address(d.pool).codehash);
         vm.serializeBytes32(o, "codehashAcmeGuard", address(d.guard).codehash);
         vm.serializeBytes32(o, "invariantsCodeHash", address(inv).codehash);
+        vm.serializeBytes32(o, "codehashAcmeLendFixed", address(fixedLend).codehash);
+        vm.serializeBytes(o, "fixedLendRuntimeCode", address(fixedLend).code);
         string memory json = vm.serializeBytes(o, "invariantsRuntimeCode", address(inv).code);
         string memory def = string.concat("deployments/", vm.toString(block.chainid), ".json");
         vm.writeJson(json, vm.envOr("DEPLOYMENTS_OUT", def));

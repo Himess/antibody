@@ -139,3 +139,54 @@ impl DatabaseRef for StrictDb<'_> {
         }
     }
 }
+
+/// Rounds (docs/rounds.md): serves a round manifest's override code at the overridden target
+/// addresses. Balance, nonce and storage still come from the proven anchor state underneath, so a
+/// fix committed as a code override runs on exactly the state the original PoC ran on.
+#[derive(Debug)]
+pub struct OverrideDb<'a, D> {
+    inner: &'a D,
+    overrides: HashMap<Address, (B256, Bytecode)>,
+}
+
+impl<'a, D> OverrideDb<'a, D> {
+    pub fn new(inner: &'a D, overrides: impl IntoIterator<Item = (Address, Bytecode)>) -> Self {
+        Self { inner, overrides: overrides.into_iter().map(|(a, c)| (a, (c.hash_slow(), c))).collect() }
+    }
+}
+
+impl<D: DatabaseRef> DatabaseRef for OverrideDb<'_, D> {
+    type Error = D::Error;
+
+    fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
+        let info = self.inner.basic_ref(address)?;
+        Ok(match self.overrides.get(&address) {
+            None => info,
+            Some((hash, code)) => {
+                let (balance, nonce) = info.map(|i| (i.balance, i.nonce)).unwrap_or_default();
+                Some(AccountInfo { balance, nonce, code_hash: *hash, account_id: None, code: Some(code.clone()) })
+            }
+        })
+    }
+
+    fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        match self.overrides.values().find(|(h, _)| *h == code_hash) {
+            Some((_, code)) => Ok(code.clone()),
+            None => self.inner.code_by_hash_ref(code_hash),
+        }
+    }
+
+    fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
+        self.inner.storage_ref(address, index)
+    }
+
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
+        self.inner.block_hash_ref(number)
+    }
+}
+
+impl<D: MissingTracker> MissingTracker for OverrideDb<'_, D> {
+    fn first_missing(&self) -> Option<MissingWitness> {
+        self.inner.first_missing()
+    }
+}

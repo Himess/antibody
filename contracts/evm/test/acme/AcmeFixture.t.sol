@@ -10,6 +10,7 @@ import {AcmeSetup} from "../../src/acme/AcmeSetup.sol";
 import {AcmeInvariants} from "../../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../../src/acme/AcmeTokens.sol";
 import {AcmeGuard, GuardPausable} from "../../src/acme/AcmeGuard.sol";
+import {AcmeLendFixed} from "../../src/acme/AcmeLendFixed.sol";
 import {
     PocA_SpotPriceBorrow,
     PocC_PoolArbitrage,
@@ -23,6 +24,7 @@ interface Vm {
     function prank(address, address) external;
     function prank(address) external;
     function expectRevert(bytes4) external;
+    function etch(address, bytes calldata) external;
 }
 
 contract AcmeFixtureTest {
@@ -112,6 +114,53 @@ contract AcmeFixtureTest {
         vm.prank(hunter, hunter);
         vm.expectRevert(GuardPausable.ProtocolPaused.selector);
         d.vault.withdraw(1);
+    }
+
+    // ---- round 1: the project's fix for bug #1 as a code override at AcmeLend's address ----
+
+    function _installRound1Fix() internal {
+        AcmeLendFixed fixedLend = new AcmeLendFixed(
+            d.guard, IAcmeToken(address(d.usd)), IAcmeToken(address(d.eth)), d.pool, AcmeSetup.P_REF
+        );
+        vm.etch(address(d.lend), address(fixedLend).code);
+        require(d.lend.collateralPrice() == AcmeSetup.P_REF, "fix: spot 2,080 is capped at the reference");
+    }
+
+    function test_round1_fix_keepsAnchorInvariants() public {
+        _installRound1Fix();
+        require(inv.check(pre) == 0, "the fix changes no state");
+    }
+
+    function test_round1_fix_stopsA() public {
+        _installRound1Fix();
+        vm.deal(hunter, 100 ether);
+        vm.prank(hunter, hunter);
+        try new PocA_SpotPriceBorrow{value: 100 ether}(d.eth, d.usd, d.pool, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "A no longer breaks solvency");
+    }
+
+    function test_round1_fix_stopsD() public {
+        _installRound1Fix();
+        vm.deal(hunter, 100 ether);
+        vm.prank(hunter, hunter);
+        try new PocD_DonationSyncBorrow{value: 100 ether}(d.eth, d.usd, d.pool, d.lend) {} catch {}
+        require(inv.check(pre) == 0, "D no longer breaks solvency");
+    }
+
+    function test_round1_fix_leavesOtherBugs() public {
+        _installRound1Fix();
+        vm.deal(hunter, 10 ether);
+        vm.prank(hunter, hunter);
+        new PocF_UncheckedRepay{value: 10 ether}(d.eth, d.usd, d.lend);
+        require(inv.check(pre) == inv.SOLVENCY(), "F still breaks solvency (repay is unchanged)");
+        vm.prank(address(0x7E57), address(0x7E57));
+        new PocKnown_DustWithdrawals(d.vault, 5);
+        vm.prank(hunter, hunter);
+        d.vault.sweepFees(hunter);
+        require(
+            inv.check(pre) == inv.SOLVENCY() | inv.SHARE_PRICE() | inv.FEES_TO_TREASURY(),
+            "B and the known issue still break their invariants"
+        );
     }
 
     function test_onlyPauserCanPause() public {

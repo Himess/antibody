@@ -3,7 +3,7 @@
 //! The verifier uses the execution-relevant parts (anchor, targets, invariants, impact config,
 //! attacker capabilities); the NEAR contract applies the rest (severities, payouts, bond, windows).
 
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{keccak256, Address, Bytes, B256, U256};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -20,7 +20,30 @@ pub struct Manifest {
     pub capabilities: Capabilities,
     pub payout: Payout,
     pub rules: Rules,
+    /// Rounds (docs/rounds.md): 0 is the program as opened. A round-N manifest is the program's
+    /// manifest with the project's fix committed as code overrides at the same anchor. Both fields
+    /// are omitted in round 0, so round-0 manifests keep their exact bytes and hash.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub round: u32,
+    /// Runtime code that replaces the anchor's code at these target addresses in this round. Each
+    /// overridden target's `code_hash` is the override's hash; storage stays the anchor's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<CodeOverride>,
 }
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodeOverride {
+    pub address: Address,
+    pub code_hash: B256,
+    pub runtime_code: Bytes,
+}
+
+/// Largest override accepted (twice EIP-170's limit; the verifier itself has no hard limit).
+pub const MAX_OVERRIDE_CODE: usize = 49_152;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProgramInfo {
@@ -146,6 +169,51 @@ impl Manifest {
         if m.schema != MANIFEST_SCHEMA {
             return Err(format!("manifest: unsupported schema {}", m.schema));
         }
+        m.check_overrides()?;
+        Ok(m)
+    }
+
+    /// Round rules: round 0 has no overrides; a later round overrides at least one target, each
+    /// override's hash matches its code, and the overridden target carries that hash.
+    pub fn check_overrides(&self) -> Result<(), String> {
+        if (self.round == 0) != self.overrides.is_empty() {
+            return Err("manifest: overrides are required in rounds > 0 and not allowed in round 0".into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for o in &self.overrides {
+            if !seen.insert(o.address) {
+                return Err(format!("manifest: duplicate override for {}", o.address));
+            }
+            if o.runtime_code.is_empty() || o.runtime_code.len() > MAX_OVERRIDE_CODE {
+                return Err(format!("manifest: override code for {} is empty or too large", o.address));
+            }
+            if keccak256(&o.runtime_code) != o.code_hash {
+                return Err(format!("manifest: override code for {} does not match its hash", o.address));
+            }
+            match self.targets.iter().find(|t| t.address == o.address) {
+                Some(t) if t.code_hash == o.code_hash => {}
+                Some(_) => return Err(format!("manifest: target {} must carry its override's code hash", o.address)),
+                None => return Err(format!("manifest: override {} is not a target", o.address)),
+            }
+        }
+        Ok(())
+    }
+
+    /// The round-`round` manifest for a fix: the base manifest with `code` replacing each listed
+    /// target's runtime code at the same anchor. Nothing else changes (the contract enforces it).
+    pub fn with_overrides(&self, round: u32, code: &[(Address, Bytes)]) -> Result<Manifest, String> {
+        if self.round != 0 || !self.overrides.is_empty() {
+            return Err("manifest: derive rounds from the round-0 manifest".into());
+        }
+        let mut m = self.clone();
+        m.round = round;
+        for (a, c) in code {
+            let h = keccak256(c);
+            let t = m.targets.iter_mut().find(|t| t.address == *a).ok_or_else(|| format!("manifest: {a} is not a target"))?;
+            t.code_hash = h;
+            m.overrides.push(CodeOverride { address: *a, code_hash: h, runtime_code: c.clone() });
+        }
+        m.check_overrides()?;
         Ok(m)
     }
 
@@ -187,6 +255,34 @@ pub fn parse_u128(s: &str, what: &str) -> Result<u128, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn base() -> Manifest {
+        Manifest::parse(include_bytes!("../../../fixtures/acme-local/manifest.json")).unwrap()
+    }
+
+    #[test]
+    fn round_zero_bytes_are_unchanged() {
+        let raw = include_bytes!("../../../fixtures/acme-local/manifest.json");
+        assert_eq!(base().canonical(), raw.to_vec(), "new optional fields must not change round-0 manifests");
+    }
+
+    #[test]
+    fn round_manifests() {
+        let b = base();
+        let lend = b.targets.iter().find(|t| t.name == "AcmeLend").unwrap().address;
+        let code = Bytes::from(vec![0x60, 0x00, 0x60, 0x00, 0xf3]);
+        let r1 = b.with_overrides(1, &[(lend, code.clone())]).unwrap();
+        assert_eq!(r1.round, 1);
+        assert_eq!(r1.targets.iter().find(|t| t.address == lend).unwrap().code_hash, keccak256(&code));
+        let again = Manifest::parse(&r1.canonical()).unwrap();
+        assert_eq!(again, r1);
+        assert!(r1.with_overrides(2, &[]).is_err(), "rounds derive from round 0");
+        assert!(b.with_overrides(1, &[(Address::ZERO, code.clone())]).is_err(), "only targets");
+        assert!(b.with_overrides(1, &[]).is_err(), "a round overrides something");
+        let mut bad = r1.clone();
+        bad.overrides[0].runtime_code = Bytes::from(vec![0x00]);
+        assert!(bad.check_overrides().is_err(), "hash must match the code");
+    }
 
     #[test]
     fn usd_parsing() {
