@@ -10,7 +10,7 @@ use std::{
 use alloy_primitives::{Address, Bytes, B256, U256};
 use antibody_verifier::{
     bundle::{sender_address, Bundle},
-    db::MissingWitness,
+    db::{MissingWitness, OverrideDb},
     execute_program_witness,
     facts::ProgramReceipt,
     manifest::Manifest,
@@ -184,11 +184,38 @@ pub struct BaseBuildMeta {
 /// reserved address, the targets' code hashes, `snapshot()`, `check(snapshot())`, the canaries),
 /// proven against the anchor's state root. The verifier's own activation check passes on it.
 pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
+    build_base_for(pool, manifest_json, None, min_agree, program_key)
+}
+
+/// A base witness for a round: what the round-0 checks read and what the round's own checks read (its
+/// code overrides, the invariants it adds), proven at the same anchor. It keeps the program's round-0
+/// manifest, so the TEE still judges the round against it; near-antibody uses it for the round's runs.
+pub fn build_round_base(
+    pool: &Pool,
+    manifest_json: &[u8],
+    round_json: &[u8],
+    min_agree: usize,
+    program_key: &str,
+) -> Result<(Vec<u8>, BaseBuildMeta)> {
+    build_base_for(pool, manifest_json, Some(round_json), min_agree, program_key)
+}
+
+fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
     let t_all = Instant::now();
     let manifest = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
     if manifest.round != 0 {
         return Err(eyre!("a base witness is built from the round-0 manifest"));
     }
+    let round = match round_json {
+        Some(r) => {
+            let rm = Manifest::parse(r).map_err(|e| eyre!(e))?;
+            if rm.round == 0 || rm.anchor != manifest.anchor {
+                return Err(eyre!("a round manifest is round 1 or later, at the program's anchor"));
+            }
+            Some(rm)
+        }
+        None => None,
+    };
     let m = manifest.anchor.block_number;
     let header = fetch_header(pool, m)?;
     let anchor_hash = header.hash_slow();
@@ -208,6 +235,19 @@ pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_k
         Err(e) => {
             let (kind, reason) = classify(&e);
             return Err(eyre!("the program fails its checks at the anchor: {kind:?}: {reason}"));
+        }
+    }
+    // The round's checks, with its overrides and invariants, on the same fetching DB.
+    if let Some(rm) = &round {
+        let odb = OverrideDb::new(&fdb, rm.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+        let rinv = Bytecode::new_raw(rm.invariants.runtime_code.clone());
+        match anchor_checks(&header, rm, &rinv, spec.clone(), &odb, reserved).and_then(|a| canaries_pass(rm, &a, &odb)) {
+            Ok(true) => {}
+            Ok(false) => return Err(eyre!("a canary fails at the anchor under the round's code")),
+            Err(e) => {
+                let (kind, reason) = classify(&e);
+                return Err(eyre!("the round fails its checks at the anchor: {kind:?}: {reason}"));
+            }
         }
     }
     let trace_ms = t_trace.elapsed().as_millis() as u64;
@@ -274,7 +314,16 @@ pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_k
             quorum: vec![QuorumVote { source: pool[0].label.clone(), block_hash: anchor_hash }],
             payload: Payload::Base(base),
         };
-        match anchor_checks_on_witness(&envelope, &full, reserved) {
+        // The round's checks on the same proven state: its manifest, the base's state.
+        let checked = anchor_checks_on_witness(&envelope, &full, reserved).and_then(|ok| match (&round, round_json) {
+            (Some(rm), Some(rj)) if ok => anchor_checks_on_witness(
+                &envelope,
+                &ProgramWitness { manifest_json: rj.to_vec().into(), invariants_code: rm.invariants.runtime_code.clone(), ..full.clone() },
+                reserved,
+            ),
+            _ => Ok(ok),
+        });
+        match checked {
             Ok(true) => {
                 let bytes = envelope.encode();
                 let meta = BaseBuildMeta {

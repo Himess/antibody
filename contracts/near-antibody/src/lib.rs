@@ -136,6 +136,17 @@ fn is_address(a: &str) -> bool {
     a.len() == 40 && a.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// The base witness a run at `round` uses: the proposal's for the proposed round, else the latest
+/// opened round's up to `round`, else the one pinned at activation.
+fn base_for(meta: &ProgramMeta, round: u32) -> Option<Loc> {
+    if round as usize == meta.round_manifests.len() + 1 {
+        if let Some(b) = &meta.proposal_base {
+            return Some(b.clone());
+        }
+    }
+    meta.round_bases.iter().take(round as usize).rev().find_map(|b| b.clone()).or_else(|| meta.base.clone())
+}
+
 fn valid_release(r: &Release) {
     require!(is_address(&r.proxy) && is_address(&r.implementation), "a release names 0x-prefixed proxy and implementation addresses");
     require!(hex32(&r.code_hash).is_some(), "a release names a 32-byte code hash");
@@ -159,6 +170,9 @@ pub struct ProgramMeta {
     pub base: Option<Loc>,
     /// The manifest of each round after the first.
     pub round_manifests: Vec<Loc>,
+    /// Per opened round, the base witness its proposal brought (the anchor state its checks read), if any.
+    pub round_bases: Vec<Option<Loc>>,
+    pub proposal_base: Option<Loc>,
     pub proposal_manifest: Option<Loc>,
     /// The releases of each round after the first, and of the proposal.
     pub round_releases: Vec<Vec<Release>>,
@@ -444,6 +458,8 @@ impl Contract {
             slots: m.invariants.slots.iter().map(|s| (s.bit, s.name.clone(), s.severity)).collect(),
             base: None,
             round_manifests: vec![],
+            round_bases: vec![],
+            proposal_base: None,
             proposal_manifest: None,
             round_releases: vec![],
             proposal_releases: vec![],
@@ -536,8 +552,11 @@ impl Contract {
     }
 
     /// A fix as a round (spec §8.1). `releases` are the upgrades a passed release gate will permit.
-    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, overrides_sha256: String, new_slots: Vec<SlotIn>, releases: Vec<Release>) {
+    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, overrides_sha256: String, new_slots: Vec<SlotIn>, releases: Vec<Release>, base: Option<Loc>) {
         valid_loc(&manifest);
+        if let Some(b) = &base {
+            valid_loc(b);
+        }
         require!(releases.len() <= 4, "at most 4 releases per round");
         releases.iter().for_each(valid_release);
         // The TEE checks each release against the code the round's re-runs ran (spec §9).
@@ -551,6 +570,7 @@ impl Contract {
         let mut meta = self.meta.get(&program_id).unwrap().clone();
         meta.proposal_manifest = Some(manifest.clone());
         meta.proposal_releases = releases;
+        meta.proposal_base = base;
         self.meta.insert(program_id, meta);
         let manifest_sha = hex32(&manifest.sha256).unwrap();
         let overrides = hex32(&overrides_sha256).unwrap_or_else(|| env::panic_str("overrides_sha256: 32 bytes of hex"));
@@ -574,6 +594,7 @@ impl Contract {
             if let Some(m) = meta.proposal_manifest.take() {
                 meta.round_manifests.push(m);
                 meta.round_releases.push(std::mem::take(&mut meta.proposal_releases));
+                meta.round_bases.push(meta.proposal_base.take());
             }
             self.meta.insert(program_id, meta);
         }
@@ -896,7 +917,7 @@ impl Contract {
     #[allow(clippy::too_many_arguments)]
     fn request_raw(&self, mode: Mode, p: &Program, commit: Option<u64>, run_id: u64, round: u32, manifest: H32, rm: Option<&Loc>, extra: Value) -> String {
         let meta = self.meta.get(&p.id).unwrap();
-        let base = meta.base.clone().unwrap_or_else(|| env::panic_str("no base witness pinned (activate)"));
+        let base = base_for(meta, round).unwrap_or_else(|| env::panic_str("no base witness pinned (activate)"));
         let mut r = json!({
             "v": 2,
             "mode": mode,
@@ -907,6 +928,7 @@ impl Contract {
             "commit_id": commit,
             "run_id": run_id,
             "base": {"near_tx": base.location, "sha256": base.sha256},
+            "program_manifest_sha256": p.manifest_sha256.hex(),
         });
         if let Some(l) = rm {
             r["round_manifest"] = json!({"near_tx": l.location, "sha256": l.sha256});

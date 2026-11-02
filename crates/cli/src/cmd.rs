@@ -251,6 +251,13 @@ pub fn build_base(ctx: &Ctx, manifest_json: &[u8], program_key: &str) -> Result<
     Ok((bytes, serde_json::to_value(&meta)?))
 }
 
+/// A round's base witness: the anchor state both the round-0 checks and the round's own checks read.
+pub fn build_round_base(ctx: &Ctx, manifest_json: &[u8], round_json: &[u8], program_key: &str) -> Result<(Vec<u8>, Value)> {
+    let pool = ctx.eth_pool()?;
+    let (bytes, meta) = antibody_witness::program::build_round_base(&pool, manifest_json, round_json, 1, program_key)?;
+    Ok((bytes, serde_json::to_value(&meta)?))
+}
+
 /// Pins the base witness and asks the verifier for the program's sealing key (T1 makes it count).
 pub fn program_activate(ctx: &Ctx, program: u32, wait: bool) -> Result<Value> {
     let signer = ctx.signer()?;
@@ -691,6 +698,11 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     let sha = hex::encode(sha256(&bytes));
     let overrides = hex::encode(sha256(&serde_json::to_vec(&m["overrides"])?));
     let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
+    // The round's base witness: what its own checks read at the anchor (new invariants, fixed code).
+    let key = ctx.program(program)?["key"].as_str().unwrap_or_default().to_string();
+    let (rbase, _) = build_round_base(ctx, &program_manifest_at(ctx, program, 0)?, &bytes, &key)?;
+    let rsha = hex::encode(sha256(&rbase));
+    let rup = blob::upload(ctx, &signer, &format!("antibody/base/{rsha}.bin"), &rbase)?;
     ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
     // The slots the round adds, at their manifest severities; each new slot's budget is the escrow's
     // deposits, as for a slot the program created without one.
@@ -705,11 +717,12 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
         .map(|s| json!({"slot": s["bit"], "severity": s["severity"], "budget": budget}))
         .collect();
     let args = json!({"program_id": program, "manifest": {"location": up["near_tx"], "sha256": sha}, "overrides_sha256": overrides,
-                      "new_slots": new_slots, "releases": releases});
+                      "new_slots": new_slots, "releases": releases, "base": {"location": rup["near_tx"], "sha256": rsha}});
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "propose_round", args, RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "propose_round")?;
     let run_id = run_of(&s)?;
-    let mut res = json!({"program": program, "round": m["round"], "manifest_sha256": sha, "run_id": run_id, "upload": up, "tx": s});
+    let mut res = json!({"program": program, "round": m["round"], "manifest_sha256": sha, "run_id": run_id, "upload": up,
+                         "base": {"bytes": rbase.len(), "sha256": rsha}, "tx": s});
     if wait {
         res["result"] = wait_run(ctx, run_id, 240)?;
     }

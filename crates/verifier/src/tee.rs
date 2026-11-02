@@ -94,6 +94,10 @@ pub struct Request {
     /// `check_round` after round 1: the open round's manifest, which the proposal may only extend.
     #[serde(default)]
     pub prev_round_manifest: Option<BlobRef>,
+    /// The program's round-0 manifest hash: a round's base witness, which the project supplies, must
+    /// carry that manifest.
+    #[serde(default)]
+    pub program_manifest_sha256: Option<String>,
 }
 
 /// A slot a round adds: its bit and severity must be the round manifest's.
@@ -234,7 +238,14 @@ fn base_witness(env: &Env, req: &Request) -> Result<(Envelope, BaseWitness), Sto
     let bytes = read_blob(env, &req.base)?;
     let e = Envelope::decode(&bytes).map_err(|e| Stop(Kind::ProgramMisconfigured, format!("base witness: {}", short(&e))))?;
     match e.payload.clone() {
-        Payload::Base(b) => Ok((e, b)),
+        Payload::Base(b) => {
+            if let Some(want) = req.program_manifest_sha256.as_deref() {
+                if Some(sha256(&b.manifest_json)) != hex32(want) {
+                    return Err(Stop(Kind::InfraError, "the base witness does not carry this program's manifest".into()));
+                }
+            }
+            Ok((e, b))
+        }
         _ => Err(Stop(Kind::ProgramMisconfigured, "the base witness is not a base witness".into())),
     }
 }

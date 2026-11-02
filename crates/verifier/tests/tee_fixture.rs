@@ -413,3 +413,18 @@ fn a_round_keeps_the_invariants_of_the_round_before() {
     let changed = base.with_round(2, &fix(2), Some((other.into(), slot3()))).unwrap().canonical();
     assert!(!check(&changed), "the invariants code changes with no new slot");
 }
+
+/// A base witness must carry the program's own round-0 manifest: a round's base comes from the project.
+#[test]
+fn a_base_witness_of_another_manifest_is_refused() {
+    let w = World::new();
+    let blob = seal(&w.program_key, "agent.testnet", "A");
+    let commit = expected()["submissions"]["A"]["commit_id"].as_u64().unwrap();
+    let verify = |program_manifest: &str| {
+        let req = w.request("verify", Some(commit), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob),
+                                                                         "program_manifest_sha256": program_manifest}));
+        w.run(&req, CONTRACT).0.facts.kind
+    };
+    assert_eq!(verify(&w.manifest), Kind::Violation, "the program's own manifest");
+    assert_eq!(verify(&"11".repeat(32)), Kind::InfraError, "a base built for another manifest");
+}
