@@ -1,0 +1,142 @@
+{
+  "receipt": {
+    "schema": "antibody.receipt.v2",
+    "verifier": {
+      "name": "antibody-verifier",
+      "version": "0.1.0",
+      "revm": "38.0.0",
+      "reth": "v2.2.0",
+      "rsp": "5afe72eb12a2d6accd9d7fdff66785d91cbc8e72"
+    },
+    "program": "acme-local",
+    "commit_id": 1,
+    "manifest_hash": "0x8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "anchor": {
+      "chain_id": 31337,
+      "block_number": 22,
+      "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
+      "state_root": "0x708be696bb4e8986c9bf11e23f7695e4cd30b38bf51f8a3c96fa6123a7eb139a",
+      "timestamp": 1793605560,
+      "evm_spec": "osaka"
+    },
+    "witness_sha256": "e84cae8dbc808ed77e10276563c2b0b65949ce088fccd6f7d0372b5937b0e9fd",
+    "poc_hash": "39915e344c990147303e0646ff1e21503f880952028fda61ba6cca8d2c64c760",
+    "kind": "Violation",
+    "reason": null,
+    "checks": {
+      "header_hash_bound": true,
+      "state_root_matches": true,
+      "storage_tries_verified": 11,
+      "bytecodes_supplied": 7,
+      "ancestor_headers_linked": 0,
+      "reserved_address_empty": true,
+      "target_code_hashes_match": true,
+      "anchor_invariants_hold": true
+    },
+    "senders": [
+      "0x8495d826ae4d83d7e277cd69e3500117d766d6e9"
+    ],
+    "endowment_wei_per_sender": "100000000000000000000",
+    "calls": [
+      {
+        "index": 0,
+        "sender": "0x8495d826ae4d83d7e277cd69e3500117d766d6e9",
+        "to": null,
+        "success": true,
+        "gas_used": 389591,
+        "logs": 16,
+        "created": "0xc09fc0243826113ad3eeaaf07e90000987c117e8"
+      }
+    ],
+    "created_contracts": [
+      "0xc09fc0243826113ad3eeaaf07e90000987c117e8"
+    ],
+    "total_gas_used": 389591,
+    "evaluations": 9,
+    "broken_mask": "0x1",
+    "broken": [
+      {
+        "slot": 0,
+        "name": "solvency",
+        "severity": "critical",
+        "target": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359",
+        "target_name": "AcmeLend",
+        "selector": "0xc5ebeaec",
+        "flip_point": 7,
+        "tx_index": 0
+      }
+    ],
+    "impact": {
+      "protocol_loss_usd_micro": "462931853867",
+      "attacker_gain_usd_micro": "462931853867",
+      "impact_usd_micro": "462931853867",
+      "impact_usd": "462931.85",
+      "accounts": [
+        {
+          "account": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359",
+          "role": "protocol",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "-763891853867999999988267"
+            ],
+            [
+              "acETH",
+              "123836816756666985400"
+            ]
+          ],
+          "usd_micro": "-516218220354"
+        },
+        {
+          "account": "0x6ce843c5c7853020d71b04f6216288f34ed027a4",
+          "role": "protocol",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "102960000000000000000000"
+            ],
+            [
+              "acETH",
+              "-24836816756666985400"
+            ]
+          ],
+          "usd_micro": "53286366487"
+        },
+        {
+          "account": "0x8495d826ae4d83d7e277cd69e3500117d766d6e9",
+          "role": "attacker",
+          "eth_delta_wei": "-99000000000000000000",
+          "tokens": [
+            [
+              "acUSD",
+              "660931853867999999988267"
+            ]
+          ],
+          "usd_micro": "462931853867"
+        }
+      ]
+    }
+  },
+  "facts": {
+    "v": 1,
+    "program": "acme-local",
+    "commit_id": 1,
+    "poc_hash": "39915e344c990147303e0646ff1e21503f880952028fda61ba6cca8d2c64c760",
+    "kind": "Violation",
+    "broken_mask": "0x1",
+    "fp_tags": [
+      {
+        "slot": 0,
+        "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+      }
+    ],
+    "impact_usd_micro": "462931853867",
+    "project_wrap": null,
+    "receipt_hash": "c739c371d05ccd85e4bc81257ad56c270001c464edb4ec6da88a675488185765",
+    "manifest_hash": "8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "wasm_hash": null
+  }
+}

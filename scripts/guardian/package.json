@@ -1,0 +1,12 @@
+{
+  "name": "antibody-guardian-spike",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "bs58": "^6.0.0",
+    "near-api-js": "^5.1.1"
+  }
+}

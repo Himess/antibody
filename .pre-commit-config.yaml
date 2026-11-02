@@ -1,0 +1,7 @@
+# Optional: the same secret scan through the pre-commit framework (https://pre-commit.com).
+# The repository's own hook (.githooks/pre-commit) does not need it.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

@@ -1,0 +1,138 @@
+{
+  "receipt": {
+    "schema": "antibody.receipt.v2",
+    "verifier": {
+      "name": "antibody-verifier",
+      "version": "0.1.0",
+      "revm": "38.0.0",
+      "reth": "v2.2.0",
+      "rsp": "5afe72eb12a2d6accd9d7fdff66785d91cbc8e72"
+    },
+    "program": "acme-local",
+    "commit_id": 4,
+    "manifest_hash": "0x8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "anchor": {
+      "chain_id": 31337,
+      "block_number": 22,
+      "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
+      "state_root": "0x708be696bb4e8986c9bf11e23f7695e4cd30b38bf51f8a3c96fa6123a7eb139a",
+      "timestamp": 1793605560,
+      "evm_spec": "osaka"
+    },
+    "witness_sha256": "d089e0265bf70cfb1ee617e08865a58809fd12b24e39b520c05f272eb85a1746",
+    "poc_hash": "8abe2002b812cf3dd7be477eb36e3f24b74ce322d1389fc2f44c0bb8e6842e2a",
+    "kind": "Violation",
+    "reason": null,
+    "checks": {
+      "header_hash_bound": true,
+      "state_root_matches": true,
+      "storage_tries_verified": 11,
+      "bytecodes_supplied": 7,
+      "ancestor_headers_linked": 0,
+      "reserved_address_empty": true,
+      "target_code_hashes_match": true,
+      "anchor_invariants_hold": true
+    },
+    "senders": [
+      "0xfcd644c93dbaff982e6998c766bb60751f674dee"
+    ],
+    "endowment_wei_per_sender": "100000000000000000000",
+    "calls": [
+      {
+        "index": 0,
+        "sender": "0xfcd644c93dbaff982e6998c766bb60751f674dee",
+        "to": null,
+        "success": true,
+        "gas_used": 340002,
+        "logs": 11,
+        "created": "0x544e1b1250b8d72f0f78d44f91b7abdc49d45bb6"
+      }
+    ],
+    "created_contracts": [
+      "0x544e1b1250b8d72f0f78d44f91b7abdc49d45bb6"
+    ],
+    "total_gas_used": 340002,
+    "evaluations": 8,
+    "broken_mask": "0x1",
+    "broken": [
+      {
+        "slot": 0,
+        "name": "solvency",
+        "severity": "critical",
+        "target": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359",
+        "target_name": "AcmeLend",
+        "selector": "0xc5ebeaec",
+        "flip_point": 6,
+        "tx_index": 0
+      }
+    ],
+    "impact": {
+      "protocol_loss_usd_micro": "6375600000",
+      "attacker_gain_usd_micro": "6375600000",
+      "impact_usd_micro": "6375600000",
+      "impact_usd": "6375.60",
+      "accounts": [
+        {
+          "account": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359",
+          "role": "protocol",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "-307335600000000000000000"
+            ],
+            [
+              "acETH",
+              "99000000000000000000"
+            ]
+          ],
+          "usd_micro": "-109335600000"
+        },
+        {
+          "account": "0x6ce843c5c7853020d71b04f6216288f34ed027a4",
+          "role": "protocol",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "102960000000000000000000"
+            ]
+          ],
+          "usd_micro": "102960000000"
+        },
+        {
+          "account": "0xfcd644c93dbaff982e6998c766bb60751f674dee",
+          "role": "attacker",
+          "eth_delta_wei": "-99000000000000000000",
+          "tokens": [
+            [
+              "acUSD",
+              "204375600000000000000000"
+            ]
+          ],
+          "usd_micro": "6375600000"
+        }
+      ]
+    }
+  },
+  "facts": {
+    "v": 1,
+    "program": "acme-local",
+    "commit_id": 4,
+    "poc_hash": "8abe2002b812cf3dd7be477eb36e3f24b74ce322d1389fc2f44c0bb8e6842e2a",
+    "kind": "Violation",
+    "broken_mask": "0x1",
+    "fp_tags": [
+      {
+        "slot": 0,
+        "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+      }
+    ],
+    "impact_usd_micro": "6375600000",
+    "project_wrap": null,
+    "receipt_hash": "eda237abefb5ec329d9b1d305de8144bd70644063361362f926fe632f480f1f5",
+    "manifest_hash": "8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "wasm_hash": null
+  }
+}

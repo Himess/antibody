@@ -1,0 +1,237 @@
+{
+ "program_id": "acme-local",
+ "chain_id": 31337,
+ "anchor": {
+  "number": 22,
+  "hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0"
+ },
+ "manifest_sha256": "0x8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+ "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+ "invariants_address": "0xe88d533fa3f57c4d6fa6489a13e3430d30003596",
+ "k_program_note": "TEST-ONLY key: HMAC(sha256('antibody/TEST-ONLY-secret/never-use-in-production'), 'antibody/k_program/v1' || program_id)",
+ "submissions": {
+  "A": {
+   "title": "Agent A: planted bug #1 via a swap (spot-price collateral)",
+   "commit_id": 1,
+   "salt": "0xb5c183ae2a5ea7246cf09c4523f6f2de11cbede1a5ea18fe3379650f721347d7",
+   "kind": "Violation",
+   "broken_mask": "0x1",
+   "broken": [
+    {
+     "slot": 0,
+     "name": "solvency",
+     "severity": "critical",
+     "target": "AcmeLend",
+     "selector": "0xc5ebeaec",
+     "function": "borrow(uint256)",
+     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 0,
+     "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+    }
+   ],
+   "impact_usd": "462931.85",
+   "protocol_loss_usd_micro": "462931853867",
+   "attacker_gain_usd_micro": "462931853867",
+   "evaluations": 9,
+   "reason": null,
+   "poc_hash": "39915e344c990147303e0646ff1e21503f880952028fda61ba6cca8d2c64c760",
+   "receipt_hash": "c739c371d05ccd85e4bc81257ad56c270001c464edb4ec6da88a675488185765",
+   "witness_sha256": "e84cae8dbc808ed77e10276563c2b0b65949ce088fccd6f7d0372b5937b0e9fd",
+   "facts_bytes": 493,
+   "matches_expected": true
+  },
+  "B": {
+   "title": "Agent B: planted bug #2 (sweepFees has no access control)",
+   "commit_id": 2,
+   "salt": "0x61a62c006abf769a46d65fd6949a742692abc6fa2516c193608419309c2d5d3d",
+   "kind": "Violation",
+   "broken_mask": "0x2",
+   "broken": [
+    {
+     "slot": 1,
+     "name": "fees_to_treasury",
+     "severity": "high",
+     "target": "AcmeVault",
+     "selector": "0x8d4b5cd2",
+     "function": "sweepFees(address)",
+     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 1,
+     "tag": "6fbec4b28d0d7dbb155cdd4bfac1dd1929b9435b7039269529e07d578cc2774c"
+    }
+   ],
+   "impact_usd": "1000.00",
+   "protocol_loss_usd_micro": "1000000000",
+   "attacker_gain_usd_micro": "1000000000",
+   "evaluations": 1,
+   "reason": null,
+   "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
+   "receipt_hash": "5796f0ad1bf7ab485dbf456e79c30f90db91fe29bdad21ec5410b117f038bbc3",
+   "witness_sha256": "6673982f6a73719354e4b37fd2f7d9b6d8061a2ae07a8106653ec74bd361d52d",
+   "facts_bytes": 491,
+   "matches_expected": true
+  },
+  "C": {
+   "title": "Agent C: profitable arbitrage only + a report with injected text",
+   "commit_id": 3,
+   "salt": "0x9a06932c41f10732ae1105debf0ebd786bb015afa96da912dba6613c17a3706c",
+   "kind": "NoViolation",
+   "broken_mask": "0x0",
+   "broken": [],
+   "fp_tags": [],
+   "impact_usd": "33.48",
+   "protocol_loss_usd_micro": "33480361",
+   "attacker_gain_usd_micro": "33480361",
+   "evaluations": 5,
+   "reason": null,
+   "poc_hash": "bcaa0e96e145e7d67b3096d3f00ecb7f2b2c1a3e62383369dc9aafd590c46351",
+   "receipt_hash": "a0302dd0b05f42e96788a8904c512752ddfb31fa782d3d39e3d8191d608c16da",
+   "witness_sha256": "5504b6bbde4bf0ed3012b41587405cfc95f701b8bd3836580a6f05c411265683",
+   "facts_bytes": 408,
+   "matches_expected": true
+  },
+  "D": {
+   "title": "Agent D: planted bug #1 via donation + sync (committed after A)",
+   "commit_id": 4,
+   "salt": "0x7c70da8b9333beb928ef3bb73189a8d768bd861f13a540b25dfca7ce1ebca6d8",
+   "kind": "Violation",
+   "broken_mask": "0x1",
+   "broken": [
+    {
+     "slot": 0,
+     "name": "solvency",
+     "severity": "critical",
+     "target": "AcmeLend",
+     "selector": "0xc5ebeaec",
+     "function": "borrow(uint256)",
+     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 0,
+     "tag": "5c093098566a7409829b1d564025fad4b1836c687e5dde0c0b35e4223022635a"
+    }
+   ],
+   "impact_usd": "6375.60",
+   "protocol_loss_usd_micro": "6375600000",
+   "attacker_gain_usd_micro": "6375600000",
+   "evaluations": 8,
+   "reason": null,
+   "poc_hash": "8abe2002b812cf3dd7be477eb36e3f24b74ce322d1389fc2f44c0bb8e6842e2a",
+   "receipt_hash": "eda237abefb5ec329d9b1d305de8144bd70644063361362f926fe632f480f1f5",
+   "witness_sha256": "d089e0265bf70cfb1ee617e08865a58809fd12b24e39b520c05f272eb85a1746",
+   "facts_bytes": 491,
+   "matches_expected": true
+  },
+  "E": {
+   "title": "Agent E: planted bug #4, the project's known issue (withdraw rounding)",
+   "commit_id": 5,
+   "salt": "0xc105a5ae7a7e0c7fb96418c3ad58276090f680889d64186e5446ceba29973cf7",
+   "kind": "Violation",
+   "broken_mask": "0x4",
+   "broken": [
+    {
+     "slot": 2,
+     "name": "share_price",
+     "severity": "medium",
+     "target": "AcmeVault",
+     "selector": "0x2e1a7d4d",
+     "function": "withdraw(uint256)",
+     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 2,
+     "tag": "05dbd72c13b9e01d431bc5060e3f95b5364ea001e66824d6cbd803653d0d63dd"
+    }
+   ],
+   "impact_usd": "0.00",
+   "protocol_loss_usd_micro": "0",
+   "attacker_gain_usd_micro": "0",
+   "evaluations": 1,
+   "reason": null,
+   "poc_hash": "878b9c84e6f5f9cef345803de0b846f50f711d710e5531265995ecfbc92439aa",
+   "receipt_hash": "bda5a780f3bc403a0ec9c5a16f80162724493672ababb36326ea2736b8c9b001",
+   "witness_sha256": "2ae87cfaa6c8e514b59299503a8f846fb1524c0163ebabe1cd74118ccdba854f",
+   "facts_bytes": 482,
+   "matches_expected": true
+  },
+  "F": {
+   "title": "Agent F: planted bug #3 (repay ignores transferFrom's return value)",
+   "commit_id": 6,
+   "salt": "0x5741bf30e82fa61040f8dcdd4165b10712d028968f3dc68bff28cf5874f4cf96",
+   "kind": "Violation",
+   "broken_mask": "0x1",
+   "broken": [
+    {
+     "slot": 0,
+     "name": "solvency",
+     "severity": "critical",
+     "target": "AcmeLend",
+     "selector": "0x371fd8e6",
+     "function": "repay(uint256)",
+     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 0,
+     "tag": "0c8722ac5cef40555f5a5ac306a887b094b3b77031b8974c70d2a25f17fcca81"
+    }
+   ],
+   "impact_usd": "10400.00",
+   "protocol_loss_usd_micro": "10400000000",
+   "attacker_gain_usd_micro": "10400000000",
+   "evaluations": 8,
+   "reason": null,
+   "poc_hash": "0f41b28646974efdb08e3541be25520c5f7092f00a3fec35d98e22d34fcd991b",
+   "receipt_hash": "6050574829dcdcb9e743379d2b03e270612432e1c78ee7b7913676fb21c42e95",
+   "witness_sha256": "a2781091816101829db9843b68a9d5f3fbcac889d96b9ebd0c03ace8b0340e2e",
+   "facts_bytes": 492,
+   "matches_expected": true
+  },
+  "KNOWN": {
+   "title": "Project at t0: declared known issue (dust withdrawals)",
+   "commit_id": 0,
+   "salt": "0x365850b7938d014dacad2e0bf7fbbe9d0dc54da15e522ec076f47dbc3ccc59c4",
+   "kind": "Violation",
+   "broken_mask": "0x4",
+   "broken": [
+    {
+     "slot": 2,
+     "name": "share_price",
+     "severity": "medium",
+     "target": "AcmeVault",
+     "selector": "0x2e1a7d4d",
+     "function": "withdraw(uint256)",
+     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+    }
+   ],
+   "fp_tags": [
+    {
+     "slot": 2,
+     "tag": "05dbd72c13b9e01d431bc5060e3f95b5364ea001e66824d6cbd803653d0d63dd"
+    }
+   ],
+   "impact_usd": "0.00",
+   "protocol_loss_usd_micro": "0",
+   "attacker_gain_usd_micro": "0",
+   "evaluations": 5,
+   "reason": null,
+   "poc_hash": "c7320237a49c8abdc861bc3e083446f7388f7fbff78d10dac53498684f29802a",
+   "receipt_hash": "e53c65805aa2ad8cd453ab1250c89c599b6cf6eb5be85555ccc11f83ddbcb06d",
+   "witness_sha256": "63b40868d31aed27f759b050e62f71e8faf224e4f8fab6dc087ee7a2c9a7c5cc",
+   "facts_bytes": 482,
+   "matches_expected": true
+  }
+ }
+}

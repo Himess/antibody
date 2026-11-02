@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks v8.30.1 (checksum-verified release binary)
+        run: |
+          set -euo pipefail
+          V=8.30.1
+          curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz"
+          curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_checksums.txt"
+          grep " gitleaks_${V}_linux_x64.tar.gz\$" "gitleaks_${V}_checksums.txt" | sha256sum -c -
+          tar xzf "gitleaks_${V}_linux_x64.tar.gz" gitleaks
+          ./gitleaks git --redact --no-banner --config .gitleaks.toml -v .
+      - name: never-public paths are not tracked
+        run: |
+          if git ls-files | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|\.env$)'; then
+            echo "never-public path is tracked"; exit 1
+          fi
+
+  evm:
+    name: fixture contracts (forge)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/evm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
+      - run: forge --version
+      - run: forge test -vv
+
+  verifier:
+    name: verifier (native + wasm, recorded fixtures)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: toolchain from rust-toolchain.toml
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: unit tests
+        run: cargo test --release -p antibody-verifier
+      - name: build (native)
+        run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
+      - name: build (wasm32-wasip2)
+        run: cargo build --release --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
+      - name: recorded fixtures — expected verdicts and keys, native == wasm
+        run: python3 scripts/demo/check_fixtures.py fixtures/acme-local
+
+  near:
+    name: NEAR contracts (unit tests + wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain 1.85.0 (wasm32-unknown-unknown)
+        run: rustup toolchain install 1.85.0 --profile minimal --target wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            contracts/near-guardian
+      - name: near-guardian
+        working-directory: contracts/near-guardian
+        run: |
+          cargo test
+          cargo build --release --target wasm32-unknown-unknown

@@ -1,0 +1,12 @@
+# gitleaks configuration (used by .githooks/pre-commit and CI).
+title = "antibody"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated proof data and public test fixtures"
+paths = [
+  # Binary state-proof witnesses (Merkle nodes, hashes): high entropy by construction, no secrets.
+  '''fixtures/.*\.witness\.bin$''',
+]

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit guard: refuses commits that contain secrets (gitleaks) or never-public paths.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -euo pipefail
+
+GL=""
+if command -v gitleaks >/dev/null 2>&1; then
+  GL="gitleaks"
+else
+  for c in "$HOME/.local/bin/gitleaks" "$HOME/.local/bin/gitleaks.exe"; do
+    if [ -x "$c" ]; then GL="$c"; fi
+  done
+fi
+if [ -z "$GL" ]; then
+  echo "pre-commit: gitleaks not found (https://github.com/gitleaks/gitleaks); refusing to commit." >&2
+  exit 1
+fi
+
+"$GL" git --pre-commit --staged --redact --no-banner --config .gitleaks.toml
+
+# Paths that must never be published, even if .gitignore is bypassed with `git add -f`.
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|\.env$|\.env\.)' | grep -v '^\.env\.example$' || true)
+if [ -n "$blocked" ]; then
+  echo "pre-commit: refusing never-public paths:" >&2
+  echo "$blocked" >&2
+  exit 1
+fi

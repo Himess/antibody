@@ -1,0 +1,49 @@
+[package]
+name = "antibody-witness"
+description = "Host-side witness builder: multi-RPC quorum, trace<->fetch fixpoint, proofs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "antibody-witness"
+path = "src/main.rs"
+
+[dependencies]
+antibody-verifier = { path = "../verifier" }
+rsp-client-executor.workspace = true
+rsp-mpt.workspace = true
+rsp-primitives.workspace = true
+
+reth-chainspec.workspace = true
+reth-evm.workspace = true
+reth-evm-ethereum.workspace = true
+reth-ethereum-primitives.workspace = true
+reth-execution-types.workspace = true
+reth-trie.workspace = true
+reth-errors.workspace = true
+reth-storage-errors.workspace = true
+reth-primitives-traits = { workspace = true, features = ["secp256k1"] }
+
+revm.workspace = true
+revm-primitives.workspace = true
+
+alloy-evm.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-rlp.workspace = true
+alloy-trie.workspace = true
+alloy-rpc-types.workspace = true
+alloy-network.workspace = true
+alloy-rpc-types-debug = { version = "2.0.4", default-features = false }
+
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+sha2.workspace = true
+hex.workspace = true
+reqwest = { version = "0.12.9", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+eyre = "0.6.12"
+itertools = "0.13.0"
+toml = "0.8.23"

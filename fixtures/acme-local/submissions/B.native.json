@@ -1,0 +1,120 @@
+{
+  "receipt": {
+    "schema": "antibody.receipt.v2",
+    "verifier": {
+      "name": "antibody-verifier",
+      "version": "0.1.0",
+      "revm": "38.0.0",
+      "reth": "v2.2.0",
+      "rsp": "5afe72eb12a2d6accd9d7fdff66785d91cbc8e72"
+    },
+    "program": "acme-local",
+    "commit_id": 2,
+    "manifest_hash": "0x8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "anchor": {
+      "chain_id": 31337,
+      "block_number": 22,
+      "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
+      "state_root": "0x708be696bb4e8986c9bf11e23f7695e4cd30b38bf51f8a3c96fa6123a7eb139a",
+      "timestamp": 1793605560,
+      "evm_spec": "osaka"
+    },
+    "witness_sha256": "6673982f6a73719354e4b37fd2f7d9b6d8061a2ae07a8106653ec74bd361d52d",
+    "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
+    "kind": "Violation",
+    "reason": null,
+    "checks": {
+      "header_hash_bound": true,
+      "state_root_matches": true,
+      "storage_tries_verified": 10,
+      "bytecodes_supplied": 7,
+      "ancestor_headers_linked": 0,
+      "reserved_address_empty": true,
+      "target_code_hashes_match": true,
+      "anchor_invariants_hold": true
+    },
+    "senders": [
+      "0x78ff1213aff54ae09263c815566f6fe675db70a2"
+    ],
+    "endowment_wei_per_sender": "1000000000000000000",
+    "calls": [
+      {
+        "index": 0,
+        "sender": "0x78ff1213aff54ae09263c815566f6fe675db70a2",
+        "to": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2",
+        "success": true,
+        "gas_used": 56865,
+        "logs": 2,
+        "created": null
+      }
+    ],
+    "created_contracts": [],
+    "total_gas_used": 56865,
+    "evaluations": 1,
+    "broken_mask": "0x2",
+    "broken": [
+      {
+        "slot": 1,
+        "name": "fees_to_treasury",
+        "severity": "high",
+        "target": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2",
+        "target_name": "AcmeVault",
+        "selector": "0x8d4b5cd2",
+        "flip_point": 0,
+        "tx_index": 0
+      }
+    ],
+    "impact": {
+      "protocol_loss_usd_micro": "1000000000",
+      "attacker_gain_usd_micro": "1000000000",
+      "impact_usd_micro": "1000000000",
+      "impact_usd": "1000.00",
+      "accounts": [
+        {
+          "account": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2",
+          "role": "protocol",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "-1000000000000000000000"
+            ]
+          ],
+          "usd_micro": "-1000000000"
+        },
+        {
+          "account": "0x78ff1213aff54ae09263c815566f6fe675db70a2",
+          "role": "attacker",
+          "eth_delta_wei": "0",
+          "tokens": [
+            [
+              "acUSD",
+              "1000000000000000000000"
+            ]
+          ],
+          "usd_micro": "1000000000"
+        }
+      ]
+    }
+  },
+  "facts": {
+    "v": 1,
+    "program": "acme-local",
+    "commit_id": 2,
+    "poc_hash": "8c8049ce8c980856d4416bcac3d523439ed040ff6d9f5715409b70828ddcc3dc",
+    "kind": "Violation",
+    "broken_mask": "0x2",
+    "fp_tags": [
+      {
+        "slot": 1,
+        "tag": "6fbec4b28d0d7dbb155cdd4bfac1dd1929b9435b7039269529e07d578cc2774c"
+      }
+    ],
+    "impact_usd_micro": "1000000000",
+    "project_wrap": null,
+    "receipt_hash": "5796f0ad1bf7ab485dbf456e79c30f90db91fe29bdad21ec5410b117f038bbc3",
+    "manifest_hash": "8148a40f3a42cd6279de6f2ed1fb495eb7597d62f1ee7f4eb742839847613791",
+    "wasm_hash": null
+  }
+}

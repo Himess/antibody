@@ -1,0 +1,19 @@
+[package]
+name = "antibody-runner"
+description = "Runs the verifier component under wasmtime 28 with OutLayer's engine config (fuel + epoch), reporting instructions/time/memory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "antibody-run"
+path = "src/main.rs"
+
+[dependencies]
+wasmtime = { version = "28", features = ["component-model", "async"] }
+wasmtime-wasi = "28"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+anyhow = "1"
+sha2.workspace = true
+hex.workspace = true
+serde_json.workspace = true

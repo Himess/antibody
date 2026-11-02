@@ -1,0 +1,84 @@
+{
+ "wasm_sha256": "434b023aa7c74585f49f954abad9168916589ea7f3ef271fb6a761615d30a802",
+ "facts_only": false,
+ "all_identical": true,
+ "runs": [
+  {
+   "agent": "A",
+   "identical": true,
+   "status": "ok",
+   "instructions": 471206278,
+   "guest_run_ms": 35.2,
+   "native_run_ms": 20.0,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "99de067ae2d9c919846eb009090ecf7cdb10bbffabd679dba61de2f0367071c0",
+   "output_bytes": 4248
+  },
+  {
+   "agent": "B",
+   "identical": true,
+   "status": "ok",
+   "instructions": 461824725,
+   "guest_run_ms": 34.1,
+   "native_run_ms": 21.6,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "83a67c70f9cc0bb08609506706001258b83c581442f3ab3441219c311c8b8625",
+   "output_bytes": 3660
+  },
+  {
+   "agent": "C",
+   "identical": true,
+   "status": "ok",
+   "instructions": 465795246,
+   "guest_run_ms": 35.0,
+   "native_run_ms": 18.1,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "7f42ab4761fb419584b0cdedd7052fa7e52448f7ea3f7353b1b432a190566627",
+   "output_bytes": 3407
+  },
+  {
+   "agent": "D",
+   "identical": true,
+   "status": "ok",
+   "instructions": 469902050,
+   "guest_run_ms": 35.1,
+   "native_run_ms": 18.3,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "9d1ddad9c4e7f936252dc05d872c680619d47663d32096b54f589d764a25faa4",
+   "output_bytes": 4146
+  },
+  {
+   "agent": "E",
+   "identical": true,
+   "status": "ok",
+   "instructions": 462164450,
+   "guest_run_ms": 34.9,
+   "native_run_ms": 17.7,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "3079740c63f4fe988f2780d2fc14dbb87a727efdaaa21c893f6f8de061c63daf",
+   "output_bytes": 3557
+  },
+  {
+   "agent": "F",
+   "identical": true,
+   "status": "ok",
+   "instructions": 469682444,
+   "guest_run_ms": 36.1,
+   "native_run_ms": 18.2,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "bf2d9af9871c9ed5847a06be139d34d318bbb023013bdbd8e4928bdcfc97110b",
+   "output_bytes": 3724
+  },
+  {
+   "agent": "KNOWN",
+   "identical": true,
+   "status": "ok",
+   "instructions": 466871339,
+   "guest_run_ms": 34.8,
+   "native_run_ms": 18.5,
+   "wasm_peak_mem_mb": null,
+   "output_sha256": "814b0f568b8aed55a1d2877468c7d536358cbc6f00ee37e559eba45dc67e1fdd",
+   "output_bytes": 3616
+  }
+ ]
+}

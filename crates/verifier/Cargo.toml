@@ -1,0 +1,45 @@
+[package]
+name = "antibody-verifier"
+description = "Antibody proven-state verifier: header binding, state proofs, revm re-execution, impact receipt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "antibody-verify"
+path = "src/main.rs"
+
+[dependencies]
+rsp-client-executor.workspace = true
+rsp-mpt.workspace = true
+rsp-primitives.workspace = true
+
+reth-chainspec.workspace = true
+reth-evm.workspace = true
+reth-evm-ethereum.workspace = true
+reth-ethereum-primitives.workspace = true
+reth-execution-types.workspace = true
+reth-trie.workspace = true
+reth-errors.workspace = true
+reth-primitives-traits.workspace = true
+
+revm.workspace = true
+revm-primitives.workspace = true
+
+alloy-evm.workspace = true
+alloy-primitives.workspace = true
+alloy-consensus = { workspace = true, features = ["k256"] }
+alloy-eips.workspace = true
+alloy-rlp.workspace = true
+alloy-genesis = { version = "2.0.5", default-features = false }
+
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+sha2.workspace = true
+hex.workspace = true
+serde_with = "3.12.0"
+itertools = "0.13.0"
