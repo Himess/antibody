@@ -69,7 +69,9 @@ jobs:
       - name: build (wasm32-wasip2)
         run: cargo build --release --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
       - name: recorded fixtures — expected verdicts and keys, native == wasm
-        run: python3 scripts/demo/check_fixtures.py fixtures/acme-local
+        run: |
+          python3 scripts/demo/check_fixtures.py fixtures/acme-local
+          python3 scripts/demo/check_fixtures.py fixtures/acme-local/round1
 
   near:
     name: NEAR contracts (unit tests + wasm)

@@ -19,7 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{keccak256, B256};
+use alloy_primitives::{keccak256, Address, Bytes, B256};
 use antibody_cli::{
     cmd,
     ctx::{Ctx, Deployments},
@@ -380,7 +380,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step("Program: manifest committed on NEAR, escrow 25,000 tUSD");
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
-    let deadline = now + 240;
+    let deadline = now + 360;
     let manifest = demo_manifest(&dep_a, &evm_a, anchor_n, anchor_h, &acct("acme"), &acct("tusd"), deadline)?;
     let manifest_path = a.work.join("manifest.json");
     std::fs::write(&manifest_path, manifest.canonical())?;
@@ -449,6 +449,36 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         }
     }
 
+    step("Round 1: the project ships the fix for A's bug as a code override at the same anchor; the TEE re-runs the claimed findings");
+    let fixed = dep_a["fixedLendRuntimeCode"].as_str().ok_or_else(|| eyre!("deployment has no fixedLendRuntimeCode"))?;
+    let lend: Address = dep_a["AcmeLend"].as_str().unwrap_or_default().parse()?;
+    let r1 = manifest
+        .with_overrides(1, &[(lend, Bytes::from(hex::decode(fixed.trim_start_matches("0x"))?))])
+        .map_err(|e| eyre!(e))?;
+    let r1_path = a.work.join("round1.json");
+    std::fs::write(&r1_path, r1.canonical())?;
+    let proposed = cmd::round_propose(&acme, pid, &r1_path)?;
+    let mut reruns = Vec::new();
+    let mut rerun_ok = true;
+    for (name, want) in [("KNOWN", "Violation"), ("A (MCP)", "NoViolation"), ("B", "Violation"), ("F", "Violation")] {
+        let id = rows.iter().find(|r| r.0 == name).map(|r| r.1).unwrap();
+        let t = Instant::now();
+        let r = cmd::round_rerun(&acme, id, Some(&project_key), true)?;
+        let kind = r["result"]["kind"].as_str().unwrap_or("-").to_string();
+        let pass = r["result"]["status"] == json!("Done") && kind == want;
+        rerun_ok &= pass;
+        println!("re-run {name:<8} commit {id}: {kind:<12} at the fix ({:.1}s) {}", t.elapsed().as_secs_f64(), if pass { "OK" } else { "MISMATCH" });
+        reruns.push(json!({"finding": name, "commit": id, "kind": kind, "still_broken": r["result"]["still_broken"],
+                           "receipt_hash": r["result"]["receipt_hash"], "seconds": t.elapsed().as_secs_f64(), "ok": pass}));
+    }
+    let opened = cmd::round_open(&acme, pid)?;
+    let (carried, released) = (opened["round"]["carried"].as_u64(), opened["round"]["released"].as_u64());
+    rerun_ok &= carried == Some(3) && released == Some(1);
+    println!("round 1 open: {} keys carried (known issue, B, F), {} released (A's: AcmeLend.borrow can be found again)",
+             carried.unwrap_or(0), released.unwrap_or(0));
+    results["round1"] = json!({"manifest_sha256": proposed["manifest_sha256"], "propose_tx": proposed["tx"]["tx"], "reruns": reruns,
+                               "carried": carried, "released": released, "keys": opened["keys"], "ok": rerun_ok});
+
     step("Disclosure: after deadline + delay, one TEE run publishes every content key and k_program");
     // Disclosure opens at deadline + disclosure_after in block time; retry until the contract agrees.
     wait_for("the disclosure time", Duration::from_secs(420), || {
@@ -495,8 +525,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let paused_both = relay_state.values().filter(|v| v["paused"] == json!(true)).count() == 2;
     let dup_ok = verified["same_rule_same_function"] == json!(true) && verified["committed_earlier"] == json!(true)
         && verified["commit"]["receipt_hash_matches_chain"] == json!(true) && verified["earlier"]["receipt_hash_matches_chain"] == json!(true);
-    ok &= paused_both && dup_ok && same;
-    println!("guardian paused both chains: {paused_both}; duplicate proof re-verified after disclosure: {dup_ok}");
+    ok &= paused_both && dup_ok && same && rerun_ok;
+    println!("guardian paused both chains: {paused_both}; duplicate proof re-verified after disclosure: {dup_ok}; round 1 as expected: {rerun_ok}");
     results["submissions"] = Value::Array(table);
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();

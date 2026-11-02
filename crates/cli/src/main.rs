@@ -86,6 +86,28 @@ enum ProgramCmd {
         #[arg(long)]
         program: u32,
     },
+    /// Rounds: commit a fix (round manifest from `antibody manifest-round`); new commits verify
+    /// against it at once, and claimed findings can be re-run against it
+    RoundPropose {
+        #[arg(long)]
+        program: u32,
+        #[arg(long)]
+        manifest: PathBuf,
+    },
+    /// Re-run a claimed finding against the proposed fix (project: --project-key; finder: local record)
+    RoundRerun {
+        #[arg(long)]
+        commit: u64,
+        #[arg(long)]
+        project_key: Option<PathBuf>,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    /// Open the proposed round: keys whose PoCs no longer break are released, the rest carry over
+    RoundOpen {
+        #[arg(long)]
+        program: u32,
+    },
     Show {
         program: u32,
     },
@@ -195,6 +217,18 @@ enum Cmd {
     /// Compile antibody.toml into the canonical manifest JSON (prints its sha256)
     Manifest {
         toml: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Derive a round manifest (a fix as code overrides at the same anchor) from the program's manifest
+    ManifestRound {
+        #[arg(long)]
+        base: PathBuf,
+        #[arg(long)]
+        round: u32,
+        /// <target address>=<file with the fixed runtime code in hex>; repeatable
+        #[arg(long = "override", required = true)]
+        overrides: Vec<String>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -346,6 +380,7 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Keygen { kind: KeygenKind::X25519 { ref out } } => cmd::keygen_x25519(out),
         Cmd::Keygen { kind: KeygenKind::Near { ref account_id, ref out } } => cmd::keygen_near(account_id.clone(), out),
         Cmd::Manifest { ref toml, ref out } => cmd::manifest_compile(toml, out),
+        Cmd::ManifestRound { ref base, round, ref overrides, ref out } => cmd::manifest_round(base, round, overrides, out),
         Cmd::Program { ref cmd } => {
             let c = mk()?;
             match cmd {
@@ -354,6 +389,9 @@ fn run(cli: Cli) -> Result<Value> {
                 }
                 ProgramCmd::Known { program, bundle, salt, report, no_wait } => cmd::submit_known(&c, *program, bundle, *salt, report.as_deref(), !no_wait),
                 ProgramCmd::Open { program } => cmd::program_open(&c, *program),
+                ProgramCmd::RoundPropose { program, manifest } => cmd::round_propose(&c, *program, manifest),
+                ProgramCmd::RoundRerun { commit, project_key, no_wait } => cmd::round_rerun(&c, *commit, project_key.as_deref(), !no_wait),
+                ProgramCmd::RoundOpen { program } => cmd::round_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
                 ProgramCmd::Fund { program, amount } => cmd::fund(&c, *program, amount),
                 ProgramCmd::Disclose { program } => cmd::program_simple(&c, "disclose", json!({"program_id": program}), 150),

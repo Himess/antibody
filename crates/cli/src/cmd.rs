@@ -109,13 +109,30 @@ pub fn manifest_compile(toml: &Path, out: &Path) -> Result<Value> {
     Ok(json!({"manifest": out, "bytes": bytes.len(), "sha256": format!("{hash:#x}")}))
 }
 
-/// Fetches a program's manifest and checks it against the committed hash.
+/// The manifest hash committed for `round` (0: the program's own manifest).
+pub fn round_manifest_hash(p: &Value, round: u64) -> String {
+    match round {
+        0 => p["manifest_hash"].as_str().unwrap_or_default().to_string(),
+        r => p["rounds"][(r - 1) as usize]["manifest_hash"].as_str().unwrap_or_default().to_string(),
+    }
+}
+
+/// Fetches the manifest of the program's current round (new commits verify against it) and
+/// checks it against the committed hash.
 pub fn program_manifest(ctx: &Ctx, p: &Value) -> Result<Vec<u8>> {
-    let url = p["manifest_url"].as_str().unwrap_or_default();
-    let bytes = blob::fetch(&ctx.near, url)?;
+    program_manifest_at(ctx, p, p["round"].as_u64().unwrap_or(0))
+}
+
+pub fn program_manifest_at(ctx: &Ctx, p: &Value, round: u64) -> Result<Vec<u8>> {
+    let url = match round {
+        0 => p["manifest_url"].as_str().unwrap_or_default().to_string(),
+        r => p["rounds"][(r - 1) as usize]["manifest_url"].as_str().unwrap_or_default().to_string(),
+    };
+    let expected = round_manifest_hash(p, round);
+    let bytes = blob::fetch(&ctx.near, &url)?;
     let h = hex::encode(sha256(&bytes));
-    if h != p["manifest_hash"].as_str().unwrap_or_default() {
-        return Err(eyre!("manifest at {url} hashes to {h}, not the committed {}", p["manifest_hash"]));
+    if h != expected {
+        return Err(eyre!("round {round} manifest at {url} hashes to {h}, not the committed {expected}"));
     }
     Ok(bytes)
 }
@@ -372,10 +389,126 @@ pub fn fund(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
     ensure_ok(ctx, &out, "fund_program")
 }
 
+// ----------------------------------------------------------------------- rounds
+
+/// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code
+/// file)` replaces that target's runtime code at the same anchor (docs/rounds.md).
+pub fn manifest_round(base: &Path, round: u32, overrides: &[String], out: &Path) -> Result<Value> {
+    let m = Manifest::parse(&std::fs::read(base)?).map_err(|e| eyre!(e))?;
+    let mut code = Vec::new();
+    for o in overrides {
+        let (addr, file) = o.split_once('=').ok_or_else(|| eyre!("--override takes <address>=<file with runtime code hex>"))?;
+        let hexs = std::fs::read_to_string(file)?;
+        let bytes = hex::decode(hexs.trim().trim_start_matches("0x"))?;
+        code.push((addr.parse::<alloy_primitives::Address>()?, alloy_primitives::Bytes::from(bytes)));
+    }
+    let r = m.with_overrides(round, &code).map_err(|e| eyre!(e))?;
+    let bytes = r.canonical();
+    std::fs::write(out, &bytes)?;
+    Ok(json!({"manifest": out, "round": round, "bytes": bytes.len(), "sha256": format!("{:#x}", Manifest::hash(&bytes)),
+              "overrides": r.overrides.iter().map(|o| json!({"address": o.address, "code_hash": o.code_hash})).collect::<Vec<_>>()}))
+}
+
+/// The project commits its fix: uploads the round manifest and proposes the round on NEAR.
+pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let p = ctx.program(program)?;
+    let base = program_manifest_at(ctx, &p, 0)?;
+    let bytes = std::fs::read(manifest)?;
+    let m = Manifest::parse(&bytes).map_err(|e| eyre!(e))?;
+    let up = blob::upload(ctx, &signer, &format!("antibody/manifests/{}.json", hex::encode(sha256(&bytes))), &bytes)?;
+    let out = ctx.near.function_call(
+        &signer,
+        &ctx.dep.antibody,
+        "propose_round",
+        json!({"program_id": program, "base_manifest": String::from_utf8(base)?, "manifest": String::from_utf8(bytes.clone())?,
+               "manifest_url": up["location"]}),
+        150,
+        0,
+    )?;
+    let s = ensure_ok(ctx, &out, "propose_round")?;
+    Ok(json!({"program": program, "round": m.round, "manifest_sha256": hex::encode(sha256(&bytes)), "upload": up, "tx": s}))
+}
+
+/// Re-runs a claimed finding against the proposed round's fix: recovers the PoC (the project from
+/// its key wrap, the finder from the local record, anyone after disclosure), builds a fresh witness
+/// of the same bundle at the round manifest, seals it to the verifier and asks near-antibody to run
+/// it in the TEE.
+pub fn round_rerun(ctx: &Ctx, commit_id: u64, project_key: Option<&Path>, wait: bool) -> Result<Value> {
+    let signer = ctx.signer()?;
+    let c = ctx.commit(commit_id)?;
+    let p = ctx.program(c["program"].as_u64().unwrap_or_default() as u32)?;
+    let key = p["key"].as_str().unwrap_or_default().to_string();
+    let round = p["round"].as_u64().unwrap_or(0);
+    if round == 0 || round != p["open_round"].as_u64().unwrap_or(0) + 1 {
+        return Err(eyre!("no proposed round is waiting for re-runs"));
+    }
+    let (k, source) = match project_key {
+        Some(pk) => {
+            let wrap = hex::decode(c["verdict"]["project_wrap"].as_str().ok_or_else(|| eyre!("commit {commit_id} has no project wrap"))?)?;
+            let sk = x25519_dalek::StaticSecret::from(project_secret(pk)?);
+            (sealed::project_unwrap(&wrap, &sk, &key).map_err(|e| eyre!("{e}"))?, "project wrap")
+        }
+        None => content_key_for(ctx, &p, commit_id)?,
+    };
+    let blob_bytes = blob::fetch(&ctx.near, c["sealed"]["url"].as_str().unwrap_or_default())?;
+    let payload = sealed::open_with_key(&blob_bytes, &k, &key).map_err(|e| eyre!("{e}"))?;
+    let env = Envelope::decode(&payload.envelope).map_err(|e| eyre!(e))?;
+    let Payload::Program(w) = env.payload else { return Err(eyre!("not a program witness")) };
+    let manifest_json = program_manifest_at(ctx, &p, round)?;
+    let m = Manifest::parse(&manifest_json).map_err(|e| eyre!(e))?;
+    let pool = ctx.eth_pool()?;
+    let (envelope, _meta, local) = antibody_witness::program::build_program(&pool, &manifest_json, &m.invariants.runtime_code, w.bundle, 1)?;
+    let pubkey = p["verifier"]["pubkey"].as_str().ok_or_else(|| eyre!("program has no verifier pubkey"))?;
+    let hunter = c["hunter"].as_str().unwrap_or_default();
+    let s = blob::seal(pubkey, &key, hunter, envelope, Vec::new())?;
+    let up = blob::upload(ctx, &signer, &format!("antibody/reruns/{}.bin", s.sha256), &s.blob)?;
+    let sealed_ref = json!({"url": up["location"], "sha256": s.sha256, "wrap_v": s.wrap_v});
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "request_rerun", json!({"commit_id": commit_id, "sealed": sealed_ref}), SUBMIT_TGAS, 0)?;
+    let tx = ensure_ok(ctx, &out, "request_rerun")?;
+    let mut res = json!({"commit_id": commit_id, "round": round, "key_source": source, "local_verdict": verdict_view(&local),
+                         "upload": up, "tx": tx});
+    if wait {
+        res["result"] = wait_rerun(ctx, commit_id, round, 240)?;
+    }
+    Ok(res)
+}
+
+pub fn wait_rerun(ctx: &Ctx, commit_id: u64, round: u64, timeout_s: u64) -> Result<Value> {
+    let t = std::time::Instant::now();
+    loop {
+        let c = ctx.commit(commit_id)?;
+        if let Some(r) = c["reruns"].as_array().into_iter().flatten().find(|r| r["round"].as_u64() == Some(round)) {
+            if r["status"] != json!("Requested") {
+                return Ok(r.clone());
+            }
+        }
+        if t.elapsed().as_secs() > timeout_s {
+            return Err(eyre!("no re-run result for commit {commit_id} after {timeout_s}s"));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+}
+
+/// Opens the proposed round: released keys become claimable again; the rest carry over.
+pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
+    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "open_round", json!({"program_id": program}), 200, 0)?;
+    let s = ensure_ok(ctx, &out, "open_round")?;
+    let p = ctx.program(program)?;
+    let keys = ctx.view("get_keys", json!({"program_id": program}))?;
+    Ok(json!({"program": program, "open_round": p["open_round"], "round": p["rounds"][p["open_round"].as_u64().unwrap_or(1) as usize - 1],
+              "keys": keys, "tx": s}))
+}
+
 // --------------------------------------------------------------- verification
 
 fn content_key_for(ctx: &Ctx, program: &Value, commit_id: u64) -> Result<([u8; 32], &'static str)> {
-    if let Some(k) = program["disclosure"]["keys"].as_array().into_iter().flatten().find(|k| k["commit_id"].as_u64() == Some(commit_id)) {
+    if let Some(k) = program["disclosure"]["keys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|k| k["commit_id"].as_u64() == Some(commit_id) && k["round"].is_null())
+    {
         let k: [u8; 32] = hex::decode(k["content_key"].as_str().unwrap_or_default())?.try_into().map_err(|_| eyre!("bad key"))?;
         return Ok((k, "disclosure"));
     }
@@ -398,7 +531,7 @@ fn reverify(ctx: &Ctx, program: &Value, c: &Value, k: &[u8; 32]) -> Result<Value
     let payload = sealed::open_with_key(&blob_bytes, k, key).map_err(|e| eyre!("{e}"))?;
     let env = Envelope::decode(&payload.envelope).map_err(|e| eyre!(e))?;
     let Payload::Program(w) = &env.payload else { return Err(eyre!("not a program witness")) };
-    let mh = B256::from_slice(&hex::decode(program["manifest_hash"].as_str().unwrap_or_default())?);
+    let mh = B256::from_slice(&hex::decode(round_manifest_hash(program, c["round"].as_u64().unwrap_or(0)))?);
     let receipt = run_program(&env, w, sha256(&payload.envelope), &ProgramContext { program_id: key.into(), commit_id: id, expected_manifest_hash: Some(mh) });
     let rh = hex::encode(receipt.hash());
     let onchain_rh = c["verdict"]["receipt_hash"].as_str().unwrap_or_default();

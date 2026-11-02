@@ -26,6 +26,7 @@ verifier:
 
 fixtures:
 	python3 scripts/demo/check_fixtures.py fixtures/acme-local
+	python3 scripts/demo/check_fixtures.py fixtures/acme-local/round1
 
 contract-tests:
 	cd contracts/evm && forge test
