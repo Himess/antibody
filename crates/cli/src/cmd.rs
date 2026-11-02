@@ -610,7 +610,8 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
 // ---------------------------------------------------------------------- keeper
 
 /// The permissionless steps that move money once verdicts are final (docs/spec.md §7): allocate in
-/// commit order, pay every funded claim whose window allows, and fund the debt queue.
+/// commit order, pay every funded claim whose window allows, issue the round's pause ticket, and fund
+/// the debt queue.
 pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
     let mut steps = Vec::new();
     loop {
@@ -633,6 +634,20 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
             match call(ctx, "pay", json!({"commit_id": c["id"]}), 60) {
                 Ok(s) => steps.push(json!({"paid": c["id"], "event": event(&s, "paid"), "tx": s["tx"]})),
                 Err(e) => steps.push(json!({"not_paid": c["id"], "why": e.to_string()})),
+            }
+        }
+    }
+    // The round's first finding the pause policy covers gets its ticket (spec §10.1): one per round,
+    // T1-confirmed, a key in the pause slots. Ineligible commits are refused by near-antibody.
+    let p = ctx.program(program)?;
+    if !p["ticket_rounds"].as_array().is_some_and(|r| r.contains(&p["round"])) {
+        for c in list_commits(ctx, program)? {
+            let st = state_label(&c["state"]);
+            if c["round"] == p["round"] && c["ticket"] == json!(false) && (st == "Holder" || st == "Done:Paid") {
+                if let Ok(s) = call(ctx, "pause_ticket", json!({"commit_id": c["id"]}), 300) {
+                    steps.push(json!({"pause_ticket": c["id"], "tx": s["tx"], "permit_requested": event(&s, "permit_requested")}));
+                    break;
+                }
             }
         }
     }

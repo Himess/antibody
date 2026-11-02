@@ -1,12 +1,14 @@
 //! `antibody-services demo`: the offline, keyless end-to-end run (and integration test).
 //!
-//! near-sandbox and an anvil chain (31337) with the Acme Lend fixture; the real near-antibody and
-//! tUSD contracts; MOCK OutLayer and MOCK DCAP contracts. The mock worker runs the real verifier (TEE
-//! mode, TEST root key) and records a MOCK attestation per run; the T1 relayer relays it, and
-//! near-antibody runs its real T1 checks on it. Flow: program (manifest v2) → activation (T1) →
-//! known issue (T1) → open → agents B, A (over MCP, with a function-call key), C–F → second runs for
-//! verdicts above the instant cap → the keeper allocates in commit order and pays → a withdrawal →
-//! audit(). Every expected outcome is asserted.
+//! near-sandbox and two anvil chains (31337 verifies and pauses, 31338 only pauses) with the Acme Lend
+//! fixture; the real near-antibody, near-guardian and tUSD contracts and AntibodyAdapter on both chains;
+//! MOCK OutLayer, DCAP, MPC and light-client contracts. The mock worker runs the real verifier (TEE
+//! mode, TEST root key) and records a MOCK attestation per run; the T1 relayer relays it and
+//! near-antibody runs its real T1 checks on it; the mock signer signs the guardian's permits with one
+//! TEST key; the relayer submits them to the adapters. Flow: program (manifest v2, anchor confirmed)
+//! → adapters and guardian registration → activation (T1) → known issue (T1) → open → agent A over MCP:
+//! T1, paid in seconds, pause permits on both chains ("the one moment") → agents B–F → the keeper
+//! allocates in commit order and pays → a withdrawal → audit(). Every expected outcome is asserted.
 
 use std::{
     collections::BTreeMap,
@@ -36,7 +38,9 @@ use serde_json::{json, Value};
 
 use crate::{
     evm::Evm,
-    mocks::{demo_mpc_key, demo_seed, eth_address, mock_image, MockWorker},
+    evm::EvmSigner,
+    mocks::{demo_mpc_key, demo_seed, eth_address, mock_image, MockSigner, MockWorker},
+    relayer::Relayer,
     t1::{Source, T1Relayer},
 };
 
@@ -77,6 +81,8 @@ pub(crate) fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut f:
 }
 
 const ANVIL_SENDER: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+/// anvil's well-known TEST account 1: the relayer's EVM key in the sandbox.
+const ANVIL_KEY_1: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 pub(crate) const ONE_TUSD: u128 = 1_000_000;
 const ESCROW_TUSD: &str = "40000";
 /// The sandbox's terms text; its sha256 is committed in the manifest and named by every commit.
@@ -109,6 +115,31 @@ fn deploy_acme(a: &DemoArgs, rpc: &str, guardian: &str, out: &Path) -> Result<Va
         return Err(eyre!("forge script failed: {}", String::from_utf8_lossy(&st.stderr)));
     }
     Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
+}
+
+/// The program's adapter on one chain (CREATE2: the same address everywhere), made Acme's pauser and
+/// the AcmeLend proxy's admin.
+fn deploy_adapter(a: &DemoArgs, rpc: &str, guardian: &str, program_key: &str, acme: &Path, out: &Path) -> Result<Value> {
+    let st = Command::new(&a.forge_bin)
+        .current_dir(a.root.join("contracts/evm"))
+        .args(["script", "script/DeployAdapter.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER, "--slow"])
+        .env("GUARDIAN_ADDRESS", guardian)
+        .env("PROGRAM_KEY", program_key)
+        .env("ACME", acme)
+        .env("ADAPTER_OUT", out)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()?;
+    if !st.status.success() {
+        return Err(eyre!("forge script DeployAdapter failed: {}", String::from_utf8_lossy(&st.stderr)));
+    }
+    Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
+}
+
+/// The TEST key's public key as the MPC contract formats derived keys: `secp256k1:<base58 of x ‖ y>`.
+fn mpc_public_key() -> String {
+    let pt = demo_mpc_key().verifying_key().to_encoded_point(false);
+    format!("secp256k1:{}", bs58::encode(&pt.as_bytes()[1..]).into_string())
 }
 
 fn start_sandbox(a: &DemoArgs, home: &Path, log: &Path) -> Result<(Child, Signer)> {
@@ -153,7 +184,8 @@ fn demo_settlement(deadline: u64) -> Settlement {
     let t = |n: u128| (n * ONE_TUSD).to_string();
     Settlement {
         payouts: Payouts { critical: t(10_000), high: t(3_000), medium: t(1_000), low: "0".into(), impact_bps: 0, impact_cap: "0".into(), decimals: 6 },
-        instant: InstantRule { cap: t(5_000), budget: t(10_000), window_secs: 3_600 },
+        // A Critical is paid in seconds when T1; the budget holds A and B, so F waits its window.
+        instant: InstantRule { cap: t(10_000), budget: t(15_000), window_secs: 3_600 },
         fees: Fees { protocol_bps: 0, release: "0".into() },
         bond: t(25),
         challenge_bond: t(100),
@@ -323,10 +355,14 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let mut procs = Procs(Vec::new());
     let mut results = json!({"started_unix": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs()});
 
-    step("EVM: anvil (chain 31337) and the Acme Lend fixture");
+    step("EVM: two anvils (31337 verifies and pauses, 31338 only pauses) and the Acme Lend fixture on both");
     procs.0.push(start_anvil(&a.anvil_bin, 31337, 8545, &a.work.join("anvil-31337.log"))?);
-    let guardian_evm = eth_address(&demo_mpc_key());
-    let dep_a = deploy_acme(&a, "http://127.0.0.1:8545", &guardian_evm, &a.work.join("acme-31337.json"))?;
+    procs.0.push(start_anvil(&a.anvil_bin, 31338, 8546, &a.work.join("anvil-31338.log"))?);
+    // No pauser yet: the program's adapter becomes the pauser once it exists.
+    let dep_a = deploy_acme(&a, "http://127.0.0.1:8545", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31337.json"))?;
+    let dep_b = deploy_acme(&a, "http://127.0.0.1:8546", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31338.json"))?;
+    let same = ["AcmeGuard", "AcmeLend", "AcmeLendImpl", "AcmeLendFixed"].iter().all(|k| dep_a[k] == dep_b[k]);
+    println!("same addresses on both chains: {same}");
     let evm_a = Evm::new("http://127.0.0.1:8545");
     let anchor = evm_a.call("eth_getBlockByNumber", json!(["latest", false]))?;
     let anchor_n = crate::evm::hex_u64(&anchor["number"])?;
@@ -334,22 +370,22 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     // The anchor must never be anvil's mutable head: later blocks build on it, its state is fixed.
     evm_a.call("evm_mine", json!([]))?;
 
-    step("NEAR: sandbox, accounts and contracts (tUSD, near-antibody, MOCK OutLayer, MOCK DCAP)");
+    step("NEAR: sandbox, accounts and contracts (tUSD, near-antibody, near-guardian, MOCK OutLayer, DCAP, MPC, light client)");
     let (sandbox, root) = start_sandbox(&a, &a.work.join("near"), &a.work.join("sandbox.log"))?;
     procs.0.push(sandbox);
     let near = Near::new("sandbox", Some("http://127.0.0.1:3030".into()));
     let keys = a.work.join("keys");
     std::fs::create_dir_all(&keys)?;
     std::fs::write(keys.join("test.near.json"), serde_json::to_vec(&root.to_file_json())?)?;
-    let names = ["tusd", "bounty", "outlayer", "dcap", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f"];
+    let names = ["tusd", "bounty", "guardian", "outlayer", "dcap", "mpc", "lc", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f"];
     let acct = |n: &str| format!("{n}.test.near");
     let dep = Deployments {
         network: "sandbox".into(),
         antibody: acct("bounty"),
         tusd: acct("tusd"),
-        guardian: None,
+        guardian: Some(acct("guardian")),
         outlayer: Some(acct("outlayer")),
-        light_client: None,
+        light_client: Some(acct("lc")),
         rpc: Some("http://127.0.0.1:3030".into()),
     };
     let dep_file = a.work.join("deployments.json");
@@ -367,11 +403,18 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::admin_deploy(&ctx_of("outlayer"), &rel.join("antibody_mock_outlayer.wasm"), Some("new".into()),
         Some(json!({"worker": acct("worker"), "images": [mock_image()]}).to_string()))?;
     cmd::admin_deploy(&ctx_of("dcap"), &rel.join("antibody_mock_dcap.wasm"), Some("new".into()), Some("{}".into()))?;
+    cmd::admin_deploy(&ctx_of("mpc"), &rel.join("antibody_mock_mpc.wasm"), Some("new".into()),
+        Some(json!({"signer": acct("worker"), "public_key": mpc_public_key()}).to_string()))?;
+    cmd::admin_deploy(&ctx_of("lc"), &rel.join("antibody_mock_lc.wasm"), Some("new".into()), Some(json!({"owner": "test.near"}).to_string()))?;
+    // The local chain's anchor, as the real light client would have it for Sepolia.
+    cmd::admin_call(&root_ctx, &acct("lc"), "set_block_hash", &json!({"number": anchor_n, "hash": format!("{anchor_h:#x}")}).to_string(), 0, 30)?;
+    cmd::admin_deploy(&ctx_of("guardian"), &a.root.join("contracts/near-guardian/target/wasm32-unknown-unknown/release/antibody_guardian.wasm"),
+        Some("new".into()), Some(json!({"owner": "test.near", "mpc": acct("mpc"), "antibody": acct("bounty")}).to_string()))?;
     let defaults = json!({
         "verifier": {"wasm_url": "https://github.com/Himess/antibody/releases/download/sandbox/antibody-verify.wasm", "wasm_hash": verifier_hash,
                      "max_instructions": 5_000_000_000u64, "max_memory_mb": 512, "max_execution_seconds": 60, "deposit": "10000000000000000000000"},
         "outlayer": acct("outlayer"), "dcap_verifier": acct("dcap"), "accepted_tcb": ["UpToDate"], "image_delay_secs": 3_600,
-        "light_client": null, "light_client_chain_id": 11155111, "guardian": null, "treasury": "test.near", "image_registry": acct("outlayer"),
+        "light_client": acct("lc"), "light_client_chain_id": 31337, "guardian": acct("guardian"), "treasury": "test.near", "image_registry": acct("outlayer"),
     });
     cmd::admin_deploy(&ctx_of("bounty"), &rel.join("near_antibody.wasm"), Some("new".into()),
         Some(json!({"owner": "test.near", "token": acct("tusd"), "defaults": defaults}).to_string()))?;
@@ -383,7 +426,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     }
     results["deployment"] = json!({"near_antibody": acct("bounty"), "verifier_wasm_sha256": verifier_hash, "images": near.view(&acct("bounty"), "get_images", json!({}))?});
 
-    step("Background: MOCK worker (the real verifier in TEE mode, TEST root key) and the T1 relayer");
+    step("Background: MOCK worker (the real verifier in TEE mode, TEST root key), MOCK MPC signer, T1 relayer, permit relayer");
     let stop = Arc::new(AtomicBool::new(false));
     let worker_key = Signer::from_file(&keys.join(format!("{}.json", acct("worker"))))?;
     let mut handles = Vec::new();
@@ -414,6 +457,42 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         }));
     }
 
+    {
+        let (near, stop, signer, mpc) = (near.clone(), stop.clone(), worker_key.clone(), acct("mpc"));
+        handles.push(std::thread::spawn(move || {
+            let mut s = MockSigner { near, mpc, signer, key: demo_mpc_key(), done: Default::default() };
+            while !stop.load(Ordering::Relaxed) {
+                if let Err(e) = s.tick() {
+                    eprintln!("mock signer: {e:#}");
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }));
+    }
+    let relayer_file = a.work.join("services/relayer.json");
+    {
+        let r = Relayer {
+            near: near.clone(),
+            guardian: acct("guardian"),
+            antibody: acct("bounty"),
+            chains: BTreeMap::from([
+                (31337, ("http://127.0.0.1:8545".to_string(), "local-31337:".to_string())),
+                (31338, ("http://127.0.0.1:8546".to_string(), "local-31338:".to_string())),
+            ]),
+            signer: Some(EvmSigner::from_hex(ANVIL_KEY_1)?),
+            state_file: relayer_file.clone(),
+        };
+        let stop = stop.clone();
+        handles.push(std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                if let Err(e) = r.tick() {
+                    eprintln!("permit relayer: {e:#}");
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        }));
+    }
+
     step(&format!("Program: manifest v2 committed on NEAR, escrow {ESCROW_TUSD} tUSD"));
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
     let manifest = demo_manifest(&dep_a, &evm_a, anchor_n, anchor_h, &acct("acme"), now + 3_600)?;
@@ -427,6 +506,26 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     println!("program {pid} created: {} (anchor {})", created["tx"]["tx"], created["anchor"]["anchor"]);
     results["program"] = json!({"program_id": pid, "manifest_sha256": hex::encode(sha256(&manifest.canonical())), "anchor_block": anchor_n,
                                 "anchor_hash": format!("{anchor_h:#x}"), "create_tx": created["tx"]["tx"], "anchor": created["anchor"]});
+    let program_key = acme.program(pid)?["key"].as_str().unwrap_or_default().to_string();
+
+    step("Guardian: the program's adapter on both chains (CREATE2), registered with near-guardian");
+    let guardian_evm = eth_address(&demo_mpc_key());
+    let ad_a = deploy_adapter(&a, "http://127.0.0.1:8545", &guardian_evm, &program_key, &a.work.join("acme-31337.json"), &a.work.join("adapter-31337.json"))?;
+    let ad_b = deploy_adapter(&a, "http://127.0.0.1:8546", &guardian_evm, &program_key, &a.work.join("acme-31338.json"), &a.work.join("adapter-31338.json"))?;
+    let adapter = ad_a["adapter"].as_str().unwrap_or_default().to_lowercase();
+    if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
+        return Err(eyre!("the adapter's address differs between chains"));
+    }
+    let proxy = dep_a["AcmeLend"].as_str().unwrap_or_default().to_lowercase();
+    let chains = json!([{"chain_id": 31337, "adapter": adapter, "proxies": [proxy]}, {"chain_id": 31338, "adapter": adapter, "proxies": [proxy]}]);
+    let reg = acme.near.function_call(&acme.signer()?, &acct("guardian"), "register", json!({"program_key": program_key, "chains": chains}), 60,
+        100_000_000_000_000_000_000_000)?;
+    let pinned = near.view(&acct("guardian"), "get_program", json!({"program_key": program_key, "project": acct("acme")}))?;
+    println!("adapter {adapter} on 31337 and 31338; guardian address {} (expected {guardian_evm})", pinned["address"]);
+    if pinned["address"].as_str().map(|x| x.eq_ignore_ascii_case(&guardian_evm)) != Some(true) {
+        return Err(eyre!("near-guardian pinned {} for the program, not the adapter's {guardian_evm}", pinned["address"]));
+    }
+    results["guardian"] = json!({"adapter": adapter, "proxy": proxy, "guardian_address": pinned["address"], "register_tx": cmd::event(&json!({"events": antibody_cli::near::events(&reg)}), "program_registered")});
 
     step("Activation: the base witness is pinned; the program's sealing key counts once T1-confirmed");
     let t = Instant::now();
@@ -457,17 +556,6 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         cmd::deposit(&c, "100")?;
     }
     let mut rows: Vec<(String, u64, f64)> = Vec::new();
-    // B first: a High below the instant cap, final as soon as it is T1.
-    let t = Instant::now();
-    let b = cmd::submit(&ctx_of("agent-b"), pid, &fx.join("B.bundle.json"), None, None, true)?;
-    let b_id = b["commit"]["commit_id"].as_u64().unwrap_or_default();
-    wait_t1(&root_ctx, b["reveal"]["run_id"].as_u64().unwrap_or_default())?;
-    let paid_b = cmd::keeper(&ctx_of("keeper"), pid)?;
-    let b_secs = t.elapsed().as_secs_f64();
-    println!("B: verdict T1 and paid {:.1}s after its commit: {}", b_secs, cmd::state_label(&root_ctx.commit(b_id)?["state"]));
-    rows.push(("B".into(), b_id, b_secs));
-    results["instant"] = json!({"commit": b_id, "seconds_commit_to_paid": b_secs, "keeper": paid_b});
-
     let agent_key = a.work.join("keys/agent-a.fc-key.json");
     cmd::agent_key_add(&ctx_of("agent-a"), 2.0, &agent_key)?;
     let state_a = a.work.join("state/agent-a-mcp");
@@ -476,11 +564,37 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let sandbox_net = ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030"];
     let mcp = mcp_submit(&a.antibody_bin, &sandbox_net, &dep_file, &acct("agent-a"), &agent_key, Some("http://127.0.0.1:8545"), &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
-    rows.push(("A (MCP)".into(), a_commit, t.elapsed().as_secs_f64()));
+    let t_verdict = t.elapsed().as_secs_f64();
     results["mcp"] = json!({"tools": mcp["mcp_tools"], "commit_id": a_commit});
 
-    step("Agents C–F (library/CLI path); D commits after A");
-    for x in ["c", "d", "e", "f"] {
+    step("The one moment: A's verdict is T1, A is paid in seconds, and both chains pause");
+    wait_t1(&root_ctx, root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default())?;
+    let t_t1 = t.elapsed().as_secs_f64();
+    let keeper_a = cmd::keeper(&ctx_of("keeper"), pid)?;
+    let t_paid = t.elapsed().as_secs_f64();
+    let paid_a = cmd::paid_of(&root_ctx.commit(a_commit)?);
+    let mut paused_at: BTreeMap<String, f64> = BTreeMap::new();
+    wait_for("pause() on both chains", Duration::from_secs(120), || {
+        let st: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        for v in st.values() {
+            if v["kind"] == "pause" && v["status"] == "confirmed" && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true)) {
+                paused_at.entry(v["chain_id"].to_string()).or_insert_with(|| t.elapsed().as_secs_f64());
+            }
+        }
+        paused_at.len() == 2
+    })?;
+    let relayed: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    let paused_both = evm_a.paused(dep_a["AcmeGuard"].as_str().unwrap_or_default())? && Evm::new("http://127.0.0.1:8546").paused(dep_b["AcmeGuard"].as_str().unwrap_or_default())?;
+    println!("A: commit→verdict {t_verdict:.1}s, T1 at {t_t1:.1}s, paid {} tUSD at {t_paid:.1}s; paused on 31337 at {:.1}s and 31338 at {:.1}s",
+             paid_a / ONE_TUSD, paused_at.get("31337").copied().unwrap_or(-1.0), paused_at.get("31338").copied().unwrap_or(-1.0));
+    rows.push(("A (MCP)".into(), a_commit, t_verdict));
+    results["one_moment"] = json!({"commit": a_commit, "seconds_from_commit": {"verdict": t_verdict, "t1": t_t1, "paid": t_paid,
+                                   "paused_31337": paused_at.get("31337"), "paused_31338": paused_at.get("31338")},
+                                   "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
+                                   "paused_both": paused_both, "keeper": keeper_a, "permits": relayed});
+
+    step("Agents B–F (library/CLI path); D commits after A");
+    for x in ["b", "c", "d", "e", "f"] {
         let t = Instant::now();
         let report = if x == "c" { Some(fx.join("C.report.md")) } else { None };
         let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &fx.join(format!("{}.bundle.json", x.to_uppercase())), None, report.as_deref(), true)?;
@@ -534,7 +648,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         ("F", ("Violation", "Done:Paid", 10_000 * ONE_TUSD)),
     ]);
     let mut table = Vec::new();
-    let mut ok = known_n == 1 && after == before + 3_000 * ONE_TUSD;
+    let one = &results["one_moment"];
+    let mut ok = known_n == 1 && after == before + 3_000 * ONE_TUSD && same && one["paused_both"] == json!(true) && one["instant"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     for (agent, id, secs) in &rows {
         let c = root_ctx.commit(*id)?;
@@ -555,8 +670,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let audit = root_ctx.view("audit", json!({"program_id": pid}))?;
     let contract_audit = root_ctx.view("audit_contract", json!({}))?;
     ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true);
-    println!("known issues: {known_n}; audit(program): {}; audit(contract): {}; B withdrew 3000 tUSD: {}",
-             audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD);
+    println!("known issues: {known_n}; audit(program): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid instantly: {}; paused on both chains: {}",
+             audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD, one["instant"], one["paused_both"]);
     results["submissions"] = Value::Array(table);
     results["audit"] = json!({"program": audit, "contract": contract_audit});
     results["record"] = root_ctx.view("program_record", json!({"program_id": pid}))?;
