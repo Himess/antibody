@@ -10,25 +10,25 @@
     },
     "program": "antibody.testnet/acme-local",
     "commit_id": 5,
-    "manifest_hash": "0x5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
-    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "manifest_hash": "0x920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
+    "invariants_code_hash": "0x2a760c5837f090fa641cd7f18944e40bb2142350c40c3649d871b5bd1607f78c",
     "anchor": {
       "chain_id": 31337,
-      "block_number": 22,
-      "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
-      "state_root": "0x708be696bb4e8986c9bf11e23f7695e4cd30b38bf51f8a3c96fa6123a7eb139a",
-      "timestamp": 1793605560,
+      "block_number": 23,
+      "block_hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931",
+      "state_root": "0x6d9d523fa9cd814208d2a2cb8ba6efe9434abc5353e1a2df06309d4b687363be",
+      "timestamp": 1793651474,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "72a3443462ed7a020063314fc4aca44986d37e68461801c40cb5ebb333e2847a",
-    "poc_hash": "bb1c2803a38d94911210096353d3f6b4e7306d0ac360dc80c61d25f0be2e9942",
+    "witness_sha256": "bf96bf62ad8c44eb739d63ca2984e973a5cb2e408752e3a90339eae36dbba2de",
+    "poc_hash": "4653e01386be297d49cb9ee65d6276ebcd450bdc56ec09b91ffeac7ac751d130",
     "kind": "Violation",
     "reason": null,
     "checks": {
       "header_hash_bound": true,
       "state_root_matches": true,
-      "storage_tries_verified": 10,
-      "bytecodes_supplied": 7,
+      "storage_tries_verified": 11,
+      "bytecodes_supplied": 8,
       "ancestor_headers_linked": 0,
       "reserved_address_empty": true,
       "target_code_hashes_match": true,
@@ -42,15 +42,15 @@
       {
         "index": 0,
         "sender": "0x9e9a617e990fed8bf5aa2c105e7f4372bd36a109",
-        "to": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2",
+        "to": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069",
         "success": true,
-        "gas_used": 90157,
+        "gas_used": 95414,
         "logs": 4,
         "created": null
       }
     ],
     "created_contracts": [],
-    "total_gas_used": 90157,
+    "total_gas_used": 95414,
     "evaluations": 1,
     "broken_mask": "0x4",
     "broken": [
@@ -58,7 +58,7 @@
         "slot": 2,
         "name": "share_price",
         "severity": "medium",
-        "target": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2",
+        "target": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069",
         "target_name": "AcmeVault",
         "selector": "0x2e1a7d4d",
         "flip_point": 0,
@@ -72,7 +72,7 @@
       "impact_usd": "0.00",
       "accounts": [
         {
-          "account": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359",
+          "account": "0x86a7ae34ac860f0eb62765ae374e92b17254a587",
           "role": "protocol",
           "eth_delta_wei": "0",
           "tokens": [
@@ -103,7 +103,7 @@
     "v": 2,
     "mode": "verify",
     "request_sha256": "",
-    "manifest_sha256": "5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
+    "manifest_sha256": "920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
     "program_key": "antibody.testnet/acme-local",
     "round": 0,
     "key_epoch": "aa48e4a42e26942d",
@@ -113,10 +113,10 @@
     "keys": [
       {
         "slot": 2,
-        "tag": "facc21a3771535c15bfdb7649ea0f915f58855f40a93a3e374ac225400a96ca8"
+        "tag": "ee00a6e4dd8c4b805326328a085aaffde0e6be97715aea97ef5872df8574f7a0"
       }
     ],
     "impact_usd_micro": "0",
-    "receipt_sha256": "42240d39a61cbdefcd30a9ff404c84bfe30d0590c02e050886d4db07df215c95"
+    "receipt_sha256": "aa8b7e39f0827a29807902cb9b8168a6ac4077da74f9663b250235e217561482"
   }
 }

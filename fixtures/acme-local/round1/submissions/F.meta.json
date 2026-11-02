@@ -1,42 +1,42 @@
 {
-  "anchor_block": 22,
-  "anchor_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
+  "anchor_block": 23,
+  "anchor_hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931",
   "senders": [
     "0x8e255be0cbbb1538ed8376d98cdca3d7df0eb373"
   ],
   "trace_verdict": null,
-  "trace_ms": 14,
-  "trace_rpc_reads": 45,
+  "trace_ms": 95,
+  "trace_rpc_reads": 47,
   "fixpoint_passes": 1,
   "fixpoint_added": [],
   "proof_quorum": [
     {
-      "accounts": 11,
-      "slots": 34,
-      "unanimous": 11,
-      "quorum_reached": 11,
+      "accounts": 12,
+      "slots": 35,
+      "unanimous": 12,
+      "quorum_reached": 12,
       "responses_per_provider": {
-        "rpc0": 11
+        "rpc0": 12
       },
       "failures_per_provider": {},
       "raw_json_differs_but_normalised_equal": 0,
       "disagreements": [],
-      "fetch_ms": 2
+      "fetch_ms": 9
     }
   ],
   "stats": {
-    "witness_bytes": 47284,
-    "witness_sha256": "3a8a7eec30ab1f7e52badf9a26c1d055a91ebf8cf445e59978ee919df501a89f",
-    "accounts": 11,
-    "storage_slots": 34,
-    "storage_tries": 11,
-    "proof_nodes_total": 88,
-    "proof_nodes_unique": 45,
-    "proof_bytes_unique": 4076,
-    "bytecodes": 7,
-    "bytecode_bytes": 17120,
+    "witness_bytes": 48333,
+    "witness_sha256": "4b2146437db7a51a19f09ffacba021ae7fc10399eb4326bd89f926830aae94ac",
+    "accounts": 12,
+    "storage_slots": 35,
+    "storage_tries": 12,
+    "proof_nodes_total": 95,
+    "proof_nodes_unique": 46,
+    "proof_bytes_unique": 4207,
+    "bytecodes": 8,
+    "bytecode_bytes": 17710,
     "ancestor_headers": 0,
     "block_rlp_bytes": 613
   },
-  "total_ms": 43
+  "total_ms": 157
 }

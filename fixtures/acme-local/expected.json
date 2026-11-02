@@ -2,12 +2,12 @@
  "program_id": "antibody.testnet/acme-local",
  "chain_id": 31337,
  "anchor": {
-  "number": 22,
-  "hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0"
+  "number": 23,
+  "hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931"
  },
- "manifest_sha256": "0x5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
- "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
- "invariants_address": "0x1fca3c5c59c22727fa8052158f737f4fc4c3062e",
+ "manifest_sha256": "0x920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
+ "invariants_code_hash": "0x2a760c5837f090fa641cd7f18944e40bb2142350c40c3649d871b5bd1607f78c",
+ "invariants_address": "0xd61677b051b5c86e9ce3a35fd29e133c995a6ae6",
  "keys_note": "TEST-ONLY keys: mac = HMAC(sha256('antibody/TEST-ONLY-root/never-use-in-production'), label), scripts/demo/v2keys.py",
  "submissions": {
   "A": {
@@ -24,13 +24,13 @@
      "target": "AcmeLend",
      "selector": "0xc5ebeaec",
      "function": "borrow(uint256)",
-     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+     "target_address": "0x86a7ae34ac860f0eb62765ae374e92b17254a587"
     }
    ],
    "keys": [
     {
      "slot": 0,
-     "tag": "799adb82dd2d7daba76dc3365075b115a47ef232af8d6465dd6d12a45d653caa"
+     "tag": "a1f13d554248c99a2364d6e382f07bf1be4df4a4df7801fd8b5f38bbf4d3b234"
     }
    ],
    "impact_usd": "462931.85",
@@ -38,9 +38,9 @@
    "attacker_gain_usd_micro": "462931853867",
    "evaluations": 9,
    "reason": null,
-   "poc_hash": "21c5dd8deb739d0a63beab12d43c7d1c30f918cd877762ed79a7822cb1556224",
-   "receipt_hash": "6f95870ee32966e182a85a86f063a313fc0ecc83651cdad2661d69b7701fd2df",
-   "witness_sha256": "5344565cf5e3c425d2ac0fccf039b87e41b6670eb483dc6cac0aa69ed084ac9e",
+   "poc_hash": "d9471594c567d9876d43b5f790ebcf5bb3eddc0708611267eed30af5610800c6",
+   "receipt_hash": "d16c06fc8f93ff9283dedefae2264bdb61f8b8b74903d27ede9385a7acd8738e",
+   "witness_sha256": "887105f74fbe159b023e1e3b9a6429b147df65c8c2ee70a0089ea933594b80f8",
    "facts_bytes": 468,
    "matches_expected": true
   },
@@ -58,13 +58,13 @@
      "target": "AcmeVault",
      "selector": "0x8d4b5cd2",
      "function": "sweepFees(address)",
-     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
     }
    ],
    "keys": [
     {
      "slot": 1,
-     "tag": "7cd425a22d14fadabd2dab5f9f2612915079f7209b75ab9208fb1cad5a304a0f"
+     "tag": "38595ee45668feb4b7f9ce1bf8921df2c1db3003a147ea3df652ace617b3f61f"
     }
    ],
    "impact_usd": "1000.00",
@@ -72,9 +72,9 @@
    "attacker_gain_usd_micro": "1000000000",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "179dbf79d04124f303156e762e44214fb1863ad47caf218127402f385ed7b320",
-   "receipt_hash": "4fc649fd69f7237606855f0628e9f4135759af4d77b51696004afca69eb21849",
-   "witness_sha256": "b3f74399ac37a08852aafac3f056bc87a759ee905cd08981ab4b547aadca563a",
+   "poc_hash": "7a346ef1eb18edf5d73d0945e21eea06b670c36c7749c8d48e13633b37f9546a",
+   "receipt_hash": "03b894d615cfced85237a2437d1cb79ad646f679c9c893fff714ed1bdc760502",
+   "witness_sha256": "206b9d69fcc0db774ad2a093dd54c0fb5f7bd4c31fcc14ae46f9b8e5f694d91b",
    "facts_bytes": 466,
    "matches_expected": true
   },
@@ -92,8 +92,8 @@
    "evaluations": 5,
    "reason": null,
    "poc_hash": "0eea14cedd3caf52aaf3a0d7085f2933daeac6d42933542e75dfd28801c81280",
-   "receipt_hash": "7fa03d7f5d0f901e893bfe7da540f15b16545ccf32a37b63363f0721cab03408",
-   "witness_sha256": "1c1cc8b2daf78702b13f9cf5182f8a2270cbfd27f46a4be61881e7710d09cdac",
+   "receipt_hash": "499741bc1b558c3508845b22f37c9dfa7478c49627391c662d9ee3bdbd02d95e",
+   "witness_sha256": "b3743317eec0667f1b4821ceba4e0d9230a6bf3f442c4a6d9b22f76aea7f7e28",
    "facts_bytes": 373,
    "matches_expected": true
   },
@@ -111,13 +111,13 @@
      "target": "AcmeLend",
      "selector": "0xc5ebeaec",
      "function": "borrow(uint256)",
-     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+     "target_address": "0x86a7ae34ac860f0eb62765ae374e92b17254a587"
     }
    ],
    "keys": [
     {
      "slot": 0,
-     "tag": "799adb82dd2d7daba76dc3365075b115a47ef232af8d6465dd6d12a45d653caa"
+     "tag": "a1f13d554248c99a2364d6e382f07bf1be4df4a4df7801fd8b5f38bbf4d3b234"
     }
    ],
    "impact_usd": "6375.60",
@@ -125,9 +125,9 @@
    "attacker_gain_usd_micro": "6375600000",
    "evaluations": 8,
    "reason": null,
-   "poc_hash": "953b8b683e506ede617288622b686bffa3157780c92a844b479e555e7ba815e6",
-   "receipt_hash": "ace3f23204c2c79d96b22c412ec00e83985a9bd76035c04ad4a231f9536c94c5",
-   "witness_sha256": "4cd54b3f3d718edcbf9b65912ccb71c1e4731c3149a114afc44c688ba4192852",
+   "poc_hash": "b92526966c3e549e9f5552b9ed02b53cfab02b7cb5d8b26d96761cb73ee418ae",
+   "receipt_hash": "f9987e4e897f06d61f0b6d056a991ab1176661f641855f8d93656001589f17f1",
+   "witness_sha256": "2f81eb742031c5193908de49e56e4bb2ef78c3fce3be9d083f8dc131fbd05a87",
    "facts_bytes": 466,
    "matches_expected": true
   },
@@ -145,13 +145,13 @@
      "target": "AcmeVault",
      "selector": "0x2e1a7d4d",
      "function": "withdraw(uint256)",
-     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
     }
    ],
    "keys": [
     {
      "slot": 2,
-     "tag": "facc21a3771535c15bfdb7649ea0f915f58855f40a93a3e374ac225400a96ca8"
+     "tag": "ee00a6e4dd8c4b805326328a085aaffde0e6be97715aea97ef5872df8574f7a0"
     }
    ],
    "impact_usd": "0.00",
@@ -159,9 +159,9 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 1,
    "reason": null,
-   "poc_hash": "bb1c2803a38d94911210096353d3f6b4e7306d0ac360dc80c61d25f0be2e9942",
-   "receipt_hash": "42240d39a61cbdefcd30a9ff404c84bfe30d0590c02e050886d4db07df215c95",
-   "witness_sha256": "72a3443462ed7a020063314fc4aca44986d37e68461801c40cb5ebb333e2847a",
+   "poc_hash": "4653e01386be297d49cb9ee65d6276ebcd450bdc56ec09b91ffeac7ac751d130",
+   "receipt_hash": "aa8b7e39f0827a29807902cb9b8168a6ac4077da74f9663b250235e217561482",
+   "witness_sha256": "bf96bf62ad8c44eb739d63ca2984e973a5cb2e408752e3a90339eae36dbba2de",
    "facts_bytes": 457,
    "matches_expected": true
   },
@@ -179,13 +179,13 @@
      "target": "AcmeLend",
      "selector": "0x371fd8e6",
      "function": "repay(uint256)",
-     "target_address": "0x1eea7b535e4d25b9bfc3eb69e3890a4b67f9b359"
+     "target_address": "0x86a7ae34ac860f0eb62765ae374e92b17254a587"
     }
    ],
    "keys": [
     {
      "slot": 0,
-     "tag": "5bec843462165eaf6106860719505191365e12c1bac3228865bd9ef327efca34"
+     "tag": "f1af4035b107d39c35a009b7fafe74df9d66aff0bea5375af603ff01d7d621d7"
     }
    ],
    "impact_usd": "10400.00",
@@ -193,9 +193,9 @@
    "attacker_gain_usd_micro": "10400000000",
    "evaluations": 8,
    "reason": null,
-   "poc_hash": "2fd56484ddefd26d31c9f2cd9a5b6f0a6252f9fc598d29393629e4d22baf5d64",
-   "receipt_hash": "cf82851e90a694e0a33307dcf34b088f4525358749483b9f849912ea497cfe73",
-   "witness_sha256": "be84834825bf62ad7d895617b2f13702b3f63a63a4b6cc847d0b2683ab59c416",
+   "poc_hash": "178e245a32e738f4e0e56a3177bee006b084186bae21aa942e86e9883416a89b",
+   "receipt_hash": "95416c181e5704a6b79ea906ca1c05b0de557b7469292b762043ad3dcddf82e7",
+   "witness_sha256": "d4ff1fe498e23d60929610e193b24e05f22bd67dd8de1c0ca67e68769f26a187",
    "facts_bytes": 467,
    "matches_expected": true
   },
@@ -213,13 +213,13 @@
      "target": "AcmeVault",
      "selector": "0x2e1a7d4d",
      "function": "withdraw(uint256)",
-     "target_address": "0x9512485eba149db1ca3e2e9ec91f7bb6f0d3bdc2"
+     "target_address": "0x82e8edda6058fbc42b6dbe96ec747ff3f6d07069"
     }
    ],
    "keys": [
     {
      "slot": 2,
-     "tag": "facc21a3771535c15bfdb7649ea0f915f58855f40a93a3e374ac225400a96ca8"
+     "tag": "ee00a6e4dd8c4b805326328a085aaffde0e6be97715aea97ef5872df8574f7a0"
     }
    ],
    "impact_usd": "0.00",
@@ -227,9 +227,9 @@
    "attacker_gain_usd_micro": "0",
    "evaluations": 5,
    "reason": null,
-   "poc_hash": "212cad7236aca2868a6d24e26eb161e6c76f4b254dcd11a19aac8c81b78a38c1",
-   "receipt_hash": "bc2bcca3a7b62b989e74712a201e263948ea4341b376c37352dceb78ff508df8",
-   "witness_sha256": "c48607f02b3a736a16ca1c94916625af714efcef0bb5c61244675b1ecb029c55",
+   "poc_hash": "051edb722d62f0e398bb8656a591b3f3231da61e1981a51a76bba3136d3c7ff3",
+   "receipt_hash": "b9ad613bc62f481d9d729db0ccdb79c69bf52e43320800300ab2e2b3b6b7aa5c",
+   "witness_sha256": "1a0422419fa887fae704cbef8aa6e1fc0197440435f889811f4a3134d43c9dda",
    "facts_bytes": 457,
    "matches_expected": true
   }

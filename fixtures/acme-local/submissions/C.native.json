@@ -10,25 +10,25 @@
     },
     "program": "antibody.testnet/acme-local",
     "commit_id": 3,
-    "manifest_hash": "0x5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
-    "invariants_code_hash": "0xf5de064a15bf73ee95627c7822d71277f768169dd741fbca9e6cfd6f3df79d37",
+    "manifest_hash": "0x920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
+    "invariants_code_hash": "0x2a760c5837f090fa641cd7f18944e40bb2142350c40c3649d871b5bd1607f78c",
     "anchor": {
       "chain_id": 31337,
-      "block_number": 22,
-      "block_hash": "0x44fa77658758a4b2b25756b8c833664247c4e2bada183160084e83a59fdc54e0",
-      "state_root": "0x708be696bb4e8986c9bf11e23f7695e4cd30b38bf51f8a3c96fa6123a7eb139a",
-      "timestamp": 1793605560,
+      "block_number": 23,
+      "block_hash": "0xf02192f06f7db9a9198082d1d5e4bec209d65c675db27a16bb8d9adb56b77931",
+      "state_root": "0x6d9d523fa9cd814208d2a2cb8ba6efe9434abc5353e1a2df06309d4b687363be",
+      "timestamp": 1793651474,
       "evm_spec": "osaka"
     },
-    "witness_sha256": "1c1cc8b2daf78702b13f9cf5182f8a2270cbfd27f46a4be61881e7710d09cdac",
+    "witness_sha256": "b3743317eec0667f1b4821ceba4e0d9230a6bf3f442c4a6d9b22f76aea7f7e28",
     "poc_hash": "0eea14cedd3caf52aaf3a0d7085f2933daeac6d42933542e75dfd28801c81280",
     "kind": "NoViolation",
     "reason": null,
     "checks": {
       "header_hash_bound": true,
       "state_root_matches": true,
-      "storage_tries_verified": 11,
-      "bytecodes_supplied": 7,
+      "storage_tries_verified": 12,
+      "bytecodes_supplied": 8,
       "ancestor_headers_linked": 0,
       "reserved_address_empty": true,
       "target_code_hashes_match": true,
@@ -98,7 +98,7 @@
     "v": 2,
     "mode": "verify",
     "request_sha256": "",
-    "manifest_sha256": "5c591d0bdd116ba9e27349ac8f98997afa8a7fbbc50e186b90cad7ccdf6e3b22",
+    "manifest_sha256": "920d4eb0a8010190646504053fc35b1668a9b1c76b0235a1149011ca0d8f9b6d",
     "program_key": "antibody.testnet/acme-local",
     "round": 0,
     "key_epoch": "aa48e4a42e26942d",
@@ -106,6 +106,6 @@
     "run_id": 0,
     "kind": "NoViolation",
     "impact_usd_micro": "33480361",
-    "receipt_sha256": "7fa03d7f5d0f901e893bfe7da540f15b16545ccf32a37b63363f0721cab03408"
+    "receipt_sha256": "499741bc1b558c3508845b22f37c9dfa7478c49627391c662d9ee3bdbd02d95e"
   }
 }

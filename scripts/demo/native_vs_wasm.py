@@ -16,7 +16,7 @@ NATIVE = os.path.join(ROOT, "target", "release", "antibody-verify" + EXE)
 RUNNER = os.path.join(ROOT, "target", "release", "antibody-run" + EXE)
 WASM = os.path.join(ROOT, "target", "wasm32-wasip2", "release", "antibody-verify.wasm")
 sys.path.insert(0, os.path.dirname(__file__))
-from acme_fixture import COMMIT_ID, k_program  # noqa: E402
+from acme_fixture import COMMIT_ID  # noqa: E402
 
 
 def main():
@@ -25,8 +25,8 @@ def main():
     exp = json.load(open(os.path.join(fx, "expected.json")))
     program_id = exp["program_id"]
     wasm_sha = hashlib.sha256(open(WASM, "rb").read()).hexdigest()
-    envs = {"ANTIBODY_PROGRAM_ID": program_id, "ANTIBODY_EXPECTED_MANIFEST": exp["manifest_sha256"],
-            "ANTIBODY_K_PROGRAM": k_program(program_id).hex(), "ANTIBODY_WASM_HASH": wasm_sha}
+    # Keys come from the TEST root on both sides (the runner's encryption-keys host, the native default).
+    envs = {"ANTIBODY_PROGRAM_ID": program_id, "ANTIBODY_EXPECTED_MANIFEST": exp["manifest_sha256"], "ANTIBODY_WASM_HASH": wasm_sha}
     if facts_only:
         envs["ANTIBODY_OUTPUT"] = "facts"
     rows, all_ok = [], True
