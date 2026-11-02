@@ -406,8 +406,12 @@ enum Cmd {
         #[command(subcommand)]
         cmd: TeeCmd,
     },
-    /// MCP server on stdio for AI agents
-    Mcp,
+    /// MCP server on stdio for AI agents; every path a tool takes stays inside the workspace
+    Mcp {
+        /// Default: the working directory
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -548,8 +552,12 @@ fn run(cli: Cli) -> Result<Value> {
                 TeeCmd::ConfirmMock { run, mock_outlayer } => antibody_cli::tee::confirm_mock(&c, mock_outlayer, *run),
             }
         }
-        Cmd::Mcp => {
-            mcp::serve(&mk()?)?;
+        Cmd::Mcp { ref workspace } => {
+            let ws = match workspace {
+                Some(w) => w.clone(),
+                None => std::env::current_dir()?,
+            };
+            mcp::serve(&mk()?, &ws)?;
             Ok(Value::Null)
         }
     }
@@ -557,7 +565,7 @@ fn run(cli: Cli) -> Result<Value> {
 
 fn main() {
     let cli = Cli::parse();
-    let is_mcp = matches!(cli.cmd, Cmd::Mcp);
+    let is_mcp = matches!(cli.cmd, Cmd::Mcp { .. });
     match run(cli) {
         Ok(v) if !is_mcp => println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default()),
         Ok(_) => {}

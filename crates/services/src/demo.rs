@@ -284,6 +284,9 @@ pub(crate) fn mcp_submit(
     program: u32,
     bundle: &Path,
 ) -> Result<Value> {
+    // The server only reads files inside its workspace (the state directory): the agent's own copy.
+    let local = bundle.file_name().and_then(|n| n.to_str()).ok_or_else(|| eyre!("bundle file name"))?.to_string();
+    std::fs::copy(bundle, state.join(&local))?;
     let mut command = Command::new(antibody_bin);
     command.args(net).arg("--deployments").arg(deployments).args(["--account", account, "--key-file"]).arg(key);
     if let Some(rpc) = eth_rpc {
@@ -309,7 +312,7 @@ pub(crate) fn mcp_submit(
     let tools = rpc(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))?;
     let n = tools["result"]["tools"].as_array().map(|t| t.len()).unwrap_or(0);
     let r = rpc(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "submit",
-        "arguments": {"program_id": program, "bundle_path": bundle, "wait": true}}}))?;
+        "arguments": {"program_id": program, "bundle_path": local, "wait": true}}}))?;
     drop(stdin);
     let _ = child.wait();
     if r["result"]["isError"] == json!(true) {
