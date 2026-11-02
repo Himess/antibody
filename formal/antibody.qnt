@@ -551,9 +551,9 @@ module antibody {
   action Rerun(c: int): bool = {
     val x = s.cs.get(c)
     all {
-      s.proposed, s.now <= s.proposedAt + RERUN_WIN, x.rerun == "none",
+      s.phase == "open", not(s.misconfigured), s.proposed, s.now <= s.proposedAt + RERUN_WIN, x.rerun == "none",
       or {
-        x.round == s.round and (x.alloc == "holder" or x.alloc == "dup" or x.alloc == "gap"),
+        x.round == s.round and (x.alloc == "holder" or ((x.alloc == "dup" or x.alloc == "gap") and x.end == "")),
         x.end == "paid",
         everHeld(c),
       },

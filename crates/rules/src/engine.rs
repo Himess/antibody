@@ -1515,6 +1515,9 @@ impl<S: Store> Engine<S> {
     pub fn request_rerun(&mut self, ctx: &Ctx, commit: CommitId, spec: RunSpec) -> R<Vec<Effect>> {
         let mut c = self.get_commit(commit)?;
         let p = self.get_program(c.program)?;
+        if p.phase != Phase::Open {
+            return Err(Error::State("the program is not open"));
+        }
         let Some(accepted_at) = self.proposal_accepted_at(&p) else {
             return Err(Error::State("no T1-confirmed round proposal"));
         };
