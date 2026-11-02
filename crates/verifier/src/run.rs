@@ -861,6 +861,36 @@ pub fn check_program_at_anchor(
     anchor_checks_on_witness(env, w, reserved).map_err(|e| crate::program::classify(&e))
 }
 
+/// The ERC-1967 implementation slot, `keccak256("eip1967.proxy.implementation") - 1`. Base witnesses
+/// prove it for every target, so a round can check its releases (spec §9).
+pub const EIP1967_IMPLEMENTATION_SLOT: B256 = alloy_primitives::b256!("360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc");
+
+/// A round proposal checked at the anchor: [`check_program_at_anchor`] under the round's manifest,
+/// and its releases. Each release names a target that is an ERC-1967 proxy at the anchor and the code
+/// hash of the override that replaces that proxy's implementation, so a release permit installs only
+/// code the round's re-runs ran. Returns whether every canary passes and whether every release holds.
+pub fn check_round_at_anchor(
+    env: &Envelope,
+    w: &ProgramWitness,
+    reserved: Option<Address>,
+    releases: &[(Address, B256)],
+) -> Result<(bool, bool), (crate::facts::Kind, String)> {
+    let canaries_ok = check_program_at_anchor(env, w, reserved)?;
+    let manifest = crate::manifest::Manifest::parse(&w.manifest_json).map_err(|e| (crate::facts::Kind::ProgramMisconfigured, e))?;
+    // The anchor's own state (no overrides), validated against the header by the checks above; read
+    // through its own log so a missing slot touches nothing else.
+    let anchor_db = StrictDb::new(&w.state, HashMap::default(), HashMap::default());
+    let releases_ok = releases.iter().all(|(proxy, code_hash)| {
+        let Ok(word) = anchor_db.storage_ref(*proxy, U256::from_be_bytes(EIP1967_IMPLEMENTATION_SLOT.0)) else {
+            return false;
+        };
+        let implementation = Address::from_word(B256::from(word.to_be_bytes::<32>()));
+        manifest.targets.iter().any(|t| t.address == *proxy)
+            && manifest.overrides.iter().any(|o| o.address == implementation && o.code_hash == *code_hash)
+    });
+    Ok((canaries_ok, releases_ok))
+}
+
 /// [`check_program_at_anchor`] with its error unclassified: a missing witness entry stays
 /// `VerifyError::Incomplete`, so the base-witness builder can add it and try again.
 pub fn anchor_checks_on_witness(env: &Envelope, w: &ProgramWitness, reserved: Option<Address>) -> Result<bool, crate::program::ProgramError> {

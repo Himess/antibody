@@ -85,6 +85,17 @@ pub struct Request {
     pub slot: Option<u8>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// `check_round`: the releases the round proposes (spec §9).
+    #[serde(default)]
+    pub releases: Vec<ReleaseIn>,
+}
+
+/// A proposed release: the proxy to upgrade and the code hash its new implementation must have.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseIn {
+    pub proxy: String,
+    pub code_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -159,6 +170,11 @@ pub struct Output {
 fn hex32(s: &str) -> Option<[u8; 32]> {
     let b = hex::decode(s.trim_start_matches("0x")).ok()?;
     b.try_into().ok()
+}
+
+/// A round's proposed releases as (proxy, code hash); `None` if one is malformed.
+fn releases_of(req: &Request) -> Option<Vec<(Address, B256)>> {
+    req.releases.iter().map(|r| Some((r.proxy.parse::<Address>().ok()?, B256::from(hex32(&r.code_hash)?)))).collect()
 }
 
 /// Why a run produced no verdict: the facts kind to report and a short reason.
@@ -483,9 +499,14 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
                             bytecodes: base.bytecodes.clone(),
                             bundle: crate::bundle::Bundle::default(),
                         };
-                        match crate::run::check_program_at_anchor(&benv, &full, Some(reserved_address(&req.program_key, benv.claimed_block_hash))) {
-                            Ok(canaries_ok) => RoundCheck { ok: true, canaries_ok },
-                            Err(_) => RoundCheck { ok: false, canaries_ok: false },
+                        let reserved = Some(reserved_address(&req.program_key, benv.claimed_block_hash));
+                        match releases_of(req).map(|r| crate::run::check_round_at_anchor(&benv, &full, reserved, &r)) {
+                            Some(Ok((canaries_ok, true))) => RoundCheck { ok: true, canaries_ok },
+                            Some(Ok((_, false))) | None => {
+                                facts.reason = Some("a release is not a checked override of a target proxy".into());
+                                RoundCheck { ok: false, canaries_ok: false }
+                            }
+                            Some(Err(_)) => RoundCheck { ok: false, canaries_ok: false },
                         }
                     }
                 },

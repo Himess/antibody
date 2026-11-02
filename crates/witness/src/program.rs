@@ -219,6 +219,12 @@ pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_k
     for (a, s) in &rec.slots {
         access.entry(*a).or_default().extend(s.iter().copied());
     }
+    // Every target's ERC-1967 implementation slot, set or not, so a round can check its releases
+    // against the anchor (spec §9).
+    let implementation_slot = U256::from_be_bytes(antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT.0);
+    for t in &manifest.targets {
+        access.entry(t.address).or_default().insert(implementation_slot);
+    }
     let mut codes = rec.codes.clone();
     let mut block_numbers = rec.block_numbers.clone();
     let mut reports = Vec::new();

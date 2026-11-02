@@ -294,3 +294,35 @@ fn base_and_submission_merge_into_the_same_verdict() {
     assert_eq!(out.facts.keys, out2.facts.keys, "same keys from the merged witness");
     let _ = BlobRef::Inline { inline: String::new() };
 }
+
+/// A round check binds the round's releases (spec §9): each must name a target that is an ERC-1967
+/// proxy at the anchor and the code hash of the override that replaces its implementation.
+#[test]
+fn a_round_check_binds_its_releases() {
+    let w = World::new();
+    let round_bytes = std::fs::read(root().join("fixtures/acme-local/round1/manifest.json")).unwrap();
+    let m: serde_json::Value = serde_json::from_slice(&round_bytes).unwrap();
+    let target = |name: &str| m["targets"].as_array().unwrap().iter().find(|t| t["name"] == name).unwrap()["address"].as_str().unwrap().to_string();
+    let (lend, vault) = (target("AcmeLend"), target("AcmeVault"));
+    let o = &m["overrides"][0];
+    assert_eq!(o["address"].as_str().unwrap(), target("AcmeLendImpl"), "round 1 overrides AcmeLend's implementation");
+    let fixed = o["code_hash"].as_str().unwrap().to_string();
+    let check = |releases: serde_json::Value| {
+        let req = w.request(
+            "check_round",
+            None,
+            serde_json::json!({"round": 1, "manifest_sha256": hex::encode(sha256(&round_bytes)), "round_manifest": w.upload(&round_bytes),
+                               "releases": releases}),
+        );
+        let facts = serde_json::to_value(w.run(&req, CONTRACT).0.facts).unwrap();
+        (facts["round_check"]["ok"].as_bool().unwrap(), facts["reason"].clone())
+    };
+    assert_eq!(check(serde_json::json!([])).0, true, "a round without releases");
+    assert_eq!(check(serde_json::json!([{"proxy": lend, "code_hash": fixed}])).0, true, "the proxy, to the code the re-runs ran");
+    let (ok, reason) = check(serde_json::json!([{"proxy": lend, "code_hash": format!("0x{}", "11".repeat(32))}]));
+    assert!(!ok, "other code than the override's");
+    assert!(reason.as_str().unwrap().contains("release"));
+    assert!(!check(serde_json::json!([{"proxy": vault, "code_hash": fixed}])).0, "a target that is not a proxy of the override");
+    assert!(!check(serde_json::json!([{"proxy": "0x0000000000000000000000000000000000000001", "code_hash": fixed}])).0, "not a target");
+    assert!(!check(serde_json::json!([{"proxy": "nope", "code_hash": fixed}])).0, "malformed");
+}

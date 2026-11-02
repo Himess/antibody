@@ -488,7 +488,10 @@ anything else. A `check_round` run (TEE) verifies:
 - only target code changed, and the new code hashes match the overrides;
 - the old slots are byte-identical;
 - `check()` holds at the anchor with the new code;
-- the **canaries** still succeed. A "fix" that makes the targets revert everything is rejected.
+- the **canaries** still succeed. A "fix" that makes the targets revert everything is rejected;
+- every proposed **release** names a target that is an ERC-1967 proxy at the anchor, and the code hash of
+  the override that replaces that proxy's implementation. A release permit can then only install code
+  the round's re-runs ran. Base witnesses prove every target's implementation slot for this.
 
 ### 8.2 Immune memory
 

@@ -540,6 +540,9 @@ impl Contract {
         valid_loc(&manifest);
         require!(releases.len() <= 4, "at most 4 releases per round");
         releases.iter().for_each(valid_release);
+        // The TEE checks each release against the code the round's re-runs ran (spec §9).
+        let checked: Vec<Value> =
+            releases.iter().map(|r| json!({"proxy": r.proxy.to_lowercase(), "code_hash": r.code_hash.to_lowercase()})).collect();
         let p = self.load_program(program_id);
         let mut meta = self.meta.get(&program_id).unwrap().clone();
         meta.proposal_manifest = Some(manifest.clone());
@@ -550,7 +553,7 @@ impl Contract {
         let slots: Vec<SlotRule> = new_slots.iter().map(|s| SlotRule { slot: s.slot, severity: s.severity, budget: s.budget.0 }).collect();
         let run_id = self.store.peek_id(IdKind::Run);
         let round = p.round + 1;
-        let req = self.request_raw(Mode::CheckRound, &p, None, run_id, round, manifest_sha, Some(&manifest), json!({}));
+        let req = self.request_raw(Mode::CheckRound, &p, None, run_id, round, manifest_sha, Some(&manifest), json!({"releases": checked}));
         let ctx = self.ctx();
         let before = env::storage_usage();
         let fx = self.engine().propose_round(&ctx, program_id, manifest_sha, overrides, slots, spec(&req)).unwrap_or_else(|e| fail(e));
