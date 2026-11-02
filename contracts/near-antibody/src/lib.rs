@@ -124,13 +124,20 @@ pub enum BlobIn {
 pub struct Release {
     /// 0x-prefixed EVM address of the proxy.
     pub proxy: String,
-    /// keccak256 of the new implementation's runtime code (hex).
+    /// keccak256 of the new implementation's runtime code (hex): what the permit commits to.
     pub code_hash: String,
+    /// Where that implementation is deployed (the same address on every chain), for relayers. The
+    /// adapter checks the code at it against `code_hash`.
+    pub implementation: String,
+}
+
+fn is_address(a: &str) -> bool {
+    let a = a.strip_prefix("0x").unwrap_or("");
+    a.len() == 40 && a.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn valid_release(r: &Release) {
-    let p = r.proxy.strip_prefix("0x").unwrap_or("");
-    require!(p.len() == 40 && p.bytes().all(|b| b.is_ascii_hexdigit()), "a release names a 0x-prefixed proxy address");
+    require!(is_address(&r.proxy) && is_address(&r.implementation), "a release names 0x-prefixed proxy and implementation addresses");
     require!(hex32(&r.code_hash).is_some(), "a release names a 32-byte code hash");
 }
 
