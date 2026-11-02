@@ -35,12 +35,16 @@ contract AcmeInvariants is IAntibodyInvariants {
         P_REF = pRef;
     }
 
-    function snapshot() external view returns (bytes memory) {
+    function snapshot() external view virtual returns (bytes memory) {
         return abi.encode(_feesAndTreasury(), vault.totalAssets(), vault.totalSupply());
     }
 
-    function check(bytes calldata pre) external view returns (uint256 broken) {
+    function check(bytes calldata pre) external view virtual returns (uint256 broken) {
         (uint256 fees0, uint256 assets0, uint256 shares0) = abi.decode(pre, (uint256, uint256, uint256));
+        return _base(fees0, assets0, shares0);
+    }
+
+    function _base(uint256 fees0, uint256 assets0, uint256 shares0) internal view returns (uint256 broken) {
         if (!solvent()) broken |= SOLVENCY;
         if (_feesAndTreasury() < fees0) broken |= FEES_TO_TREASURY;
         uint256 assets1 = vault.totalAssets();
@@ -63,5 +67,29 @@ contract AcmeInvariants is IAntibodyInvariants {
 
     function _feesAndTreasury() internal view returns (uint256) {
         return vault.accruedFees() + acUSD.balanceOf(treasury);
+    }
+}
+
+/// The invariants a round adds (the gap lane): bits 0-2 exactly as before, and bit 3.
+contract AcmeInvariantsV2 is AcmeInvariants {
+    /// bit 3 — Medium: the protected saver's acUSD never falls in a transaction the saver did not send
+    uint256 public constant PROTECTED_BALANCES = 1 << 3;
+
+    address public immutable saver;
+
+    constructor(AcmeLend lend_, AcmeVault vault_, IAcmeToken acUSD_, address treasury_, uint256 pRef, address saver_)
+        AcmeInvariants(lend_, vault_, acUSD_, treasury_, pRef)
+    {
+        saver = saver_;
+    }
+
+    function snapshot() external view override returns (bytes memory) {
+        return abi.encode(_feesAndTreasury(), vault.totalAssets(), vault.totalSupply(), acUSD.balanceOf(saver));
+    }
+
+    function check(bytes calldata pre) external view override returns (uint256 broken) {
+        (uint256 fees0, uint256 assets0, uint256 shares0, uint256 saver0) = abi.decode(pre, (uint256, uint256, uint256, uint256));
+        broken = _base(fees0, assets0, shares0);
+        if (acUSD.balanceOf(saver) < saver0) broken |= PROTECTED_BALANCES;
     }
 }

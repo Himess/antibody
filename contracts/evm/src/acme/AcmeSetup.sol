@@ -28,6 +28,21 @@ contract AcmeDemoBorrower {
     }
 }
 
+/// @notice A saver: a project-owned account holding acUSD with a standing approval to the vault (as
+/// users of routers have). The program protects its balance (the gap lane, planted bug #5).
+contract AcmeDemoSaver {
+    address public immutable owner;
+
+    constructor(address owner_) {
+        owner = owner_;
+    }
+
+    function approve(IAcmeToken token, address spender) external {
+        require(msg.sender == owner, "saver: not owner");
+        token.approve(spender, type(uint256).max);
+    }
+}
+
 library AcmeSetup {
     bytes32 internal constant SALT = keccak256("antibody/acme-lend/v1");
     /// Committed reference price of acETH (acUSD per acETH, 1e18-scaled).
@@ -42,6 +57,7 @@ library AcmeSetup {
     uint256 internal constant B1_DEBT = 100_000e18;
     uint256 internal constant B2_COLLATERAL = 60e18;
     uint256 internal constant B2_DEBT = 50_000e18;
+    uint256 internal constant SAVER_USD = 5_000e18;
 
     struct Deployment {
         AcmeGuard guard;
@@ -58,6 +74,7 @@ library AcmeSetup {
         AcmeVault vaultImpl;
         AcmeDemoBorrower borrower1;
         AcmeDemoBorrower borrower2;
+        AcmeDemoSaver saver;
     }
 
     function deploy(address admin) internal returns (Deployment memory d) {
@@ -76,12 +93,15 @@ library AcmeSetup {
         );
         d.borrower1 = new AcmeDemoBorrower{salt: keccak256(abi.encode(SALT, 1))}(admin);
         d.borrower2 = new AcmeDemoBorrower{salt: keccak256(abi.encode(SALT, 2))}(admin);
+        d.saver = new AcmeDemoSaver{salt: keccak256(abi.encode(SALT, 3))}(admin);
     }
 
     /// @dev Calls must come from `admin` (the minter, pool admin and borrower owner): the test
     /// contract itself, or the script's broadcaster.
     function seed(Deployment memory d, address admin) internal {
         d.usd.mint(admin, POOL_USD + VAULT_DEPOSIT + VAULT_YIELD);
+        d.usd.mint(address(d.saver), SAVER_USD);
+        d.saver.approve(IAcmeToken(address(d.usd)), address(d.vault));
         d.eth.mint(admin, POOL_ETH);
         d.eth.mint(address(d.borrower1), B1_COLLATERAL);
         d.eth.mint(address(d.borrower2), B2_COLLATERAL);

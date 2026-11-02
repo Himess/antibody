@@ -7,17 +7,18 @@ pragma solidity 0.8.28;
 // fingerprints, receipts and payouts are asserted by the verifier and contract tests.)
 
 import {AcmeSetup} from "../../src/acme/AcmeSetup.sol";
-import {AcmeInvariants} from "../../src/acme/AcmeInvariants.sol";
+import {AcmeInvariants, AcmeInvariantsV2} from "../../src/acme/AcmeInvariants.sol";
 import {IAcmeToken} from "../../src/acme/AcmeTokens.sol";
 import {AcmeGuard, GuardPausable} from "../../src/acme/AcmeGuard.sol";
-import {AcmeLendFixed} from "../../src/acme/AcmeLendFixed.sol";
-import {AcmeLendFinal, AcmeVaultFixed} from "../../src/acme/AcmeFinalFix.sol";
+import {AcmeLendFixed} from "../../src/acme-fixes/AcmeLendFixed.sol";
+import {AcmeLendFinal, AcmeVaultFixed} from "../../src/acme-fixes/AcmeFinalFix.sol";
 import {AntibodyAdapter, AntibodyProxy} from "../../src/antibody/AntibodyAdapter.sol";
 import {
     PocA_SpotPriceBorrow,
     PocC_PoolArbitrage,
     PocD_DonationSyncBorrow,
     PocF_UncheckedRepay,
+    PocG_ArbitraryFrom,
     PocKnown_DustWithdrawals
 } from "./pocs/AcmePocs.sol";
 
@@ -106,6 +107,26 @@ contract AcmeFixtureTest {
         require(hunter.balance == 10 ether, "F: collateral back");
         require(d.usd.balanceOf(hunter) > 0, "F: kept the loan");
         require(inv.check(pre) == inv.SOLVENCY(), "F: solvency only");
+    }
+
+    /// The gap lane: G takes the saver's approved acUSD. Nothing committed breaks; the saver loses it all.
+    function test_G_arbitraryFrom_harmsTheSaverAndBreaksNoInvariant() public {
+        uint256 before = d.usd.balanceOf(address(d.saver));
+        vm.prank(hunter, hunter);
+        new PocG_ArbitraryFrom(d.vault, IAcmeToken(address(d.usd)), address(d.saver));
+        require(d.usd.balanceOf(address(d.saver)) == 0 && before == AcmeSetup.SAVER_USD, "G: the saver lost everything");
+        require(d.vault.balanceOf(hunter) == 0, "G: the PoC contract holds the saver's shares");
+        require(inv.check(pre) == 0, "G breaks no committed invariant");
+    }
+
+    /// The invariants round 1 adds catch it: bit 3, and only bit 3.
+    function test_G_isCaughtByTheInvariantARoundAdds() public {
+        AcmeInvariantsV2 inv2 = new AcmeInvariantsV2(d.lend, d.vault, IAcmeToken(address(d.usd)), address(d.treasury), AcmeSetup.P_REF, address(d.saver));
+        bytes memory pre2 = inv2.snapshot();
+        require(inv2.check(pre2) == 0, "the new invariants hold at the anchor");
+        vm.prank(hunter, hunter);
+        new PocG_ArbitraryFrom(d.vault, IAcmeToken(address(d.usd)), address(d.saver));
+        require(inv2.check(pre2) == inv2.PROTECTED_BALANCES(), "G breaks protected_balances only");
     }
 
     function test_guardianPauseStopsEverything() public {
@@ -252,6 +273,13 @@ contract AcmeFixtureTest {
         vm.prank(hunter, hunter);
         try new PocF_UncheckedRepay{value: 10 ether}(d.eth, d.usd, d.lend) {} catch {}
         require(inv.check(pre) == 0, "F no longer breaks solvency");
+    }
+
+    function test_final_fix_stopsG() public {
+        _installFinalFix();
+        vm.prank(hunter, hunter);
+        try new PocG_ArbitraryFrom(d.vault, IAcmeToken(address(d.usd)), address(d.saver)) {} catch {}
+        require(d.usd.balanceOf(address(d.saver)) == AcmeSetup.SAVER_USD, "the saver keeps its funds");
     }
 
     function test_final_fix_leavesTheKnownIssue() public {

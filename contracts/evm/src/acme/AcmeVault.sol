@@ -54,7 +54,19 @@ contract AcmeVault is GuardPausable {
     }
 
     function deposit(uint256 assets) external whenNotPaused returns (uint256 shares) {
-        if (!acUSD.transferFrom(msg.sender, address(this), assets)) revert TransferFailed();
+        return _deposit(msg.sender, msg.sender, assets);
+    }
+
+    /// @notice A convenience for routers: deposits acUSD that `from` approved to the vault.
+    /// PLANTED BUG #5 (gap lane, user harm): nothing checks that `from` asked for this, and the shares
+    /// go to the caller. Anyone can take the funds of any account that approved the vault. The pool
+    /// stays solvent, fees and the share price are untouched: no committed invariant breaks.
+    function depositFor(address from, uint256 assets) external virtual whenNotPaused returns (uint256 shares) {
+        return _deposit(from, msg.sender, assets);
+    }
+
+    function _deposit(address from, address to, uint256 assets) internal returns (uint256 shares) {
+        if (!acUSD.transferFrom(from, address(this), assets)) revert TransferFailed();
         uint256 fee = assets * DEPOSIT_FEE_BPS / 10_000;
         uint256 net = assets - fee;
         accruedFees += fee;
@@ -62,9 +74,9 @@ contract AcmeVault is GuardPausable {
         shares = supply == 0 ? net : net * supply / totalAssets(); // rounds down: favours the vault
         if (shares == 0) revert ZeroShares();
         lend.supply(net);
-        balanceOf[msg.sender] += shares;
+        balanceOf[to] += shares;
         totalSupply = supply + shares;
-        emit Deposit(msg.sender, assets, shares, fee);
+        emit Deposit(to, assets, shares, fee);
     }
 
     function withdraw(uint256 assets) external whenNotPaused returns (uint256 shares) {

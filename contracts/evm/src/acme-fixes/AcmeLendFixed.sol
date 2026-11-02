@@ -7,10 +7,10 @@ pragma solidity 0.8.28;
 // is unchanged (the reference price is an immutable), and the other planted bugs are left as they
 // are, so their claims carry over into round 1.
 
-import {AcmeGuard} from "./AcmeGuard.sol";
-import {IAcmeToken} from "./AcmeTokens.sol";
-import {AcmePool} from "./AcmePool.sol";
-import {AcmeLend} from "./AcmeLend.sol";
+import {AcmeGuard} from "../acme/AcmeGuard.sol";
+import {IAcmeToken} from "../acme/AcmeTokens.sol";
+import {AcmePool} from "../acme/AcmePool.sol";
+import {AcmeLend} from "../acme/AcmeLend.sol";
 
 contract AcmeLendFixed is AcmeLend {
     /// @notice acUSD per acETH (1e18-scaled) the project commits to; collateral is never valued above it.

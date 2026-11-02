@@ -5,7 +5,6 @@ pragma solidity ^0.8.20;
 //   contracts/evm/src/acme/AcmeGuard.sol
 //   contracts/evm/src/acme/AcmeInvariants.sol
 //   contracts/evm/src/acme/AcmeLend.sol
-//   contracts/evm/src/acme/AcmeLendFixed.sol
 //   contracts/evm/src/acme/AcmePool.sol
 //   contracts/evm/src/acme/AcmeSetup.sol
 //   contracts/evm/src/acme/AcmeTokens.sol
