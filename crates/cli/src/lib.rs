@@ -5,6 +5,7 @@ pub mod blob;
 pub mod cmd;
 pub mod ctx;
 pub mod draft;
+pub mod judge;
 pub mod mcp;
 pub mod near;
 pub mod practice;

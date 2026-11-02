@@ -300,6 +300,20 @@ impl Near {
         self.call("tx", json!({"tx_hash": hash, "sender_account_id": signer, "wait_until": "NONE"}))
     }
 
+    pub fn explorer_account(&self, account: &str) -> String {
+        match self.network.as_str() {
+            "mainnet" => format!("https://nearblocks.io/address/{account}"),
+            "testnet" => format!("https://testnet.nearblocks.io/address/{account}"),
+            other => format!("{other}:{account}"),
+        }
+    }
+
+    /// An account's access keys (`view_access_key_list`).
+    pub fn access_keys(&self, account: &str) -> Result<Vec<Value>> {
+        let r = self.call("query", json!({"request_type": "view_access_key_list", "finality": "optimistic", "account_id": account}))?;
+        Ok(r["keys"].as_array().cloned().unwrap_or_default())
+    }
+
     pub fn explorer_tx(&self, hash: &str) -> String {
         match self.network.as_str() {
             "mainnet" => format!("https://nearblocks.io/txns/{hash}"),

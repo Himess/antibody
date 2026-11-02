@@ -408,6 +408,12 @@ enum Cmd {
         #[arg(long)]
         of: Option<String>,
     },
+    /// View calls only (no account, no key): each contract's code hash and whether it is locked, the
+    /// pins, and per program its anchor, T1 confirmations, payouts, pauses and permits, with links
+    Judge {
+        #[arg(long)]
+        program: Option<u32>,
+    },
     /// Permissionless: allocate final verdicts in commit order, pay funded claims, settle debts
     Keeper {
         #[arg(long)]
@@ -587,6 +593,7 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Retry { program, commit, no_wait } => cmd::retry(&mk()?, program, commit, !no_wait),
         Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
         Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
+        Cmd::Judge { program } => antibody_cli::judge::judge(&mk()?, program),
         Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
         Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, ref base_witness, no_wait } } => {
             let releases = releases.iter().map(|r| cmd::parse_release(r)).collect::<eyre::Result<Vec<_>>>()?;
