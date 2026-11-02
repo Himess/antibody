@@ -80,14 +80,17 @@ valid permit, and only to an implementation whose on-chain code hash is the perm
 
 ## The demo
 
-`make demo` runs both rounds after the payouts:
-- **Round 1, a partial fix:** `AcmeLendFixed` (planted bug #1). The keeper re-runs A, B and F (paid) and
-  the duplicate D. A and D no longer break anything; B and F still do. B's and F's keys are carried and
-  the gate stays shut: no release.
-- **Round 2, the final fix:** `AcmeLendFinal` (bugs #1 and #3) and `AcmeVaultFixed` (bug #2). A, B and F
-  are re-run again and all are fixed, so the gate holds. The guardian signs four permits (two proxies, two
-  chains), the relayer submits them, both proxies run the final fix on both chains, and B's fee-sweep
-  exploit reverts against the released code.
+`make demo` runs both rounds after the payouts. Before them, G (planted bug #5, the gap lane) took the
+protected saver's approved acUSD and broke no committed invariant: its bond was refunded and a gap claim
+recorded.
+- **Round 1, a partial fix and a new invariant:** `AcmeLendFixed` (planted bug #1) and
+  `protected_balances` (bit 3, a new invariants contract). The keeper re-runs A, B and F (paid), the
+  duplicate D and the gap claim G. A and D no longer break anything; B and F still do, so their keys are
+  carried and the gate stays shut. G's re-run breaks the new invariant: its claim is promoted and paid.
+- **Round 2, the final fix:** `AcmeLendFinal` (bugs #1 and #3) and `AcmeVaultFixed` (bugs #2 and #5),
+  keeping `protected_balances`. A, B, F and G are re-run again and all are fixed, so the gate holds. The
+  guardian signs four permits (two proxies, two chains), the relayer submits them, both proxies run the
+  final fix on both chains, and B's fee-sweep exploit reverts against the released code.
 
 The declared known issue (#4) is not part of the fix and still breaks its invariant. It is known, so it
 blocks no release.
