@@ -148,9 +148,8 @@ pub struct Proposal {
     pub overrides_sha256: H32,
     pub new_slots: Vec<SlotRule>,
     pub check_run: RunId,
+    /// The proposal counts once its `check_round` run is T1-confirmed and valid; re-runs may then start.
     pub proposed_at: Time,
-    /// Set when the `check_round` run is final and valid: re-runs may start.
-    pub accepted_at: Option<Time>,
     pub canaries_ok: bool,
 }
 

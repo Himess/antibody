@@ -369,9 +369,9 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
     let proposed = cmd::round_propose(acme, pid, &manifest, &rel, true)?;
     let check = proposed["run_id"].as_u64().unwrap_or_default();
     wait_t1(acme, check)?;
-    let proposal = acme.program(pid)?["proposal"].clone();
-    if proposal["accepted_at"].is_null() {
-        return Err(eyre!("round {round}: the TEE did not accept the proposal (run {check})"));
+    let rc = cmd::run(acme, check)?["outcome"]["Answered"]["facts"]["extra"]["RoundCheck"].clone();
+    if rc["ok"] != json!(true) {
+        return Err(eyre!("round {round}: the TEE did not accept the proposal (run {check}): {rc}"));
     }
     let k = cmd::keeper(keeper, pid)?;
     let runs: Vec<u64> = k["steps"].as_array().into_iter().flatten().filter_map(|s| s["run_id"].as_u64()).collect();
@@ -386,9 +386,11 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
     // The round's minimum duration and re-run window are block time.
     near.call("sandbox_fast_forward", json!({"delta_height": 200}))?;
     let opened = cmd::round_open(keeper, pid)?["round_opened"].clone();
+    // Release permits beyond one call's gas are queued at near-guardian; the keeper asks for them.
+    cmd::keeper(keeper, pid)?;
     let summary = format!("{} re-runs ({} fixed), release gate {}, {} keys released, {} carried",
         reruns.len(), reruns.iter().filter(|r| r["kind"] == "NoViolation").count(), opened["release_gate"], opened["released"], opened["carried"]);
-    Ok(json!({"round": round, "manifest_sha256": proposed["manifest_sha256"], "check_round_run": check, "canaries_ok": proposal["canaries_ok"],
+    Ok(json!({"round": round, "manifest_sha256": proposed["manifest_sha256"], "check_round_run": check, "canaries_ok": rc["canaries_ok"],
               "releases": rel, "reruns": reruns, "opened": opened, "summary": summary, "seconds": t.elapsed().as_secs_f64()}))
 }
 

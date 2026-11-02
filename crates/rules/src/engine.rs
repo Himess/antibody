@@ -1491,7 +1491,6 @@ impl<S: Store> Engine<S> {
             new_slots,
             check_run: 0,
             proposed_at: ctx.now,
-            accepted_at: None,
             canaries_ok: false,
         });
         let run = self.new_run(&p, None, Mode::CheckRound, round, &spec, ctx, &ctx.caller);
