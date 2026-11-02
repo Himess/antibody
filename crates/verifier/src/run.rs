@@ -858,14 +858,19 @@ pub fn check_program_at_anchor(
     w: &ProgramWitness,
     reserved: Option<Address>,
 ) -> Result<bool, (crate::facts::Kind, String)> {
+    anchor_checks_on_witness(env, w, reserved).map_err(|e| crate::program::classify(&e))
+}
+
+/// [`check_program_at_anchor`] with its error unclassified: a missing witness entry stays
+/// `VerifyError::Incomplete`, so the base-witness builder can add it and try again.
+pub fn anchor_checks_on_witness(env: &Envelope, w: &ProgramWitness, reserved: Option<Address>) -> Result<bool, crate::program::ProgramError> {
     use crate::{
         db::OverrideDb,
         facts::Kind,
         manifest::Manifest,
         program::{anchor_checks, canaries_pass, ProgramError},
     };
-    let mis = |r: String| (Kind::ProgramMisconfigured, r);
-    let from = |e: ProgramError| crate::program::classify(&e);
+    let mis = |reason: String| ProgramError::Verdict { kind: Kind::ProgramMisconfigured, reason };
     let manifest = Manifest::parse(&w.manifest_json).map_err(mis)?;
     if env.chain_id != manifest.anchor.chain_id || env.claimed_block_hash != manifest.anchor.block_hash {
         return Err(mis("the witness is not anchored at the program's committed block".into()));
@@ -897,8 +902,8 @@ pub fn check_program_at_anchor(
     let inv_code = Bytecode::new_raw(w.invariants_code.clone());
     manifest.check_overrides().map_err(mis)?;
     let odb = OverrideDb::new(&db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
-    let anchor = anchor_checks(&header, &manifest, &inv_code, spec, &odb, reserved).map_err(from)?;
-    canaries_pass(&manifest, &anchor, &odb).map_err(from)
+    let anchor = anchor_checks(&header, &manifest, &inv_code, spec, &odb, reserved)?;
+    canaries_pass(&manifest, &anchor, &odb)
 }
 
 /// Program-mode entry point: always returns a receipt with a typed verdict.

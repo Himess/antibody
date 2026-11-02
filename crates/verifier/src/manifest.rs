@@ -19,8 +19,11 @@ pub struct Manifest {
     pub invariants: Invariants,
     pub impact: ImpactConfig,
     pub capabilities: Capabilities,
-    pub payout: Payout,
-    pub rules: Rules,
+    /// v1 only: v2 carries every settlement term in `settlement`, so the terms have one source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payout: Option<Payout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<Rules>,
     /// Rounds (docs/rounds.md): 0 is the program as opened. A round-N manifest is the program's
     /// manifest with the project's fix committed as code overrides at the same anchor. Both fields
     /// are omitted in round 0, so round-0 manifests keep their exact bytes and hash.
@@ -40,6 +43,10 @@ pub struct Manifest {
     /// Calls that must keep succeeding after a fix (§8.1).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub canaries: Vec<Canary>,
+    /// v2: the settlement rules near-antibody enforces (§3.2: payouts, windows, budgets, policies).
+    /// The verifier carries it unchanged; the manifest hash covers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -208,8 +215,15 @@ pub struct Rules {
 impl Manifest {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let m: Manifest = serde_json::from_slice(bytes).map_err(|e| format!("manifest: {e}"))?;
-        if m.schema != MANIFEST_SCHEMA && m.schema != MANIFEST_SCHEMA_V2 {
-            return Err(format!("manifest: unsupported schema {}", m.schema));
+        match m.schema.as_str() {
+            MANIFEST_SCHEMA if m.payout.is_none() || m.rules.is_none() || m.settlement.is_some() => {
+                return Err("manifest: a v1 manifest has payout and rules, and no settlement".into());
+            }
+            MANIFEST_SCHEMA_V2 if m.settlement.is_none() || m.payout.is_some() || m.rules.is_some() => {
+                return Err("manifest: a v2 manifest has a settlement section, and no payout or rules".into());
+            }
+            MANIFEST_SCHEMA | MANIFEST_SCHEMA_V2 => {}
+            other => return Err(format!("manifest: unsupported schema {other}")),
         }
         m.check_overrides()?;
         m.check_v2()?;
