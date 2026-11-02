@@ -661,6 +661,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "antibody-rules"
+version = "0.5.0"
+dependencies = [
+ "borsh",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "antibody-runner"
 version = "0.1.0"
 dependencies = [
