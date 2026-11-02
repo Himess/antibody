@@ -332,8 +332,32 @@ pub fn top_up(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
 
 // ------------------------------------------------------------------ witnesses
 
-/// Builds a program witness for `bundle_file` from the Ethereum RPC (state at the anchor).
-pub fn build_witness(ctx: &Ctx, manifest_json: &[u8], bundle_file: &Path, salt: Option<B256>, program_key: &str) -> Result<(Vec<u8>, Value, ProgramReceipt, B256)> {
+/// The base witness the current round's commits run on (near-antibody's `base_for`: the latest opened
+/// round's that brought one, else the activation's), fetched and checked against its pinned hash.
+pub fn pinned_base(ctx: &Ctx, program: u32) -> Result<Vec<u8>> {
+    let round = ctx.program(program)?["round"].as_u64().unwrap_or(0) as usize;
+    let m = meta(ctx, program)?;
+    let rounds = m["round_bases"].as_array().cloned().unwrap_or_default();
+    let loc = rounds
+        .iter()
+        .take(round)
+        .rev()
+        .find(|b| !b.is_null())
+        .or(Some(&m["base"]).filter(|b| !b.is_null()))
+        .cloned()
+        .ok_or_else(|| eyre!("program {program} has no pinned base witness"))?;
+    let bytes = blob::fetch(&ctx.near, loc["location"].as_str().unwrap_or_default())?;
+    let (got, want) = (hex::encode(sha256(&bytes)), loc["sha256"].as_str().unwrap_or_default().trim_start_matches("0x").to_lowercase());
+    if got != want {
+        return Err(eyre!("the base witness at {} hashes to {got}, not the pinned {want}", loc["location"]));
+    }
+    Ok(bytes)
+}
+
+/// Builds the witness for `bundle_file`. With a program: first from its pinned base witness alone, which
+/// needs no RPC (the proof must read only state the base proves); otherwise, or when it reads more,
+/// from the Ethereum RPC at the anchor. The meta says which (`source`).
+pub fn build_witness(ctx: &Ctx, program: Option<u32>, manifest_json: &[u8], bundle_file: &Path, salt: Option<B256>, program_key: &str) -> Result<(Vec<u8>, Value, ProgramReceipt, B256)> {
     let m = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
     let bf: BundleFile = serde_json::from_str(&std::fs::read_to_string(bundle_file)?)?;
     let salt = match salt {
@@ -341,10 +365,27 @@ pub fn build_witness(ctx: &Ctx, manifest_json: &[u8], bundle_file: &Path, salt: 
         None => B256::from(blob::random32()?),
     };
     let bundle = parse_bundle(&bf, salt)?;
-    let pool = ctx.eth_pool()?;
+    let mut skipped = None;
+    if let Some(p) = program {
+        match pinned_base(ctx, p).and_then(|b| antibody_witness::program::build_submission_from_base(&b, manifest_json, bundle.clone(), program_key)) {
+            Ok((bytes, meta, receipt)) => {
+                let mut v = serde_json::to_value(&meta)?;
+                v["source"] = json!("base");
+                return Ok((bytes, v, receipt, salt));
+            }
+            Err(e) => skipped = Some(e.to_string()),
+        }
+    }
+    let pool = ctx.eth_pool().map_err(|e| match &skipped {
+        Some(s) => eyre!("{e} (the pinned base witness was not enough: {s})"),
+        None => e,
+    })?;
     let (bytes, meta, receipt) =
         antibody_witness::program::build_program(&pool, manifest_json, &m.invariants.runtime_code, bundle, 1, program_key)?;
-    Ok((bytes, serde_json::to_value(&meta)?, receipt, salt))
+    let mut v = serde_json::to_value(&meta)?;
+    v["source"] = json!("rpc");
+    v["base_not_enough"] = json!(skipped);
+    Ok((bytes, v, receipt, salt))
 }
 
 fn verdict_view(r: &ProgramReceipt) -> Value {
@@ -366,8 +407,8 @@ pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &
         Some(p) => ctx.program(p)?["key"].as_str().unwrap_or("local").to_string(),
         None => "local".to_string(),
     };
-    let (bytes, meta, receipt, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
-    Ok(json!({"verdict": verdict_view(&receipt), "witness_bytes": bytes.len(), "fixpoint_passes": meta["fixpoint_passes"],
+    let (bytes, meta, receipt, salt) = build_witness(ctx, program, &manifest_json, bundle, salt, &key)?;
+    Ok(json!({"verdict": verdict_view(&receipt), "witness_bytes": bytes.len(), "witness_source": meta["source"], "fixpoint_passes": meta["fixpoint_passes"],
               "salt_note": "a fresh random salt is drawn per submission unless --salt is given", "salt": format!("{salt:#x}"),
               "receipt": receipt}))
 }
@@ -432,7 +473,7 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
     let key = p["key"].as_str().unwrap_or_default().to_string();
     let pk = sealing_pk(&p)?;
     let manifest_json = program_manifest(ctx, program)?;
-    let (envelope, _meta, local, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
+    let (envelope, wmeta, local, salt) = build_witness(ctx, Some(program), &manifest_json, bundle, salt, &key)?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
         None => Vec::new(),
@@ -468,8 +509,8 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
                         "commitment": cm, "sha256": s.sha256, "blob": blob_path, "content_key": hex::encode(s.content_key),
                         "salt": format!("{salt:#x}"), "local_verdict": verdict_view(&local), "commit_tx": summary["tx"]});
     write_json(&ctx.record_path(program, commit_id), &record)?;
-    Ok(json!({"commit_id": commit_id, "commitment": cm, "bond_from_credit": from_credit,
-              "local_verdict": verdict_view(&local), "record": ctx.record_path(program, commit_id), "tx": summary,
+    Ok(json!({"commit_id": commit_id, "commitment": cm, "bond_from_credit": from_credit, "witness_source": wmeta["source"],
+              "witness_bytes": wmeta["stats"]["witness_bytes"], "local_verdict": verdict_view(&local), "record": ctx.record_path(program, commit_id), "tx": summary,
               "note": "the content key and salt are in the local record (.antibody/): keep it private"}))
 }
 
@@ -546,7 +587,7 @@ pub fn submit_known(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, 
     let key = p["key"].as_str().unwrap_or_default().to_string();
     let pk = sealing_pk(&p)?;
     let manifest_json = program_manifest_at(ctx, program, 0)?;
-    let (envelope, _, local, salt) = build_witness(ctx, &manifest_json, bundle, salt, &key)?;
+    let (envelope, _, local, salt) = build_witness(ctx, Some(program), &manifest_json, bundle, salt, &key)?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
         None => Vec::new(),
