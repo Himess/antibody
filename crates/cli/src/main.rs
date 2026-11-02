@@ -370,6 +370,19 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentKeyCmd,
     },
+    /// Scaffold a program workspace: annotated antibody.toml, project key, next steps
+    Init {
+        #[arg(long)]
+        out: PathBuf,
+        /// Your NEAR account (the project)
+        #[arg(long)]
+        project: String,
+        #[arg(long, default_value_t = 11155111)]
+        chain_id: u64,
+        /// Program deadline, in days from now
+        #[arg(long, default_value_t = 14)]
+        days: u64,
+    },
     /// Read-only: compare a Sepolia block hash with NEAR's Ethereum light client (the check
     /// create_program runs); --forge also shows a forged header being rejected
     AnchorCheck {
@@ -505,6 +518,7 @@ fn run(cli: Cli) -> Result<Value> {
             }
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
+        Cmd::Init { ref out, ref project, chain_id, days } => cmd::init(out, project, chain_id, days),
         Cmd::Invariants { cmd: InvariantsCmd::Draft { ref sources, ref out, ai, ref model, ref effort, max_tokens } } => {
             antibody_cli::draft::run(sources, out, ai, model, effort, max_tokens)
         }

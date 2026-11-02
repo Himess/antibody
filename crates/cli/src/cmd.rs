@@ -389,6 +389,120 @@ pub fn fund(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
     ensure_ok(ctx, &out, "fund_program")
 }
 
+// ------------------------------------------------------------------------- init
+
+const INIT_TOML: &str = r#"# Antibody program manifest: your bounty terms as code. Its sha256 is what you commit on NEAR.
+# Fill every <...>, then:  antibody manifest antibody.toml --out manifest.json
+# A complete example: fixtures/acme-local/antibody.toml in the Antibody repository.
+schema = "antibody.manifest.v1"
+
+[program]
+name = "<program name>"
+project = "<PROJECT>"
+description = "<one line: what is in scope>"
+
+[anchor]
+# A finalized block of your staging deployment. Create the program within about 7 days of it so that
+# NEAR's Ethereum light client can confirm its hash (otherwise it is labelled project-attested).
+# `antibody anchor-check --block <n>` shows what the light client has for it.
+chain_id = <CHAIN_ID>
+block_number = 0
+block_hash = "0x<block hash>"
+evm_spec = "osaka"
+trust = "light-client"
+
+# One entry per contract in scope; code_hash = keccak256 of its runtime code at the anchor.
+[[targets]]
+name = "<Contract>"
+address = "0x<address>"
+code_hash = "0x<code hash>"
+
+[invariants]
+# Reserved address where the verifier injects your invariants; keep it as is.
+address = "0xe88d533fa3f57c4d6fa6489a13e3430d30003596"
+# Runtime code of your IAntibodyInvariants contract (with your addresses as immutables), and its hash.
+# `antibody invariants draft --source <your contracts> --out draft/` writes a first draft.
+runtime_code = "0x<runtime code>"
+runtime_code_hash = "0x<keccak256 of runtime_code>"
+gas_limit = 5000000
+
+[[invariants.slots]]
+bit = 0
+name = "<invariant name>"
+severity = "critical"
+
+[impact]
+# Accounts whose losses count as protocol loss, and committed reference prices (USD).
+protocol_accounts = ["0x<address>"]
+native_usd = "2000"
+
+[[impact.tokens]]
+symbol = "<SYM>"
+address = "0x<token address>"
+decimals = 18
+usd = "1"
+
+[capabilities]
+# What a PoC may do: fresh senders with this much ETH each, this many transactions and this much gas.
+max_senders = 2
+max_endowment_wei = "100000000000000000000"
+max_txs = 4
+max_gas_per_tx = 16777216
+max_total_gas = 30000000
+max_blocks = 1
+max_timestamp_delta = 0
+max_entry_calls = 256
+
+[payout]
+# Raw units of the payout token (tUSD has 6 decimals: 10000000000 = 10,000 tUSD).
+token = "tusd.antibody-hq.testnet"
+decimals = 6
+critical = "10000000000"
+high = "3000000000"
+medium = "1000000000"
+low = "0"
+impact_bps = 0
+impact_cap = "0"
+
+[rules]
+bond = "25000000"
+reveal_window_blocks = 300
+disclosure_after_secs = 86400
+deadline_unix = <DEADLINE>
+instant_payout_cap = "5000000000"
+challenge_delay_secs = 259200
+"#;
+
+/// Scaffolds a program workspace: an annotated antibody.toml, the project's X25519 key (findings are
+/// re-encrypted to it), and the next steps.
+pub fn init(out: &Path, project: &str, chain_id: u64, days: u64) -> Result<Value> {
+    std::fs::create_dir_all(out)?;
+    let toml_path = out.join("antibody.toml");
+    if toml_path.exists() {
+        return Err(eyre!("{} exists; not overwriting", toml_path.display()));
+    }
+    let deadline = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() + days * 86_400;
+    let toml = INIT_TOML
+        .replace("<PROJECT>", project)
+        .replace("<CHAIN_ID>", &chain_id.to_string())
+        .replace("<DEADLINE>", &deadline.to_string());
+    std::fs::write(&toml_path, toml)?;
+    let key = out.join("project.x25519.json");
+    let k = if key.exists() { json!({"kept": key}) } else { keygen_x25519(&key)? };
+    let steps = format!(
+        "# Next steps\n\n\
+         1. Write or draft your invariants: `antibody invariants draft --source <contracts> --out draft/`.\n\
+         2. Deploy to staging, pick a finalized anchor block (`antibody anchor-check --block <n>`), and fill `antibody.toml`.\n\
+         3. `antibody manifest antibody.toml --out manifest.json`, then `antibody check --manifest manifest.json --bundle draft/noop.bundle.json` must say NoViolation.\n\
+         4. `antibody --account {project} program create --manifest manifest.json --escrow <tUSD> --project-key project.x25519.json`.\n\
+         5. Declare known issues (`program known`), then `program open`.\n\n\
+         Keep `project.x25519.json` secret: it decrypts every valid finding.\n"
+    );
+    std::fs::write(out.join("NEXT_STEPS.md"), steps)?;
+    Ok(json!({"out": out, "manifest_template": toml_path, "project_key": k, "deadline_unix": deadline,
+              "next": out.join("NEXT_STEPS.md")}))
+}
+
 // ---------------------------------------------------------------------- anchors
 
 /// Read-only: compares a Sepolia block's header hash with NEAR's Ethereum light client, the check
