@@ -214,7 +214,8 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
 }
 
 /// Agent A submits through the MCP server, the way an AI agent would.
-fn mcp_submit(antibody_bin: &Path, deployments: &Path, account: &str, key: &Path, eth_rpc: &str, state: &Path, bundle: &Path) -> Result<Value> {
+#[allow(clippy::too_many_arguments)]
+fn mcp_submit(antibody_bin: &Path, deployments: &Path, account: &str, key: &Path, eth_rpc: &str, state: &Path, program: u32, bundle: &Path) -> Result<Value> {
     let mut child = Command::new(antibody_bin)
         .args(["--network", "sandbox", "--rpc", "http://127.0.0.1:3030", "--deployments"])
         .arg(deployments)
@@ -239,7 +240,7 @@ fn mcp_submit(antibody_bin: &Path, deployments: &Path, account: &str, key: &Path
     let tools = rpc(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))?;
     let n = tools["result"]["tools"].as_array().map(|t| t.len()).unwrap_or(0);
     let r = rpc(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "submit",
-        "arguments": {"program_id": 0, "bundle_path": bundle, "wait": true}}}))?;
+        "arguments": {"program_id": program, "bundle_path": bundle, "wait": true}}}))?;
     drop(stdin);
     let _ = child.wait();
     if r["result"]["isError"] == json!(true) {
@@ -384,16 +385,17 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::keygen_x25519(&project_key)?;
     let acme = ctx_of("acme");
     let created = cmd::program_create(&acme, &manifest_path, "25000", &project_key, Some(acct("guardian")), None)?;
-    println!("program created: {}", created["tx"]["tx"]);
+    let pid = created["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no program_created event: {created}"))? as u32;
+    println!("program {pid} created: {}", created["tx"]["tx"]);
     results["program"] = json!({"manifest_sha256": hex::encode(sha256(&manifest.canonical())), "anchor_block": anchor_n,
-                                "anchor_hash": format!("{anchor_h:#x}"), "create_tx": created["tx"]["tx"]});
+                                "anchor_hash": format!("{anchor_h:#x}"), "create_tx": created["tx"]["tx"], "program_id": pid});
 
     let fx = a.root.join("fixtures/acme-local/submissions");
     step("t0: the project declares its known issue (verified by the same TEE path)");
     let t = Instant::now();
-    let known = cmd::submit_known(&acme, 0, &fx.join("KNOWN.bundle.json"), None, None, true)?;
+    let known = cmd::submit_known(&acme, pid, &fx.join("KNOWN.bundle.json"), None, None, true)?;
     let mut rows = vec![("KNOWN".to_string(), known["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64())];
-    cmd::program_open(&acme, 0)?;
+    cmd::program_open(&acme, pid)?;
 
     step("Agents: deposit bonds; agent A gets a function-call key and submits through MCP");
     for x in ["a", "b", "c", "d", "e", "f"] {
@@ -404,7 +406,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let state_a = a.work.join("state/agent-a-mcp");
     std::fs::create_dir_all(&state_a)?;
     let t = Instant::now();
-    let mcp = mcp_submit(&a.antibody_bin, &dep_file, &acct("agent-a"), &agent_key, "http://127.0.0.1:8545", &state_a, &fx.join("A.bundle.json"))?;
+    let mcp = mcp_submit(&a.antibody_bin, &dep_file, &acct("agent-a"), &agent_key, "http://127.0.0.1:8545", &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
     rows.push(("A (MCP)".into(), a_commit, t.elapsed().as_secs_f64()));
     results["mcp"] = json!({"tools": mcp["mcp_tools"], "commit_id": a_commit});
@@ -422,7 +424,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     for x in ["b", "c", "d", "e", "f"] {
         let t = Instant::now();
         let report = if x == "c" { Some(fx.join("C.report.md")) } else { None };
-        let r = cmd::submit(&ctx_of(&format!("agent-{x}")), 0, &fx.join(format!("{}.bundle.json", x.to_uppercase())), None, report.as_deref(), true)?;
+        let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &fx.join(format!("{}.bundle.json", x.to_uppercase())), None, report.as_deref(), true)?;
         rows.push((x.to_uppercase(), r["commit"]["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64()));
     }
 
@@ -447,10 +449,10 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     step("Disclosure: after deadline + delay, one TEE run publishes every content key and k_program");
     // Disclosure opens at deadline + disclosure_after in block time; retry until the contract agrees.
     wait_for("the disclosure time", Duration::from_secs(420), || {
-        cmd::program_simple(&root_ctx, "disclose", json!({"program_id": 0}), 150).is_ok()
+        cmd::program_simple(&root_ctx, "disclose", json!({"program_id": pid}), 150).is_ok()
     })?;
     wait_for("the disclosure result", Duration::from_secs(60), || {
-        root_ctx.program(0).map(|p| !p["disclosure"].is_null()).unwrap_or(false)
+        root_ctx.program(pid).map(|p| !p["disclosure"].is_null()).unwrap_or(false)
     })?;
     let d_commit = rows.iter().find(|r| r.0 == "D").map(|r| r.1).unwrap();
     let verified = cmd::verify(&root_ctx, d_commit)?;

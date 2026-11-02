@@ -209,10 +209,12 @@ impl Near {
         Err(last)
     }
 
+    /// Views read optimistic state, so a command sees the writes of the transaction it just sent
+    /// (`send` returns at EXECUTED_OPTIMISTIC; "final" lags by a few blocks).
     pub fn view_raw(&self, contract: &str, method: &str, args: &[u8]) -> Result<Vec<u8>> {
         let r = self.call(
             "query",
-            json!({"request_type": "call_function", "finality": "final", "account_id": contract, "method_name": method,
+            json!({"request_type": "call_function", "finality": "optimistic", "account_id": contract, "method_name": method,
                    "args_base64": base64::engine::general_purpose::STANDARD.encode(args)}),
         )?;
         if let Some(e) = r.get("error") {
@@ -233,7 +235,7 @@ impl Near {
     }
 
     pub fn account(&self, account_id: &str) -> Result<Option<Value>> {
-        match self.call("query", json!({"request_type": "view_account", "finality": "final", "account_id": account_id})) {
+        match self.call("query", json!({"request_type": "view_account", "finality": "optimistic", "account_id": account_id})) {
             Ok(v) => Ok(Some(v)),
             Err(e) if e.to_string().contains("UNKNOWN_ACCOUNT") || e.to_string().contains("does not exist") => Ok(None),
             Err(e) => Err(e),
