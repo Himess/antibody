@@ -28,10 +28,13 @@ use antibody_cli::{
     ctx::{Ctx, Deployments},
     near::{Near, Signer},
 };
-use antibody_rules::settlement::{Fees, Instant as InstantRule, Known, Pause, Payouts, SWindows, Settlement};
+use antibody_rules::settlement::{Fees, Gap, Instant as InstantRule, Known, Pause, Payouts, SWindows, Settlement};
 use antibody_verifier::{
     facts::sha256,
-    manifest::{Anchor, Capabilities, ImpactConfig, Invariants, Manifest, PricedToken, ProgramInfo, Severity, Slot, Target, MANIFEST_SCHEMA_V2},
+    manifest::{
+        Anchor, Canary, Capabilities, ImpactConfig, Invariants, Manifest, PricedToken, ProgramInfo, ProtectedAccount, Severity, Slot, Target,
+        MANIFEST_SCHEMA_V2,
+    },
 };
 use eyre::{eyre, Result};
 use serde_json::{json, Value};
@@ -203,7 +206,7 @@ fn demo_settlement(deadline: u64) -> Settlement {
         },
         slot_budgets: vec![],
         unevaluable: json!("refund"),
-        gap: None,
+        gap: Some(Gap { threshold_usd_micro: "100000000".into(), claim_amount: t(1_000) }),
         known: Known { max_count: 4, max_share_bps: 5_000 },
         pause: Pause { slots: vec![0], min_impact_usd_micro: "0".into() },
         terms_sha256: hex::encode(sha256(TERMS.as_bytes())),
@@ -263,8 +266,12 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
         round: 0,
         overrides: Vec::new(),
         groups: vec![],
-        protected_accounts: vec![],
-        canaries: vec![],
+        protected_accounts: vec![ProtectedAccount { address: a("saver")?, kind: "user".into() }],
+        // Liveness: a "fix" that reverts everything breaks no invariant, so these calls must still succeed.
+        canaries: vec![
+            Canary { to: a("AcmeLend")?, data: keccak256(b"collateralPrice()")[..4].to_vec().into() },
+            Canary { to: a("AcmeVault")?, data: keccak256(b"totalAssets()")[..4].to_vec().into() },
+        ],
         settlement: Some(serde_json::to_value(demo_settlement(deadline))?),
     })
 }
@@ -318,8 +325,8 @@ pub(crate) fn mcp_submit(
     if r["result"]["isError"] == json!(true) {
         return Err(eyre!("MCP submit failed: {}", r["result"]["content"][0]["text"]));
     }
-    let text = r["result"]["content"][0]["text"].as_str().unwrap_or("{}");
-    Ok(json!({"mcp_tools": n, "result": serde_json::from_str::<Value>(text)?}))
+    let data = antibody_cli::mcp::result_data(&r["result"]).ok_or_else(|| eyre!("MCP submit: no data in {}", r["result"]))?;
+    Ok(json!({"mcp_tools": n, "result": data}))
 }
 
 /// Whether a verdict is above the program's instant cap: it is final only after an agreeing second
@@ -348,12 +355,24 @@ fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
     Ok(last)
 }
 
+/// G's bundle (the gap lane): PocG_ArbitraryFrom deposits the saver's approved acUSD for itself.
+fn gap_bundle(a: &DemoArgs, dep: &Value) -> Result<PathBuf> {
+    let art: Value = serde_json::from_slice(&std::fs::read(a.root.join("contracts/evm/out/AcmePocs.sol/PocG_ArbitraryFrom.json"))?)?;
+    let word = |k: &str| format!("{:0>64}", dep[k].as_str().unwrap_or_default().trim_start_matches("0x").to_lowercase());
+    let data = format!("{}{}{}{}", art["bytecode"]["object"].as_str().unwrap_or_default(), word("AcmeVault"), word("acUSD"), word("saver"));
+    let bundle = json!({"senders": 1, "endowment_wei": (10u128.pow(18)).to_string(), "protected": [],
+                        "calls": [{"sender": 0, "to": null, "value": "0", "data": data, "gas_limit": 3_000_000}]});
+    let path = a.work.join("G.bundle.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&bundle)?)?;
+    Ok(path)
+}
+
 /// One round of a fix (docs/rounds.md). The round manifest is the program's own with code overrides read
 /// from the deployed fixes. The project proposes it with its releases; the TEE checks both (check_round).
 /// The keeper re-runs every eligible commit at the fix, then opens the round once its windows pass.
 #[allow(clippy::too_many_arguments)]
 fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, round: u32, base: &Path, dep: &Value, evm: &Evm,
-             overrides: &[(&str, &str)], releases: &[(&str, &str)]) -> Result<Value> {
+             overrides: &[(&str, &str)], invariants: Option<(&str, &[&str])>, releases: &[(&str, &str)]) -> Result<Value> {
     let t = Instant::now();
     let dir = a.work.join(format!("round{round}"));
     std::fs::create_dir_all(&dir)?;
@@ -364,7 +383,12 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
         flags.push(format!("{}={}", dep[*target].as_str().unwrap_or_default(), file.display()));
     }
     let manifest = dir.join("manifest.json");
-    cmd::manifest_round(base, round, &flags, &manifest)?;
+    let added: Vec<String> = invariants.map(|(_, s)| s.iter().map(|x| x.to_string()).collect()).unwrap_or_default();
+    let inv_file = dir.join("invariants.hex");
+    if let Some((code, _)) = invariants {
+        std::fs::write(&inv_file, code)?;
+    }
+    cmd::manifest_round(base, round, &flags, invariants.map(|_| (inv_file.as_path(), added.as_slice())), &manifest)?;
     let rel: Vec<Value> = releases
         .iter()
         .map(|(proxy, fix)| json!({"proxy": dep[*proxy], "implementation": dep[*fix], "code_hash": dep[format!("codehash{fix}")]}))
@@ -431,7 +455,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let keys = a.work.join("keys");
     std::fs::create_dir_all(&keys)?;
     std::fs::write(keys.join("test.near.json"), serde_json::to_vec(&root.to_file_json())?)?;
-    let names = ["tusd", "bounty", "guardian", "outlayer", "dcap", "mpc", "lc", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f"];
+    let names = ["tusd", "bounty", "guardian", "outlayer", "dcap", "mpc", "lc", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f", "agent-g"];
     let acct = |n: &str| format!("{n}.test.near");
     let dep = Deployments {
         network: "sandbox".into(),
@@ -604,7 +628,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::program_open(&acme, pid)?;
 
     step("Agents: NEAR credit and tUSD credit; agent A gets a function-call key and submits through MCP");
-    for x in ["a", "b", "c", "d", "e", "f"] {
+    for x in ["a", "b", "c", "d", "e", "f", "g"] {
         let c = ctx_of(&format!("agent-{x}"));
         cmd::storage_deposit(&c, "1")?;
         cmd::deposit(&c, "100")?;
@@ -647,11 +671,13 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                                    "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                    "paused_both": paused_both, "keeper": keeper_a, "permits": relayed});
 
-    step("Agents B–F (library/CLI path); D commits after A");
-    for x in ["b", "c", "d", "e", "f"] {
+    step("Agents B–G (library/CLI path); D commits after A; G harms the protected saver and breaks no invariant (the gap lane)");
+    let g_bundle = gap_bundle(&a, &dep_a)?;
+    for x in ["b", "c", "d", "e", "f", "g"] {
         let t = Instant::now();
         let report = if x == "c" { Some(fx.join("C.report.md")) } else { None };
-        let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &fx.join(format!("{}.bundle.json", x.to_uppercase())), None, report.as_deref(), true)?;
+        let bundle = if x == "g" { g_bundle.clone() } else { fx.join(format!("{}.bundle.json", x.to_uppercase())) };
+        let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &bundle, None, report.as_deref(), true)?;
         rows.push((x.to_uppercase(), r["commit"]["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64()));
     }
     for (_, id, _) in &rows {
@@ -688,14 +714,15 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     results["keeper"] = last_keeper;
     results["withdrawal"] = json!({"account": acct("agent-b"), "wallet_before": cmd::fmt_tusd(before), "wallet_after": cmd::fmt_tusd(after)});
 
-    step("Round 1, a partial fix (AcmeLendFixed, bug #1): the keeper re-runs every paid PoC at it; B and F still break, so no release");
+    step("Round 1, a partial fix (AcmeLendFixed, bug #1) and a new invariant (protected_balances): the keeper re-runs every paid PoC; B and F still break, G's claim is promoted");
     let keeper = ctx_of("keeper");
+    let v2 = dep_a["invariantsV2RuntimeCode"].as_str().unwrap_or_default().to_string();
     let r1 = run_round(&a, &acme, &keeper, &near, pid, 1, &manifest_path, &dep_a, &evm_a, &[("AcmeLendImpl", "AcmeLendFixed")],
-                       &[("AcmeLend", "AcmeLendFixed")])?;
+                       Some((v2.as_str(), &["3:protected_balances:medium"])), &[("AcmeLend", "AcmeLendFixed")])?;
     println!("round 1: {}", r1["summary"]);
     step("Round 2, the final fix (AcmeLendFinal, AcmeVaultFixed): every paid PoC is fixed, so the release gate holds");
     let r2 = run_round(&a, &acme, &keeper, &near, pid, 2, &manifest_path, &dep_a, &evm_a,
-                       &[("AcmeLendImpl", "AcmeLendFinal"), ("AcmeVaultImpl", "AcmeVaultFixed")],
+                       &[("AcmeLendImpl", "AcmeLendFinal"), ("AcmeVaultImpl", "AcmeVaultFixed")], None,
                        &[("AcmeLend", "AcmeLendFinal"), ("AcmeVault", "AcmeVaultFixed")])?;
     println!("round 2: {}", r2["summary"]);
     step("Release: the guardian signs a permit per proxy and chain; the relayer upgrades both proxies on both chains");
@@ -735,6 +762,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         ("D", ("Violation", "Done:DuplicateConfirmed", 0)),
         ("E", ("Violation", "Done:Known", 0)),
         ("F", ("Violation", "Done:Paid", 10_000 * ONE_TUSD)),
+        ("G", ("NoViolation", "Done:Paid", 1_000 * ONE_TUSD)),
     ]);
     let mut table = Vec::new();
     let one = &results["one_moment"];
