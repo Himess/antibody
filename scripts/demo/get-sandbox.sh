@@ -12,7 +12,7 @@ esac
 mkdir -p "$ROOT/.tools"
 if [ -x "$ROOT/.tools/near-sandbox" ]; then echo "$ROOT/.tools/near-sandbox"; exit 0; fi
 TMP="$(mktemp -d)"
-curl -sSL "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/$PLAT/$VERSION/near-sandbox.tar.gz" -o "$TMP/ns.tar.gz"
+curl -sSL --retry 6 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 600   "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/$PLAT/$VERSION/near-sandbox.tar.gz" -o "$TMP/ns.tar.gz"
 echo "$SHA  $TMP/ns.tar.gz" | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -) >&2
 tar xzf "$TMP/ns.tar.gz" -C "$TMP"
 install -m 0755 "$TMP/$PLAT/near-sandbox" "$ROOT/.tools/near-sandbox"

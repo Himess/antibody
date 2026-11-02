@@ -118,6 +118,11 @@ jobs:
             contracts/near-guardian
       - name: build contracts, verifier (native + wasm), CLI and services
         run: make build
+      - name: near-sandbox binary (cached; sha256-pinned in scripts/demo/get-sandbox.sh)
+        uses: actions/cache@v4
+        with:
+          path: .tools/near-sandbox
+          key: near-sandbox-2.14.0-${{ runner.os }}-${{ hashFiles('scripts/demo/get-sandbox.sh') }}
       - name: sandbox demo
         run: make e2e
       - name: results
