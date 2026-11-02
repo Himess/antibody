@@ -542,7 +542,7 @@ impl Contract {
         releases.iter().for_each(valid_release);
         // The TEE checks each release against the code the round's re-runs ran (spec §9).
         let checked: Vec<Value> =
-            releases.iter().map(|r| json!({"proxy": r.proxy.to_lowercase(), "code_hash": r.code_hash.to_lowercase()})).collect();
+            releases.iter().map(|r| json!({"proxy": r.proxy.to_ascii_lowercase(), "code_hash": r.code_hash.to_ascii_lowercase()})).collect();
         let p = self.load_program(program_id);
         let mut meta = self.meta.get(&program_id).unwrap().clone();
         meta.proposal_manifest = Some(manifest.clone());
