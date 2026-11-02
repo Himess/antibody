@@ -80,8 +80,14 @@ jobs:
         with:
           workspaces: |
             contracts/near-guardian
+            contracts/near-antibody
       - name: near-guardian
         working-directory: contracts/near-guardian
         run: |
-          cargo test
+          cargo test --lib
           cargo build --release --target wasm32-unknown-unknown
+      - name: near-antibody + tUSD (rules driven by the recorded fixture)
+        working-directory: contracts/near-antibody
+        run: |
+          cargo test --lib -p near-antibody -p antibody-tusd
+          cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd

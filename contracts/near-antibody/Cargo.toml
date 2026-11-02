@@ -1,0 +1,32 @@
+[package]
+name = "near-antibody"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Antibody settlement contract: programs, escrow, commit-reveal, verified facts -> payouts"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { version = "=5.9.0", features = ["unstable"] }
+
+[dev-dependencies]
+near-sdk = { version = "=5.9.0", features = ["unstable", "unit-testing"] }
+
+[workspace]
+resolver = "3"
+members = [".", "tusd"]
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
+
+[patch.crates-io]
+# Test-only: near-sdk's `unit-testing` feature pulls near-vm-runner, whose filesystem cache is Unix-only.
+near-vm-runner = { path = "../../third_party/patches/near-vm-runner-0.29.2" }
