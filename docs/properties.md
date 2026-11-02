@@ -79,6 +79,19 @@ own proposal only. Every paid PoC and every holder of a key, from any round, is 
 (immune memory), so a fix that brings an old bug back is not released either. The model now opens two
 rounds.
 
+## What building the rounds end to end found
+
+Running the gap lane through two rounds on the sandbox (`make demo`) found four more, all fixed with tests:
+- **An unjudged re-run counted as fixed.** Every re-run that was not a Violation counted as fixed, so an
+  `InvalidPoC` re-run released its key and opened the release gate. Only a T1 Violation or NoViolation is
+  evidence now (`an_unjudged_rerun_is_no_evidence`).
+- **Re-runs used a witness's own invariants code**, so a round that brings new invariants judged nothing.
+  Runs now use the manifest's code (`a_rerun_uses_the_rounds_invariants_code`).
+- **A round could drop the invariant the round before added**, since rounds were checked against round 0
+  only. The TEE now checks each proposal against the open round (`a_round_keeps_the_invariants_of_the_round_before`).
+- **A round check that failed without a verdict blocked the program's rounds for good** (one proposal at a
+  time). It now drops the proposal (`a_failed_round_check_lets_the_project_propose_again`).
+
 ## Limits
 
 - The model covers one program with four commits, three keys (two sharing an invariant) and three

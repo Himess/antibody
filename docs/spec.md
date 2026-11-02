@@ -523,7 +523,8 @@ caught. The keeper requests every paid PoC's re-run.
 At opening, for each key held in round r:
 - **released** if its holder's re-run shows it fixed, or if nobody requested that re-run;
 - **carried** into round r+1 (same holder, no new payment) if its re-run still breaks it, or if a requested
-  re-run has no T1 result.
+  re-run has no T1 verdict. Only a Violation or a NoViolation is a verdict: a re-run the verifier could
+  not judge (InvalidPoC, Unevaluable, a misconfigured round) shows nothing fixed, and may be asked again.
 
 ### 8.4 The one-way appeal
 

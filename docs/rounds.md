@@ -61,7 +61,8 @@ brings an old bug back is caught. `antibody keeper` requests every eligible re-r
 window has passed with nothing in flight, and every commit of the closing round is settled. For each key
 held in the round:
 - **released** if its holder's re-run shows it fixed (or nobody asked for that re-run);
-- **carried** to the same holder if it still breaks.
+- **carried** to the same holder if it still breaks, or if its re-run has no verdict (only a T1
+  Violation or NoViolation counts; a re-run the verifier could not judge shows nothing fixed).
 
 A duplicate of a released key whose own re-run still breaks it is **promoted** (the one-way appeal). A fix
 can only add payments.
