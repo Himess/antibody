@@ -8,7 +8,9 @@
 //! TEST key; the relayer submits them to the adapters. Flow: program (manifest v2, anchor confirmed)
 //! → adapters and guardian registration → activation (T1) → known issue (T1) → open → agent A over MCP:
 //! T1, paid in seconds, pause permits on both chains ("the one moment") → agents B–F → the keeper
-//! allocates in commit order and pays → a withdrawal → audit(). Every expected outcome is asserted.
+//! allocates in commit order and pays → a withdrawal → rounds and releases → the practice program (a
+//! tutorial): the vending contract, and two judges with no account who try it → audit(). Every
+//! expected outcome is asserted.
 
 use std::{
     collections::BTreeMap,
@@ -26,7 +28,8 @@ use alloy_primitives::{keccak256, B256};
 use antibody_cli::{
     cmd,
     ctx::{Ctx, Deployments},
-    near::{Near, Signer},
+    near::{Near, Signer, ONE_NEAR},
+    practice,
 };
 use antibody_rules::settlement::{Fees, Gap, Instant as InstantRule, Known, Pause, Payouts, SWindows, Settlement};
 use antibody_verifier::{
@@ -84,12 +87,18 @@ pub(crate) fn wait_for<F: FnMut() -> bool>(what: &str, timeout: Duration, mut f:
 }
 
 const ANVIL_SENDER: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+/// anvil's well-known TEST account 2: deploys the practice vaults, so the Acme deployer's nonces stay
+/// the same on both chains.
+const ANVIL_SENDER_2: &str = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 /// anvil's well-known TEST account 1: the relayer's EVM key in the sandbox.
 const ANVIL_KEY_1: &str = "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
 pub(crate) const ONE_TUSD: u128 = 1_000_000;
 const ESCROW_TUSD: &str = "40000";
 /// The sandbox's terms text; its sha256 is committed in the manifest and named by every commit.
 const TERMS: &str = "Acme Lend (sandbox demo) terms: a DELIBERATELY VULNERABLE TEST FIXTURE. Payouts in tUSD, a testnet token with no value.";
+const PRACTICE_TERMS: &str =
+    "Practice program (sandbox demo) terms: a TUTORIAL TARGET whose bug and proof are public. Payouts in tUSD, a testnet token with no value.";
+const PRACTICE_ESCROW_TUSD: &str = "30";
 
 fn start_anvil(bin: &Path, chain_id: u64, port: u16, log: &Path) -> Result<Child> {
     let child = Command::new(bin)
@@ -111,6 +120,24 @@ fn deploy_acme(a: &DemoArgs, rpc: &str, guardian: &str, out: &Path) -> Result<Va
         // A real transfer before the anchor (anvil_setBalance would rewrite the anchor block's state).
         .env("GUARDIAN_FUND_WEI", "100000000000000000")
         .env("DEPLOYMENTS_OUT", out)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()?;
+    if !st.status.success() {
+        return Err(eyre!("forge script failed: {}", String::from_utf8_lossy(&st.stderr)));
+    }
+    Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
+}
+
+/// The practice program's tutorial vaults (docs/practice.md): 24, a thousandth of an ether each.
+fn deploy_practice(a: &DemoArgs, rpc: &str, out: &Path) -> Result<Value> {
+    let st = Command::new(&a.forge_bin)
+        .current_dir(a.root.join("contracts/evm"))
+        .args(["script", "script/DeployPractice.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER_2, "--slow"])
+        .env_remove("DEPLOYER_KEY")
+        .env("COUNT", "24")
+        .env("VALUE_WEI", "24000000000000000")
+        .env("PRACTICE_OUT", out)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()?;
@@ -276,6 +303,88 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
     })
 }
 
+/// The practice program's terms: one Low slot paid 1 tUSD under the instant cap, a 0.1 tUSD bond, no
+/// pause, no gap lane, no known issues.
+fn practice_settlement(deadline: u64) -> Settlement {
+    let t = |n: u128| (n * ONE_TUSD).to_string();
+    Settlement {
+        payouts: Payouts { critical: "0".into(), high: "0".into(), medium: "0".into(), low: t(1), impact_bps: 0, impact_cap: "0".into(), decimals: 6 },
+        instant: InstantRule { cap: t(1), budget: t(24), window_secs: 3_600 },
+        fees: Fees { protocol_bps: 0, release: "0".into() },
+        bond: (ONE_TUSD / 10).to_string(),
+        challenge_bond: t(1),
+        windows: SWindows {
+            reveal: 300,
+            challenge: 30,
+            resolve: 120,
+            infra_grace: 300,
+            run_timeout: 120,
+            round_min: 60,
+            rerun_window: 120,
+            disclosure_max_delay: 600,
+            deadline,
+            exit_grace: 60,
+        },
+        slot_budgets: vec![],
+        unevaluable: json!("refund"),
+        gap: None,
+        known: Known { max_count: 0, max_share_bps: 0 },
+        pause: Pause { slots: vec![], min_impact_usd_micro: "0".into() },
+        terms_sha256: hex::encode(sha256(PRACTICE_TERMS.as_bytes())),
+    }
+}
+
+/// The practice program's manifest (v2): the factory and each vault as its own target (`vault-<i>`),
+/// and the one rule.
+fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+    let code: alloy_primitives::Bytes = dep["invariantsRuntimeCode"].as_str().unwrap_or_default().parse()?;
+    let factory = dep["factory"].as_str().ok_or_else(|| eyre!("practice deployment: factory"))?;
+    let mut targets = vec![Target { name: "factory".into(), address: factory.parse()?, code_hash: code_hash(evm, factory, anchor_n)? }];
+    let mut vaults = Vec::new();
+    for (i, v) in dep["vaults"].as_array().into_iter().flatten().enumerate() {
+        let v = v.as_str().unwrap_or_default();
+        targets.push(Target { name: format!("vault-{i}"), address: v.parse()?, code_hash: code_hash(evm, v, anchor_n)? });
+        vaults.push(v.parse()?);
+    }
+    Ok(Manifest {
+        schema: MANIFEST_SCHEMA_V2.into(),
+        program: ProgramInfo {
+            name: "Practice program — a tutorial (sandbox demo)".into(),
+            project: project.into(),
+            description: "TUTORIAL TARGET: 24 vaults with one textbook bug (sweep has no access check), published with its proof (docs/practice.md).".into(),
+        },
+        anchor: Anchor { chain_id: 31337, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: "project-attested".into() },
+        targets,
+        invariants: Invariants {
+            address: alloy_primitives::Address::from_slice(&keccak256(b"antibody/invariants/v1")[12..]),
+            runtime_code_hash: keccak256(&code),
+            runtime_code: code,
+            gas_limit: 5_000_000,
+            slots: vec![Slot { bit: 0, name: "vault_keeps_its_ether".into(), severity: Severity::Low }],
+        },
+        impact: ImpactConfig { protocol_accounts: vaults, native_usd: "2000".into(), tokens: vec![] },
+        capabilities: Capabilities {
+            max_senders: 1,
+            max_endowment_wei: 10u128.pow(16).to_string(),
+            max_txs: 1,
+            max_gas_per_tx: 1_000_000,
+            max_total_gas: 1_000_000,
+            max_blocks: 1,
+            max_timestamp_delta: 0,
+            max_eval_gas: None,
+            max_entry_calls: 256,
+        },
+        payout: None,
+        rules: None,
+        round: 0,
+        overrides: Vec::new(),
+        groups: vec![],
+        protected_accounts: vec![],
+        canaries: vec![],
+        settlement: Some(serde_json::to_value(practice_settlement(deadline))?),
+    })
+}
+
 /// Agent A submits through the MCP server, the way an AI agent would. `net` selects the NEAR
 /// network; without `eth_rpc` the CLI reads `SEPOLIA_RPC` from `.env`, so the URL never appears in a
 /// command line.
@@ -317,7 +426,7 @@ pub(crate) fn mcp_submit(
     };
     rpc(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "agent-a", "version": "1"}}}))?;
     let tools = rpc(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))?;
-    let n = tools["result"]["tools"].as_array().map(|t| t.len()).unwrap_or(0);
+    let names: Vec<Value> = tools["result"]["tools"].as_array().into_iter().flatten().map(|t| t["name"].clone()).collect();
     let r = rpc(json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "submit",
         "arguments": {"program_id": program, "bundle_path": local, "wait": true}}}))?;
     drop(stdin);
@@ -326,7 +435,7 @@ pub(crate) fn mcp_submit(
         return Err(eyre!("MCP submit failed: {}", r["result"]["content"][0]["text"]));
     }
     let data = antibody_cli::mcp::result_data(&r["result"]).ok_or_else(|| eyre!("MCP submit: no data in {}", r["result"]))?;
-    Ok(json!({"mcp_tools": n, "result": data}))
+    Ok(json!({"mcp_tools": names.len(), "tool_names": names, "result": data}))
 }
 
 /// Whether a verdict is above the program's instant cap: it is final only after an agreeing second
@@ -414,11 +523,25 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
     near.call("sandbox_fast_forward", json!({"delta_height": 200}))?;
     let opened = cmd::round_open(keeper, pid)?["round_opened"].clone();
     // Release permits beyond one call's gas are queued at near-guardian; the keeper asks for them.
-    cmd::keeper(keeper, pid)?;
+    let k2 = cmd::keeper(keeper, pid)?;
     let summary = format!("{} re-runs ({} fixed), release gate {}, {} keys released, {} carried",
         reruns.len(), reruns.iter().filter(|r| r["kind"] == "NoViolation").count(), opened["release_gate"], opened["released"], opened["carried"]);
     Ok(json!({"round": round, "manifest_sha256": proposed["manifest_sha256"], "check_round_run": check, "canaries_ok": rc["canaries_ok"],
-              "releases": rel, "reruns": reruns, "opened": opened, "summary": summary, "seconds": t.elapsed().as_secs_f64()}))
+              "releases": rel, "reruns": reruns, "opened": opened, "summary": summary, "keeper": [k, k2], "seconds": t.elapsed().as_secs_f64()}))
+}
+
+/// Every payout transaction in a result (the keeper's `{"paid": commit, "tx": hash}` steps), by commit.
+fn pay_txs(v: &Value, out: &mut BTreeMap<u64, Value>) {
+    match v {
+        Value::Object(m) => {
+            if let (Some(c), Some(tx)) = (m.get("paid").and_then(|c| c.as_u64()), m.get("tx").filter(|t| t.is_string())) {
+                out.entry(c).or_insert_with(|| tx.clone());
+            }
+            m.values().for_each(|x| pay_txs(x, out));
+        }
+        Value::Array(a) => a.iter().for_each(|x| pay_txs(x, out)),
+        _ => {}
+    }
 }
 
 pub fn run(a: DemoArgs) -> Result<Value> {
@@ -441,6 +564,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         .iter()
         .all(|k| dep_a[k] == dep_b[k]);
     println!("same addresses on both chains: {same}");
+    // The practice program's vaults exist at the same anchor (another deployer: Acme's nonces are untouched).
+    let dep_p = deploy_practice(&a, "http://127.0.0.1:8545", &a.work.join("practice-31337.json"))?;
     let evm_a = Evm::new("http://127.0.0.1:8545");
     let anchor = evm_a.call("eth_getBlockByNumber", json!(["latest", false]))?;
     let anchor_n = crate::evm::hex_u64(&anchor["number"])?;
@@ -502,7 +627,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     for x in ["a", "b", "c", "d", "e", "f", "g"] {
         cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct(&format!("agent-{x}")), "amount": (200 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
     }
-    results["deployment"] = json!({"near_antibody": acct("bounty"), "verifier_wasm_sha256": verifier_hash, "images": near.view(&acct("bounty"), "get_images", json!({}))?});
+    results["deployment"] = json!({"network": "sandbox", "near_antibody": acct("bounty"), "guardian": acct("guardian"), "token": acct("tusd"), "verifier_wasm_sha256": verifier_hash, "images": near.view(&acct("bounty"), "get_images", json!({}))?});
 
     step("Background: MOCK worker (the real verifier in TEE mode, TEST root key), MOCK MPC signer, T1 relayer, permit relayer");
     let stop = Arc::new(AtomicBool::new(false));
@@ -633,7 +758,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         cmd::storage_deposit(&c, "1")?;
         cmd::deposit(&c, "100")?;
     }
-    let mut rows: Vec<(String, u64, f64)> = Vec::new();
+    // (finding, commit, seconds to the verdict, its commit and reveal transactions)
+    let mut rows: Vec<(String, u64, f64, Value)> = Vec::new();
     let agent_key = a.work.join("keys/agent-a.fc-key.json");
     cmd::agent_key_add(&ctx_of("agent-a"), 2.0, &agent_key)?;
     let state_a = a.work.join("state/agent-a-mcp");
@@ -643,7 +769,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let mcp = mcp_submit(&a.antibody_bin, &sandbox_net, &dep_file, &acct("agent-a"), &agent_key, Some("http://127.0.0.1:8545"), &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
     let t_verdict = t.elapsed().as_secs_f64();
-    results["mcp"] = json!({"tools": mcp["mcp_tools"], "commit_id": a_commit});
+    results["mcp"] = json!({"tools": mcp["mcp_tools"], "tool_names": mcp["tool_names"], "commit_id": a_commit});
 
     step("The one moment: A's verdict is T1, A is paid in seconds, and both chains pause");
     wait_t1(&root_ctx, root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default())?;
@@ -665,7 +791,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let paused_both = evm_a.paused(dep_a["AcmeGuard"].as_str().unwrap_or_default())? && Evm::new("http://127.0.0.1:8546").paused(dep_b["AcmeGuard"].as_str().unwrap_or_default())?;
     println!("A: commit→verdict {t_verdict:.1}s, T1 at {t_t1:.1}s, paid {} tUSD at {t_paid:.1}s; paused on 31337 at {:.1}s and 31338 at {:.1}s",
              paid_a / ONE_TUSD, paused_at.get("31337").copied().unwrap_or(-1.0), paused_at.get("31338").copied().unwrap_or(-1.0));
-    rows.push(("A (MCP)".into(), a_commit, t_verdict));
+    rows.push(("A (MCP)".into(), a_commit, t_verdict, json!({"commit": mcp["result"]["commit"]["tx"]["tx"], "reveal": mcp["result"]["reveal"]["tx"]["tx"]})));
     results["one_moment"] = json!({"commit": a_commit, "seconds_from_commit": {"verdict": t_verdict, "t1": t_t1, "paid": t_paid,
                                    "paused_31337": paused_at.get("31337"), "paused_31338": paused_at.get("31338")},
                                    "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
@@ -678,9 +804,10 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         let report = if x == "c" { Some(fx.join("C.report.md")) } else { None };
         let bundle = if x == "g" { g_bundle.clone() } else { fx.join(format!("{}.bundle.json", x.to_uppercase())) };
         let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &bundle, None, report.as_deref(), true)?;
-        rows.push((x.to_uppercase(), r["commit"]["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64()));
+        rows.push((x.to_uppercase(), r["commit"]["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64(),
+                   json!({"commit": r["commit"]["tx"]["tx"], "reveal": r["reveal"]["tx"]["tx"]})));
     }
-    for (_, id, _) in &rows {
+    for (_, id, ..) in &rows {
         if let Some(r) = root_ctx.commit(*id)?["run"].as_u64() {
             wait_t1(&root_ctx, r)?;
         }
@@ -689,7 +816,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     step("Above the instant cap: an independent second run (anyone may ask; the keeper does), then the challenge window");
     let program = root_ctx.program(pid)?;
     let mut seconds = Vec::new();
-    for (name, id, _) in &rows {
+    for (name, id, ..) in &rows {
         let c = root_ctx.commit(*id)?;
         let v = cmd::run_view(&cmd::run(&root_ctx, c["run"].as_u64().unwrap_or_default())?);
         if c["state"] == json!("Verifying") && above_cap(&program, &v) {
@@ -703,15 +830,16 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     near.call("sandbox_fast_forward", json!({"delta_height": 40}))?;
 
     step("Settlement: the keeper allocates in commit order and pays; B withdraws its credit");
-    let mut last_keeper = Value::Null;
+    let mut keeper_runs = Vec::new();
     wait_for("every claim settled", Duration::from_secs(180), || {
-        last_keeper = cmd::keeper(&ctx_of("keeper"), pid).unwrap_or(Value::Null);
-        rows.iter().all(|(_, id, _)| root_ctx.commit(*id).map(|c| cmd::state_label(&c["state"]) != "Verifying" && cmd::state_label(&c["state"]) != "Holder").unwrap_or(false))
+        keeper_runs.push(cmd::keeper(&ctx_of("keeper"), pid).unwrap_or(Value::Null));
+        rows.iter().all(|(_, id, ..)| root_ctx.commit(*id).map(|c| cmd::state_label(&c["state"]) != "Verifying" && cmd::state_label(&c["state"]) != "Holder").unwrap_or(false))
     })?;
     let before = cmd::u128_of(&root_ctx.near.view(&acct("tusd"), "ft_balance_of", json!({"account_id": acct("agent-b")}))?);
     cmd::withdraw(&ctx_of("agent-b"), "3000")?;
     let after = cmd::u128_of(&root_ctx.near.view(&acct("tusd"), "ft_balance_of", json!({"account_id": acct("agent-b")}))?);
-    results["keeper"] = last_keeper;
+    results["keeper"] = keeper_runs.last().cloned().unwrap_or(Value::Null);
+    results["keeper_runs"] = Value::Array(keeper_runs);
     results["withdrawal"] = json!({"account": acct("agent-b"), "wallet_before": cmd::fmt_tusd(before), "wallet_after": cmd::fmt_tusd(after)});
 
     step("Round 1, a partial fix (AcmeLendFixed, bug #1) and a new invariant (protected_balances): the keeper re-runs every paid PoC; B and F still break, G's claim is promoted");
@@ -750,6 +878,43 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     println!("released on both chains in {:.1}s: {}", t.elapsed().as_secs_f64(), if releases_ok { "both proxies run the final fix; B's exploit reverts" } else { "MISMATCH" });
     results["rounds"] = json!([r1, r2]);
     results["release"] = json!({"checks": released, "ok": releases_ok, "seconds": t.elapsed().as_secs_f64()});
+
+    step("Practice program (a tutorial): 24 vaults, one public bug; the vending contract; two judges with no account try it");
+    let t = Instant::now();
+    cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": "test.near", "amount": (100 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
+    cmd::storage_deposit(&root_ctx, "1")?;
+    let pm = practice_manifest(&dep_p, &evm_a, anchor_n, anchor_h, "test.near", now + 3_600)?;
+    let pm_path = a.work.join("practice-manifest.json");
+    std::fs::write(&pm_path, pm.canonical())?;
+    let practice_key = a.work.join("keys/practice.x25519.json");
+    cmd::keygen_x25519(&practice_key)?;
+    let pc = cmd::program_create(&root_ctx, &pm_path, PRACTICE_ESCROW_TUSD, &practice_key, None)?;
+    let ppid = pc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no practice program id: {pc}"))? as u32;
+    let pact = cmd::program_activate(&root_ctx, ppid, true)?;
+    wait_t1(&root_ctx, pact["run_id"].as_u64().unwrap_or_default())?;
+    cmd::program_open(&root_ctx, ppid)?;
+    cmd::admin_create_account(&root_ctx, &acct("practice"), "10", None, Some(&keys.join(format!("{}.json", acct("practice")))))?;
+    let terms = practice::Terms { gas_funds: ONE_NEAR / 20, allowance: ONE_NEAR / 20, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 6 };
+    let vending_wasm = a.root.join("contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm");
+    let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, "test.near", ppid, 24, &terms, ONE_NEAR / 5)?;
+    let funded = practice::fund(&root_ctx, &acct("practice"), 2 * ONE_NEAR, 2 * ONE_TUSD)?;
+    println!("practice program {ppid} open; vending {} with the public vend key {}", acct("practice"), vending["public_vend_key"]);
+    // Judges: no account, no key and no Ethereum RPC. The public vend key calls `vend`, and the proof is
+    // sealed against the pinned base witness alone.
+    let judge = Ctx { near: near.clone(), dep: dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges") };
+    let mut tries = Vec::new();
+    for name in ["ann", "bob"] {
+        let r = practice::try_it(&judge, &acct("practice"), ppid, name)?;
+        println!("{}: vault {} ({}), witness from the {} ({} bytes), {} {}, {} in {:.1}s", r["account"], r["vault_index"], r["vault"],
+                 r["witness_source"].as_str().unwrap_or("-"), r["witness_bytes"], r["verdict"]["kind"].as_str().unwrap_or("-"),
+                 r["t1"]["tier"].as_str().unwrap_or("-"), r["state"].as_str().unwrap_or("-"), r["seconds"].as_f64().unwrap_or_default());
+        tries.push(r);
+    }
+    let practice_ok = tries.iter().all(|r| r["state"] == json!("Done:Paid") && r["paid_raw"] == json!(ONE_TUSD.to_string()))
+        && tries[0]["vault"] != tries[1]["vault"]
+        && tries.iter().all(|r| r["vended_by"] == json!(acct("practice")) && r["witness_source"] == json!("base"));
+    results["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&pm.canonical())),
+                                 "vending": vending, "fund": funded, "tries": tries, "ok": practice_ok, "seconds": t.elapsed().as_secs_f64()});
     stop.store(true, Ordering::Relaxed);
     for h in handles {
         let _ = h.join();
@@ -773,8 +938,11 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= gate(&results["rounds"][0]) == Some(false) && results["rounds"][0]["opened"]["carried"] == json!(2);
     ok &= gate(&results["rounds"][1]) == Some(true) && results["rounds"][1]["opened"]["released"] == json!(2);
     ok &= results["release"]["ok"] == json!(true);
+    ok &= results["practice"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
-    for (agent, id, secs) in &rows {
+    let mut pays = BTreeMap::new();
+    pay_txs(&results, &mut pays);
+    for (agent, id, secs, txs) in &rows {
         let c = root_ctx.commit(*id)?;
         let v = cmd::run_view(&cmd::run(&root_ctx, c["run"].as_u64().unwrap_or_default())?);
         let kind = v["kind"].as_str().unwrap_or("-").to_string();
@@ -787,17 +955,29 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         ok &= pass;
         println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8.1} {}", agent, id, kind, v["tier"].as_str().unwrap_or("-"), keys.join(", "),
                  state, paid / ONE_TUSD, secs, if pass { "OK" } else { "MISMATCH" });
-        table.push(json!({"agent": agent, "commit": id, "verdict": kind, "tier": v["tier"], "keys": v["keys"], "state": c["state"],
-                          "paid_raw": paid.to_string(), "seconds": secs, "ok": pass}));
+        let mut txs = txs.clone();
+        txs["pay"] = pays.get(id).cloned().unwrap_or(Value::Null);
+        table.push(json!({"agent": agent, "commit": id, "run": c["run"], "verdict": kind, "tier": v["tier"], "keys": v["keys"], "state": c["state"],
+                          "paid_raw": paid.to_string(), "seconds": secs, "txs": txs, "ok": pass}));
     }
     let audit = root_ctx.view("audit", json!({"program_id": pid}))?;
     let contract_audit = root_ctx.view("audit_contract", json!({}))?;
-    ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true);
-    println!("known issues: {known_n}; audit(program): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid instantly: {}; paused on both chains: {}",
-             audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD, one["instant"], one["paused_both"]);
+    let practice_audit = root_ctx.view("audit", json!({"program_id": results["practice"]["program_id"]}))?;
+    ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true) && practice_audit["ok"] == json!(true);
+    println!("known issues: {known_n}; audit(program): {}; audit(practice): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid instantly: {}; paused on both chains: {}; practice: {}",
+             audit["ok"], practice_audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD, one["instant"], one["paused_both"], results["practice"]["ok"]);
     results["submissions"] = Value::Array(table);
-    results["audit"] = json!({"program": audit, "contract": contract_audit});
+    results["audit"] = json!({"program": audit, "practice": practice_audit, "contract": contract_audit});
     results["record"] = root_ctx.view("program_record", json!({"program_id": pid}))?;
+    let judged = antibody_cli::judge::judge(&judge, None)?;
+    let judge_ok = judged["programs"].as_array().map(|p| p.len()) == Some(2)
+        && judged["programs"][0]["verdicts"]["t1_confirmed"].as_u64() >= Some(7)
+        && judged["programs"][0]["pauses"].as_u64() == Some(2)
+        && judged["programs"][1]["payouts"].as_array().map(|p| p.len()) == Some(2);
+    println!("judge (view calls only): {} programs, {} pause permits, {} release permits; ok: {judge_ok}", judged["programs"].as_array().map(|p| p.len()).unwrap_or(0),
+             judged["programs"][0]["pauses"], judged["programs"][0]["releases"]);
+    ok &= judge_ok;
+    results["judge"] = judged;
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();
     std::fs::write(a.work.join("results.json"), serde_json::to_vec_pretty(&results)?)?;
