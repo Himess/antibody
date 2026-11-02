@@ -63,9 +63,11 @@ pub fn new_args(owner: &str, antibody: &str, token: &str, program: u32, vaults: 
     v
 }
 
-/// The vending contract's `vend(name, public_key)` arguments, in Borsh (an ed25519 key is tag 0).
+/// The vending contract's `vend(name, public_key)` arguments, in Borsh. near-sdk's `PublicKey` is a
+/// `Vec<u8>`: its length (33), the curve (0, ed25519) and the key.
 pub fn vend_args(name: &str, public_key: &[u8; 32]) -> Vec<u8> {
     let mut v = borsh_str(name);
+    v.extend(33u32.to_le_bytes());
     v.push(0);
     v.extend(public_key);
     v
@@ -92,33 +94,38 @@ pub fn vault_address(ctx: &Ctx, program: u32, i: u32) -> Result<String> {
     m.targets.iter().find(|t| t.name == format!("vault-{i}")).map(|t| format!("{:#x}", t.address)).ok_or_else(|| eyre!("no vault-{i} in program {program}"))
 }
 
-/// Who calls `vend`: your account if you name one, otherwise the public vend key.
-fn vend_caller(ctx: &Ctx, vending: &str) -> Result<Signer> {
-    if ctx.account.is_some() || ctx.key_file.is_some() || std::env::var("ANTIBODY_KEY_FILE").is_ok() {
-        ctx.signer()
-    } else {
-        Ok(public_vend_signer(vending))
+/// A practice account's name, as the vending contract takes it (it also names a local directory).
+pub fn check_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.len() > 32 || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_') {
+        return Err(eyre!("a practice name is 1 to 32 of a-z, 0-9, - and _"));
     }
+    Ok(())
 }
 
-/// Vends `<name>.<vending>` for a new key (written to `key_out`).
+/// Vends `<name>.<vending>` for a new key (written to `key_out`). The public vend key calls `vend`;
+/// once its allowance is spent, your own account does, if you named one.
 pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Value> {
-    let caller = vend_caller(ctx, vending)?;
+    check_name(name)?;
     let account = format!("{name}.{vending}");
     let key = Signer::generate(Some(account.clone()))?;
-    let out = ctx.near.send(
-        &caller,
-        vending,
-        vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: 100 * TGAS, deposit: 0 }],
-        "EXECUTED_OPTIMISTIC",
-    )?;
+    let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: 100 * TGAS, deposit: 0 }];
+    let public = public_vend_signer(vending);
+    let (out, by) = match ctx.near.send(&public, vending, call.clone(), "EXECUTED_OPTIMISTIC") {
+        Ok(out) => (out, public.account_id),
+        Err(e) if ctx.account.is_some() || ctx.key_file.is_some() => {
+            let me = ctx.signer()?;
+            eprintln!("the public vend key could not call vend ({e}); calling it as {}", me.account_id);
+            (ctx.near.send(&me, vending, call, "EXECUTED_OPTIMISTIC")?, me.account_id)
+        }
+        Err(e) => return Err(e),
+    };
     let s = cmd::ensure_ok(ctx, &out, "vend")?;
     if let Some(dir) = key_out.parent() {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(key_out, serde_json::to_vec_pretty(&key.to_file_json())?)?;
     let vault = vault_of(ctx, vending, &account)?.ok_or_else(|| eyre!("{vending} assigned no vault to {account}"))?;
-    Ok(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": caller.account_id, "tx": s}))
+    Ok(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": by, "tx": s}))
 }
 
 /// Waits until a run is T1-confirmed (or failed).
@@ -159,6 +166,7 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
 /// reveal, verdict, T1), and settle as the practice account. With no `--account`, the public vend key
 /// calls `vend`, so nothing but this command is needed.
 pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Value> {
+    check_name(name)?;
     let t0 = Instant::now();
     let dir = ctx.state_dir.join("practice").join(name);
     let key_file = dir.join("key.json");
@@ -191,7 +199,8 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
         }
     }
     Ok(json!({"account": account, "vault": vault, "vault_index": vended["vault"], "vended_by": vended["vended_by"], "commit_id": commit,
-              "run_id": run, "verdict": submitted["reveal"]["result"], "t1": t1, "settle": settled,
+              "run_id": run, "verdict": submitted["reveal"]["result"], "witness_source": submitted["commit"]["witness_source"],
+              "witness_bytes": submitted["commit"]["witness_bytes"], "t1": t1, "settle": settled,
               "state": cmd::state_label(&c["state"]), "paid_raw": cmd::paid_of(&c).to_string(), "beneficiary": c["beneficiary"],
               "links": links, "seconds": t0.elapsed().as_secs_f64()}))
 }
@@ -255,4 +264,36 @@ pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result
     }
     res["credit"] = ctx.view("get_account", json!({"account_id": vending}))?;
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn borsh_args_match_the_contract() {
+        let t = Terms { gas_funds: 1, allowance: 2, bond_budget: 3, per_commit_cap: 4, per_hour: 5 };
+        let a = new_args("o", "b", "t", 7, 24, &t);
+        // three strings (4 + 1 bytes each), two u32, four u128, one u32
+        assert_eq!(a.len(), 3 * 5 + 8 + 64 + 4);
+        assert_eq!(&a[15..19], &7u32.to_le_bytes());
+        let v = vend_args("ann", &[9; 32]);
+        assert_eq!(&v[..11], &[3, 0, 0, 0, b'a', b'n', b'n', 33, 0, 0, 0]);
+        assert_eq!((v[11], v.len()), (0, 11 + 1 + 32));
+    }
+
+    #[test]
+    fn practice_names_are_plain() {
+        assert!(check_name("ann-1_x").is_ok());
+        for bad in ["", "Ann", "../x", "a.b", &"a".repeat(33)] {
+            assert!(check_name(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_public_vend_key_is_derived_from_the_published_seed() {
+        let k = public_vend_signer("practice.antibody.testnet");
+        assert_eq!(k.account_id, "practice.antibody.testnet");
+        assert_eq!(k.public_key(), public_vend_signer("other.testnet").public_key());
+    }
 }

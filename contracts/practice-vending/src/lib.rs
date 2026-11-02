@@ -216,6 +216,16 @@ mod tests {
         assert_eq!(v.vault_of("cat.practice.antibody.testnet".parse().unwrap()), Some(2));
     }
 
+    /// The Borsh layout `antibody try` writes for `vend` (crates/cli/src/practice.rs `vend_args`).
+    #[test]
+    fn vend_args_layout() {
+        let key = pk();
+        let bytes = near_sdk::borsh::to_vec(&("ann".to_string(), key.clone())).unwrap();
+        let mut want = vec![3, 0, 0, 0, b'a', b'n', b'n', 33, 0, 0, 0, 0];
+        want.extend(&key.as_bytes()[1..]);
+        assert_eq!(bytes, want);
+    }
+
     #[test]
     #[should_panic(expected = "owner only")]
     fn only_the_owner_funds() {
