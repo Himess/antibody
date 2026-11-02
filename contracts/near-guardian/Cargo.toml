@@ -19,6 +19,7 @@ near-sdk = { version = "=5.9.0", features = ["unstable", "unit-testing"] }
 k256 = { version = "0.13", features = ["ecdsa"] }
 
 [profile.release]
+strip = true
 codegen-units = 1
 opt-level = "z"
 lto = true
