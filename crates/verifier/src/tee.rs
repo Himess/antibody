@@ -279,13 +279,20 @@ fn open(keys: &ProgramKeys, program_key: &str, hunter: &str, blob: &[u8]) -> Res
 
 /// The witness a PoC runs on: a full program witness, or a submission merged with the base.
 fn program_witness(env_in: Envelope, base: &BaseWitness, manifest: Bytes) -> Result<(Envelope, ProgramWitness), Stop> {
+    // A run is judged by the manifest's own invariants (a round may add some), never by the copy in a
+    // witness built for an earlier round.
+    let invariants = Manifest::parse(&manifest).map_err(|e| Stop(Kind::ProgramMisconfigured, e))?.invariants.runtime_code;
     match env_in.payload.clone() {
         Payload::Program(mut w) => {
             w.manifest_json = manifest;
-            Ok((env_in, w))
+            w.invariants_code = invariants;
+            let mut e = env_in;
+            e.payload = Payload::Program(w.clone());
+            Ok((e, w))
         }
         Payload::Submission(sub) => {
-            let w = ProgramWitness::assemble(base, &sub, manifest).map_err(|e| invalid(format!("witness: {}", short(&e))))?;
+            let mut w = ProgramWitness::assemble(base, &sub, manifest).map_err(|e| invalid(format!("witness: {}", short(&e))))?;
+            w.invariants_code = invariants;
             let mut e = env_in;
             e.payload = Payload::Program(w.clone());
             Ok((e, w))

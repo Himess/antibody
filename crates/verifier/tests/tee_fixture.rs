@@ -428,3 +428,27 @@ fn a_base_witness_of_another_manifest_is_refused() {
     assert_eq!(verify(&w.manifest), Kind::Violation, "the program's own manifest");
     assert_eq!(verify(&"11".repeat(32)), Kind::InfraError, "a base built for another manifest");
 }
+
+/// A run is judged by the manifest's invariants: a round that brings new invariants code re-runs a
+/// round-0 witness under it (the witness's own copy is the old code).
+#[test]
+fn a_rerun_uses_the_rounds_invariants_code() {
+    use antibody_verifier::manifest::{Manifest, Severity, Slot};
+    let w = World::new();
+    let base = Manifest::parse(&std::fs::read(root().join("fixtures/acme-local/manifest.json")).unwrap()).unwrap();
+    let r1 = Manifest::parse(&std::fs::read(root().join("fixtures/acme-local/round1/manifest.json")).unwrap()).unwrap();
+    let fix: Vec<_> = r1.overrides.iter().map(|o| (o.address, o.runtime_code.clone())).collect();
+    let mut code = base.invariants.runtime_code.to_vec();
+    code.push(0x00); // other bytes, the same behaviour
+    let slot = Slot { bit: 3, name: "protected_balances".into(), severity: Severity::Medium };
+    let round = base.with_round(1, &fix, Some((code.into(), vec![slot]))).unwrap().canonical();
+    let e = expected();
+    let blob = seal(&w.program_key, "agent.testnet", "A");
+    let req = w.request(
+        "rerun",
+        Some(e["submissions"]["A"]["commit_id"].as_u64().unwrap()),
+        serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob), "round": 1,
+                           "manifest_sha256": hex::encode(sha256(&round)), "round_manifest": w.upload(&round)}),
+    );
+    assert_eq!(w.run(&req, CONTRACT).0.facts.kind, Kind::NoViolation, "A is fixed, judged under the round's invariants");
+}

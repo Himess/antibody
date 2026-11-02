@@ -375,6 +375,25 @@ fn a_failed_round_check_lets_the_project_propose_again() {
     assert!(w.e.store.program(p).unwrap().proposal.is_some(), "and the project proposes again");
 }
 
+/// A re-run the verifier could not judge (InvalidPoC) shows nothing fixed: the key is carried, the gate
+/// stays shut, and the re-run may be asked again.
+#[test]
+fn an_unjudged_rerun_is_no_evidence() {
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::InvalidPoC, &[]);
+    w.rerun(c0, Kind::InvalidPoC, &[]); // no evidence: it may be asked again
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert!(!fx.iter().any(|f| matches!(f, Effect::ReleasePermit { .. })), "nothing was shown fixed");
+    assert_eq!(w.e.store.holder(p, 1, &tag(1)), Some(c0), "the key is carried");
+    w.audit_ok(&[p]);
+}
+
 #[test]
 fn canaries_block_release() {
     let mut w = W::new();

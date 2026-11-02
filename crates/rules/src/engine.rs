@@ -1557,7 +1557,7 @@ impl<S: Store> Engine<S> {
         let pr = p.proposal.clone().unwrap();
         if let Some(r) = self.rerun_at(&c, pr.round) {
             let stuck = matches!(r.outcome, RunOutcome::Failed { .. })
-                || matches!(&r.outcome, RunOutcome::Answered { facts, .. } if facts.kind == Kind::InfraError)
+                || matches!(&r.outcome, RunOutcome::Answered { facts, .. } if !Self::judged(facts))
                 || (r.outcome == RunOutcome::Pending && ctx.now >= r.started_at + p.params.windows.run_timeout);
             if !stuck {
                 return Err(Error::State("already re-run at this fix"));
@@ -1590,11 +1590,18 @@ impl<S: Store> Engine<S> {
         self.get_run(c.rerun?).ok().filter(|r| r.round == round)
     }
 
+    /// A re-run's verdict counts as evidence only when it is a T1 Violation or NoViolation: a re-run the
+    /// verifier could not judge (InvalidPoC, Unevaluable, a misconfigured round, an infrastructure error)
+    /// shows nothing fixed.
+    fn judged(facts: &FactsSummary) -> bool {
+        matches!(facts.kind, Kind::Violation | Kind::NoViolation)
+    }
+
     /// Whether the commit's T1 re-run at the fix for `round` still breaks one of `tags`.
     fn rerun_breaks(&self, c: &Commit, tags: &[H32], round: u32) -> Option<bool> {
         let r = self.rerun_at(c, round)?;
         match &r.outcome {
-            RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => {
+            RunOutcome::Answered { facts, tier: Tier::T1, .. } if Self::judged(facts) => {
                 Some(facts.kind == Kind::Violation && facts.keys.iter().any(|k| tags.contains(&k.tag)))
             }
             _ => None,
@@ -1605,7 +1612,7 @@ impl<S: Store> Engine<S> {
     fn rerun_clean(&self, c: &Commit, round: u32) -> Option<bool> {
         let r = self.rerun_at(c, round)?;
         match &r.outcome {
-            RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => Some(facts.kind != Kind::Violation),
+            RunOutcome::Answered { facts, tier: Tier::T1, .. } if Self::judged(facts) => Some(facts.kind == Kind::NoViolation),
             _ => None,
         }
     }
@@ -1615,7 +1622,7 @@ impl<S: Store> Engine<S> {
         let pr = p.proposal.as_ref()?;
         let r = self.rerun_at(c, pr.round)?;
         match &r.outcome {
-            RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => {
+            RunOutcome::Answered { facts, tier: Tier::T1, .. } if Self::judged(facts) => {
                 Some(facts.kind == Kind::Violation && facts.keys.iter().any(|k| pr.new_slots.iter().any(|s| s.slot == k.slot)))
             }
             _ => None,
