@@ -794,13 +794,16 @@ pub fn execute_program_witness(
     let sealed: Vec<SealedHeader> = once(SealedHeader::seal_slow(header.clone()))
         .chain(ancestors.into_iter().map(SealedHeader::seal_slow))
         .collect();
-    build_trie_db(&w.state, header.state_root, w.bytecodes.iter(), &sealed)
+    // Code is re-analysed from the bytes its hash commits to: the witness's padding and jump table are
+    // not trusted (revm's serde accepts both as given).
+    let codes: Vec<Bytecode> = w.bytecodes.iter().map(|c| Bytecode::new_raw(c.original_bytes())).collect();
+    build_trie_db(&w.state, header.state_root, codes.iter(), &sealed)
         .map_err(|e| VerifyError::Witness(e.to_string()))?;
     let mut block_hashes: HashMap<u64, B256> = HashMap::default();
     for (child, parent) in sealed.iter().tuple_windows() {
         block_hashes.insert(parent.number(), child.parent_hash());
     }
-    let bytecode_by_hash: HashMap<B256, &Bytecode> = w.bytecodes.iter().map(|c| (c.hash_slow(), c)).collect();
+    let bytecode_by_hash: HashMap<B256, &Bytecode> = codes.iter().map(|c| (c.hash_slow(), c)).collect();
     let db = StrictDb::new(&w.state, block_hashes, bytecode_by_hash);
     let spec = program_chain_spec(manifest.anchor.chain_id)?;
     let inv_code = Bytecode::new_raw(w.invariants_code.clone());

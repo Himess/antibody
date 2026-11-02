@@ -565,6 +565,17 @@ fn tamper(args: &[String]) -> Result<()> {
     let kind = arg(args, "--kind").ok_or_else(|| eyre!("--kind"))?;
     let out = arg(args, "--out").ok_or_else(|| eyre!("--out"))?;
     let mut env = Envelope::decode(&std::fs::read(&wpath)?).map_err(|e| eyre!(e))?;
+    if kind == "jump-table" {
+        // Program witness: keep the largest bytecode's bytes (and so its hash), mark every JUMPDEST invalid.
+        let Payload::Program(w) = &mut env.payload else { return Err(eyre!("program witness expected")) };
+        let c = w.bytecodes.iter_mut().max_by_key(|c| c.original_bytes().len()).ok_or_else(|| eyre!("no code"))?;
+        let bits = c.legacy_jump_table().map(|t| t.len()).ok_or_else(|| eyre!("not legacy code"))?;
+        let empty = revm::bytecode::JumpTable::from_slice(&vec![0u8; bits.div_ceil(8)], bits);
+        *c = revm::state::Bytecode::new_analyzed(c.bytecode().clone(), c.original_bytes().len(), empty);
+        std::fs::write(&out, env.encode())?;
+        println!("{}", json!({"kind": kind, "out": out, "note": "every JUMPDEST of the largest bytecode marked invalid; bytes and hash unchanged"}));
+        return Ok(());
+    }
     let Payload::Replay(w) = &mut env.payload else { return Err(eyre!("replay witness expected")) };
     let note: String;
     match kind.as_str() {
