@@ -1,10 +1,15 @@
 //! Practice accounts for Antibody's practice program (docs/practice.md).
 //!
-//! `vend(name, public_key)` creates `<name>.<this account>` with a little NEAR for gas and one key:
-//! a function-call key for near-antibody's `commit`, `reveal` and `retry` (and FastFS uploads) only. The
-//! account is registered as an agent of this contract, so its bonds come from this contract's credit
-//! within a small cap and its payouts come back here; it cannot withdraw. Each account is assigned its
-//! own tutorial vault. Vending is rate-limited per hour and the amounts are small; the owner refills.
+//! `vend(name, public_key)` creates `<name>.<this account>` with a little NEAR for gas and one key: a
+//! function-call key for near-antibody's `commit`, `reveal` and `retry`, the permissionless `allocate`
+//! and `pay`, and FastFS uploads, nothing else. The account is registered as an agent of this
+//! contract, so near-antibody takes its bonds, its verification runs and its storage from this
+//! contract's credit there (the bonds within a small cap), and its payouts come back to that credit; it
+//! cannot withdraw. Each account is assigned its own tutorial vault. Vending is rate-limited per hour
+//! and the amounts are small; the owner refills.
+//!
+//! Anyone may call `vend`. The operator also adds a deliberately public function-call key for `vend`
+//! on this account, within an allowance, so a first try needs no NEAR account (`antibody try`).
 //!
 //! Arguments and views are Borsh (the CLI encodes them): with no JSON the contract is half the size,
 //! and its storage stake half as large.
@@ -16,9 +21,11 @@ use near_sdk::{
     AccountId, Gas, NearToken, PanicOnDefault, Promise, PublicKey,
 };
 
-/// near-antibody methods a practice key may call (as an agent key, `cmd::AGENT_METHODS`).
-pub const AGENT_METHODS: &str = "commit,reveal,retry,__fastdata_fastfs";
+/// near-antibody methods a practice key may call: an agent key's (`cmd::AGENT_METHODS`) and the
+/// permissionless `allocate` and `pay`, so a practice account settles its own payout.
+pub const PRACTICE_METHODS: &str = "commit,reveal,retry,allocate,pay,__fastdata_fastfs";
 pub const CALL_GAS: Gas = Gas::from_tgas(20);
+pub const FUND_GAS: Gas = Gas::from_tgas(150);
 
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq)]
@@ -27,8 +34,6 @@ pub struct Terms {
     pub gas_funds: U128,
     /// The key's allowance.
     pub allowance: U128,
-    /// NEAR credit deposited at near-antibody for the account's verification runs.
-    pub near_credit: U128,
     /// Token units of this contract's credit the account may bond in all, and per commit.
     pub bond_budget: U128,
     pub per_commit_cap: U128,
@@ -41,6 +46,7 @@ pub struct Terms {
 pub struct Vending {
     owner: AccountId,
     antibody: AccountId,
+    token: AccountId,
     program_id: u32,
     vaults: u32,
     terms: Terms,
@@ -53,9 +59,16 @@ pub struct Vending {
 #[near]
 impl Vending {
     #[init]
-    pub fn new(#[serializer(borsh)] owner: AccountId, #[serializer(borsh)] antibody: AccountId, #[serializer(borsh)] program_id: u32, #[serializer(borsh)] vaults: u32, #[serializer(borsh)] terms: Terms) -> Self {
+    pub fn new(
+        #[serializer(borsh)] owner: AccountId,
+        #[serializer(borsh)] antibody: AccountId,
+        #[serializer(borsh)] token: AccountId,
+        #[serializer(borsh)] program_id: u32,
+        #[serializer(borsh)] vaults: u32,
+        #[serializer(borsh)] terms: Terms,
+    ) -> Self {
         require!(vaults > 0, "at least one vault");
-        Self { owner, antibody, program_id, vaults, terms, vended: 0, hour: 0, in_hour: 0, accounts: LookupMap::new(b"a") }
+        Self { owner, antibody, token, program_id, vaults, terms, vended: 0, hour: 0, in_hour: 0, accounts: LookupMap::new(b"a") }
     }
 
     /// Creates the practice account `<name>.<this account>` for `public_key` and assigns it a vault.
@@ -81,23 +94,33 @@ impl Vending {
             "EVENT_JSON:{{\"standard\":\"antibody-practice\",\"version\":\"0.1.0\",\"event\":\"vended\",\"data\":[{{\"account\":\"{account}\",\"vault\":{vault},\"program_id\":{}}}]}}",
             self.program_id
         ));
+        let allowance = near_sdk::Allowance::limited(NearToken::from_yoctonear(t.allowance.0)).unwrap_or_else(|| env::panic_str("the allowance must be positive"));
         let create = Promise::new(account.clone())
             .create_account()
             .transfer(NearToken::from_yoctonear(t.gas_funds.0))
-            .add_access_key_allowance(public_key, near_sdk::Allowance::limited(NearToken::from_yoctonear(t.allowance.0)).unwrap(), self.antibody.clone(), AGENT_METHODS.into());
-        let credit = Promise::new(self.antibody.clone()).function_call(
-            "storage_deposit".into(),
-            format!("{{\"account_id\":\"{account}\"}}").into_bytes(),
-            NearToken::from_yoctonear(t.near_credit.0),
-            CALL_GAS,
-        );
+            .add_access_key_allowance(public_key, allowance, self.antibody.clone(), PRACTICE_METHODS.into());
         let agent = Promise::new(self.antibody.clone()).function_call(
             "register_agent".into(),
             format!("{{\"agent\":\"{account}\",\"bond_budget\":\"{}\",\"per_commit_cap\":\"{}\"}}", t.bond_budget.0, t.per_commit_cap.0).into_bytes(),
             NearToken::from_yoctonear(1),
             CALL_GAS,
         );
-        create.then(credit).then(agent)
+        create.then(agent)
+    }
+
+    /// The owner moves `amount` of this contract's tokens into its credit at near-antibody, where the
+    /// practice accounts' bonds come from (their payouts return there).
+    #[payable]
+    pub fn fund(&mut self, #[serializer(borsh)] amount: U128) -> Promise {
+        near_sdk::assert_one_yocto();
+        require!(env::predecessor_account_id() == self.owner, "owner only");
+        // `msg` is near-antibody's token message `"deposit"`, itself a JSON string.
+        Promise::new(self.token.clone()).function_call(
+            "ft_transfer_call".into(),
+            format!("{{\"receiver_id\":\"{}\",\"amount\":\"{}\",\"msg\":\"\\\"deposit\\\"\"}}", self.antibody, amount.0).into_bytes(),
+            NearToken::from_yoctonear(1),
+            FUND_GAS,
+        )
     }
 
     /// The tutorial vault assigned to a practice account.
@@ -107,12 +130,14 @@ impl Vending {
     }
 
     #[result_serializer(borsh)]
-    pub fn get_config(&self) -> (AccountId, AccountId, u32, u32, Terms, u32) {
-        (self.owner.clone(), self.antibody.clone(), self.program_id, self.vaults, self.terms.clone(), self.vended)
+    pub fn get_config(&self) -> (AccountId, AccountId, AccountId, u32, u32, Terms, u32) {
+        (self.owner.clone(), self.antibody.clone(), self.token.clone(), self.program_id, self.vaults, self.terms.clone(), self.vended)
     }
 
-    /// The owner: new amounts or a new program (refills arrive as plain transfers and token deposits).
+    /// The owner: new amounts or a new program (NEAR refills arrive as plain transfers, tokens with `fund`).
+    #[payable]
     pub fn set_terms(&mut self, #[serializer(borsh)] program_id: u32, #[serializer(borsh)] vaults: u32, #[serializer(borsh)] terms: Terms) {
+        near_sdk::assert_one_yocto();
         require!(env::predecessor_account_id() == self.owner, "owner only");
         require!(vaults > 0, "at least one vault");
         self.program_id = program_id;
@@ -128,16 +153,21 @@ mod tests {
 
     fn terms(per_hour: u32) -> Terms {
         let n = |x: u128| U128(x);
-        Terms { gas_funds: n(10), allowance: n(5), near_credit: n(3), bond_budget: n(100), per_commit_cap: n(10), per_hour }
+        Terms { gas_funds: n(10), allowance: n(5), bond_budget: n(100), per_commit_cap: n(10), per_hour }
+    }
+
+    fn ctx_as(now_ns: u64, caller: &str, deposit: u128) {
+        let mut b = VMContextBuilder::new();
+        b.current_account_id("practice.antibody.testnet".parse().unwrap())
+            .predecessor_account_id(caller.parse().unwrap())
+            .account_balance(NearToken::from_near(10))
+            .attached_deposit(NearToken::from_yoctonear(deposit))
+            .block_timestamp(now_ns);
+        testing_env!(b.build());
     }
 
     fn ctx(now_ns: u64) {
-        let mut b = VMContextBuilder::new();
-        b.current_account_id("practice.antibody.testnet".parse().unwrap())
-            .predecessor_account_id("judge.testnet".parse().unwrap())
-            .account_balance(NearToken::from_near(10))
-            .block_timestamp(now_ns);
-        testing_env!(b.build());
+        ctx_as(now_ns, "judge.testnet", 0);
     }
 
     fn pk() -> PublicKey {
@@ -145,7 +175,7 @@ mod tests {
     }
 
     fn vending(per_hour: u32) -> Vending {
-        Vending::new("antibody.testnet".parse().unwrap(), "bounty.antibody.testnet".parse().unwrap(), 1, 3, terms(per_hour))
+        Vending::new("antibody.testnet".parse().unwrap(), "bounty.antibody.testnet".parse().unwrap(), "wrap.testnet".parse().unwrap(), 1, 3, terms(per_hour))
     }
 
     #[test]
@@ -184,6 +214,23 @@ mod tests {
         ctx(3_600_000_000_000);
         let _ = v.vend("cat".into(), pk());
         assert_eq!(v.vault_of("cat.practice.antibody.testnet".parse().unwrap()), Some(2));
+    }
+
+    #[test]
+    #[should_panic(expected = "owner only")]
+    fn only_the_owner_funds() {
+        ctx_as(0, "judge.testnet", 1);
+        let _ = vending(10).fund(U128(5));
+    }
+
+    #[test]
+    fn the_owner_funds_and_sets_terms() {
+        ctx_as(0, "antibody.testnet", 1);
+        let mut v = vending(10);
+        let _ = v.fund(U128(5));
+        v.set_terms(2, 24, terms(3));
+        let (.., program, vaults, t, _) = v.get_config();
+        assert_eq!((program, vaults, t.per_hour), (2, 24, 3));
     }
 
     #[test]
