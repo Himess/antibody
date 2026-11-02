@@ -543,15 +543,11 @@ where
     let cfg = evm_env.cfg_env.clone();
 
     // ---- the PoC: fresh salted senders, bounded endowment, anchor environment ----
+    // A sender's address is a hash of the bundle's salt, so no salt reaches an account that exists (that
+    // takes a keccak preimage). Its account is set here, never read at the anchor: a proof needs no
+    // witness for its senders, and one that reads only pinned base state needs none beyond the base.
     let senders: Vec<Address> = (0..bundle.senders).map(|i| sender_address(&bundle.sender_salt, i)).collect();
     let mut state = State::builder().with_database(WrapDatabaseRef(db)).with_bundle_update().build();
-    for s in &senders {
-        if let Some(a) = state.basic(*s).map_err(|e| missing_or(db, e))? {
-            if a.nonce != 0 || !a.balance.is_zero() || a.code_hash != KECCAK_EMPTY {
-                return Err(verdict(Kind::InvalidPoC, format!("sender {s} is not a fresh empty account at the anchor")));
-            }
-        }
-    }
     for s in &senders {
         state.insert_account(
             *s,
@@ -736,10 +732,15 @@ where
     let none = BTreeSet::new();
 
     let mut pre = State::builder().with_database(WrapDatabaseRef(db)).build();
-    let balances = |st: &mut State<WrapDatabaseRef<&D>>| -> Result<Vec<(U256, Vec<U256>)>, ProgramError> {
+    // A sender's ether before the PoC is its endowment (below), so the anchor is not read for it.
+    let balances = |st: &mut State<WrapDatabaseRef<&D>>, is_pre: bool| -> Result<Vec<(U256, Vec<U256>)>, ProgramError> {
         let mut out = Vec::new();
         for (a, _) in &accounts {
-            let eth = st.basic(*a).map_err(|e| missing_or(db, e))?.map(|i| i.balance).unwrap_or_default();
+            let eth = if is_pre && senders.contains(a) {
+                U256::ZERO
+            } else {
+                st.basic(*a).map_err(|e| missing_or(db, e))?.map(|i| i.balance).unwrap_or_default()
+            };
             let mut tb = Vec::new();
             for (t, _, _, _) in &tokens {
                 let o = eval_call(
@@ -757,8 +758,8 @@ where
         }
         Ok(out)
     };
-    let before = balances(&mut pre)?;
-    let after = balances(post)?;
+    let before = balances(&mut pre, true)?;
+    let after = balances(post, false)?;
 
     let to_i = |u: U256| I256::from_raw(u);
     let (mut protocol, mut attacker, mut harm) = (I256::ZERO, I256::ZERO, I256::ZERO);

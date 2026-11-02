@@ -168,6 +168,12 @@ fn merge_node(a: &Node, b: &Node, depth: usize) -> Result<Node, String> {
     }
 }
 
+/// The partial trie of `root` that proves nothing: the root's digest alone. Merged with a base it adds
+/// nothing, so it is the state of a submission whose proof reads only what the base proves.
+pub fn digest_only(root: B256) -> Result<EthereumState, String> {
+    to_mirror(&State { state_trie: Node { data: Data::Digest(root) }, storage_tries: HashMap::default() })
+}
+
 /// Merges two partial tries of the same state: every node is the expanded one where either side has
 /// it, and every expansion is checked against the hash it replaces.
 pub fn merge(base: &EthereumState, extra: &EthereumState) -> Result<EthereumState, String> {
@@ -191,6 +197,15 @@ mod tests {
 
     fn leaf(path: &[u8], v: &[u8]) -> Node {
         Node { data: Data::Leaf(path.to_vec(), v.to_vec()) }
+    }
+
+    #[test]
+    fn a_digest_only_trie_merges_to_the_base() {
+        let base = to_mirror::<State, EthereumState>(&State { state_trie: leaf(&[0x20, 0xab], &[1]), storage_tries: HashMap::default() }).unwrap();
+        let root = base.state_root();
+        let merged = merge(&base, &digest_only(root).unwrap()).unwrap();
+        assert_eq!(merged.state_root(), root);
+        assert_eq!(bincode::serialize(&merged).unwrap(), bincode::serialize(&base).unwrap());
     }
 
     #[test]
