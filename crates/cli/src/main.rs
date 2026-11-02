@@ -370,6 +370,12 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentKeyCmd,
     },
+    /// Draft invariants for your program from its sources (a defensive helper; you review and
+    /// approve the output before committing anything)
+    Invariants {
+        #[command(subcommand)]
+        cmd: InvariantsCmd,
+    },
     /// T1: check or relay OutLayer's TDX quote for a run (NEAR's DCAP verifier)
     Tee {
         #[command(subcommand)]
@@ -377,6 +383,27 @@ enum Cmd {
     },
     /// MCP server on stdio for AI agents
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum InvariantsCmd {
+    /// Deterministic draft from standard shapes, plus templates; with --ai, Claude extends it
+    /// (needs ANTHROPIC_API_KEY)
+    Draft {
+        /// Solidity files or directories (repeatable)
+        #[arg(long = "source", required = true)]
+        sources: Vec<PathBuf>,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        ai: bool,
+        #[arg(long, default_value = antibody_cli::draft::AI_MODEL)]
+        model: String,
+        #[arg(long, default_value = "high")]
+        effort: String,
+        #[arg(long, default_value_t = 16000)]
+        max_tokens: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -468,6 +495,9 @@ fn run(cli: Cli) -> Result<Value> {
                     cmd::admin_outlayer_secret(&c, api, outlayer, wasm_hash, profile, contract)
                 }
             }
+        }
+        Cmd::Invariants { cmd: InvariantsCmd::Draft { ref sources, ref out, ai, ref model, ref effort, max_tokens } } => {
+            antibody_cli::draft::run(sources, out, ai, model, effort, max_tokens)
         }
         Cmd::Tee { ref cmd } => {
             let c = mk()?;

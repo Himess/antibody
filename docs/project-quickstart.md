@@ -15,6 +15,9 @@ too. The verifier injects its runtime code at a reserved address in its own fork
 `contracts/evm/src/acme/AcmeInvariants.sol` is a complete example (solvency at reference prices, fees never
 decrease, share price never falls).
 
+To start from a draft, run `antibody invariants draft --source <your contracts> --out draft/`. Add `--ai`
+for Claude's extension. Review the draft, edit it and approve it (docs/invariants-drafting.md).
+
 ## 2. Deploy staging and pick an anchor
 
 1. Deploy your contracts to Sepolia (and, if you want, pause-only copies elsewhere).
