@@ -1,108 +1,112 @@
-# Rounds: paying for a second bug in the same function
+# Rounds: fixes, immune memory and the release gate
 
 A finding's key is `(invariant, function where it broke)`. Two different bugs that break the same
-invariant inside the same function therefore share a key, and the second one is a duplicate. That is
-the price of judging duplicates without reading anyone's text. Rounds remove that price once the
-project fixes the first bug.
+invariant inside the same function share a key, so the second one is a duplicate. Rounds remove that
+price once the project fixes the first bug. They are also how a fix ships: a release permit is signed
+only for code that every paid exploit was re-run against and no longer breaks (spec §8–§9).
 
-## The idea
+## A round manifest
 
-1. The project ships a fix as a **round manifest**: the program's manifest plus code overrides. Each
-   override is the fixed runtime code for a target, at the same address and the same anchor.
-2. The TEE **re-runs** every claimed finding against the fix. The PoC is the original one (same
-   `poc_hash`); only the code under test changes.
-3. When the round **opens**, the contract releases each key whose PoC no longer breaks it. A released
-   key can be claimed again. Every other key carries over to its original finder.
-
-So in round 1, the bug that was fixed is gone. A second bug in the same function, if one exists, now
-breaks the invariant on a free key and is paid like any new finding.
-
-## Why code overrides at the same anchor
-
-- **No redeploy and no new anchor.** The fix is just bytes in the manifest, committed by hash. The
-  state is the same proven anchor state, so re-runs compare like with like.
-- **The storage layout must not change.** Overrides replace code only; storage stays the anchor's.
-  The fixture's fix (`contracts/evm/src/acme/AcmeLendFixed.sol`) inherits from `AcmeLend` and keeps its
-  reference price in an immutable.
-- **Base Sepolia is unaffected.** It stays pause-only. A real deployment of the fix is the
-  project's business; the program keeps judging against the committed manifest.
-
-## What cannot change in a round
-
-`propose_round(program_id, base_manifest, manifest, manifest_url)` takes the program's own manifest,
-which must hash to the committed one, and the round manifest. The contract checks that they are
-identical, except for:
-
-- `round`, which must be the next round number;
-- `overrides`, which must be non-empty, with each `code_hash = keccak256(runtime_code)` and each
-  address a target;
-- the overridden targets' `code_hash`, which must equal the override's hash.
-
-Rules, payouts, bond, windows, deadline, invariants, anchor, capabilities and impact config cannot
-change. A project cannot use a round to make its program cheaper or its invariants weaker.
-
-## Flow and states
+The project ships a fix as a **round manifest**: the program's round-0 manifest plus code overrides.
+Each override is the fixed runtime code of a target, at the same address and the same anchor.
 
 ```
-round r open ──propose_round──▶ round r+1 Proposed ──open_round──▶ round r+1 Open
-                                   │  new commits verify against r+1 (and wait to settle)
-                                   │  request_rerun(commit) for each claimed finding → on_rerun
+antibody manifest-round --base manifest.json --round 1 --override <implementation>=<fixed runtime hex> --out round1.json
 ```
 
-- **New commits.** From the proposal on, they belong to round r+1 and verify against its manifest. They
-  finalize only after the round opens, when the carried keys are known.
-- **Re-runs.** `request_rerun(commit_id, sealed)` is open to the project or the finder, only for a
-  commit that holds a key in the open round, up to 3 attempts per round.
-  - `sealed` is a fresh witness of the same bundle, built at the round manifest and sealed to the
-    verifier.
-  - The project builds it from its key wrap (`antibody program round-rerun --commit N --project-key ...`).
-  - The finder builds it from their local record.
-  - After disclosure, anyone can.
-- **The TEE** (`{"mode":"rerun"}`, see docs/crypto-spec.md §8.1):
-  - checks the blob like a submission;
-  - requires `poc_hash(bundle)` to equal the original verdict's;
-  - runs the PoC against the round manifest;
-  - returns facts without a project wrap.
-- **`on_rerun`** records the keys the PoC still breaks. A re-run that fails, executes another PoC or
-  comes back `InvalidPoC` is recorded as `Failed` and is no evidence; it can be retried.
-- **`open_round`** (the project) needs every earlier-round commit settled and no re-run in flight. For
-  each key of the previous round:
-  - it is **released** if its holder's re-run is `Done` and no longer breaks it;
-  - otherwise it **carries over** to the same holder.
-  Carried claims take priority over claims made by the new round's own commits, because they were
-  found first.
+- **No redeploy and no new anchor.** The fix is bytes in the manifest, committed by hash. Re-runs use
+  the same proven anchor state, so they compare like with like.
+- **The storage layout must not change.** Overrides replace code only. The fixture's fixes inherit from
+  the contracts they fix (`AcmeLendFixed`, `AcmeLendFinal`, `AcmeVaultFixed`).
+- **Proxies.** A target behind an ERC-1967 proxy is fixed by overriding its implementation. That is also
+  what a release replaces on chain.
 
-## Safety properties
+A round may replace target code and add invariants. It may never remove or weaken an invariant, add known
+issues, change payouts or windows, or touch anything else.
 
-| Property | Why it holds |
-|---|---|
-| A key is released only if its PoC really stopped breaking it | Release needs a `Done` re-run of the same `poc_hash`, at the committed round manifest, on the proven anchor state. The project cannot fabricate one, only choose the fix |
-| A lazy or hostile project changes nothing for finders | Keys that are not re-run carry over. Payouts already decided in a round are never revisited |
-| Rules stay immutable | `check_round` allows only code overrides |
-| Re-runs stay confidential until disclosure | Re-run blobs are sealed to the verifier like submissions. The disclosure run also publishes their content keys (entries with `round`) |
-| No unbounded loops | One proposed round at a time. Re-runs are limited to claim holders and 3 attempts. `open_round` walks the program's claims once |
+## Proposing
+
+```
+antibody round propose --program N --manifest round1.json --release <proxy>:<implementation>:<code hash>
+```
+
+The manifest goes up with FastFS. The releases name each proxy to upgrade, the implementation to install
+(deployed beforehand, the same address on every chain) and the code hash that implementation must have.
+near-antibody sends both to the TEE as a `check_round` run, which verifies:
+- only target code changed, the new code hashes match the overrides, and the old slots are identical;
+- `check()` holds at the anchor with the new code, and the canaries still succeed;
+- every release names a target that is an ERC-1967 proxy at the anchor, and the code hash of the
+  override that replaces that proxy's implementation. Base witnesses prove every target's
+  implementation slot for this.
+
+The proposal counts once the check is T1-confirmed.
+
+## Immune memory: re-runs
+
+Within `rerun_window` of the confirmed check, anyone may ask for, and pay for, a re-run at the fix
+(`antibody round rerun --commit N`) of:
+- every paid PoC, from any round, and every commit that ever held a key;
+- the round's duplicates (their appeal) and gap claims.
+
+The TEE re-runs the original sealed PoC (the same `poc_hash`) under the round manifest. A re-run counts
+for its own proposal only, so the next fix is checked against every paid exploit again, and a fix that
+brings an old bug back is caught. `antibody keeper` requests every eligible re-run while a proposal is open.
+
+## Opening
+
+`antibody round open --program N` is permissionless once the round has run for `round_min`, the re-run
+window has passed with nothing in flight, and every commit of the closing round is settled. For each key
+held in the round:
+- **released** if its holder's re-run shows it fixed (or nobody asked for that re-run);
+- **carried** to the same holder if it still breaks.
+
+A duplicate of a released key whose own re-run still breaks it is **promoted** (the one-way appeal). A fix
+can only add payments.
+
+The **release gate** holds when:
+1. every paid PoC, from any round, was re-run at this fix and shows no violation;
+2. every Critical or High PoC of the round, duplicates included, was re-run and is fixed;
+3. no gap claim still breaks;
+4. the canaries pass;
+5. every holder of a Critical or High key, from any round, was re-run at this fix and shows no violation.
+
+When it holds, near-antibody asks near-guardian for a release permit per proxy and chain: EIP-712,
+signed by Chain Signatures under the project's path. The program's adapter upgrades a proxy only with a
+valid permit, and only to an implementation whose on-chain code hash is the permit's.
+
+## The demo
+
+`make demo` runs both rounds after the payouts:
+- **Round 1, a partial fix:** `AcmeLendFixed` (planted bug #1). The keeper re-runs A, B and F (paid) and
+  the duplicate D. A and D no longer break anything; B and F still do. B's and F's keys are carried and
+  the gate stays shut: no release.
+- **Round 2, the final fix:** `AcmeLendFinal` (bugs #1 and #3) and `AcmeVaultFixed` (bug #2). A, B and F
+  are re-run again and all are fixed, so the gate holds. The guardian signs four permits (two proxies, two
+  chains), the relayer submits them, both proxies run the final fix on both chains, and B's fee-sweep
+  exploit reverts against the released code.
+
+The declared known issue (#4) is not part of the fix and still breaks its invariant. It is known, so it
+blocks no release.
 
 ## Evidence
 
-- `fixtures/acme-local/round1/` holds the fix (`AcmeLendFixed`'s runtime code), the round manifest,
-  and re-run witnesses for every claimed finding, with expected verdicts.
-  - A and D (the spot-price bug) are `NoViolation` at the fix.
-  - B, F and the known issue keep their exact keys.
-  - CI checks native == wasm (`scripts/demo/check_fixtures.py fixtures/acme-local/round1`).
-- `crates/verifier/tests/tee_fixture.rs` (`rerun_mode_runs_the_same_poc_at_the_fix`) covers the TEE
-  re-run mode and its rejections: another PoC, the wrong round's manifest, round 0.
-- `contracts/near-antibody/src/tests.rs` covers the contract rules:
-  - `rounds_release_fixed_keys_and_carry_the_rest`: G's new finding on A's released key is paid, H's on
-    F's carried key is a duplicate, K's on the known issue's key is known;
-  - `round_manifests_may_only_change_target_code`;
-  - `rounds_wait_for_earlier_commits_and_need_a_claim_to_rerun`.
-- `contracts/evm/test/acme/AcmeFixture.t.sol` (`test_round1_fix_*`) runs the fix in Foundry with `vm.etch`.
-- The sandbox demo (`make demo`, CI job `e2e`) proposes round 1, re-runs KNOWN, A, B and F through the
-  MOCK OutLayer path and opens the round: 3 keys carried, 1 released.
+- `fixtures/acme-local/round1/` and `round2/`: each round's fixed runtime code, round manifest and
+  re-run witnesses for every finding that held a key, with expected verdicts
+  (`scripts/demo/acme_round.py --round N`, checked by `scripts/demo/check_fixtures.py`).
+- `crates/verifier/tests/tee_fixture.rs`, `a_round_check_binds_its_releases`: a release to other code,
+  to a target that is not the override's proxy, or to a non-target is refused.
+- `crates/rules/tests/scenarios.rs`: `release_gate_blocks_unfixed`, `later_fix_releases_carried_key`,
+  `regression_blocks_release`, `canaries_block_release`, `unexamined_duplicate_blocks_release`,
+  `gap_lane_promoted`.
+- `formal/antibody.qnt` (two round openings): `laterFixReleasesCarriedKeyTest`,
+  `regressionBlocksReleaseTest`, and the gate as invariant `p11_permits` (docs/properties.md).
+- `contracts/evm/test/acme/AcmeFixture.t.sol`: `test_round1_*` and `test_final_*`, including a release
+  permit per proxy through the adapter.
 
 ## Limits
 
-- **One anchor.** A fix that needs a migration (new storage) cannot be expressed as a code override.
-  Such a fix needs a new program.
-- **Projects can still pay more.** A second bug inside the same function before the first one is fixed
-  is still a duplicate; `top_up` remains the way to reward it.
+- **One anchor.** A fix that needs new storage cannot be expressed as a code override; it needs a new
+  program.
+- **Code, not intent.** The gate shows that every paid exploit stops working, the canaries still pass
+  and the code shipped is the code checked. It does not show that the fix has no other bug: that is what
+  the next round's hunters are paid for.
