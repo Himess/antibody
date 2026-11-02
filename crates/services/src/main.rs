@@ -3,7 +3,7 @@
 //! - `indexer`  — NEP-297 event history with tx links + state snapshot + latency metrics
 //! - `api`      — read-only JSON API (programs, feed, commits with duplicate proofs, leaderboard,
 //!                guardian/relayer status, events, MOCK mainnet data)
-//! - `relayer`  — broadcasts the guardian's signed pause() transactions to every chain
+//! - `relayer`  — submits the guardian's signed permits to each chain's adapter (its own EVM key)
 //! - `notifier` — posts new events to webhooks
 //! - `all`      — indexer + relayer + notifier + api in one process
 //! - `t1`       — relays each answered run's quote to near-antibody (T1)
@@ -170,6 +170,16 @@ fn chains(args: &[String]) -> Result<BTreeMap<u64, (String, String)>> {
     Ok(m)
 }
 
+/// The relayer's EVM key, from $RELAYER_EVM_KEY or the repository's .env (never printed). Without it
+/// the relayer only watches.
+fn relayer_signer() -> Result<Option<evm::EvmSigner>> {
+    let from_env = std::env::var("RELAYER_EVM_KEY").ok().filter(|v| !v.is_empty());
+    let from_file = || {
+        repo_root().and_then(|r| antibody_cli::ctx::load_dotenv(&r.join(".env")).into_iter().find(|(k, _)| k == "RELAYER_EVM_KEY").map(|(_, v)| v))
+    };
+    from_env.or_else(from_file).map(|k| evm::EvmSigner::from_hex(&k)).transpose()
+}
+
 fn explorer(chain_id: u64) -> String {
     match chain_id {
         11155111 => "https://sepolia.etherscan.io/tx/".into(),
@@ -265,7 +275,9 @@ fn main() -> Result<()> {
             let r = relayer::Relayer {
                 near: near_for(&cli, &dep),
                 guardian: dep.guardian.clone().ok_or_else(|| eyre!("no guardian in deployments"))?,
+                antibody: dep.antibody.clone(),
                 chains: chains(c)?,
+                signer: relayer_signer()?,
                 state_file: state_dir(&cli).join("relayer.json"),
             };
             if *once {
@@ -307,7 +319,14 @@ fn main() -> Result<()> {
             let ix = indexer(&cli, &dep, source, 0)?;
             std::thread::spawn(move || ix.run(5000));
             if let Some(g) = dep.guardian.clone() {
-                let r = relayer::Relayer { near: near_for(&cli, &dep), guardian: g, chains: chains(c)?, state_file: state_dir(&cli).join("relayer.json") };
+                let r = relayer::Relayer {
+                    near: near_for(&cli, &dep),
+                    guardian: g,
+                    antibody: dep.antibody.clone(),
+                    chains: chains(c)?,
+                    signer: relayer_signer()?,
+                    state_file: state_dir(&cli).join("relayer.json"),
+                };
                 std::thread::spawn(move || r.run(3000));
             }
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();

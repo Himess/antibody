@@ -1,6 +1,11 @@
-//! Minimal EVM JSON-RPC client (blocking) for the relayer and the demo.
+//! Minimal EVM JSON-RPC client (blocking) for the relayer and the demo, and an EIP-1559 signer for
+//! an account that pays its own gas (the relayer's).
 
+use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
+use alloy_eips::eip2718::Encodable2718;
+use alloy_primitives::{keccak256, Address, Bytes, Signature, TxKind, U256};
 use eyre::{eyre, Result};
+use k256::ecdsa::SigningKey;
 use serde_json::{json, Value};
 
 #[derive(Clone)]
@@ -48,12 +53,66 @@ impl Evm {
         Ok((!r.is_null()).then_some(r))
     }
 
+    /// A view returning `address[]` (e.g. `pauseTargets()`).
+    pub fn address_array(&self, to: Address, signature: &str) -> Result<Vec<Address>> {
+        let data = format!("0x{}", hex::encode(&keccak256(signature.as_bytes())[..4]));
+        let r = self.call("eth_call", json!([{"to": to, "data": data}, "latest"]))?;
+        let b = hex::decode(r.as_str().unwrap_or_default().trim_start_matches("0x"))?;
+        let word = |i: usize| -> Result<&[u8]> { b.get(i * 32..i * 32 + 32).ok_or_else(|| eyre!("short return data")) };
+        let n = U256::from_be_slice(word(1)?).to::<usize>();
+        (0..n).map(|i| Ok(Address::from_slice(&word(2 + i)?[12..]))).collect()
+    }
+
     /// `paused()` on a target (AcmeGuard or any Pausable): selector 0x5c975abb.
     pub fn paused(&self, to: &str) -> Result<bool> {
         let r = self.call("eth_call", json!([{"to": to, "data": "0x5c975abb"}, "latest"]))?;
         Ok(r.as_str().map(|s| s.trim_start_matches("0x").trim_start_matches('0') == "1").unwrap_or(false))
     }
 
+}
+
+fn hex_u128(v: &Value) -> Result<u128> {
+    u128::from_str_radix(v.as_str().ok_or_else(|| eyre!("not hex: {v}"))?.trim_start_matches("0x"), 16).map_err(|e| eyre!("{e}"))
+}
+
+/// An EVM account that signs and pays for its own transactions (the relayer's). Its key never leaves
+/// this process and is never printed.
+pub struct EvmSigner {
+    key: SigningKey,
+    pub address: Address,
+}
+
+impl EvmSigner {
+    pub fn from_hex(secret: &str) -> Result<Self> {
+        let b = hex::decode(secret.trim().trim_start_matches("0x"))?;
+        let key = SigningKey::from_slice(&b).map_err(|_| eyre!("not a secp256k1 secret key"))?;
+        let pt = key.verifying_key().to_encoded_point(false);
+        let address = Address::from_slice(&keccak256(&pt.as_bytes()[1..])[12..]);
+        Ok(Self { key, address })
+    }
+
+    /// Signs and broadcasts an EIP-1559 call; returns the transaction hash.
+    pub fn send(&self, evm: &Evm, chain_id: u64, to: Address, data: Vec<u8>, gas_limit: u64) -> Result<String> {
+        let nonce = hex_u64(&evm.call("eth_getTransactionCount", json!([self.address, "pending"]))?)?;
+        let price = hex_u128(&evm.call("eth_gasPrice", json!([]))?)?;
+        let tip = price.min(1_000_000_000);
+        let tx = TxEip1559 {
+            chain_id,
+            nonce,
+            gas_limit,
+            max_fee_per_gas: price * 2 + tip,
+            max_priority_fee_per_gas: tip,
+            to: TxKind::Call(to),
+            value: U256::ZERO,
+            access_list: Default::default(),
+            input: Bytes::from(data),
+        };
+        let (sig, recid) = self.key.sign_prehash_recoverable(tx.signature_hash().as_slice())?;
+        let (r, s) = sig.split_bytes();
+        let signature = Signature::new(U256::from_be_slice(&r), U256::from_be_slice(&s), recid.is_y_odd());
+        let raw = TxEnvelope::Eip1559(tx.into_signed(signature)).encoded_2718();
+        evm.send_raw(&format!("0x{}", hex::encode(raw)))
+    }
 }
 
 pub fn hex_u64(v: &Value) -> Result<u64> {

@@ -689,6 +689,8 @@ dependencies = [
 name = "antibody-services"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips 2.0.5",
  "alloy-primitives",
  "antibody-cli",
  "antibody-rules",
