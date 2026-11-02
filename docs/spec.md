@@ -65,7 +65,8 @@ create ──(anchor check)──▶ Setup ──activate (T1)──▶ Activate
    - If the call fails, or the chain or the block is outside the client's window, the anchor is
      `Unconfirmed`. It is labelled so and cannot trigger pauses.
    - `recheck_anchor` is permissionless while the block is inside the client's window.
-2. **Activate.** One verifier run in `activate` mode derives the program's keys (§11) and outputs the
+2. **Activate.** `activate(program_id, base)` pins the base witness (§4.4). One verifier run in
+   `activate` mode checks the program at the anchor, derives the program's keys (§11) and outputs the
    program's sealing public key and key epoch. The key is accepted only when that run is **T1-confirmed**
    (§6). Activation retries until it is; each retry costs one run.
 3. **Known issues** (optional, before open only). §7.6.
@@ -81,33 +82,46 @@ becomes available at once.
 
 ### 3.2 Manifest v2
 
-The manifest is canonical JSON (keys sorted, no whitespace). Its SHA-256 is the program's
-`manifest_hash`. The contract stores the fields it enforces; the verifier receives the full manifest in
-every request and checks it against the hash. Schema: `antibody.manifest.v2`.
+The manifest's exact bytes are committed: their SHA-256 is the program's `manifest_hash`, and every reader
+hashes the bytes it receives, never a re-encoding. The CLI writes them in one canonical form (compact
+JSON, fields in a fixed order, the `settlement` object's keys sorted). Schema: `antibody.manifest.v2`.
+near-antibody reads the identity, the anchor, the slots and `settlement`. The verifier reads the rest; it
+receives the round-0 manifest inside the base witness (§4.4) and a later round's manifest by hash. A v2
+manifest has a `settlement` section and none of v1's `payout` and `rules` sections, so the terms have one
+source.
 
 | Field | Meaning |
 |---|---|
-| `program` | `name`, `project` (NEAR account), `terms_sha256` (§16), `description` |
-| `chain` | `name`, `chain_id`, `anchor {number, hash, timestamp}` |
-| `rules` | `evm` (the EVM rules, §18), `fork_policy` (`pin`), `label` |
-| `targets[]` | `name`, `address`, `code_hash`, `chain_id` |
-| `invariants` | `code_hash`, `runtime_code`, `gas_limit` (per evaluation), `slots[]` {`slot`, `name`, `plain`, `severity`, `budget`} |
-| `groups` | `per-function` (default), or `custom[]` {`id`, `name`, `members[] {target, selector}`} (§7.2) |
-| `payouts` | `critical`, `high`, `medium`, `low`; `impact_bps`, `impact_cap`; `instant_cap`; `instant_budget` per `instant_window`; `protocol_fee_bps`; `release_fee` |
-| `bond` | `amount`, `formula` (§12.2) |
-| `challenge_bond` | amount (§6.4) |
-| `windows` | `reveal`, `challenge`, `resolve`, `infra_grace`, `round_min`, `rerun_window`, `disclosure_max_delay`, `deadline`, `exit_grace` |
-| `capabilities` | `senders`, `endowment_wei`, `max_entry_calls`, `max_total_gas`, `max_eval_gas`, `max_blob_bytes` |
-| `unevaluable` | `refund` (default) or `{violation: {slot, severity}}` (§5.4) |
-| `protected_accounts[]` | `address`, `kind` (`user` or `protocol`), `assets[]`; never AMM or market-making accounts (§7.7) |
-| `gap_lane` | `threshold_usd_micro`, `claim_amount` |
-| `prices` | committed USD prices per asset, used for impact (§5.6) |
-| `known_issues` | `max_count`, `max_share_bps` (§7.6) |
-| `pause` | `slots[]`, `min_impact_usd_micro`, `chains[] {chain_id, adapter, targets[] {address, code_hash}}` (§10) |
-| `release` | `chains[] {chain_id, adapter, proxy}` (§9) |
-| `canaries[]` | `{to, data, expect: "success"}`: calls that must keep succeeding after a fix (§8.3) |
-| `witness` | `base {near_tx, sha256}`: the base state witness, pinned at open (§4.4) |
-| `pins` | §15 |
+| `program` | `name`, `project` (NEAR account), `description` |
+| `anchor` | `chain_id`, `block_number`, `block_hash`, `evm_spec` (the EVM rules, §18), `trust` |
+| `targets[]` | `name`, `address`, `code_hash` |
+| `invariants` | `runtime_code`, `runtime_code_hash`, `gas_limit` (per evaluation), `slots[]` {`bit`, `name`, `severity`}; `address` is ignored: the verifier serves the invariants at a reserved address per program (§5.7) |
+| `impact` | `protocol_accounts[]`, `native_usd`, `tokens[]` {`symbol`, `address`, `decimals`, `usd`}: committed prices (§5.6) |
+| `capabilities` | `max_senders`, `max_endowment_wei`, `max_txs`, `max_gas_per_tx`, `max_total_gas`, `max_blocks`, `max_timestamp_delta`, `max_entry_calls`, `max_eval_gas` |
+| `groups[]` | Optional `{id, name, members[] {target, selector}}`; absent, every entry point is its own group (§7.2) |
+| `protected_accounts[]` | Optional `{address, kind}`, `kind` being `user` or `protocol` (§7.7) |
+| `canaries[]` | Optional `{to, data}`: calls that must keep succeeding after a fix (§8.1) |
+| `round`, `overrides[]` | A round's manifest only (§8.1) |
+| `settlement` | Every term near-antibody enforces (below) |
+
+`settlement` (amounts are decimal strings in raw token units; windows are seconds):
+
+| Field | Meaning |
+|---|---|
+| `payouts` | `critical`, `high`, `medium`, `low`, `impact_bps`, `impact_cap`, `decimals` |
+| `instant` | `cap`, `budget`, `window_secs` (§6.3) |
+| `fees` | `protocol_bps`, `release` (§12.3) |
+| `bond`, `challenge_bond` | §12.2, §6.4 |
+| `windows` | `reveal`, `challenge`, `resolve`, `infra_grace`, `run_timeout`, `round_min`, `rerun_window`, `disclosure_max_delay`, `deadline` (unix seconds), `exit_grace` |
+| `slot_budgets[]` | `{slot, budget}` per round (§7.4); a slot not listed has the escrow as its budget |
+| `unevaluable` | `"refund"` or `{"violation": severity}` (§5.4) |
+| `gap` | Optional `threshold_usd_micro`, `claim_amount` (§7.7) |
+| `known` | `max_count`, `max_share_bps` (§7.6) |
+| `pause` | `slots[]`, `min_impact_usd_micro` (§10) |
+| `terms_sha256` | The terms text (§16) |
+
+The base witness is pinned at activation, and the pins (§15) come from the deployment's defaults at
+creation: neither is part of the manifest.
 
 ### 3.3 Bounds
 
@@ -115,10 +129,11 @@ every request and checks it against the hash. Schema: `antibody.manifest.v2`.
 - Every window is within its range (`docs/api.md`).
 - `max_eval_gas ≥ (max_entry_calls + 2) × invariants.gas_limit`, and the final evaluation runs with its
   own reserved `gas_limit`, outside the total.
-- Every payout and budget is at most the escrow, and the payout arithmetic cannot overflow `u128`.
+- Every amount is at most 2^100, so the payout arithmetic cannot overflow `u128`. A payout the escrow
+  does not cover is owed through the shortfall queue (§7.8).
 - Every string has a length cap.
-- At most 32 targets, 64 slots, 64 groups, 8 canaries and 8 chains.
-- `bond ≥ bond_floor` (§12.2).
+- At most 32 targets, 64 slots, 64 groups and 8 canaries.
+- The bond and the challenge bond are positive (§12.2 gives the recommended floor).
 - The project's X25519 key is not a low-order point (§11.5).
 
 `antibody invariants validate` runs the same checks off chain, plus a dry run of `check()` at the
@@ -130,23 +145,29 @@ anchor (§5.4).
 
 `commit(program_id, round, commitment, terms_sha256)` with a bond (`ft_transfer_call`, or from the
 account's credit).
-- `commitment = SHA-256("antibody/commit/v2" ‖ program_key ‖ u32_be(round) ‖ hunter ‖ blob_sha256)`.
-  It binds the hunter, so a commitment cannot be copied.
+- `commitment = SHA-256("antibody/commit/v2" ‖ u32_be(len) ‖ program_key ‖ u32_be(round) ‖ u32_be(len) ‖
+  hunter ‖ blob_sha256)`, with the program key and the hunter length-prefixed. It binds the hunter, so a
+  commitment cannot be copied.
 - `round` must be the program's current round: **commits are bound to their round**.
 - `terms_sha256` must equal the program's. Committing accepts the terms (§16).
-- Storage is paid from the requester's NEP-145 credit (§12.1).
+- Storage is paid from the beneficiary's NEP-145 credit (§12.1).
 - An agent's commit is checked against its bond budget and per-commit cap (§13).
+- An agent's bond comes from its owner's credit; anyone else's comes from their credit or arrives with
+  `ft_transfer_call`.
 
 Commit order (a per-program index) is priority.
 
 ### 4.2 Reveal
 
-`submit(commit_id, blob)` within `reveal` seconds of the commit.
-- `blob` is `inline` (at most 32 KB, carried in the call itself), or `near-tx:<hash>` for a larger blob
-  uploaded with FastFS.
-- The contract checks `SHA-256(blob) = blob_sha256` for inline blobs. The verifier checks it for
-  `near-tx` blobs.
-- The reveal starts a verification run (§5) paid from the requester's credit.
+`reveal(commit_id, blob)` within `reveal` seconds of the commit.
+- `blob` is `{"inline": hex}` (at most 15 KB, carried in the call itself), or
+  `{"near_tx": {"location": "near-tx:<hash>:<signer>", "sha256"}}` for a larger blob uploaded with FastFS.
+  Every request near-antibody sends stays within OutLayer's 32 KB of free input, so a run never needs an
+  extra deposit.
+- The commitment is checked against `SHA-256(blob)` for inline blobs and against the given `sha256` for
+  FastFS blobs, whose fetched bytes the verifier checks. A FastFS location is kept for later runs; an
+  inline blob is not stored, and a later run of the commit passes it again.
+- The reveal starts a verification run (§5) paid from the beneficiary's credit.
 
 A commit not revealed in time **expires** (`expire`, permissionless), and its bond is forfeited to the
 program's escrow.
@@ -158,10 +179,12 @@ verifier can open it, until disclosure.
 
 ### 4.4 Witnesses
 
-- **Base witness.** State proofs for the targets at the anchor, built and published by the project (FastFS),
-  pinned by hash at open. Re-runs and duplicates all use it.
+- **Base witness.** The anchor header, the invariants and proofs for every account, slot and code the
+  activation checks read (`antibody program activate` builds it by tracing them), published by the
+  project with FastFS and pinned at activation. Re-runs and duplicates all use it.
 - **Extra witness.** Proofs for any other account or slot the PoC touches. It travels inside the sealed
-  blob, so disclosure releases everything a re-run needs.
+  blob, so disclosure releases everything a re-run needs. A sealed blob may also carry a complete program
+  witness; the verifier merges an extra witness with the base and uses a complete one as it is.
 
 The verifier fetches `near-tx` blobs and the base witness from at least two NEAR RPCs and accepts only
 bytes that match the committed hash.
@@ -171,18 +194,22 @@ bytes that match the committed hash.
 ### 5.1 Request
 
 near-antibody calls OutLayer's `request_execution` with:
-- `source: WasmUrl {url, hash}`: the program's pinned verifier build;
+- `source: WasmUrl {url, hash, build_target}`: the program's pinned verifier build;
 - `payer_account_id`: the requester, so unused deposit returns to them;
-- `input_data`: the canonical JSON request below.
+- `input_data`: the request below, built from near-antibody's own records.
 
 ```
-{ "v": 2, "mode": "verify" | "activate" | "rerun" | "second" | "distinct" | "release_wrap" | "disclose",
+{ "v": 2, "mode": "activate" | "verify" | "second" | "rerun" | "check_round" | "distinct" | "release_wrap" | "disclose",
   "program_key", "manifest_sha256", "round", "key_epoch", "commit_id", "run_id",
-  "hunter", "blob": {"inline": hex} | {"near_tx": hash, "sha256"},
-  "base_witness": {"near_tx", "sha256"}, "round_overrides_sha256", … }
+  "base": {"near_tx", "sha256"},                      // the pinned base witness
+  "round_manifest": {"near_tx", "sha256"},            // rounds after 0
+  "hunter", "blob": {"inline"} | {"near_tx", "sha256"}, // submissions
+  "project_pk", "earlier", "patch", "slot", "tags" }   // release_wrap, distinct, disclose
 ```
 
-`request_sha256 = SHA-256(input_data)`. The facts repeat it, so T0 and T1 bind to the same bytes.
+`run_id` is the id the run will get, so the facts can name it. `request_sha256 = SHA-256(input_data)`
+is stored with the run; the facts repeat it, so T0 and T1 bind to the same bytes. Each request emits a
+`run_requested` event, from which relayers find the OutLayer request behind a run.
 
 ### 5.2 Facts v2
 
@@ -191,19 +218,20 @@ that hash against the quote.
 
 | Field | Meaning |
 |---|---|
-| `v` | 2 |
+| `v`, `mode` | 2, and the request's mode |
 | `request_sha256`, `manifest_sha256`, `program_key`, `round`, `key_epoch`, `commit_id`, `run_id` | Bind the facts to one request |
 | `kind` | `Violation`, `NoViolation`, `InvalidPoC`, `Unevaluable`, `ProgramMisconfigured`, `InfraError` |
-| `keys[]` | `{slot, group, tag}`: the root-cause keys (§7.2) |
-| `broken_mask` | Bitmask of broken slots |
+| `keys[]` | `{slot, tag}`: the root-cause keys (§7.2); the tag hides which group it names |
 | `impact_usd_micro` | min(protocol loss, attacker gain) at committed prices (§5.6) |
 | `protected_harm_usd_micro` | Loss on declared protected accounts (§7.7) |
 | `receipt_sha256` | Hash of the full receipt, which is deterministic and byte-identical on every platform |
 | `poc_sha256` | Hash of the decrypted bundle |
 | `reason` | For `InvalidPoC`, `InfraError`, `ProgramMisconfigured`: a short code |
 
-Mode-specific fields: `activate` adds `sealing_pk`; `rerun` adds the re-run's keys and kind; `release_wrap`
-adds `wrap`; `disclose` adds the disclosure keys.
+Mode-specific fields: `activate` adds `sealing_pk`; `check_round` adds `round_check {ok, canaries_ok}`;
+`verify` and `second` may add `wrap_d`; `release_wrap` adds `wrap`; `disclose` adds `disclosed[]`;
+`distinct` adds `distinct`. Facts that do not parse, or that bind another request, are the run's fault:
+near-antibody records them as `InfraError`.
 
 ### 5.3 Outcomes
 
@@ -273,10 +301,11 @@ and wasm builds give byte-identical output.
 
 - **T0.** OutLayer returned the facts. The OutLayer operator vouches for them.
 - **T1.** Someone relayed the TDX quote of that run and NEAR's DCAP verifier accepted it:
-  - its measurements are in the program's pinned image set (§15);
-  - its TCB status is accepted;
-  - its `report_data` binds `SHA-256(request_sha256 ‖ output_sha256)` of this run;
-  - its caller is the run's signer, or near-antibody.
+  - OutLayer's attestation of the run describes exactly what near-antibody recorded: the pinned wasm,
+    `input_hash = request_sha256`, `output_hash = output_sha256` (the bytes near-antibody received), the
+    run's signer (or near-antibody) as caller, and no secrets;
+  - the quote's `report_data` is the SHA-256 of those attestation fields, followed by zeros;
+  - its measurements are in the program's pinned image set (§15), and its TCB status is accepted.
 
   `confirm_tee` is permissionless.
 
@@ -293,8 +322,12 @@ disclosed with a wrong key.
 
 A verdict is final when no challenge is open, it is not `InfraError`, and one of these holds:
 1. it is T1 and its payout is at most `instant_cap`; or
-2. its challenge window (`challenge` seconds) has passed. Above `instant_cap`, a `second` run of the same
-   request must also have produced identical facts. A second run that disagrees voids the verdict (§6.5).
+2. its challenge window (`challenge` seconds) has passed. Above `instant_cap`, an independent `second`
+   run of the same PoC must also agree: same kind, keys and impact. Anyone may request it and pays for
+   it. A second run that disagrees voids the verdict (§6.5).
+
+Allocation waits at a commit that is not final (§7.1), so whoever is owed a later payout has a reason to
+request the second run that unblocks it.
 
 A T1 verdict above the cap still waits the window and needs an agreeing second run, because a TDX quote
 can be forged with physical access to a machine. Exposure to that attack is bounded by §6.3.
@@ -310,8 +343,8 @@ A holder (§7) is paid **in seconds** when all of the following hold:
 Otherwise it is paid when its window has passed. "Paid in seconds under the cap; larger payouts after the
 window."
 
-Missing quote (about 10% of runs today). The keeper requests a re-run of the same request, whose quote
-counts for the same facts. If no quote arrives, the T0 window applies.
+Missing quote (about 10% of runs today). A submission's verdict falls back to its T0 window. A
+structural run (activation, a known issue) is simply requested again.
 
 ### 6.4 Challenges: settled by re-execution
 
@@ -640,19 +673,23 @@ key derivation (`request_app_private_key`):
 ### 12.1 Requester pays
 
 - Each account holds an NEP-145-style **credit** in NEAR for storage and verification.
-  - `storage_deposit` tops it up.
+  - `storage_deposit` tops it up; a new account's entry is paid from its own deposit.
   - An agent key can spend it but not withdraw it.
-  - Every run is paid from the requester's credit, and OutLayer refunds the unused part to the requester
-    (`payer_account_id`).
+  - The storage a call adds (a program, a commit, an agent, a proposal, a disclosure request) is
+    charged to the payer's credit.
+  - Every run is charged the program's pinned deposit plus a 0.01 NEAR allowance for the storage of its
+    answer. OutLayer refunds the unused part of the deposit to the requester (`payer_account_id`).
+- Withdrawals of token credit and of NEAR credit attach one yoctoNEAR, so only a full-access key withdraws.
 - OutLayer keeps its base fee (0.001 NEAR on testnet) on every attempt, failed ones included.
-- Projects pay activation, known issues, `check_round`, re-runs of their own choosing, and the
-  disclosure deposit, which is collected at creation and can be topped up by anyone.
+- Projects pay activation, known issues, `check_round` and re-runs of their own choosing. Whoever
+  requests a disclosure pays for it.
 - near-antibody's own balance never pays for anyone's call.
 
 ### 12.2 Bonds
 
-`bond_floor = 3 × p95(cost of verifying one submission, T1 relay included)`, valued at the committed
-NEAR/tUSD rate. `docs/measurements.md` shows the formula with today's measured values. Bonds price slop:
+The recommended floor is `3 × p95(cost of verifying one submission, T1 relay included)`, valued at the
+NEAR/tUSD rate the project uses; `docs/measurements.md` shows the formula with today's measured values.
+The contract requires a positive bond. Bonds price slop:
 - a final `NoViolation`, a final `InvalidPoC` or an expired commit **forfeits the bond to the program's
   escrow**, where it pays future findings;
 - the protocol never earns from forfeits.
@@ -667,10 +704,11 @@ NEAR/tUSD rate. `docs/measurements.md` shows the formula with today's measured v
 
 - **Registry.** `register_agent(agent, bond_budget, per_commit_cap)` is called by the owner. The agent is
   a sub-account of the owner, so only the owner could create it.
-- **Key.** A function-call key on near-antibody, limited to `commit`, `submit`, `upload` and the
-  permissionless advance methods. It cannot call `withdraw`, transfer tokens, or attach deposits.
+- **Key.** A function-call key on near-antibody, limited to `commit`, `reveal`, `retry` and FastFS
+  uploads. It cannot withdraw (one yoctoNEAR is required), transfer tokens, or attach deposits.
 - **Bonds.** Agent bonds come from the owner's credit, within `bond_budget` (total locked) and
-  `per_commit_cap`. A commit over either is refused and recorded as a **containment event**.
+  `per_commit_cap`. A commit over either is refused: the call returns no commit and records a
+  **containment event** (counted in the statement, and logged).
 - **Payouts and refunds** go to the owner's credit.
 - **Agent statement** (view): bonds locked and lost, verification spend, payouts, net, key permissions,
   containment events, and the record of its proofs (verdict, tier, receipt, tx links).
@@ -691,8 +729,8 @@ Callbacks parse raw bytes, and every decode failure is a typed error, never a pa
 
 The keeper is permissionless and advances everything:
 - relays quotes (§6.1);
-- requests missing quotes' re-runs;
-- allocates and pays;
+- requests the second run an above-cap verdict needs (§6.2);
+- allocates, pays and funds the shortfall queue;
 - requests immune-memory re-runs;
 - opens rounds;
 - discloses;
@@ -718,16 +756,19 @@ The part of a debt the project never covered is recorded as **defaulted**.
 At creation each program pins:
 - the verifier build (`wasm_url`, `wasm_sha256`);
 - the OutLayer account;
-- the TEE policy: the DCAP verifier account, the accepted TCB statuses, and the measurement set;
+- the TEE policy: the DCAP verifier account, the accepted TCB statuses, the measurement set and the
+  image delay;
 - the light client;
-- the guardian;
-- the MPC account;
-- the fee recipient and rates.
+- the guardian.
+
+The payout token is fixed for the deployment's life, since every credit is in it. Fee rates are terms
+of the manifest (§3.2); fees accrue to the deployment's treasury.
 
 The owner's setters change the **defaults for new programs only**.
 
-- **Measurements.** The set is a snapshot of OutLayer's approved images at creation. Later approvals are
-  added to a program only after `image_delay`, which is longer than the challenge window. A veto can only
+- **Measurements.** The set is a snapshot of OutLayer's approved images at creation (`sync_images`,
+  permissionless, copies OutLayer's list). Later approvals count for a program only after `image_delay`,
+  which is longer than the challenge window. A veto can only
   remove an image, which forces the window, and can never cancel a payout.
 - **Locked deployment.** The launch accounts (near-antibody, guardian, practice vending) hold no
   full-access keys, and their builds are reproducible (NEP-330 metadata).
