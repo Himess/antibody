@@ -18,6 +18,7 @@ contracts:
 	cd contracts/near-antibody && cargo build --release --target wasm32-unknown-unknown \
 		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap -p antibody-mock-lc
 	cd contracts/near-guardian && cargo build --release --target wasm32-unknown-unknown
+	cd contracts/practice-vending && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/evm && forge build
 
 verifier:
@@ -32,6 +33,7 @@ contract-tests:
 	cd contracts/evm && forge test
 	cd contracts/near-antibody && cargo test --lib -p near-antibody -p antibody-tusd
 	cd contracts/near-guardian && cargo test --lib
+	cd contracts/practice-vending && cargo test --lib
 	cargo test --release -p antibody-verifier -p antibody-cli
 
 sandbox:

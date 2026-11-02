@@ -1,0 +1,32 @@
+[package]
+name = "antibody-practice-vending"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Antibody practice accounts: a sub-account with a key scoped to near-antibody, registered as an agent of this contract, and assigned its own tutorial vault"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { version = "=5.9.0" }
+
+[dev-dependencies]
+near-sdk = { version = "=5.9.0", features = ["unit-testing"] }
+
+[profile.release]
+strip = true
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
+
+[workspace]
+resolver = "3"
+
+[patch.crates-io]
+# Test-only: near-sdk's `unit-testing` feature pulls near-vm-runner, whose filesystem cache is Unix-only.
+near-vm-runner = { path = "../../third_party/patches/near-vm-runner-0.29.2" }
