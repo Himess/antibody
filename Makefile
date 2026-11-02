@@ -1,7 +1,7 @@
 # Antibody — one-command offline demo (no keys, no testnet funds).
 #   make demo   build everything, verify the recorded fixtures natively and in wasm, run the contract
-#               rule tests, then run the full flow on near-sandbox + two anvils with MOCK OutLayer and
-#               MOCK MPC, and print the results table.
+#               tests, then run the full flow on near-sandbox and anvil with MOCK OutLayer and MOCK
+#               DCAP (the real T1 checks on MOCK quotes), and print the results table.
 # Linux x86_64 or macOS arm64 with Rust (rustup), Foundry and Python 3. Elsewhere: see Dockerfile.
 
 SHELL := /bin/bash
@@ -16,7 +16,7 @@ build: contracts verifier
 contracts:
 	rustup toolchain install $(NEAR_TOOLCHAIN) --profile minimal --target wasm32-unknown-unknown
 	cd contracts/near-antibody && cargo build --release --target wasm32-unknown-unknown \
-		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc
+		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap
 	cd contracts/near-guardian && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/evm && forge build
 

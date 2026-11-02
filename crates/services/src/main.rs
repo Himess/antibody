@@ -6,15 +6,14 @@
 //! - `relayer`  — broadcasts the guardian's signed pause() transactions to every chain
 //! - `notifier` — posts new events to webhooks
 //! - `all`      — indexer + relayer + notifier + api in one process
+//! - `t1`       — relays each answered run's quote to near-antibody (T1)
 //! - `worker-mock`, `signer-mock` — sandbox stand-ins for OutLayer and the MPC network
-//! - `demo`     — the offline end-to-end run on near-sandbox + two anvils
-//! - `live`     — the same story on NEAR testnet, Sepolia and Base Sepolia, nothing mocked
+//! - `demo`     — the offline end-to-end run on near-sandbox and anvil
 
 mod api;
 mod demo;
 mod evm;
 mod indexer;
-mod live;
 mod mocks;
 mod notifier;
 mod relayer;
@@ -89,8 +88,9 @@ enum Cmd {
         #[arg(long, default_value = "fastnear")]
         source: String,
     },
-    /// T1 relayer: relays OutLayer's TDX quote for every verdict and re-run to near-antibody
-    /// (`confirm_tee`); needs the indexer's events and a funded NEAR account to pay gas
+    /// T1 relayer: relays the quote of every answered run to near-antibody (`confirm_tee`). On
+    /// testnet it needs the indexer's events; with --mock-outlayer (sandbox) it relays MOCK
+    /// attestations. Pays gas only
     T1 {
         #[arg(long)]
         account: String,
@@ -98,6 +98,9 @@ enum Cmd {
         key_file: Option<PathBuf>,
         #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
         api: String,
+        /// Sandbox only: the mock-outlayer account whose MOCK attestations to relay
+        #[arg(long)]
+        mock_outlayer: Option<String>,
         #[arg(long, default_value_t = 10000)]
         interval_ms: u64,
         #[arg(long, default_value_t = 5)]
@@ -119,7 +122,7 @@ enum Cmd {
         #[arg(long)]
         key_file: PathBuf,
     },
-    /// Offline end-to-end run: near-sandbox + two anvils, every expected outcome asserted
+    /// Offline end-to-end run: near-sandbox and anvil, every expected outcome asserted
     Demo {
         #[arg(long)]
         sandbox_bin: Option<PathBuf>,
@@ -128,29 +131,6 @@ enum Cmd {
         /// Keep the chains running at the end (for exploring with the CLI/API)
         #[arg(long)]
         keep: bool,
-    },
-    /// The Acme story live on NEAR testnet, Sepolia and Base Sepolia: real OutLayer TEE, Chain
-    /// Signatures, light client and DCAP verifier. Resumable: finished steps are skipped
-    Live {
-        /// NEAR key files `<account>.json` (default: .secrets/near)
-        #[arg(long)]
-        keys: Option<PathBuf>,
-        /// The Sepolia fixture (default: fixtures/acme-sepolia, from scripts/demo/acme_fixture.py --net sepolia)
-        #[arg(long)]
-        fixture: Option<PathBuf>,
-        /// Acme Lend's Sepolia deployment (default: contracts/evm/deployments/11155111.json)
-        #[arg(long)]
-        acme: Option<PathBuf>,
-        #[arg(long)]
-        work_dir: Option<PathBuf>,
-        #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
-        api: String,
-        /// The program's deadline, in minutes from its creation (round 1 must be proposed before it)
-        #[arg(long, default_value_t = 60)]
-        deadline_minutes: u64,
-        /// Run these finished steps again (comma-separated)
-        #[arg(long, value_delimiter = ',')]
-        redo: Vec<String>,
     },
 }
 
@@ -238,23 +218,6 @@ fn main() -> Result<()> {
             })?;
             Ok(())
         }
-        Cmd::Live { keys, fixture, acme, work_dir, api, deadline_minutes, redo } => {
-            let root = repo_root().ok_or_else(|| eyre!("run the live story from inside the repository"))?;
-            let exe = if cfg!(windows) { ".exe" } else { "" };
-            live::run(live::LiveArgs {
-                work: work_dir.clone().unwrap_or_else(|| root.join("target/live")),
-                deployments: cli.deployments.clone().unwrap_or_else(|| root.join("deployments/near-testnet.json")),
-                keys: keys.clone().unwrap_or_else(|| root.join(".secrets/near")),
-                fixture: fixture.clone().unwrap_or_else(|| root.join("fixtures/acme-sepolia")),
-                acme: acme.clone().unwrap_or_else(|| root.join("contracts/evm/deployments/11155111.json")),
-                antibody_bin: root.join(format!("target/release/antibody{exe}")),
-                outlayer_api: api.clone(),
-                deadline_minutes: *deadline_minutes,
-                redo: redo.clone(),
-                root,
-            })?;
-            Ok(())
-        }
         Cmd::WorkerMock { outlayer, key_file } => {
             let dep = load_dep(&cli)?;
             let mut w = mocks::MockWorker {
@@ -311,9 +274,13 @@ fn main() -> Result<()> {
             }
             r.run(*interval_ms)
         }
-        Cmd::T1 { account, key_file, api, interval_ms, max_attempts, once } => {
+        Cmd::T1 { account, key_file, api, mock_outlayer, interval_ms, max_attempts, once } => {
             let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(account.clone()), key_file.clone(), None)?;
-            let r = t1::T1Relayer { ctx, api: api.clone(), state_dir: state_dir(&cli), max_attempts: *max_attempts };
+            let source = match mock_outlayer {
+                Some(o) => t1::Source::Mock { outlayer: o.clone() },
+                None => t1::Source::OutLayer { api: api.clone() },
+            };
+            let r = t1::T1Relayer { ctx, source, state_dir: state_dir(&cli), max_attempts: *max_attempts };
             if *once {
                 println!("{}", serde_json::to_string_pretty(&r.tick()?)?);
                 Ok(())

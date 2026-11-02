@@ -118,14 +118,14 @@ jobs:
         run: |
           cargo test --lib
           cargo build --release --target wasm32-unknown-unknown
-      - name: near-antibody + tUSD (rules driven by the recorded fixture)
+      - name: near-antibody (the rule core's NEAR adapter) + tUSD + sandbox mocks
         working-directory: contracts/near-antibody
         run: |
           cargo test --lib -p near-antibody -p antibody-tusd
-          cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc
+          cargo build --release --target wasm32-unknown-unknown -p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap
 
   e2e:
-    name: sandbox end-to-end (near-sandbox + 2 anvils, MOCK OutLayer/MPC)
+    name: sandbox end-to-end (near-sandbox + anvil, MOCK OutLayer/DCAP)
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:

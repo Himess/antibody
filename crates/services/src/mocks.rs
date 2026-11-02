@@ -1,19 +1,54 @@
-//! Sandbox-only stand-ins for the two external networks (never used on testnet):
+//! Sandbox-only stand-ins for the external networks (never used on testnet):
 //! - `MockWorker` plays OutLayer's worker: it runs the real verifier in TEE mode (same code path as
-//!   the wasm in OutLayer) with a TEST seed and resolves `mock-outlayer` requests;
+//!   the wasm in OutLayer) with a TEST root key, resolves `mock-outlayer` requests, and records a MOCK
+//!   attestation per run with a MOCK quote that only `mock-dcap` accepts (no TDX hardware);
 //! - `MockSigner` plays the Chain Signatures network with one TEST secp256k1 key.
 
 use std::collections::BTreeSet;
 
 use antibody_cli::near::{Near, Signer};
+use base64::Engine as _;
 use antibody_verifier::{fastfs, facts::sha256, tee};
 use eyre::{eyre, Result};
 use k256::ecdsa::SigningKey;
 use serde_json::{json, Value};
 
-/// TEST-ONLY seed for the sandbox verifier key (the TEE derives it from a protected secret).
+/// TEST-ONLY root key standing in for OutLayer's encryption key in the sandbox.
 pub fn demo_seed() -> [u8; 32] {
     sha256(b"antibody/demo/TEST-ONLY-verifier-seed")
+}
+
+/// One 48-byte register of the MOCK worker image.
+fn mock_register(name: &str) -> String {
+    let a = sha256(format!("antibody/MOCK-worker-image/{name}").as_bytes());
+    let b = sha256(&a);
+    format!("{}{}", hex::encode(a), hex::encode(&b[..16]))
+}
+
+/// The MOCK worker image `mock-outlayer` lists as approved (`get_approved_measurements`).
+pub fn mock_image() -> Value {
+    json!({"mrtd": mock_register("mrtd"), "rtmr0": mock_register("rtmr0"), "rtmr1": mock_register("rtmr1"),
+           "rtmr2": mock_register("rtmr2"), "rtmr3": mock_register("rtmr3")})
+}
+
+/// What the mock worker attests about a run: OutLayer's attestation fields, with the input and the
+/// output exactly as delivered, and a MOCK quote whose report_data binds them.
+pub fn mock_attestation(request: &Value, input: &[u8], output: &[u8], now: i64) -> (Value, String) {
+    let source: Value = serde_json::from_str(request["source"].as_str().unwrap_or("{}")).unwrap_or_default();
+    let wasm = &source["WasmUrl"];
+    let a = json!({
+        "task_type": "execute", "task_id": request["request_id"], "repo": null, "commit": null,
+        "build_target": wasm["build_target"], "wasm_hash": wasm["hash"],
+        "input_hash": hex::encode(sha256(input)), "output_hash": hex::encode(sha256(output)),
+        "block_height": request["height"], "caller_account_id": request["signer"], "project_id": null, "secrets_ref": null,
+        "timestamp": now, "attached_usd": null,
+    });
+    let mut report_data = antibody_cli::tee::task_hash(&a).to_vec();
+    report_data.extend([0u8; 32]);
+    let mut quote = mock_image();
+    quote["mock"] = json!("antibody MOCK quote: no TDX hardware; accepted only by mock-dcap");
+    quote["report_data"] = json!(hex::encode(report_data));
+    (a, base64::engine::general_purpose::STANDARD.encode(quote.to_string()))
 }
 
 /// TEST-ONLY key standing in for the MPC network in the sandbox demo.
@@ -68,8 +103,17 @@ impl MockWorker {
             let mac = antibody_verifier::keys::TestMac(self.seed);
             let env = tee::Env { mac: &mac, fetch: &fetch, predecessor: p["caller"].as_str().map(String::from) };
             let out = tee::handle(&input, &env);
-            let output = Some(serde_json::to_string(&out.facts)?);
-            self.near.function_call(&self.worker, &self.outlayer, "resolve_execution", json!({"request_id": id, "output": output}), 100, 0)?;
+            let output = serde_json::to_string(&out.facts)?;
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+            let (attestation, quote) = mock_attestation(p, &input, output.as_bytes(), now);
+            self.near.function_call(
+                &self.worker,
+                &self.outlayer,
+                "resolve_execution",
+                json!({"request_id": id, "output": output, "attestation": attestation, "quote": quote}),
+                100,
+                0,
+            )?;
             self.done.insert(id);
             n += 1;
         }

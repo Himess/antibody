@@ -691,8 +691,10 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "antibody-cli",
+ "antibody-rules",
  "antibody-verifier",
  "axum",
+ "base64 0.22.1",
  "clap",
  "eyre",
  "hex",
