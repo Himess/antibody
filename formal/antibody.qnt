@@ -25,7 +25,7 @@ module antibody {
   // ================================================================ scope
   pure val NC = 4                                    // commits
   pure val CIDS = 0.to(NC - 1)
-  pure val MAXR = 1                                  // rounds 0 and 1
+  pure val MAXR = 2                                  // rounds 0, 1 and 2
   pure val ROUNDS = 0.to(MAXR)
   pure val KEYS = Set("A", "B", "C")                 // root-cause keys: (invariant slot, group)
   pure val SLOT = Map("A" -> 0, "B" -> 1, "C" -> 1)
@@ -163,8 +163,12 @@ module antibody {
     else if (x.truth == "Gap") (if (s.addsInv) "breaks" else "fixed")
     else "fixed"
 
-  // Release gate:
-  // - every paid PoC of the round is re-run and fixed;
+  // Whether commit c holds a key in round r: as first finding, carried or promoted.
+  def holdsIn(c: int, r: int): bool = KEYS.exists(k => s.holder.get((r, k)) == c)
+  def everHeld(c: int): bool = ROUNDS.exists(r => r <= s.round and holdsIn(c, r))
+
+  // Release gate (every re-run is at the proposed fix: results reset when a round opens):
+  // - every paid PoC, from any round, is re-run and fixed (immune memory);
   // - every Critical or High PoC of the round, duplicates included, was re-run and is fixed: a
   //   duplicate that still breaks is an open Critical even when the first finding was fixed;
   // - no gap claim still breaks;
@@ -172,8 +176,7 @@ module antibody {
   def critHigh(x: Commit): bool = VIOL.contains(x.facts) and CRIT_HIGH.contains(keyOf(x.facts))
   def releaseGate: bool = and {
     s.canaries,
-    CIDS.forall(c => c >= s.n or s.cs.get(c).round != s.round or s.cs.get(c).end != "paid"
-                       or s.cs.get(c).rerun == "fixed"),
+    CIDS.forall(c => c >= s.n or s.cs.get(c).end != "paid" or s.cs.get(c).rerun == "fixed"),
     // every Critical or High PoC of the round, first finding or duplicate, was re-run and is fixed
     CIDS.forall(c => c >= s.n or s.cs.get(c).round != s.round or not(critHigh(s.cs.get(c)))
                        or s.cs.get(c).alloc == "none" or s.cs.get(c).rerun == "fixed"),
@@ -538,15 +541,22 @@ module antibody {
   // ---- rounds, immune memory and the one-way appeal
   action ProposeRound(f: Set[str], addsInv: bool, canaries: bool): bool = all {
     s.phase == "open", not(s.misconfigured), not(s.proposed), s.round < MAXR, s.now < DEADLINE,
+    addsInv implies not(s.slots.contains(GAPSLOT)),   // a round only adds new invariants
     s' = ghost({ ...s, proposed: true, fix: f, addsInv: addsInv, canaries: canaries, proposedAt: s.now }),
   }
 
-  // Immune memory and appeals: permissionless re-runs, at the requester's cost, at the proposed fix.
+  // Immune memory and appeals: permissionless re-runs, at the requester's cost, at the proposed fix:
+  // the round's first findings, duplicates and gap claims, every paid PoC, and every commit that ever
+  // held a key. A re-run counts for its own proposal only.
   action Rerun(c: int): bool = {
     val x = s.cs.get(c)
     all {
-      s.proposed, s.now <= s.proposedAt + RERUN_WIN, x.round == s.round, x.rerun == "none",
-      x.alloc == "holder" or x.alloc == "dup" or x.alloc == "gap",
+      s.proposed, s.now <= s.proposedAt + RERUN_WIN, x.rerun == "none",
+      or {
+        x.round == s.round and (x.alloc == "holder" or x.alloc == "dup" or x.alloc == "gap"),
+        x.end == "paid",
+        everHeld(c),
+      },
       s' = ghost({ ...s, cs: withC(c, { ...x, rerun: afterFix(x) }) }),
     }
   }
@@ -593,7 +603,7 @@ module antibody {
       CIDS.forall(c => c >= s.n or s.cs.get(c).round != r or s.cs.get(c).st == "done" or s.cs.get(c).alloc != "none"),
       s' = ghost({ ...s,
         round: r1, roundStart: s.now, proposed: false, fix: Set(),
-        cs: CIDS.mapBy(d => nextC(d)),
+        cs: CIDS.mapBy(d => { ...nextC(d), rerun: "none" }),
         holder: s.holder.keys().mapBy(rk =>
           if (rk._1 != r1) s.holder.get(rk)
           else if (carried.contains(rk._2)) s.holder.get((r, rk._2))
@@ -917,6 +927,28 @@ module antibody {
       .then(ProposeRound(Set(), false, true)).then(Rerun(0))   // a "fix" that fixes nothing
       .then(3.reps(_ => Tick)).then(OpenRound)
       .expect(and { s.permits == 0, s.holder.get((1, "A")) == 0, all_properties })
+
+  // A partial fix carries the key; the next round's fix is re-run and releases it.
+  run laterFixReleasesCarriedKeyTest =
+    init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "VA1")).then(FactsT1(0))
+      .then(Allocate).then(Pay(0))
+      .then(ProposeRound(Set(), false, true)).then(Rerun(0))
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(and { s.permits == 0, s.holder.get((1, "A")) == 0, s.cs.get(0).rerun == "none" })
+      .then(ProposeRound(Set("VA1"), false, true)).then(Rerun(0))
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(and { s.round == 2, s.permits == 1, s.holder.get((2, "A")) == -1, all_properties })
+
+  // Immune memory: a later fix that brings a paid bug back is not released.
+  run regressionBlocksReleaseTest =
+    init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "VA1")).then(FactsT1(0))
+      .then(Allocate).then(Pay(0))
+      .then(ProposeRound(Set("VA1"), false, true)).then(Rerun(0))
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(s.permits == 1)
+      .then(ProposeRound(Set(), false, true)).then(Rerun(0))   // the new code reintroduces bug 1
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(and { s.round == 2, s.permits == 1, all_properties })
 
   run canariesBlockReleaseTest =
     init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "VA1")).then(FactsT1(0))

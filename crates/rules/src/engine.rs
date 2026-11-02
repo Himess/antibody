@@ -1522,30 +1522,30 @@ impl<S: Store> Engine<S> {
         if ctx.now > accepted_at + p.params.windows.rerun_window {
             return Err(Error::State("the re-run window has passed"));
         }
-        if c.round != p.round && !self.holds_in(&p, &c, p.round) {
-            return Err(Error::State("only commits of the closing round, or holding a key in it, are re-run"));
+        // The round's first findings, duplicates and gap claims; every paid PoC; every commit that ever
+        // held a key (immune memory, spec §8.2).
+        let of_round = c.round == p.round
+            && matches!(
+                c.state,
+                CommitState::Holder { .. }
+                    | CommitState::Duplicate { .. }
+                    | CommitState::GapClaim { .. }
+                    | CommitState::Done(End::Paid { .. })
+                    | CommitState::Done(End::Exhausted)
+            );
+        let paid = matches!(c.state, CommitState::Done(End::Paid { .. }));
+        if !(of_round || paid || self.ever_held(&p, &c, p.round)) {
+            return Err(Error::State("re-runs are for the round's findings, paid PoCs and key holders"));
         }
-        let eligible = matches!(
-            c.state,
-            CommitState::Holder { .. }
-                | CommitState::Duplicate { .. }
-                | CommitState::GapClaim { .. }
-                | CommitState::Done(End::Paid { .. })
-                | CommitState::Done(End::Exhausted)
-        );
-        if !eligible {
-            return Err(Error::State("only first findings, duplicates and gap claims are re-run"));
-        }
-        if let Some(rid) = c.rerun {
-            let r = self.get_run(rid)?;
+        let pr = p.proposal.clone().unwrap();
+        if let Some(r) = self.rerun_at(&c, pr.round) {
             let stuck = matches!(r.outcome, RunOutcome::Failed { .. })
                 || matches!(&r.outcome, RunOutcome::Answered { facts, .. } if facts.kind == Kind::InfraError)
                 || (r.outcome == RunOutcome::Pending && ctx.now >= r.started_at + p.params.windows.run_timeout);
             if !stuck {
-                return Err(Error::State("already re-run"));
+                return Err(Error::State("already re-run at this fix"));
             }
         }
-        let pr = p.proposal.clone().unwrap();
         let run = self.new_run(&p, Some(commit), Mode::Rerun, pr.round, &spec, ctx, &ctx.caller);
         let fx = self.request_run(&p, &run, &ctx.caller)?;
         c.rerun = Some(run.id);
@@ -1563,8 +1563,19 @@ impl<S: Store> Engine<S> {
 
     /// The T1-confirmed re-run result of a commit at the proposal: `Some(true)` still breaks `tags`,
     /// `Some(false)` fixed, `None` no T1 result (not requested, in flight, failed, or T0 only).
-    fn rerun_breaks(&self, c: &Commit, tags: &[H32]) -> Option<bool> {
-        let r = self.get_run(c.rerun?).ok()?;
+    /// Whether a commit held a key in any round up to `r`.
+    fn ever_held(&self, p: &Program, c: &Commit, r: u32) -> bool {
+        (0..=r).any(|x| self.holds_in(p, c, x))
+    }
+
+    /// The commit's re-run at the fix proposed for `round`: a re-run counts for its own proposal only.
+    fn rerun_at(&self, c: &Commit, round: u32) -> Option<Run> {
+        self.get_run(c.rerun?).ok().filter(|r| r.round == round)
+    }
+
+    /// Whether the commit's T1 re-run at the fix for `round` still breaks one of `tags`.
+    fn rerun_breaks(&self, c: &Commit, tags: &[H32], round: u32) -> Option<bool> {
+        let r = self.rerun_at(c, round)?;
         match &r.outcome {
             RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => {
                 Some(facts.kind == Kind::Violation && facts.keys.iter().any(|k| tags.contains(&k.tag)))
@@ -1573,10 +1584,19 @@ impl<S: Store> Engine<S> {
         }
     }
 
+    /// Whether the commit's T1 re-run at the fix for `round` shows no violation at all.
+    fn rerun_clean(&self, c: &Commit, round: u32) -> Option<bool> {
+        let r = self.rerun_at(c, round)?;
+        match &r.outcome {
+            RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => Some(facts.kind != Kind::Violation),
+            _ => None,
+        }
+    }
+
     /// The gap claim's T1 re-run breaks an invariant this round adds.
     fn rerun_breaks_new_slot(&self, p: &Program, c: &Commit) -> Option<bool> {
         let pr = p.proposal.as_ref()?;
-        let r = self.get_run(c.rerun?).ok()?;
+        let r = self.rerun_at(c, pr.round)?;
         match &r.outcome {
             RunOutcome::Answered { facts, tier: Tier::T1, .. } if facts.kind != Kind::InfraError => {
                 Some(facts.kind == Kind::Violation && facts.keys.iter().any(|k| pr.new_slots.iter().any(|s| s.slot == k.slot)))
@@ -1619,10 +1639,9 @@ impl<S: Store> Engine<S> {
         }
         // Re-runs still in flight hold the opening; a re-run without a T1 result after its timeout counts
         // as an infrastructure failure, which carries its key (spec §8.3).
-        for &cid in &ids {
-            let c = self.get_commit(cid)?;
-            if let Some(rid) = c.rerun {
-                let rr = self.get_run(rid)?;
+        for i in 0..p.commits {
+            let c = self.get_commit(self.store.commit_at(program, i).unwrap())?;
+            if let Some(rr) = self.rerun_at(&c, r1) {
                 if rr.outcome == RunOutcome::Pending && ctx.now < rr.started_at + p.params.windows.run_timeout {
                     return Err(Error::State("a re-run is still in flight"));
                 }
@@ -1651,7 +1670,7 @@ impl<S: Store> Engine<S> {
                 continue;
             }
             let tags: Vec<H32> = held.iter().map(|(t, _)| *t).collect();
-            match self.rerun_breaks(&c, &tags) {
+            match self.rerun_breaks(&c, &tags, r1) {
                 Some(false) => {
                     released.extend(tags.iter().copied());
                     for t in &tags {
@@ -1669,7 +1688,7 @@ impl<S: Store> Engine<S> {
                     }
                 }
                 None => {
-                    if c.rerun.is_none() {
+                    if self.rerun_at(&c, r1).is_none() {
                         // Nobody re-ran it: released by default, but it was never shown fixed.
                         released.extend(tags.iter().copied());
                         if held.iter().any(|(_, s)| crit_high(&p, *s)) {
@@ -1686,8 +1705,16 @@ impl<S: Store> Engine<S> {
                     }
                 }
             }
-            // Every paid PoC must be re-run and fixed.
-            if matches!(c.state, CommitState::Done(End::Paid { .. })) && self.rerun_breaks(&c, &tags) != Some(false) {
+        }
+        // Immune memory (spec §9): every paid PoC, and every holder of a Critical or High key, from any
+        // round, was re-run at this fix and shows no violation.
+        for i in 0..p.commits {
+            let c = self.get_commit(self.store.commit_at(program, i).unwrap())?;
+            let paid = matches!(c.state, CommitState::Done(End::Paid { .. }));
+            let held_crit_high = c.run.and_then(|rid| self.store.run(rid)).and_then(|run| run.facts().cloned()).is_some_and(|f| {
+                f.keys.iter().any(|k| crit_high(&p, k.slot) && (0..=r).any(|x| self.store.holder(program, x, &k.tag) == Some(c.id)))
+            });
+            if (paid || held_crit_high) && self.rerun_clean(&c, r1) != Some(true) {
                 gate = false;
             }
         }
@@ -1700,7 +1727,7 @@ impl<S: Store> Engine<S> {
             let Some(f) = c.run.and_then(|rid| self.store.run(rid)).and_then(|r0| r0.facts().cloned()) else { continue };
             let tags: Vec<H32> = f.keys.iter().map(|k| k.tag).collect();
             let crit = f.keys.iter().any(|k| crit_high(&p, k.slot));
-            let breaks = self.rerun_breaks(&c, &tags);
+            let breaks = self.rerun_breaks(&c, &tags, r1);
             if crit && breaks != Some(false) {
                 // A Critical or High duplicate that is not shown fixed blocks the release.
                 gate = false;

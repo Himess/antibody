@@ -313,6 +313,50 @@ fn release_gate_blocks_unfixed() {
     w.audit_ok(&[p]);
 }
 
+/// A partial fix carries the key; the next round's fix is re-run (a re-run counts for its own
+/// proposal only) and releases it.
+#[test]
+fn later_fix_releases_carried_key() {
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::Violation, &[(A, tag(1))]);
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert!(!fx.iter().any(|f| matches!(f, Effect::ReleasePermit { .. })));
+    assert_eq!(w.e.store.holder(p, 1, &tag(1)), Some(c0), "carried by the partial fix");
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::NoViolation, &[]);
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert!(fx.iter().any(|f| matches!(f, Effect::ReleasePermit { round: 2, .. })));
+    assert_eq!(w.e.store.holder(p, 2, &tag(1)), None, "released at round 2");
+    w.audit_ok(&[p]);
+}
+
+/// Immune memory: every paid PoC is re-run at every fix, so a fix that brings a paid bug back is
+/// not released.
+#[test]
+fn regression_blocks_release() {
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::NoViolation, &[]);
+    w.tick(61);
+    assert!(w.open_round(p).unwrap().iter().any(|f| matches!(f, Effect::ReleasePermit { round: 1, .. })));
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::Violation, &[(A, tag(1))]); // the new code reintroduces the bug
+    w.tick(61);
+    assert!(!w.open_round(p).unwrap().iter().any(|f| matches!(f, Effect::ReleasePermit { .. })));
+    w.audit_ok(&[p]);
+}
+
 #[test]
 fn canaries_block_release() {
     let mut w = W::new();

@@ -55,8 +55,8 @@ jobs:
           cache-on-failure: true
       - name: rule core tests (scenarios mirroring the model)
         run: cargo test --release -p antibody-rules
-      - name: model scenarios, 20,000 random traces, 600 traces replayed against the rule core
-        run: scripts/formal/replay.sh 600 45
+      - name: model scenarios, 20,000 random traces, 600 traces of 60 steps replayed against the rule core
+        run: scripts/formal/replay.sh 600 60
       - name: bounded model checking (Apalache)
         working-directory: formal
         run: quint verify antibody.qnt --invariant=all_properties --max-steps=6

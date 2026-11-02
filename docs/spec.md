@@ -493,13 +493,14 @@ anything else. A `check_round` run (TEE) verifies:
 ### 8.2 Immune memory
 
 While a round is proposed, and within `rerun_window` of its T1-confirmed round check, anyone may request
-(and pay for) a `rerun` of:
-- every paid PoC of the round, and every commit holding a key in it;
-- every duplicate (its appeal);
-- every gap claim.
+(and pay for) a `rerun`, at the proposed fix, of:
+- every paid PoC, from any round, and every commit that ever held a key;
+- every duplicate of the round (its appeal);
+- every gap claim of the round.
 
-Each runs at the new code and invariants, and counts only when T1-confirmed. The keeper requests every
-paid PoC's re-run.
+Each runs at the new code and invariants, and counts only when T1-confirmed. A re-run counts for its own
+proposal only: the next proposal re-runs everything again, so a fix that brings an old bug back is
+caught. The keeper requests every paid PoC's re-run.
 
 ### 8.3 Opening the round
 
@@ -532,12 +533,12 @@ priority. Otherwise its reservation is released and the claim stays on record.
 ## 9. Release gate and release permits
 
 A round's fix may ship only if, at opening:
-1. every paid PoC of the closing round was re-run and is fixed;
+1. every paid PoC, from any round, was re-run at this fix and shows no violation (immune memory);
 2. **every Critical or High PoC of the round, duplicates included, was re-run and is fixed**. A duplicate
    that still breaks is an open Critical even when the first finding was fixed;
 3. no gap claim still breaks;
 4. the canaries pass;
-5. every Critical or High key ever held is fixed.
+5. every holder of a Critical or High key, from any round, was re-run at this fix and shows no violation.
 
 When the gate holds, near-antibody asks the guardian for a **release permit**, which pays `release_fee`:
 

@@ -8,7 +8,7 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
    T0 and T1 verdicts from an adversarial operator, challenges, the allocation cursor, payments, debts,
    rounds with immune memory and appeals, known issues, the gap lane, permits, disclosure and the exit.
    Each property below is a Quint invariant, checked three ways:
-   - by 19 deterministic scenarios (`quint test`);
+   - by 21 deterministic scenarios (`quint test`);
    - on every state of 20,000 random traces (`quint run --invariant=all_properties`);
    - by bounded model checking with Apalache (`quint verify`).
 2. **The code against the model.** `crates/rules` (the settlement engine near-antibody runs) replays
@@ -18,7 +18,8 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
    - every commit's state;
    - key holders, tickets, permits and disclosures.
 
-   `scripts/formal/replay.sh` runs it: 600 traces, 27,600 steps, no divergence.
+   `scripts/formal/replay.sh` runs it: 600 traces of 60 steps (36,600 steps; about 5% of the traces go
+   through both round openings), no divergence.
 3. **The code on its own.** Scenario tests mirror the model's scenarios (`crates/rules/tests/scenarios.rs`).
    After each scenario, `audit()` checks every conservation equation.
 4. **The arithmetic.** Kani proves the payout formulas and every movement of a program's escrow
@@ -55,7 +56,7 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
 | 8 | **Instant payments happen only with T1, below the cap, and within the budget of their window** | `p8_instant` | `instantPayoutTest`, `instantBudgetTest`, `aboveCapNeedsSecondRunTest` / `instant_payout`, `instant_budget_exhausted_waits_window`, `above_cap_needs_second_run`; Kani: `the_instant_budget_holds_in_every_window` |
 | 9 | **No known issue is added after open, and known issues stay within their cap** | `p9_known` | `knownIssueTest` / `known_issue_needs_t1_cap_and_setup` |
 | 10 | **Disclosure cannot be blocked once its condition holds**: the condition depends on nobody's consent, and once true it stays true | `p10_disclosure` | `disclosure_needs_condition_and_t1` |
-| 11 | **Permits follow the committed policy**: pause tickets only for T1 holders of policy keys, at most one per round; release permits only when the release gate holds | `p11_permits` | `releaseGateBlocksUnfixedTest`, `canariesBlockReleaseTest`, `unexaminedDuplicateBlocksReleaseTest` / `release_gate_blocks_unfixed`, `unexamined_duplicate_blocks_release` |
+| 11 | **Permits follow the committed policy**: pause tickets only for T1 holders of policy keys, at most one per round; release permits only when the release gate holds | `p11_permits` | `releaseGateBlocksUnfixedTest`, `laterFixReleasesCarriedKeyTest`, `regressionBlocksReleaseTest`, `canariesBlockReleaseTest`, `unexaminedDuplicateBlocksReleaseTest` / `release_gate_blocks_unfixed`, `later_fix_releases_carried_key`, `regression_blocks_release`, `unexamined_duplicate_blocks_release` |
 | 12 | **The owner cannot change a live program** | `p12_pins` | `ownerCannotChangeLiveProgramTest` |
 
 ## What the model found
@@ -71,9 +72,17 @@ These counterexamples changed the design (spec §20, D7):
 The replay found two crashes in the engine, both fixed: a round opening over an expired commit, and a
 second run answering after its verdict was voided.
 
+Reading the engine for a second round found what a one-opening model could not reach: a re-run was
+never reset, so a key a partial fix carried could not be re-run at the next fix, and no later fix of
+that program could ever be released. The same held for promoted holders. Re-runs now count for their
+own proposal only. Every paid PoC and every holder of a key, from any round, is re-run at each fix
+(immune memory), so a fix that brings an old bug back is not released either. The model now opens two
+rounds.
+
 ## Limits
 
-- The model covers one program with four commits, three keys (two sharing an invariant) and two rounds.
+- The model covers one program with four commits, three keys (two sharing an invariant) and three
+  rounds (two openings).
   It has one key per verdict; multi-key verdicts are covered by the engine's own tests.
 - Apalache checks bounded depths; the random simulations go deeper but are not exhaustive.
 - Liveness is checked as safety: the exit's guard is time alone, and after the exit nothing is in flight.

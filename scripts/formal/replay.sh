@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 N="${1:-600}"
-STEPS="${2:-45}"
+STEPS="${2:-60}"
 OUT="$ROOT/target/quint-traces"
 cd "$ROOT/formal"
 quint typecheck antibody.qnt
