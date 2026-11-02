@@ -326,3 +326,31 @@ fn a_round_check_binds_its_releases() {
     assert!(!check(serde_json::json!([{"proxy": "0x0000000000000000000000000000000000000001", "code_hash": fixed}])).0, "not a target");
     assert!(!check(serde_json::json!([{"proxy": "nope", "code_hash": fixed}])).0, "malformed");
 }
+
+/// Immune memory in the TEE (spec §8.2): the same sealed PoC re-run under a round's manifest. Round 1
+/// (bug #1 fixed) stops A but not B, whose keys stay exactly as in round 0; round 2 (the final fix)
+/// stops B and F too.
+#[test]
+fn a_rerun_judges_the_same_poc_at_the_fix() {
+    let w = World::new();
+    let e = expected();
+    let rerun = |agent: &str, round: u32| {
+        let round_bytes = std::fs::read(root().join(format!("fixtures/acme-local/round{round}/manifest.json"))).unwrap();
+        let commit = e["submissions"][agent]["commit_id"].as_u64().unwrap();
+        let blob = seal(&w.program_key, "agent.testnet", agent);
+        let req = w.request(
+            "rerun",
+            Some(commit),
+            serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob), "round": round,
+                               "manifest_sha256": hex::encode(sha256(&round_bytes)), "round_manifest": w.upload(&round_bytes)}),
+        );
+        let out = w.run(&req, CONTRACT).0;
+        (out.facts.kind, serde_json::to_value(&out.facts.keys).unwrap())
+    };
+    assert_eq!(rerun("A", 1).0, Kind::NoViolation, "A is fixed in round 1");
+    let (kind, keys) = rerun("B", 1);
+    assert_eq!(kind, Kind::Violation, "B still breaks in round 1");
+    assert_eq!(keys, e["submissions"]["B"]["keys"], "with its round-0 keys");
+    assert_eq!(rerun("B", 2).0, Kind::NoViolation, "B is fixed in round 2");
+    assert_eq!(rerun("F", 2).0, Kind::NoViolation, "F is fixed in round 2");
+}
