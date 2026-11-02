@@ -16,6 +16,7 @@ mod indexer;
 mod mocks;
 mod notifier;
 mod relayer;
+mod t1;
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -85,6 +86,22 @@ enum Cmd {
         chains: Vec<String>,
         #[arg(long, default_value = "fastnear")]
         source: String,
+    },
+    /// T1 relayer: relays OutLayer's TDX quote for every verdict and re-run to near-antibody
+    /// (`confirm_tee`); needs the indexer's events and a funded NEAR account to pay gas
+    T1 {
+        #[arg(long)]
+        account: String,
+        #[arg(long)]
+        key_file: Option<PathBuf>,
+        #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
+        api: String,
+        #[arg(long, default_value_t = 10000)]
+        interval_ms: u64,
+        #[arg(long, default_value_t = 5)]
+        max_attempts: u32,
+        #[arg(long)]
+        once: bool,
     },
     /// Sandbox only: resolve MOCK OutLayer requests with the verifier in TEE mode (TEST seed)
     WorkerMock {
@@ -251,6 +268,16 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             r.run(*interval_ms)
+        }
+        Cmd::T1 { account, key_file, api, interval_ms, max_attempts, once } => {
+            let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(account.clone()), key_file.clone(), None)?;
+            let r = t1::T1Relayer { ctx, api: api.clone(), state_dir: state_dir(&cli), max_attempts: *max_attempts };
+            if *once {
+                println!("{}", serde_json::to_string_pretty(&r.tick()?)?);
+                Ok(())
+            } else {
+                r.run(*interval_ms)
+            }
         }
         Cmd::Notifier { program, interval_ms } => {
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();

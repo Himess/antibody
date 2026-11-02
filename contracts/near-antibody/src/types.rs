@@ -251,6 +251,9 @@ pub struct Rerun {
     pub still_broken: Vec<FindingKey>,
     pub receipt_hash: Option<String>,
     pub height: u64,
+    pub input_sha256: Option<String>,
+    pub output_sha256: Option<String>,
+    pub tee: Option<TeeConfirmation>,
 }
 
 /// Pointer to a sealed submission (docs/crypto-spec.md §4).
@@ -348,6 +351,11 @@ pub struct Commit {
     /// The program round this commit belongs to (its manifest decides the verdict).
     pub round: u32,
     pub reruns: Vec<Rerun>,
+    /// SHA-256 of the exact `input_data` sent to OutLayer and of the exact bytes it returned: the
+    /// values a TDX quote's report_data must bind for a T1 confirmation.
+    pub run_input_sha256: Option<String>,
+    pub run_output_sha256: Option<String>,
+    pub tee: Option<TeeConfirmation>,
 }
 
 #[near(serializers = [borsh, json])]
@@ -446,4 +454,227 @@ pub enum TokenMsg {
     FundProgram { program_id: u32 },
     /// Voluntary bonus to the finder of `commit_id` (projects can pay more, never less).
     TopUp { commit_id: u64, note: Option<String> },
+}
+
+// ------------------------------------------------------------------------ T1 (TDX quotes)
+
+/// OutLayer's per-execution attestation (`testnet-api.outlayer.ai/attestations/by-request/{id}`).
+/// SHA-256 over these fields, in this order, is the first half of the TDX quote's report_data
+/// (OutLayer `worker/src/tdx_attestation.rs`, report data layout V1).
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct TeeAttestationIn {
+    pub task_type: String,
+    pub task_id: i64,
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub commit: Option<String>,
+    pub build_target: Option<String>,
+    pub wasm_hash: Option<String>,
+    pub input_hash: Option<String>,
+    pub output_hash: String,
+    pub block_height: Option<u64>,
+    pub caller_account_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    pub secrets_ref: Option<String>,
+    pub timestamp: i64,
+    pub attached_usd: Option<String>,
+}
+
+impl TeeAttestationIn {
+    pub fn task_hash(&self) -> Vec<u8> {
+        let mut m: Vec<u8> = Vec::new();
+        m.extend(self.task_type.as_bytes());
+        m.extend(self.task_id.to_le_bytes());
+        for s in [&self.repo, &self.commit, &self.build_target, &self.wasm_hash, &self.input_hash].into_iter().flatten() {
+            m.extend(s.as_bytes());
+        }
+        m.extend(self.output_hash.as_bytes());
+        if let Some(h) = self.block_height {
+            m.extend(h.to_le_bytes());
+        }
+        for s in [&self.caller_account_id, &self.project_id, &self.secrets_ref].into_iter().flatten() {
+            m.extend(s.as_bytes());
+        }
+        m.extend(self.timestamp.to_le_bytes());
+        if let Some(u) = &self.attached_usd {
+            m.extend(u.as_bytes());
+        }
+        near_sdk::env::sha256(&m)
+    }
+}
+
+/// One approved worker image (OutLayer's `get_approved_measurements` entry), lowercase hex.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TeeMeasurements {
+    pub mrtd: String,
+    pub rtmr0: String,
+    pub rtmr1: String,
+    pub rtmr2: String,
+    pub rtmr3: String,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TeeConfig {
+    /// DCAP verifier contract (`verify_quote`), e.g. `tee-verifier-2026-07-22.testnet`.
+    pub verifier: Option<AccountId>,
+    /// Worker images whose quotes count (pinned from OutLayer's allowlist by the owner).
+    pub measurements: Vec<TeeMeasurements>,
+    /// Accepted TCB statuses (dcap-qvl), e.g. "UpToDate".
+    pub accepted_tcb: Vec<String>,
+}
+
+impl Default for TeeConfig {
+    fn default() -> Self {
+        Self { verifier: None, measurements: Vec::new(), accepted_tcb: vec!["UpToDate".into()] }
+    }
+}
+
+/// A verdict whose OutLayer run was proven by a TDX quote verified on NEAR (tier T1).
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TeeConfirmation {
+    pub quote_sha256: String,
+    pub report_data: String,
+    pub tcb_status: String,
+    pub mrtd: String,
+    pub rtmr3: String,
+    pub outlayer_task_id: i64,
+    pub verifier: AccountId,
+    pub height: u64,
+    pub ns: u64,
+}
+
+// Borsh mirrors of near/mpc `tee-verifier-interface` (the DCAP verifier's return value).
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum VerificationResultIn {
+    Verified(VerifiedReportIn),
+    Rejected(VerifierErrorIn),
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub enum VerifierErrorIn {
+    DcapVerification(String),
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct VerifiedReportIn {
+    pub status: String,
+    pub advisory_ids: Vec<String>,
+    pub report: ReportIn,
+    pub ppid: Vec<u8>,
+    pub qe_status: TcbStatusWithAdvisoryIn,
+    pub platform_status: TcbStatusWithAdvisoryIn,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum ReportIn {
+    SgxEnclave(EnclaveReportIn),
+    TD10(TDReport10In),
+    TD15(TDReport15In),
+    TD15Ex(TDReport15ExIn),
+}
+
+impl ReportIn {
+    pub fn as_td10(&self) -> Option<&TDReport10In> {
+        match self {
+            ReportIn::TD10(r) => Some(r),
+            ReportIn::TD15(r) => Some(&r.base),
+            ReportIn::TD15Ex(r) => Some(&r.base.base),
+            ReportIn::SgxEnclave(_) => None,
+        }
+    }
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct TDReport10In {
+    pub tee_tcb_svn: [u8; 16],
+    pub mr_seam: [u8; 48],
+    pub mr_signer_seam: [u8; 48],
+    pub seam_attributes: [u8; 8],
+    pub td_attributes: [u8; 8],
+    pub xfam: [u8; 8],
+    pub mr_td: [u8; 48],
+    pub mr_config_id: [u8; 48],
+    pub mr_owner: [u8; 48],
+    pub mr_owner_config: [u8; 48],
+    pub rt_mr0: [u8; 48],
+    pub rt_mr1: [u8; 48],
+    pub rt_mr2: [u8; 48],
+    pub rt_mr3: [u8; 48],
+    pub report_data: [u8; 64],
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct TDReport15In {
+    pub base: TDReport10In,
+    pub tee_tcb_svn2: [u8; 16],
+    pub mr_service_td: [u8; 48],
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct TDReport15ExIn {
+    pub base: TDReport15In,
+    pub vmid: u8,
+    pub td_id: [u8; 32],
+    pub dev_info: [u8; 48],
+    pub init_service_td_hash: [u8; 48],
+    pub init_service_td_attributes: [u8; 8],
+    pub init_cpu_svn: [u8; 16],
+    pub init_tee_tcb_svn: [u8; 16],
+    pub init_tee_fmspc: [u8; 12],
+    pub cur_service_td_hash: [u8; 48],
+    pub cur_service_td_attributes: [u8; 8],
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct EnclaveReportIn {
+    pub cpu_svn: [u8; 16],
+    pub misc_select: u32,
+    pub reserved1: [u8; 28],
+    pub attributes: [u8; 16],
+    pub mr_enclave: [u8; 32],
+    pub reserved2: [u8; 32],
+    pub mr_signer: [u8; 32],
+    pub reserved3: [u8; 96],
+    pub isv_prod_id: u16,
+    pub isv_svn: u16,
+    pub reserved4: [u8; 60],
+    pub report_data: [u8; 64],
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub enum TcbStatusIn {
+    UpToDate,
+    OutOfDateConfigurationNeeded,
+    OutOfDate,
+    ConfigurationAndSWHardeningNeeded,
+    ConfigurationNeeded,
+    SWHardeningNeeded,
+    Revoked,
+    TDRelaunchAdvised,
+    TDRelaunchAdvisedConfigurationNeeded,
+}
+
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug)]
+pub struct TcbStatusWithAdvisoryIn {
+    pub status: TcbStatusIn,
+    pub advisory_ids: Vec<String>,
 }

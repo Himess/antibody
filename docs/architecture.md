@@ -5,6 +5,7 @@ flowchart LR
   subgraph Project
     P[project account] -- "ft_transfer_call(tUSD, create_program{manifest})" --> AB
     P -- "submit_known (t0)" --> AB
+  P -- "propose_round / request_rerun / open_round (fix as code override)" --> AB
   end
   subgraph Hunter["Hunter / AI agent (CLI or MCP)"]
     H[antibody CLI / antibody mcp] -- "1. commit(hash)" --> AB
@@ -55,7 +56,8 @@ flowchart LR
    - the bond: refunded on Violation, forfeited otherwise;
    - a Critical triggers the guardian.
 6. **Finalize.** Once the reveal windows of all earlier commits have closed, the commit is paid, marked Duplicate (with proof) or marked Known. Payouts above the instant cap wait the T0 challenge delay.
-7. **Disclosure.** After `deadline + disclosure_after`, one TEE run publishes every content key and `k_program`. `antibody verify` then recomputes every receipt and tag.
+7. **Rounds (optional).** The project commits a fix as code overrides at the same anchor (`propose_round`). The TEE re-runs claimed findings against it (`request_rerun`), and `open_round` releases the keys whose PoCs no longer break, so a second bug in the same function can be paid (docs/rounds.md).
+8. **Disclosure.** After `deadline + disclosure_after`, one TEE run publishes every content key (re-run blobs included) and `k_program`. `antibody verify` then recomputes every receipt and tag.
 
 ## Determinism
 

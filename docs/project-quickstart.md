@@ -65,7 +65,26 @@ antibody --account acme.testnet top-up --commit <id> --amount 500    # pay more,
 
 You can decrypt any Violation; non-violations are never disclosed to you before disclosure time.
 
-## 6. Close
+## 6. Ship a fix (rounds)
+
+When you fix a bug, commit the fix as a code override at the same anchor. Then a second, different bug
+in the same function can be found and paid (docs/rounds.md).
+
+```bash
+antibody manifest-round --base manifest.json --round 1 \
+         --override <target address>=<fixed runtime code hex file> --out round1.json
+antibody --account acme.testnet program round-propose --program <id> --manifest round1.json
+antibody --account acme.testnet program round-rerun --commit <id> --project-key project.x25519.json   # each claimed finding
+antibody --account acme.testnet program round-open --program <id>
+```
+
+- **What the round may change.** Only target code. The contract rejects any other change to the
+  committed manifest.
+- **New commits** verify against the fix as soon as you propose it.
+- **Re-runs.** Each re-run executes the finder's own PoC against the fix in the TEE. Keys whose PoCs no
+  longer break are released when the round opens; the rest stay with their finders.
+
+## 7. Close
 
 ```bash
 antibody program disclose --program <id>           # anyone, after deadline + disclosure delay

@@ -42,6 +42,8 @@ tiers are summarised in [trust.md](trust.md).
 | P5 | Sock-puppet hunters committing early to take keys | A commit binds a ciphertext hash and an account, so the puppet must hold the PoC at commit time. A puppet that wins is paid from the project's own escrow | A project that already knew a bug can race real hunters with a puppet instead of declaring it. Every commit becomes public at disclosure, and reputation records it |
 | P6 | Invariants that never break, so nothing is paid | `check(snapshot()) == 0` at the anchor is enforced (`ProgramMisconfigured` otherwise). The invariants code is public in the manifest, so hunters judge a program before working on it | Weak invariants are a market problem, not a protocol one |
 | P7 | Invariants that revert to block payment | A revert at the anchor gives `ProgramMisconfigured`. A revert after the PoC gives `ExecutionError` (bond refunded, flagged), and evaluation gas is capped | A revert after the PoC is not auto-paid; it is at the project's discretion |
+| P9 | Using a round to change the rules (cheaper payouts, weaker invariants) | `propose_round` requires the round manifest to equal the committed one except `round`, `overrides` and the overridden targets' code hashes (docs/rounds.md) | None |
+| P10 | Releasing keys without really fixing the bug, to pay a second finder less or not at all | A key is released only by a `Done` TEE re-run of the same `poc_hash` at the committed fix. A release can only make new findings payable, and decided payouts are never revisited | A project can choose not to re-run: keys then carry over (finders keep them) |
 | P8 | A forged anchor (state that never existed) | On Sepolia the anchor hash is checked against the NEAR light client at creation, and a mismatch rejects the program and refunds escrow. Otherwise the program is labelled project-attested and anyone can check it against any Sepolia RPC | Project-attested anchors rely on hunters checking |
 
 ### Hunters and copycats
@@ -57,13 +59,15 @@ tiers are summarised in [trust.md](trust.md).
 | H7 | Fooling the invariants (detecting them, writing to them) | The invariants are served only to evaluation calls through an overlay. The PoC sees an empty reserved address |
 | H8 | Forged state in the witness | Every account and slot is proven against the anchor's state root inside the verifier. Missing data gives `InvalidPoC` |
 | H9 | Gaming "first finder" with a broad invariant | Keys include the function where the invariant flipped, so different bugs under one rule are different keys |
+| H11 | Gaming a round (re-running someone else's commit, or with another PoC) | Only the project or the finder can request a re-run, and only for a commit holding a key. The TEE requires the original `poc_hash` | Exhausting verification with huge PoCs is H10 |
 | H10 | Exhausting verification with huge PoCs | Caps on transactions, gas, entry calls and invariant evaluation gas are committed in the manifest; OutLayer caps instructions and time |
 
 ### Infrastructure
 
 | # | Threat | Mitigation | Residual |
 |---|---|---|---|
-| I1 | A malicious or faulty OutLayer worker returns wrong facts | T0: the operator is trusted. Above the instant cap, payouts wait `challenge_delay`, and anyone whose local re-run disagrees can `challenge()`. After disclosure every verdict can be recomputed. T1 binds facts to a TDX quote | Small payouts are instant in T0 |
+| I1 | A malicious or faulty OutLayer worker returns wrong facts | T0: the operator is trusted. Above the instant cap, payouts wait `challenge_delay`, and anyone whose local re-run disagrees can `challenge()`. After disclosure every verdict can be recomputed. T1 (`confirm_tee`): the run's TDX quote must bind the exact input and output near-antibody recorded, verify with NEAR's DCAP verifier, and come from a pinned worker image | Small payouts are instant in T0, and T1 arrives after settlement unless relayed in time |
+| I13 | A relayed quote for another run, or a forged collateral | `confirm_tee` recomputes `report_data` from near-antibody's own record of the run (input and output hashes, wasm, caller, secrets). Collateral is checked by the DCAP verifier against Intel's roots | Trust in Intel TDX and DCAP |
 | I2 | Extracting the verifier key | `S` is a `PROTECTED_` secret, generated in the keystore TEE and readable only by the pinned wasm hash when called through near-antibody. The reproducible build shows the code never prints it | Trust in TDX and the keystore governance |
 | I3 | Replaying another commit's facts | The contract checks `program`, `commit_id` and `manifest_hash` in the facts. The TEE computes facts per request | None |
 | I4 | OutLayer returning `null` (failure, timeout) | The commit is marked for retry (3 attempts), then `Error` with the bond refunded. Finalization waits for earlier retries | Liveness depends on OutLayer |

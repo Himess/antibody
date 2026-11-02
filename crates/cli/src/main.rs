@@ -370,8 +370,44 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentKeyCmd,
     },
+    /// T1: check or relay OutLayer's TDX quote for a run (NEAR's DCAP verifier)
+    Tee {
+        #[command(subcommand)]
+        cmd: TeeCmd,
+    },
     /// MCP server on stdio for AI agents
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum TeeCmd {
+    /// Check any OutLayer run's quote: report_data binding, DCAP verification as a free view call,
+    /// and OutLayer's approved worker images (no keys, no transactions)
+    Check {
+        #[arg(long)]
+        request_id: u64,
+        #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
+        api: String,
+        #[arg(long, default_value = antibody_cli::tee::DEFAULT_VERIFIER)]
+        verifier: String,
+    },
+    /// Relay the quote of a commit's verification (or, with --round, its re-run) to near-antibody,
+    /// which repeats every check on chain and marks the verdict T1
+    Confirm {
+        #[arg(long)]
+        commit: u64,
+        #[arg(long)]
+        round: Option<u32>,
+        /// OutLayer request id (or give the requesting transaction with --tx and --tx-signer)
+        #[arg(long)]
+        request_id: Option<u64>,
+        #[arg(long)]
+        tx: Option<String>,
+        #[arg(long)]
+        tx_signer: Option<String>,
+        #[arg(long, default_value = antibody_cli::tee::DEFAULT_API)]
+        api: String,
+    },
 }
 
 fn run(cli: Cli) -> Result<Value> {
@@ -394,7 +430,7 @@ fn run(cli: Cli) -> Result<Value> {
                 ProgramCmd::RoundOpen { program } => cmd::round_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
                 ProgramCmd::Fund { program, amount } => cmd::fund(&c, *program, amount),
-                ProgramCmd::Disclose { program } => cmd::program_simple(&c, "disclose", json!({"program_id": program}), 150),
+                ProgramCmd::Disclose { program } => cmd::program_simple(&c, "disclose", json!({"program_id": program}), 300),
                 ProgramCmd::WithdrawEscrow { program } => cmd::program_simple(&c, "withdraw_escrow", json!({"program_id": program}), 60),
             }
         }
@@ -430,6 +466,20 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
                 AdminCmd::OutlayerSecret { wasm_hash, profile, contract, outlayer, api } => {
                     cmd::admin_outlayer_secret(&c, api, outlayer, wasm_hash, profile, contract)
+                }
+            }
+        }
+        Cmd::Tee { ref cmd } => {
+            let c = mk()?;
+            match cmd {
+                TeeCmd::Check { request_id, api, verifier } => antibody_cli::tee::check(&c, api, verifier, *request_id),
+                TeeCmd::Confirm { commit, round, request_id, tx, tx_signer, api } => {
+                    let id = match (request_id, tx, tx_signer) {
+                        (Some(id), _, _) => *id,
+                        (None, Some(tx), Some(signer)) => antibody_cli::tee::request_id_from_tx(&c, tx, signer)?,
+                        _ => return Err(eyre::eyre!("pass --request-id, or --tx with --tx-signer")),
+                    };
+                    antibody_cli::tee::confirm(&c, api, *commit, *round, id)
                 }
             }
         }

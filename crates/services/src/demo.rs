@@ -481,9 +481,16 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step("Disclosure: after deadline + delay, one TEE run publishes every content key and k_program");
     // Disclosure opens at deadline + disclosure_after in block time; retry until the contract agrees.
-    wait_for("the disclosure time", Duration::from_secs(420), || {
-        cmd::program_simple(&root_ctx, "disclose", json!({"program_id": pid}), 150).is_ok()
-    })?;
+    // 300 Tgas: OutLayer (100) and the callback (20) are forwarded; the rest reads every commit.
+    let last_err = std::cell::RefCell::new(String::new());
+    wait_for("the disclosure time", Duration::from_secs(420), || match cmd::program_simple(&root_ctx, "disclose", json!({"program_id": pid}), 300) {
+        Ok(_) => true,
+        Err(e) => {
+            *last_err.borrow_mut() = e.to_string();
+            false
+        }
+    })
+    .map_err(|e| eyre!("{e} (last error: {})", last_err.borrow()))?;
     wait_for("the disclosure result", Duration::from_secs(60), || {
         root_ctx.program(pid).map(|p| !p["disclosure"].is_null()).unwrap_or(false)
     })?;

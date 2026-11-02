@@ -30,5 +30,7 @@ Event names (standard `antibody`): `program_created`, `anchor_checked`, `program
 `known_issue_submitted`, `known_issue_claimed`, `program_opened`, `deposit`, `committed`, `submitted`,
 `verify_failed`, `verdict`, `verdict_error`, `pause_requested`, `duplicate`, `known`, `payout_delayed`, `paid`,
 `payout_failed`, `challenged`, `challenge_resolved`, `expired`, `top_up`, `withdraw`, `escrow_withdrawn`,
-`disclosed`, `disclosure_failed`, `program_misconfigured`, `verifier_set`, `verifier_pubkey`. The guardian
+`disclosed`, `disclosure_failed`, `program_misconfigured`, `verifier_set`, `verifier_pubkey`, and for rounds
+`round_proposed`, `rerun_requested`, `rerun_result`, `rerun_failed`, `round_opened`, and for T1
+`tee_config_set`, `tee_confirm_requested`, `tee_confirmed`, `tee_rejected`. The guardian
 emits `pause_signed` (standard `antibody-guardian`).

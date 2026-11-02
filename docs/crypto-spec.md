@@ -170,6 +170,29 @@ The contract stores the result. Anyone can then:
 
 Duplicates become fully checkable: "same rule, same function, committed earlier".
 
+Entries for re-run blobs (§8.1) carry their round: `{"commit_id":n,"round":r,"wrap_v":hex}` in, and
+`{"commit_id":n,"round":r,"content_key":hex}` out.
+
+### 8.1 Re-runs (rounds, docs/rounds.md)
+
+When a project proposes round `r` (a fix as code overrides), a claimed finding can be re-run against it:
+
+```
+{"mode":"rerun","program_id":program_key,"commit_id":n,"round":r,"hunter":account,
+ "manifest_hash":hex(sha256(round-r manifest)),"poc_hash":hex(original verdict's poc_hash),
+ "sealed":{"url":…,"sha256":hex,"wrap_v":hex}}
+```
+
+- **The blob.** It is a fresh `ABSEAL1` blob whose payload is bound to the original `program_key` and
+  `hunter`. Its witness is built at the round-`r` manifest from the same bundle.
+- **Who builds it.** The project, from its key wrap, or the finder.
+- **TEE checks.** The same blob checks as `verify`. In addition:
+  - `poc_hash(bundle)` must equal the request's `poc_hash`, otherwise `InvalidPoC`;
+  - the witness's manifest must hash to `manifest_hash`;
+  - `round` must be > 0, otherwise the request fails.
+- **Output.** Facts as in §9, with no `project_wrap`. near-antibody checks the program, the commit, the
+  round's manifest hash and the `poc_hash`, then records which keys the PoC still breaks.
+
 ## 9. Receipts and facts
 
 - **Receipt v2.** The full deterministic output: anchor, checks, calls, broken invariants with plaintext fingerprints, and impact. It is encoded as compact JSON in struct order. `receipt_hash = SHA-256(receipt bytes)`. The receipt stays sealed with the PoC until disclosure, and anyone can recompute it after.
@@ -183,7 +206,7 @@ Duplicates become fully checkable: "same rule, same function, committed earlier"
 | Tier | Mechanism | What a relying party trusts |
 |---|---|---|
 | T0 (testnet default) | OutLayer worker output, delivered on-chain by the operator account; wasm pinned by `WasmUrl` hash | The OutLayer operator's attested workers |
-| T1 (COULD) | The TDX quote of the run, verified on NEAR by a DCAP verifier; `report_data` binds the input and output hashes | Intel TDX and the pinned measurements |
+| T1 | The run's TDX quote, verified on NEAR by `tee-verifier-*.verify_quote` through `confirm_tee`. `report_data` binds the wasm hash, the input and output hashes, the caller and the secrets (docs/trust.md) | Intel TDX, the DCAP collateral and the pinned worker measurements |
 | T2 (roadmap) | A zk proof of the same verifier execution | Mathematics only |
 
 All tiers rely on the same determinism: anyone can always re-run the verifier natively from the disclosed inputs. A wrong T0 verdict is detectable after the fact. Before payout, T0 adds an optimistic delay with `challenge()` above a payout cap.

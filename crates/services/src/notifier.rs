@@ -33,6 +33,9 @@ pub fn message(e: &Value) -> Option<String> {
         "pause_requested" => format!("Program #{}: verified Critical (commit #{}) — guardian pause requested", d["program_id"], d["commit_id"]),
         "pause_signed" => format!("Guardian: pause() signed for chain {} (EVM tx {})", d["chain_id"], d["tx_hash"].as_str().unwrap_or_default()),
         "disclosed" => format!("Program #{}: disclosure published ({} content keys)", d["program_id"], d["keys"]),
+        "round_proposed" => format!("Program #{}: round {} proposed (fix committed as code overrides); new commits verify against it", d["program_id"], d["round"]),
+        "rerun_result" => format!("Commit #{} re-run at round {}: {} ({} key(s) still broken)", d["commit_id"], d["round"], d["kind"].as_str().unwrap_or_default(), d["still_broken"].as_array().map(|a| a.len()).unwrap_or(0)),
+        "round_opened" => format!("Program #{}: round {} open — {} key(s) carried, {} released for new findings", d["program_id"], d["round"], d["carried"], d["released"].as_array().map(|a| a.len()).unwrap_or(0)),
         _ => return None,
     };
     Some(format!("{s} — {link}"))

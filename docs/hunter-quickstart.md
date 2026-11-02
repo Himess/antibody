@@ -75,6 +75,11 @@ How each verdict settles:
 - **The project's declared known issue:** Known. No payout; bond refunded.
 - **NoViolation or InvalidPoC:** your bond is forfeited.
 
+**Rounds.** A program can be in a later round, after the project committed a fix as a code override.
+`check`, `commit` and `pull` always use the current round's manifest, so your PoC runs against the
+fixed code. When a round opens, keys whose PoCs no longer break at the fix are released. A different
+bug in the same function then counts as a new finding (docs/rounds.md).
+
 ## 6. Hunting with an AI agent (MCP)
 
 Give the agent a key that can only commit and submit:

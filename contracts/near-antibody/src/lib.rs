@@ -24,6 +24,10 @@
 //!   The TEE re-runs claimed findings against it (`request_rerun`); keys whose PoCs no longer break
 //!   are released when the round opens, so a second bug in the same function can be paid. Keys
 //!   that still break, or that were never re-run, carry over.
+//! - **T1.** Anyone may relay OutLayer's TDX quote for a run (`confirm_tee`). near-antibody recomputes
+//!   the quote's report_data from what it sent and received, has the DCAP verifier check the quote,
+//!   and pins the worker measurements. A T1 verdict needs no challenge window, and a challenged T1
+//!   payout can be resolved without the arbiter.
 //! - **Disclosure.** After `deadline + disclosure_after`, one TEE run publishes every content key
 //!   and `k_program`, so anyone can re-verify every receipt and tag.
 
@@ -42,7 +46,7 @@ use near_sdk::{
     log, near, require,
     serde_json::{self, json, Value},
     store::{LookupMap, Vector},
-    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError, PromiseOrValue,
+    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError, PromiseOrValue, PromiseResult,
 };
 use types::*;
 
@@ -58,6 +62,10 @@ pub const MAX_VERIFY_ATTEMPTS: u8 = 3;
 pub const MAX_COMMITS_PER_PROGRAM: usize = 1000;
 pub const MAX_DISCLOSURE_ENTRIES: usize = 150;
 pub const SEPOLIA: u64 = 11155111;
+/// DCAP `verify_quote` burns about 176 Tgas on testnet (docs/trust.md).
+pub const TEE_VERIFY_GAS: Gas = Gas::from_tgas(200);
+pub const TEE_CB_GAS: Gas = Gas::from_tgas(25);
+pub const T1_TIER: &str = "T1 (TDX quote verified on NEAR)";
 
 pub fn hex(bytes: &[u8]) -> String {
     const H: &[u8; 16] = b"0123456789abcdef";
@@ -106,6 +114,17 @@ fn fact_keys(p: &Program, facts: &FactsIn) -> Result<Vec<FindingKey>, &'static s
     Ok(keys)
 }
 
+/// SHA-256 (lowercase hex) of the raw bytes a callback received, as OutLayer hashes its output.
+fn raw_result_sha256() -> Option<String> {
+    if env::promise_results_count() == 0 {
+        return None;
+    }
+    match env::promise_result(0) {
+        PromiseResult::Successful(b) => Some(hex(&env::sha256(&b))),
+        _ => None,
+    }
+}
+
 fn valid_sealed(s: &SealedRef) {
     require!(
         (s.url.starts_with("https://") || s.url.starts_with("near-tx:")) && s.url.len() <= 512,
@@ -131,6 +150,7 @@ pub struct Antibody {
     reputation: LookupMap<AccountId, Reputation>,
     hunters: Vector<AccountId>,
     stats: Stats,
+    tee: TeeConfig,
 }
 
 #[near]
@@ -158,6 +178,7 @@ impl Antibody {
             reputation: LookupMap::new(b"r"),
             hunters: Vector::new(b"h"),
             stats: Stats::default(),
+            tee: TeeConfig::default(),
         }
     }
 
@@ -186,6 +207,22 @@ impl Antibody {
     pub fn set_outlayer(&mut self, outlayer: AccountId) {
         self.assert_owner();
         self.outlayer = outlayer;
+    }
+
+    /// T1: the DCAP verifier, the worker images whose quotes count, and the accepted TCB statuses.
+    pub fn set_tee_config(&mut self, config: TeeConfig) {
+        self.assert_owner();
+        for m in &config.measurements {
+            for h in [&m.mrtd, &m.rtmr0, &m.rtmr1, &m.rtmr2, &m.rtmr3] {
+                require!(is_hex(h, 48), "measurements: 48-byte lowercase hex");
+            }
+        }
+        emit("tee_config_set", json!({"verifier": config.verifier, "measurements": config.measurements.len(), "accepted_tcb": config.accepted_tcb}));
+        self.tee = config;
+    }
+
+    pub fn get_tee_config(&self) -> TeeConfig {
+        self.tee.clone()
     }
 
     /// Runs the pinned verifier in `pubkey` mode and stores the sealed-submission public key it prints.
@@ -436,6 +473,9 @@ impl Antibody {
             bonus: U128(0),
             round: 0,
             reruns: Vec::new(),
+            run_input_sha256: None,
+            run_output_sha256: None,
+            tee: None,
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
         emit("known_issue_submitted", json!({"program_id": program_id, "commit_id": id, "commit_hash": commit_hash, "sealed_sha256": sealed.sha256}));
@@ -491,6 +531,9 @@ impl Antibody {
             bonus: U128(0),
             round: p.round,
             reruns: Vec::new(),
+            run_input_sha256: None,
+            run_output_sha256: None,
+            tee: None,
         });
         self.programs.get_mut(program_id).unwrap().commits.push(id);
         self.rep_mut(&hunter).commits += 1;
@@ -567,6 +610,7 @@ impl Antibody {
             "project_pubkey": p.project_pubkey,
         })
         .to_string();
+        self.commit_mut(commit_id).run_input_sha256 = Some(hex(&env::sha256(input.as_bytes())));
         self.outlayer_request(&p.verifier, input).then(
             Self::ext(env::current_account_id()).with_static_gas(VERIFY_CB_GAS).on_verified(commit_id),
         )
@@ -581,6 +625,7 @@ impl Antibody {
             return;
         }
         let p = self.load_program(c.program);
+        let output_sha = raw_result_sha256();
         let facts = match r {
             Ok(Some(f)) => f,
             _ => {
@@ -629,6 +674,7 @@ impl Antibody {
             let cm = self.commit_mut(commit_id);
             cm.verdict = Some(verdict);
             cm.status = CommitStatus::Verified;
+            cm.run_output_sha256 = output_sha;
         }
         emit(
             "verdict",
@@ -849,7 +895,10 @@ impl Antibody {
             Outcome::Delayed { amount, severity, until_ns } => (amount, severity, until_ns),
             _ => env::panic_str("not a delayed payout"),
         };
-        require!(env::block_timestamp() >= until_ns, "challenge window still open");
+        require!(
+            env::block_timestamp() >= until_ns || c.tee.is_some(),
+            "challenge window still open (a T1 confirmation releases it early)"
+        );
         let pm = self.programs.get_mut(c.program).unwrap();
         pm.reserved = U128(pm.reserved.0.saturating_sub(amount.0));
         self.pay(commit_id, amount.0, severity)
@@ -970,6 +1019,9 @@ impl Antibody {
             still_broken: Vec::new(),
             receipt_hash: None,
             height: env::block_height(),
+            input_sha256: None,
+            output_sha256: None,
+            tee: None,
         };
         {
             let cm = self.commit_mut(commit_id);
@@ -991,6 +1043,10 @@ impl Antibody {
             "sealed": sealed,
         })
         .to_string();
+        let input_sha = hex(&env::sha256(input.as_bytes()));
+        if let Some(r) = self.commit_mut(commit_id).reruns.iter_mut().find(|r| r.round == round) {
+            r.input_sha256 = Some(input_sha);
+        }
         self.outlayer_request(&p.verifier, input).then(
             Self::ext(env::current_account_id()).with_static_gas(VERIFY_CB_GAS).on_rerun(commit_id, round),
         )
@@ -1019,8 +1075,10 @@ impl Antibody {
             _ => Err("the re-run produced no result".into()),
         };
         let height = env::block_height();
+        let output_sha = raw_result_sha256();
         let rr = &mut self.commit_mut(commit_id).reruns[idx];
         rr.height = height;
+        rr.output_sha256 = output_sha;
         match result {
             Ok((kind, still, receipt)) => {
                 rr.status = RerunStatus::Done;
@@ -1108,6 +1166,152 @@ impl Antibody {
             CommitStatus::Verifying | CommitStatus::VerifyFailed => false,
             CommitStatus::Verified => c.outcome != Outcome::Pending,
         }
+    }
+
+    // ---------------------------------------------------------------------- T1
+
+    /// Relays OutLayer's TDX quote for a commit's verification run (or, with `round`, its re-run).
+    /// Anyone may call. The attestation must describe exactly the run near-antibody requested:
+    /// - the pinned verifier wasm;
+    /// - the input it sent and the output it received (both hashed);
+    /// - itself as the caller;
+    /// - the program's secrets.
+    /// The DCAP verifier then checks the quote (`collateral` is borsh, as `verify_quote` takes it;
+    /// a forged collateral cannot verify against Intel's roots).
+    pub fn confirm_tee(
+        &mut self,
+        commit_id: u64,
+        round: Option<u32>,
+        attestation: TeeAttestationIn,
+        quote: near_sdk::json_types::Base64VecU8,
+        collateral: near_sdk::json_types::Base64VecU8,
+    ) -> Promise {
+        let c = self.load_commit(commit_id);
+        let p = self.load_program(c.program);
+        let verifier = self.tee.verifier.clone().unwrap_or_else(|| env::panic_str("no DCAP verifier configured (set_tee_config)"));
+        let (input_sha, output_sha, confirmed) = match round {
+            None => {
+                require!(c.verdict.is_some(), "commit has no verdict");
+                (c.run_input_sha256.clone(), c.run_output_sha256.clone(), c.tee.is_some())
+            }
+            Some(r) => {
+                let rr = c.reruns.iter().find(|x| x.round == r && x.status == RerunStatus::Done);
+                let rr = rr.unwrap_or_else(|| env::panic_str("no completed re-run for this round"));
+                (rr.input_sha256.clone(), rr.output_sha256.clone(), rr.tee.is_some())
+            }
+        };
+        require!(!confirmed, "already T1-confirmed");
+        let a = &attestation;
+        require!(a.task_type == "execute", "attestation: not an execution");
+        require!(a.build_target.as_deref() == Some("wasm32-wasip2"), "attestation: build target");
+        require!(a.wasm_hash.as_deref() == Some(p.verifier.wasm_hash.as_str()), "attestation: not the program's pinned verifier");
+        require!(input_sha.is_some() && a.input_hash == input_sha, "attestation: input differs from what near-antibody sent");
+        require!(output_sha.as_deref() == Some(a.output_hash.as_str()), "attestation: output differs from what near-antibody received");
+        require!(a.caller_account_id.as_deref() == Some(env::current_account_id().as_str()), "attestation: another caller");
+        let sref = match (&p.verifier.secrets_owner, &p.verifier.secrets_profile) {
+            (Some(o), Some(pr)) => Some(format!("{o}/{pr}")),
+            _ => None,
+        };
+        require!(a.secrets_ref == sref, "attestation: secrets differ from the program's");
+        require!(a.repo.is_none() && a.commit.is_none() && a.project_id.is_none(), "attestation: not a WasmUrl run");
+        let report_data = hex(&a.task_hash());
+        let mut args = Vec::with_capacity(quote.0.len() + collateral.0.len() + 4);
+        args.extend((quote.0.len() as u32).to_le_bytes());
+        args.extend(&quote.0);
+        args.extend(&collateral.0);
+        emit("tee_confirm_requested", json!({"commit_id": commit_id, "round": round, "outlayer_task_id": a.task_id, "report_data": report_data}));
+        Promise::new(verifier.clone())
+            .function_call("verify_quote".into(), args, NearToken::from_yoctonear(0), TEE_VERIFY_GAS)
+            .then(Self::ext(env::current_account_id()).with_static_gas(TEE_CB_GAS).on_tee_verified(
+                commit_id,
+                round,
+                report_data,
+                hex(&env::sha256(&quote.0)),
+                a.task_id,
+                verifier,
+            ))
+    }
+
+    /// DCAP verifier callback: accepts the quote only if it verified, binds our report_data, comes
+    /// from a pinned worker image, and has an accepted TCB status.
+    #[private]
+    pub fn on_tee_verified(
+        &mut self,
+        commit_id: u64,
+        round: Option<u32>,
+        report_data: String,
+        quote_sha256: String,
+        task_id: i64,
+        verifier: AccountId,
+        #[callback_result]
+        #[serializer(borsh)]
+        r: Result<VerificationResultIn, PromiseError>,
+    ) -> bool {
+        let reject = |reason: String| {
+            emit("tee_rejected", json!({"commit_id": commit_id, "round": round, "reason": reason}));
+            false
+        };
+        let v = match r {
+            Ok(VerificationResultIn::Verified(v)) => v,
+            Ok(VerificationResultIn::Rejected(VerifierErrorIn::DcapVerification(e))) => return reject(format!("quote rejected: {e}")),
+            Err(_) => return reject("DCAP verifier call failed".into()),
+        };
+        let Some(td) = v.report.as_td10() else { return reject("not a TDX report".into()) };
+        if hex(&td.report_data[..32]) != report_data || td.report_data[32..] != [0u8; 32] {
+            return reject("quote does not bind this run".into());
+        }
+        let m = [hex(&td.mr_td), hex(&td.rt_mr0), hex(&td.rt_mr1), hex(&td.rt_mr2), hex(&td.rt_mr3)];
+        let pinned = self.tee.measurements.iter().any(|p| [&p.mrtd, &p.rtmr0, &p.rtmr1, &p.rtmr2, &p.rtmr3].iter().zip(m.iter()).all(|(a, b)| *a == b));
+        if !pinned {
+            return reject("worker measurements are not pinned".into());
+        }
+        if !self.tee.accepted_tcb.contains(&v.status) {
+            return reject(format!("TCB status {} not accepted", v.status));
+        }
+        let conf = TeeConfirmation {
+            quote_sha256,
+            report_data: report_data.clone(),
+            tcb_status: v.status.clone(),
+            mrtd: m[0].clone(),
+            rtmr3: m[4].clone(),
+            outlayer_task_id: task_id,
+            verifier,
+            height: env::block_height(),
+            ns: env::block_timestamp(),
+        };
+        let cm = self.commit_mut(commit_id);
+        match round {
+            None => {
+                cm.tee = Some(conf);
+                if let Some(vd) = cm.verdict.as_mut() {
+                    vd.tier = T1_TIER.into();
+                }
+            }
+            Some(r) => {
+                if let Some(rr) = cm.reruns.iter_mut().find(|x| x.round == r) {
+                    rr.tee = Some(conf);
+                }
+            }
+        }
+        emit("tee_confirmed", json!({"commit_id": commit_id, "round": round, "tier": T1_TIER, "tcb_status": v.status, "report_data": report_data}));
+        true
+    }
+
+    /// A challenged payout whose verdict is T1-confirmed is upheld without the arbiter: the quote
+    /// proves the pinned verifier ran on exactly this input and returned exactly these facts.
+    pub fn resolve_challenge_t1(&mut self, commit_id: u64) -> PromiseOrValue<()> {
+        let c = self.load_commit(commit_id);
+        let (amount, severity) = match c.outcome {
+            Outcome::Challenged { amount, severity, .. } => (amount, severity),
+            _ => env::panic_str("not challenged"),
+        };
+        require!(c.tee.is_some(), "the verdict is not T1-confirmed");
+        {
+            let pm = self.programs.get_mut(c.program).unwrap();
+            pm.reserved = U128(pm.reserved.0.saturating_sub(amount.0));
+        }
+        emit("challenge_resolved", json!({"commit_id": commit_id, "payout_upheld": true, "note": "resolved by T1 (TDX quote verified on NEAR)"}));
+        self.pay(commit_id, amount.0, severity)
     }
 
     // ------------------------------------------------------------- withdrawals

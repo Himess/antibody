@@ -18,8 +18,13 @@ fn acc(s: &str) -> AccountId {
     s.parse().unwrap()
 }
 
+thread_local! {
+    /// The contract's own account (the T1 test stands in for a recorded OutLayer caller).
+    static CONTRACT: std::cell::RefCell<String> = std::cell::RefCell::new("antibody.testnet".into());
+}
+
 fn contract_id() -> AccountId {
-    acc("antibody.testnet")
+    CONTRACT.with(|c| acc(&c.borrow()))
 }
 fn token() -> AccountId {
     acc("tusd.antibody-hq.testnet")
@@ -75,10 +80,14 @@ fn verifier() -> VerifierConfig {
 
 impl World {
     fn new() -> Self {
+        Self::with_verifier(verifier())
+    }
+
+    fn with_verifier(v: VerifierConfig) -> Self {
         let deadline = manifest_json()["rules"]["deadline_unix"].as_u64().unwrap();
         let mut w = World { c: unsafe_default(), height: 1_000, ts: (deadline - 12 * 86_400) * 1_000_000_000 };
         w.ctx(owner());
-        w.c = Antibody::new(owner(), token(), acc("outlayer.testnet"), None, verifier());
+        w.c = Antibody::new(owner(), token(), acc("outlayer.testnet"), None, v);
         w
     }
 
@@ -188,6 +197,7 @@ fn unsafe_default() -> Antibody {
         reputation: LookupMap::new(b"R"),
         hunters: Vector::new(b"H"),
         stats: Stats::default(),
+        tee: TeeConfig::default(),
     }
 }
 
@@ -719,6 +729,134 @@ fn rounds_wait_for_earlier_commits_and_need_a_claim_to_rerun() {
     w.c.open_round(0);
     let p = w.c.get_program(0).unwrap();
     assert_eq!((p.rounds[0].carried, p.rounds[0].released), (2, 0));
+}
+
+// ---------------------------------------------------------------------------- T1
+
+const T1_ATTESTATION: &str = include_str!("../../../fixtures/t1/outlayer-attestation-request-6496.json");
+const T1_COLLATERAL: &[u8] = include_bytes!("../../../fixtures/t1/collateral.borsh");
+const T1_VERIFY_RESULT: &[u8] = include_bytes!("../../../fixtures/t1/verify_quote-result.borsh");
+const T1_MEASUREMENT: &str = include_str!("../../../fixtures/t1/approved-measurement-109.json");
+
+/// Recorded public data: OutLayer's attestation for request 6496 and what the testnet DCAP verifier
+/// (`tee-verifier-2026-07-22.testnet.verify_quote`) returned for its quote. The test contract
+/// stands in for that request's caller, so every binding check runs on real values.
+#[test]
+fn t1_accepts_a_real_quote_only_for_the_run_it_binds() {
+    use near_sdk::borsh::BorshDeserialize;
+    use near_sdk::json_types::Base64VecU8;
+    let att: Value = serde_json::from_str(T1_ATTESTATION).unwrap();
+    CONTRACT.with(|c| *c.borrow_mut() = att["caller_account_id"].as_str().unwrap().into());
+    let mut v = verifier();
+    v.wasm_hash = att["wasm_hash"].as_str().unwrap().into();
+    let (so, sp) = att["secrets_ref"].as_str().unwrap().split_once('/').unwrap();
+    v.secrets_owner = Some(acc(so));
+    v.secrets_profile = Some(sp.into());
+    let mut w = World::with_verifier(v);
+    w.create_program(None);
+    let s = w.sealed(&project(), 0);
+    w.ctx(project());
+    let _ = w.c.submit_known(0, s);
+    w.verdict(0, w.facts(0, Kind::Violation, &tags_of("KNOWN"), 0));
+    w.ctx(project());
+    w.c.open_program(0);
+    w.deposit(&hunter("A"), 100 * ONE_TUSD);
+    let a = w.commit_and_submit(&hunter("A"), 1);
+    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
+    w.advance(w.c.get_program(0).unwrap().reveal_window_blocks + 1);
+    w.finalize(a);
+    assert!(matches!(w.outcome(a), Outcome::Delayed { .. }), "Critical above the instant cap waits (T0)");
+    w.ctx(acc("doubter.testnet"));
+    w.c.challenge(a, "my local re-run disagrees".into());
+    // The run near-antibody requested and received is the one OutLayer attested (recorded values).
+    {
+        let cm = w.c.commit_mut(a);
+        cm.run_input_sha256 = Some(att["input_hash"].as_str().unwrap().into());
+        cm.run_output_sha256 = Some(att["output_hash"].as_str().unwrap().into());
+    }
+    let pinned: TeeMeasurements = serde_json::from_str(T1_MEASUREMENT).unwrap();
+    let verifier_acc = acc("tee-verifier-2026-07-22.testnet");
+    w.ctx(owner());
+    w.c.set_tee_config(TeeConfig { verifier: Some(verifier_acc.clone()), measurements: vec![pinned], accepted_tcb: vec!["UpToDate".into()] });
+    let a_in: TeeAttestationIn = serde_json::from_str(T1_ATTESTATION).unwrap();
+    let quote: Base64VecU8 = serde_json::from_value(att["tdx_quote"].clone()).unwrap();
+    let collateral = Base64VecU8(T1_COLLATERAL.to_vec());
+
+    // Binding checks before the DCAP call: another output, wasm or caller is refused.
+    let mut tampered = a_in.clone();
+    tampered.output_hash = "00".repeat(32);
+    w.ctx(acc("relayer.testnet"));
+    assert!(panics(|| {
+        let _ = w.c.confirm_tee(a, None, tampered.clone(), quote.clone(), collateral.clone());
+    }), "output must be what near-antibody received");
+    let mut other_wasm = a_in.clone();
+    other_wasm.wasm_hash = Some("11".repeat(32));
+    w.ctx(acc("relayer.testnet"));
+    assert!(panics(|| {
+        let _ = w.c.confirm_tee(a, None, other_wasm.clone(), quote.clone(), collateral.clone());
+    }), "only the pinned verifier build");
+    w.ctx(acc("relayer.testnet"));
+    let _ = w.c.confirm_tee(a, None, a_in.clone(), quote.clone(), collateral);
+
+    // The verifier's real answer for this quote: Verified, TCB UpToDate.
+    let result = VerificationResultIn::try_from_slice(T1_VERIFY_RESULT).unwrap();
+    let rd = hex(&a_in.task_hash());
+    let qh = hex(&near_sdk::env::sha256(&quote.0));
+    w.ctx(contract_id());
+    assert!(!w.c.on_tee_verified(a, None, "22".repeat(32), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(result.clone())), "another run's report_data");
+    w.ctx(owner());
+    w.c.set_tee_config(TeeConfig { verifier: Some(verifier_acc.clone()), measurements: vec![], accepted_tcb: vec!["UpToDate".into()] });
+    w.ctx(contract_id());
+    assert!(!w.c.on_tee_verified(a, None, rd.clone(), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(result.clone())), "unpinned worker image");
+    w.ctx(owner());
+    w.c.set_tee_config(TeeConfig {
+        verifier: Some(verifier_acc.clone()),
+        measurements: vec![serde_json::from_str(T1_MEASUREMENT).unwrap()],
+        accepted_tcb: vec!["UpToDate".into()],
+    });
+    w.ctx(contract_id());
+    let rejected = VerificationResultIn::Rejected(VerifierErrorIn::DcapVerification("bad signature".into()));
+    assert!(!w.c.on_tee_verified(a, None, rd.clone(), qh.clone(), a_in.task_id, verifier_acc.clone(), Ok(rejected)), "a rejected quote");
+    assert!(w.c.get_commit(a).unwrap().tee.is_none());
+    w.ctx(contract_id());
+    assert!(w.c.on_tee_verified(a, None, rd.clone(), qh, a_in.task_id, verifier_acc, Ok(result)), "the real quote binds this run");
+    let c = w.c.get_commit(a).unwrap();
+    assert_eq!(c.verdict.unwrap().tier, T1_TIER);
+    assert_eq!(c.tee.as_ref().unwrap().tcb_status, "UpToDate");
+    assert_eq!(c.tee.unwrap().report_data, rd);
+
+    // A challenged T1 payout is upheld without the arbiter.
+    w.ctx(acc("anyone.testnet"));
+    let _ = w.c.resolve_challenge_t1(a);
+    assert!(matches!(w.outcome(a), Outcome::Paid { severity: Severity::Critical, .. }));
+    CONTRACT.with(|c| *c.borrow_mut() = "antibody.testnet".into());
+}
+
+#[test]
+fn t1_releases_a_delayed_payout_early() {
+    let (mut w, _) = setup_open_program_with_known_issue(None);
+    let a = w.commit_and_submit(&hunter("A"), 1);
+    w.verdict(a, w.facts(a, Kind::Violation, &tags_of("A"), 0));
+    w.advance(w.c.get_program(0).unwrap().reveal_window_blocks + 1);
+    w.finalize(a);
+    w.ctx(acc("anyone.testnet"));
+    assert!(panics(|| {
+        let _ = w.c.release(a);
+    }), "T0: wait for the challenge window");
+    w.c.commit_mut(a).tee = Some(TeeConfirmation {
+        quote_sha256: "aa".repeat(32),
+        report_data: "bb".repeat(32),
+        tcb_status: "UpToDate".into(),
+        mrtd: "cc".repeat(48),
+        rtmr3: "dd".repeat(48),
+        outlayer_task_id: 1,
+        verifier: acc("tee-verifier-2026-07-22.testnet"),
+        height: 1,
+        ns: 1,
+    });
+    w.ctx(acc("anyone.testnet"));
+    let _ = w.c.release(a);
+    assert!(matches!(w.outcome(a), Outcome::Paid { .. }), "a T1 verdict needs no challenge window");
 }
 
 // near-sdk 5.9's mocked blockchain does not implement yield/resume, yet `env` references the host

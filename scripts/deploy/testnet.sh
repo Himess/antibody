@@ -84,6 +84,10 @@ for c in "11155111 sepolia https://sepolia.etherscan.io/tx/ 20000000000 15000000
 done
 ab --key-file "$KEYS/$HQ.json" admin call --contract "guardian.$HQ" --method set_authorized --args "{\"account_id\":\"bounty.$HQ\",\"enabled\":true}"
 
+echo "== 7b. T1: NEAR's DCAP verifier and OutLayer's three newest approved worker images"
+MEAS="$(curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"worker.outlayer.testnet","method_name":"get_approved_measurements","args_base64":"e30="}}'   | python3 -c 'import sys,json; r=json.load(sys.stdin); print(json.dumps(json.loads(bytes(r["result"]["result"]))[-3:]))')"
+ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method set_tee_config   --args "{\"config\":{\"verifier\":\"tee-verifier-2026-07-22.testnet\",\"measurements\":$MEAS,\"accepted_tcb\":[\"UpToDate\"]}}"
+
 echo "== 8. tUSD for the project and the scripted agents (testnet token, no value)"
 ab --key-file "$KEYS/$HQ.json" admin call --contract "tusd.$HQ" --method mint --args "{\"account_id\":\"acme.$HQ\",\"amount\":\"30000000000\"}"
 for x in a b c d e f; do

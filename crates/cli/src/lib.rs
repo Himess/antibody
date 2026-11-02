@@ -6,3 +6,4 @@ pub mod cmd;
 pub mod ctx;
 pub mod mcp;
 pub mod near;
+pub mod tee;
