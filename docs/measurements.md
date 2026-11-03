@@ -2,18 +2,68 @@
 
 Every number here comes either from public NEAR testnet data, read from the RPC and FastNEAR's
 transaction API, or from this repository's own runs. Each table states its method and the window it
-covers.
+covers. The testnet run's numbers (real OutLayer, DCAP and MPC) replace the sandbox's when it runs.
 
-## Antibody's own runs
+## The sandbox run
+
+`antibody-services demo` on a Linux VPS, 2026-11-03 04:21 UTC, commit 0619160: near-sandbox and two
+anvils, the real verifier in TEE mode on MOCK OutLayer, MOCK DCAP quotes checked by the real T1 code,
+MOCK MPC. Results: [results/sandbox-2026-11-03.json](results/sandbox-2026-11-03.json). Times are
+sandbox wall clock: they show the flow's own latency, not OutLayer's or the MPC network's.
+
+| What | Value | Field |
+|---|---|---|
+| The whole story, every check passed | 526.5 s | `seconds`, `all_ok` |
+| Activation (base witness pinned, sealing key T1-confirmed) | 14.4 s | `activation.seconds` |
+| Agent A over MCP: commit to verdict, to T1, to paid | 9.7 s, 13.8 s, 26.9 s | `one_moment.seconds_from_commit` |
+| Pause after A's commit: chain 31337, chain 31338 | 26.9 s, 28.3 s | same |
+| Commit to verdict, agents B–G | 9.7–10.4 s | `submissions[].seconds` |
+| A round (the keeper re-runs every eligible proof, then the round opens): round 1, round 2 | 66.2 s, 72.1 s | `rounds[].seconds` |
+| Release after round 2 opens: both proxies on both chains | 1.0 s | `release.seconds` |
+| Practice try, vend to payout (two judges, no account) | 17.0 s each | `practice.tries[].seconds` |
+| Fork mode, the tutorial proof to payout | 36.6 s | `fork_mode.seconds` |
+| A submission's records at near-antibody by its verdict (B) | 903 B | `costs.contract_storage_bytes` |
+| Its NEAR credit spent: the run deposit and answer allowance (0.02), storage with the 1 KiB settlement prepay (0.0166) | 0.0366 NEAR | `costs.near_credit_spent_yocto` |
+| API: endpoints answering, events indexed | 17 of 17, 233 events | `api` |
+
+The sandbox charges ten times testnet's gas, so wallet deltas from it are not testnet costs.
+
+## Contracts and the verifier
 
 | What | Value | Source |
 |---|---|---|
-| Verifier work per verification (program mode, Acme fixture) | 462–476 M wasm instructions | `python3 scripts/demo/check_fixtures.py fixtures/acme-local` (wasmtime with OutLayer's engine config; also `round1`) |
+| Verifier work per verification (program mode, Acme fixtures, rounds 0–2, 17 runs) | 467–487 M wasm instructions | `python3 scripts/demo/check_fixtures.py fixtures/acme-local` (wasmtime with OutLayer's engine config; also `round1`, `round2`) |
 | Native vs wasm output | Byte-identical for every fixture (full receipt and facts) | Same script; CI job `verifier` |
-| Sandbox end to end | All expected outcomes, including round 1 and disclosure, in 376 s (CI run 41438293042) | `make demo`, CI job `e2e`, `target/demo/results.json` |
-| Guardian pause after a verified Critical (sandbox, MOCK MPC) | 0.5 s to `paused() == true` on both chains | Same run (`guardian.pause_seconds_after_verdict`) |
-| TEE re-run of one claimed finding (sandbox, MOCK OutLayer) | 7.8–7.9 s each, from the witness build to the recorded result | Same run, round-1 step |
-| near-antibody wasm | 937,426 B (fits one deploy transaction) | `contracts/near-antibody/target/wasm32-unknown-unknown/release/near_antibody.wasm` |
+| near-antibody wasm | 910,470 B built, 741,744 B after `wasm-opt -Oz` (binaryen 133): 7.42 NEAR of code stake | `scripts/deploy/testnet.sh plan` |
+| near-guardian wasm | 298,001 B built, 244,883 B after `wasm-opt -Oz`: 2.45 NEAR | Same |
+| Practice vending wasm | 78,832 B built, 64,241 B after `wasm-opt -Oz`: 0.64 NEAR | Same |
+| Settlement storage a commit prepays | 1 KiB (0.0102 NEAR); measured worst case 920 B (a first holder with four keys and a challenge record) | `a_commits_settlement_is_prepaid` (near-antibody unit test) |
+
+NEAR storage costs 1 NEAR per 100 kB, staked, not spent; a locked contract's stake stays with it.
+
+## Bond floor
+
+The recommended floor is `3 × p95(cost of verifying one submission, T1 relay included)`, valued at the
+NEAR/token rate the project uses (docs/spec.md §12.2). With today's testnet values:
+
+| Input | Value | Source |
+|---|---|---|
+| OutLayer's charge for one run, upper bound | 0.007 NEAR (a run at the 60 s limit; `estimate_execution_cost`) | OutLayer view call; measured runs below charge less (p95 0.0016) |
+| The run's transaction gas | 0.0013 NEAR | OutLayer table below (p50 0.00124) |
+| T1 relay (`verify_quote`) | 0.0176 NEAR (175.8 Tgas) | DCAP table below |
+| **Cost of one verification** | **≈ 0.026 NEAR** | sum |
+| **Floor** | **≈ 0.078 NEAR per commit** | × 3 |
+
+The sandbox demo prices bonds in its test token; the testnet story will state its demo bond and whether it
+is below this floor.
+
+## Cost per submission for a hunter (testnet)
+
+A hunter attaches the program's run deposit (0.02 NEAR) from its NEAR credit at near-antibody; OutLayer
+charges its compute (≤ 0.007) and refunds the rest to the hunter's wallet. near-antibody keeps a 0.01 NEAR
+allowance for the storage of the run's answer, and the commit's own records plus its 1 KiB settlement
+prepay (≈ 0.013 NEAR together), and the hunter pays its transactions' gas (≈ 0.002). The T1 relay is paid
+by whoever relays (Antibody's relayer by default). The bond comes back unless the proof breaks nothing.
 
 ## OutLayer on testnet (`outlayer.testnet`)
 
