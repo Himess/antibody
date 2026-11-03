@@ -53,6 +53,21 @@ class Doc:
         self.r = r
         self.net = r.get("deployment", {}).get("network", "sandbox")
         self.source = source
+        # The payout token, and the chains: the first verifies and pauses, the second only pauses.
+        self.symbol, self.decimals = ("tUSD", 6) if self.net == "sandbox" else ("wNEAR", 24)
+        chains = r.get("evm", {}).get("chains", {})
+        self.chains = (chains.get("verifies_and_pauses", 31337), chains.get("pauses", 31338))
+        # Testnet's story accounts are sub-accounts of the deployment's root (bounty.<root>).
+        self.root = (r.get("deployment", {}).get("near_antibody") or "bounty.test.near").split(".", 1)[-1]
+
+    def tokens(self, raw):
+        return f"{tokens(raw, self.decimals)} {self.symbol}"
+
+    def story_account(self, name):
+        return f"{name}.{self.root}"
+
+    def clock(self):
+        return "sandbox clock; MOCK MPC" if self.net == "sandbox" else "each chain's own clock; the MPC network signed the permits"
 
     def tx(self, h):
         if not h or not isinstance(h, str):
@@ -115,6 +130,12 @@ class Doc:
             lines += ["These are the results of the offline sandbox run (`make demo`: near-sandbox and anvil, MOCK OutLayer and MOCK DCAP "
                       "quotes checked by the real T1 code, MOCK MPC). To query that state yourself, keep it running: "
                       "`make serve`. The testnet run's results replace this file when it is live.", ""]
+        elif self.net == "testnet":
+            lines += [f"These are the results of the live run on NEAR testnet (`antibody-services live`), with Acme Lend on Sepolia "
+                      f"({self.chains[0]}: it verifies and pauses) and Base Sepolia ({self.chains[1]}: it pauses): real OutLayer TEE "
+                      "workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. "
+                      "Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls "
+                      "and need no account.", ""]
         return lines
 
 
@@ -150,8 +171,9 @@ def judges(d):
         n += 1
         txs = s.get("txs", {})
         ev = f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))}" + (f", pay {d.tx(txs.get('pay'))}" if txs.get("pay") else "")
-        exp = f"`{s.get('verdict')}`, tier `{s.get('tier')}`, `{label(s.get('state'))}`" + (f", paid {tokens(s.get('paid_raw'))} tUSD" if int(s.get("paid_raw") or 0) else "")
+        exp = f"`{s.get('verdict')}`, tier `{s.get('tier')}`, `{label(s.get('state'))}`" + (f", paid {d.tokens(s.get('paid_raw'))}" if int(s.get("paid_raw") or 0) else "")
         out += [f"| {n} | {STORY.get(s.get('agent'), s.get('agent'))} | `{d.cli('status --commit ' + str(s.get('commit')))}` | {exp} | {ev} |"]
+    a, b = d.chains
     if one:
         n += 1
         permits = one.get("permits", {})
@@ -159,8 +181,8 @@ def judges(d):
         out += [f"| {n} | The one moment: A's verdict pays A and pauses the fixture on both chains | `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` "
                 f"(the permits); the times: `python3 scripts/docs/recorded.py one_moment.seconds_from_commit` | {main.get('pauses')} pause permits; from A's commit block: "
                 f"verdict {secs.get('verdict', 0):.1f} s, T1 {secs.get('t1', 0):.1f} s, paid {secs.get('paid', 0):.1f} s (its block), pause permits signed at "
-                f"{secs.get('permit_signed_31337') or 0:.1f} s and {secs.get('permit_signed_31338') or 0:.1f} s, paused on 31337 at "
-                f"{secs.get('paused_31337') or 0:.1f} s and on 31338 at {secs.get('paused_31338') or 0:.1f} s (sandbox clock; MOCK MPC) | {ev} |"]
+                f"{secs.get(f'permit_signed_{a}') or 0:.1f} s and {secs.get(f'permit_signed_{b}') or 0:.1f} s, paused on {a} at "
+                f"{secs.get(f'paused_{a}') or 0:.1f} s and on {b} at {secs.get(f'paused_{b}') or 0:.1f} s ({d.clock()}) | {ev} |"]
     for rd in r.get("rounds", []):
         n += 1
         o = rd.get("opened", {})
@@ -181,8 +203,8 @@ def judges(d):
         hashes += [(k, v) for st in t.get("settle", []) for k, v in st.items() if k in ("allocate", "pay") and isinstance(v, str) and (k, v) not in hashes]
         links = ", ".join(f"{k} {d.tx(h)}" for k, h in hashes)
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
-                f"`{d.cli('try --name <you>')}` (sends sandbox transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
-                f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract (it paid the bond and the run), a vault of its own "
+                f"`{d.cli('try --name <you>')}` (sends {d.net} transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
+                f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract (it paid the bond and the run), a vault of its own "
                 f"(each `try` gets the next free one), about {t.get('seconds', 0):.0f} s; `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken) | {links} |"]
     rs = main.get("rule_strength") or {}
     if rs.get("statement"):
@@ -196,10 +218,10 @@ def judges(d):
         txs = fm.get("txs", {})
         out += [f"| {n} | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | "
                 f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `{d.cli('status --program ' + str(fm.get('program_id')))}` (its targets); the vault's code with `curl` (below the table) | "
-                f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('targets')} targets; the vault's code on chain 31337: `{fm.get('vault_3_code_on_chain')}` | "
+                f"`{fm.get('state')}`, {d.tokens(fm.get('paid_raw'))}; {fm.get('targets')} targets; the vault's code on chain {a}: `{fm.get('vault_3_code_on_chain')}` | "
                 f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))} |"]
     vc = r.get("verdict_consumer", {})
-    if vc:
+    if vc and not vc.get("skipped"):
         n += 1
         fr = vc.get("frozen") or {}
         out += [f"| {n} | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | "
@@ -232,10 +254,11 @@ def judges(d):
         if c.get("address") and c.get("rpc"):
             evm += [f"- Chain {c['chain_id']}, {c['proxy']}: the result ends in `{str(c.get('expected', '')).lower()[2:]}`", "",
                     "  ```bash", "  " + d.curl(c["rpc"], "eth_getStorageAt", [c["address"], "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", "latest"]), "  ```"]
+    first_rpc = next((c["rpc"] for c in rel.get("checks", []) if c.get("chain_id") == a and c.get("rpc")), "http://127.0.0.1:8545")
     if fm.get("vault_3"):
-        evm += [f"- Fork mode: the practice vault `{fm['vault_3']}` has no code on chain 31337 (`\"result\":\"0x\"`)", "",
-                "  ```bash", "  " + d.curl("http://127.0.0.1:8545", "eth_getCode", [fm["vault_3"], "latest"]), "  ```"]
-    if evm and d.net == "sandbox":
+        evm += [f"- Fork mode: the practice vault `{fm['vault_3']}` has no code on chain {a} (`\"result\":\"0x\"`)", "",
+                "  ```bash", "  " + d.curl(first_rpc, "eth_getCode", [fm["vault_3"], "latest"]), "  ```"]
+    if evm:
         out += ["", "### The EVM checks", ""] + evm
     # Every transaction behind a claim, in full, and how to look one up.
     txs = []
@@ -244,7 +267,7 @@ def judges(d):
         for k, h in sorted((s.get("txs") or {}).items(), key=lambda kv: ["commit", "reveal", "pay"].index(kv[0]) if kv[0] in ("commit", "reveal", "pay") else 9):
             if isinstance(h, str):
                 # The keeper pays; the agent commits and reveals.
-                who = ("keeper" if k == "pay" else f"agent-{letter}") + ".test.near" if d.net == "sandbox" else "<its signer>"
+                who = d.story_account("keeper" if k == "pay" else f"agent-{letter}")
                 txs.append((f"{s.get('agent')} {k}", h, who))
     if txs:
         out += ["", "### Transactions", "", "Each transaction behind the table, with the command that shows its status, events and failures:", ""]
@@ -258,9 +281,13 @@ def judges(d):
             out += [f"- {s.get('agent')}: submission (witness, seal, commit, reveal) to verdict {s.get('seconds', 0):.1f} s."]
     if tries:
         out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to payout." for t in tries]
-    out += ["", "## What this does not show", "",
-            "- The quotes in the sandbox are MOCK DCAP quotes; the T1 checks on them are the real code. The testnet run uses real OutLayer TEE workers.",
-            "- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
+    out += ["", "## What this does not show", ""]
+    if d.net == "sandbox":
+        out += ["- The quotes in the sandbox are MOCK DCAP quotes; the T1 checks on them are the real code. The testnet run uses real OutLayer TEE workers."]
+    else:
+        out += ["- The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget.",
+                "- One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
+    out += ["- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
             "- A mutation score, where shown, measures a rule set's strength, not the code's security.", ""]
     return "\n".join(out)
 
@@ -281,7 +308,7 @@ def agents(d):
             "Over MCP, the `practice_try` tool does the same in one call, with no account configured.", ""]
     if practice.get("tries"):
         t = practice["tries"][0]
-        out += [f"Expected (from the recorded run): `{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract, vault {t.get('vault_index')}, "
+        out += [f"Expected (from the recorded run): `{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, vault {t.get('vault_index')}, "
                 f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
     out += ["## Connect over MCP", "", "One config. Give the agent a function-call key (`antibody agent key add`): it may commit, reveal and retry, and it cannot withdraw or transfer.", "",
             "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", d.account("<agent>.<you>"), "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
@@ -293,7 +320,8 @@ def agents(d):
             "- An agent's bonds come from its owner's credit within a per-commit cap and a budget that counts bonds lost as well as locked, on the programs its owner listed; a commit outside them is refused and counted as a containment event.", ""]
     if one:
         out += ["## Measured in the recorded run", "",
-                f"Agent A submitted over MCP. From its commit's block: verdict {one.get('verdict', 0):.1f} s, T1 {one.get('t1', 0):.1f} s, paid {one.get('paid', 0):.1f} s (the payment's block; sandbox clock).", ""]
+                f"Agent A submitted over MCP. From its commit's block: verdict {one.get('verdict', 0):.1f} s, T1 {one.get('t1', 0):.1f} s, paid {one.get('paid', 0):.1f} s "
+                f"(the payment's block; {'sandbox clock' if d.net == 'sandbox' else 'NEAR testnet blocks'}).", ""]
     return "\n".join(out)
 
 
