@@ -302,6 +302,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
         ],
         settlement: Some(serde_json::to_value(demo_settlement(deadline))?),
         deploy: None,
+        rule_strength: None,
     })
 }
 
@@ -385,6 +386,7 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
         canaries: vec![],
         settlement: Some(serde_json::to_value(practice_settlement(deadline))?),
         deploy: None,
+        rule_strength: None,
     })
 }
 
@@ -500,7 +502,10 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
     if let Some((code, _)) = invariants {
         std::fs::write(&inv_file, code)?;
     }
-    cmd::manifest_round(base, round, &flags, invariants.map(|_| (inv_file.as_path(), added.as_slice())), &manifest)?;
+    // The final fix carries its rule strength, measured at that code (docs/rule-strength.md).
+    let strength = a.root.join("docs/results/rule-strength-acme.json");
+    let strength = (round == 2 && strength.exists()).then_some(strength);
+    cmd::manifest_round(base, round, &flags, invariants.map(|_| (inv_file.as_path(), added.as_slice())), strength.as_deref(), &manifest)?;
     let rel: Vec<Value> = releases
         .iter()
         .map(|(proxy, fix)| json!({"proxy": dep[*proxy], "implementation": dep[*fix], "code_hash": dep[format!("codehash{fix}")]}))

@@ -52,6 +52,11 @@ pub struct Manifest {
     /// deployment. Absent: the targets are on chain at the anchor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<Deploy>,
+    /// The project's rule strength at this round's code (docs/rule-strength.md): what `antibody
+    /// invariants strength` reported, committed by the manifest hash. The verifier does not read it;
+    /// anyone can reproduce it from the sources, the test and the seed it names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_strength: Option<serde_json::Value>,
 }
 
 /// A fork-mode deployment: transactions from [`deployer`], in order, in the anchor block.

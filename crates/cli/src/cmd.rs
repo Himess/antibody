@@ -1004,7 +1004,19 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
 
 /// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code
 /// file)` replaces that target's runtime code at the same anchor (docs/rounds.md).
-pub fn manifest_round(base: &Path, round: u32, overrides: &[String], invariants: Option<(&Path, &[String])>, out: &Path) -> Result<Value> {
+/// What a round manifest commits of a rule strength report (docs/rule-strength.md).
+pub fn rule_strength_summary(report: &Path) -> Result<Value> {
+    let bytes = std::fs::read(report)?;
+    let r: Value = serde_json::from_slice(&bytes)?;
+    if r["statement"].as_str().is_none() {
+        return Err(eyre!("{}: not an `antibody invariants strength` report", report.display()));
+    }
+    Ok(json!({"statement": r["statement"], "caught": r["caught"], "total": r["total"], "by_class": r["by_class"], "test": r["test"],
+              "fuzz": r["fuzz"], "sources": r["sources"], "report_sha256": hex::encode(sha256(&bytes)),
+              "label": "a measure of the rules, not of the code's security"}))
+}
+
+pub fn manifest_round(base: &Path, round: u32, overrides: &[String], invariants: Option<(&Path, &[String])>, rule_strength: Option<&Path>, out: &Path) -> Result<Value> {
     let m = Manifest::parse(&std::fs::read(base)?).map_err(|e| eyre!(e))?;
     let mut code = Vec::new();
     for o in overrides {
@@ -1028,7 +1040,9 @@ pub fn manifest_round(base: &Path, round: u32, overrides: &[String], invariants:
             Some((alloy_primitives::Bytes::from(runtime), parsed))
         }
     };
-    let r = m.with_round(round, &code, added).map_err(|e| eyre!(e))?;
+    let mut r = m.with_round(round, &code, added).map_err(|e| eyre!(e))?;
+    // A rule strength belongs to the code it was measured at: this round's, or none.
+    r.rule_strength = rule_strength.map(rule_strength_summary).transpose()?;
     let bytes = r.canonical();
     std::fs::write(out, &bytes)?;
     Ok(json!({"manifest": out, "round": round, "bytes": bytes.len(), "sha256": format!("{:#x}", Manifest::hash(&bytes)),

@@ -65,12 +65,14 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value]) -> Result<Value> {
         .map(|x| json!({"id": x["id"], "chain_id": x["chain_id"], "adapter": x["adapter"], "round": x["round"], "body": x["body"], "deadline": x["deadline"]}))
         .collect();
     let pauses = mine.iter().filter(|x| x["body"].get("Pause").is_some()).count();
+    // The current round's rule strength, as its manifest commits it (docs/rule-strength.md).
+    let strength = cmd::program_manifest(ctx, id).ok().and_then(|m| serde_json::from_slice::<Value>(&m).ok()).map(|m| m["rule_strength"].clone()).unwrap_or(Value::Null);
     Ok(json!({
         "program_id": id, "name": meta["name"], "project": p["project"], "phase": p["phase"], "round": p["round"], "program_key": key,
         "anchor": {"chain_id": meta["chain_id"], "block": meta["anchor_block"], "hash": meta["anchor_hash"], "status": record["anchor"]},
         "terms_sha256": meta["terms_sha256"], "pins": ctx.view("get_pins", json!({"program_id": id}))?,
         "verdicts": {"runs": runs, "t1_confirmed": t1}, "commits": states, "payouts": payouts,
-        "pauses": pauses, "releases": mine.len() - pauses, "permits": mine,
+        "pauses": pauses, "releases": mine.len() - pauses, "permits": mine, "rule_strength": strength,
         "record": record, "audit_ok": audit["ok"], "link": ctx.near.explorer_account(p["project"].as_str().unwrap_or_default()),
     }))
 }

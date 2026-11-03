@@ -299,6 +299,9 @@ enum Cmd {
         /// <bit>:<name>:<severity> of a slot the new invariants add; repeatable
         #[arg(long = "add-slot")]
         add_slots: Vec<String>,
+        /// The rule strength report measured at this round's code (`antibody invariants strength`)
+        #[arg(long)]
+        rule_strength: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -636,8 +639,8 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Keygen { kind: KeygenKind::X25519 { ref out } } => cmd::keygen_x25519(out),
         Cmd::Keygen { kind: KeygenKind::Near { ref account_id, ref out } } => cmd::keygen_near(account_id.clone(), out),
         Cmd::Manifest { ref toml, ref out } => cmd::manifest_compile(toml, out),
-        Cmd::ManifestRound { ref base, round, ref overrides, ref invariants_code, ref add_slots, ref out } => {
-            cmd::manifest_round(base, round, overrides, invariants_code.as_deref().map(|f| (f, add_slots.as_slice())), out)
+        Cmd::ManifestRound { ref base, round, ref overrides, ref invariants_code, ref add_slots, ref rule_strength, ref out } => {
+            cmd::manifest_round(base, round, overrides, invariants_code.as_deref().map(|f| (f, add_slots.as_slice())), rule_strength.as_deref(), out)
         }
         Cmd::Program { ref cmd } => {
             let c = mk()?;
