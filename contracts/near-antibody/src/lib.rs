@@ -1202,12 +1202,14 @@ impl Contract {
 
     /// A program's image snapshot (spec §15): how many of the deployment's known images it took at
     /// creation, the digest of their measurements stored then, and the digest of the same entries now.
-    /// They match while the list keeps them (it only grows); programs older than the digest have none.
+    /// They match while the list keeps them (it only grows); programs older than the digest have none
+    /// (`matches` is null).
     pub fn get_image_snapshot(&self, program_id: u32) -> Option<Value> {
         let pins = self.pins.get(&program_id)?;
         let stored = env::storage_read(&image_snapshot_key(program_id)).map(hex::encode);
         let now = hex::encode(self.images_digest(pins.images_known));
-        Some(json!({"images_known": pins.images_known, "sha256": stored, "recomputed": now, "matches": stored.as_deref() == Some(now.as_str())}))
+        let matches = stored.as_ref().map(|s| *s == now);
+        Some(json!({"images_known": pins.images_known, "sha256": stored, "recomputed": now, "matches": matches}))
     }
 
     pub fn get_program(&self, program_id: u32) -> Option<Program> {

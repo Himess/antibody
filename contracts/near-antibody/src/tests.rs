@@ -360,6 +360,10 @@ fn a_program_pins_the_digest_of_its_image_snapshot() {
     let s = w.c.get_image_snapshot(id).unwrap();
     assert_eq!((s["sha256"].clone(), s["matches"].clone()), (json!(want), json!(true)));
     assert!(w.c.get_image_snapshot(id + 1).is_none());
+    // A program created before the digest existed has none: `matches` is null, not false.
+    env::storage_remove(&image_snapshot_key(id));
+    let s = w.c.get_image_snapshot(id).unwrap();
+    assert_eq!((s["sha256"].clone(), s["matches"].clone()), (json!(null), json!(null)));
 }
 
 #[test]
