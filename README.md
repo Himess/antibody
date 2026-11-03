@@ -81,7 +81,7 @@ every outcome of the story:
 
 | | Account / contract | Status |
 |---|---|---|
-| near-antibody | `bounty.antibody.testnet` | deployed, not locked (code `HMmyk9i7…`, [BJfekaoi…](https://testnet.nearblocks.io/txns/BJfekaoiovZHuR24NoyVMkfwQVYQdLyJGfd5HUwNGR1B)) |
+| near-antibody | `bounty.antibody.testnet` | deployed, not locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
 | near-guardian | `guardian.antibody.testnet` | deployed, not locked (code `4SdG5PK9…`) |
 | Practice vending | `practice.antibody.testnet` | deployed, not locked (code `AdXwpxi5…`); practice program 2, its fork-mode twin program 3 |
 | Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |
