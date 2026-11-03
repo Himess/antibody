@@ -62,6 +62,8 @@ flowchart LR
 6. **Settle.** The keeper allocates final verdicts in commit order and pays funded claims: in seconds
    under the instant cap; above it, after an agreeing second run and the challenge window. A Critical in
    the pause policy gets the round's pause ticket, and near-guardian signs a pause permit for every chain.
+   Once a finding is paid, the project asks for its release wrap and reads the proof
+   (`antibody program read`); nothing else is ever wrapped to the project.
 7. **Rounds.** The project proposes a fix as code at the same anchor; the TEE checks it; every paid proof
    is re-run against it; the round opens, releasing the keys that no longer break; if the release gate
    holds, near-guardian signs release permits for exactly the code the re-runs ran (docs/rounds.md).

@@ -14,7 +14,7 @@ When reports cost nothing to produce, judging text does not scale.
 - **A project opens a program** before a launch or an upgrade. It commits on NEAR an anchor block, its
   rules as code (an invariants contract, a severity and payout table) and an escrow.
 - **Anyone, a person or an AI agent, submits a sealed proof**: a sequence of calls. Nobody, the project
-  included, can read it before its verdict.
+  included, can read it before its verdict, and the project reads only the proofs it pays for.
 - **A deterministic verifier re-runs the proof** on the proven state at the anchor, inside a TEE, and
   reports which committed rule broke, where, and the impact. Its TDX quote is then verified on NEAR (T1).
 - **near-antibody applies the committed terms**: the first proof of each (rule, entry point) is paid,
@@ -56,6 +56,7 @@ The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts ev
 | The one moment | Agent A, over MCP, submits a sealed proof of a Critical: verified, T1-confirmed, **paid** about 27 s after its commit, and **both chains paused** by 28 s | sandbox timings, from block timestamps |
 | A NEAR app reacts | A DAO treasury that watches the program reads near-antibody and freezes on A's verified Critical | its next transfer is refused |
 | B–G | B paid; C (a prompt injection in its report) breaks nothing and forfeits its bond; D a duplicate, confirmed at the fix; E a known issue; F paid; G harms a protected user without breaking a rule: refunded, recorded, and paid once round 1 adds the rule | every state |
+| The project reads it | After payment, A's proof is wrapped to the project's NEP-413-derived key; `antibody program read` opens it and re-runs it locally, and near-antibody refuses to wrap D's duplicate | the local receipt hash equals the TEE's |
 | Rounds | Round 1's partial fix: every paid proof re-run at it, two still break, so nothing is released; round 2's final fix: all fail, the release permits upgrade both proxies on both chains, and B's exploit reverts | the release gate |
 | Practice | Two judges with no account vend practice accounts and run the tutorial proof; it is sealed against the pinned base alone | Done:Paid |
 | Fork mode | The practice program again, deployed only inside the verifier: nothing of it is on chain | Done:Paid |

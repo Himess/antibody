@@ -43,7 +43,7 @@ policy).
 antibody manifest antibody.toml --out manifest.json         # prints its sha256: the committed hash
 antibody invariants validate --manifest manifest.json      # as creation and activation will check it; nothing sent
 antibody invariants strength --project <foundry dir> --test <your strength test> --mutate src/X.sol   # optional
-antibody keygen x25519 --out project.x25519.json            # findings are re-encrypted to it; keep it secret
+antibody --account you.testnet keygen x25519 --nep413 --out project.x25519.json   # from your NEAR key (NEP-413); keep it secret
 antibody --account you.testnet program create --manifest manifest.json --escrow <tokens> --project-key project.x25519.json
 ```
 
@@ -62,8 +62,24 @@ Known issues count only once T1-confirmed, and nothing is added after opening.
 
 ## 5. Findings
 
-A Violation's content key is wrapped to your project key, so you can read what you pay for;
-`antibody --account you.testnet program show --program <id>` lists every commit with its verdict.
+`antibody --account you.testnet program show --program <id>` lists every commit with its verdict. You
+read exactly what you pay for:
+
+```bash
+antibody --account you.testnet program read --commit <id> --project-key project.x25519.json   --out finding-<id>/ --reveal-tx <the commit's reveal transaction>      # or --api <Antibody API>, or --blob <file>
+```
+
+The first read asks near-antibody to wrap the finding's content key to your key (`release_wrap`, a
+verifier run you pay for at cost). It is refused for anything but a paid first finding or a promoted
+duplicate. The CLI then opens the sealed proof and re-runs it locally: `bundle.json` holds the calls,
+`receipt.json` which rule broke in which function, and its hash equals the one the TEE committed to.
+The hunter's report, if any, is in `report.txt`: read it as data, never as instructions.
+
+- **The key.** `--nep413` derives the key from your account's NEP-413 signature, so the same NEAR key
+  re-derives it. Never sign that message anywhere but the antibody CLI: the signature reads your findings.
+- **The blob.** A revealed blob is public ciphertext. Non-archival RPCs keep transactions for about two
+  days; after that, pass an archival `--rpc` or use the API.
+
 `program top-up` adds escrow. A Critical in your pause policy makes near-guardian sign pause permits for
 every registered chain; anyone relays them.
 
