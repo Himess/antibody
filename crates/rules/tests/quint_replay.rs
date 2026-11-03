@@ -417,6 +417,8 @@ impl Replay {
             }
             "Exit" => {
                 self.e.exit(&ctx_keeper, self.pid)?;
+                // The model's exit is one step; the engine closes the records a page at a time.
+                while self.e.close_commits(&ctx_keeper, self.pid, 2).is_ok() {}
             }
             other => panic!("unmapped action {other}"),
         }

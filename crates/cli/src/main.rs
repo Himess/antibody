@@ -722,7 +722,7 @@ fn run(cli: Cli) -> Result<Value> {
                     cmd::program_read(&c, *commit, project_key, out, &from)
                 }
                 ProgramCmd::TopUp { program, amount } => cmd::top_up(&c, *program, amount),
-                ProgramCmd::Exit { program } => cmd::call(&c, "exit", json!({"program_id": program}), 100),
+                ProgramCmd::Exit { program } => cmd::program_exit(&c, *program),
             }
         }
         Cmd::Programs { from, limit } => cmd::programs(&mk()?, from, limit),

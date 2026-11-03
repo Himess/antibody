@@ -213,11 +213,16 @@ pub struct Program {
     pub paid_first_hour: Amount,
     #[serde(with = "crate::types::amount")]
     pub defaulted: Amount,
-    /// (round, key) pairs whose promotion amount a duplicate reserves: one reservation per key, since
-    /// one duplicate per key can be promoted (spec §7.8).
-    pub dup_reserved: Vec<(u32, H32)>,
-    /// Rounds in which a gap claim holds a reservation: one per round (spec §7.7).
-    pub gap_reserved: Vec<u32>,
+    /// (round, key, commit): the duplicate holding a key's one promotion reservation, since one
+    /// duplicate per key can be promoted (spec §7.8).
+    pub dup_reserved: Vec<(u32, H32, CommitId)>,
+    /// (round, commit): the gap claim holding a round's one gap reservation (spec §7.7).
+    pub gap_reserved: Vec<(u32, CommitId)>,
+    /// Holders and promoted claims not yet paid: what the exit settles, bounded by the program's keys
+    /// rather than its commits.
+    pub owed: Vec<CommitId>,
+    /// After the exit: the next commit whose record `close_commits` closes.
+    pub close_cursor: u32,
 }
 
 impl Program {

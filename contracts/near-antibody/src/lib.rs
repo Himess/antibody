@@ -803,6 +803,13 @@ impl Contract {
         self.apply(fx);
     }
 
+    /// After the exit: closes up to `max` (default 50, at most 200) commit records. Permissionless.
+    pub fn close_commits(&mut self, program_id: u32, max: Option<u32>) {
+        let ctx = self.ctx();
+        let fx = self.engine().close_commits(&ctx, program_id, max.unwrap_or(50).min(200)).unwrap_or_else(|e| fail(e));
+        self.apply(fx);
+    }
+
     // ---------------------------------------------------------------- T1 (spec §6.1)
 
     /// Anyone relays a run's quote. near-antibody checks that the attestation describes the run it

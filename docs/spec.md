@@ -787,16 +787,18 @@ The keeper is permissionless and advances everything:
 After `deadline + exit_grace`, once every commit is allocated or closed, `exit(program_id)` settles every
 state. Nothing in flight can wait it out: unrevealed commits `expire` after the reveal window and runs
 `time_out` after their timeout and grace (permissionless; the keeper bot calls them), and `allocate`
-moves the cursor past every final verdict, so the exit voids nothing that could still be paid. Then:
+moves the cursor past every final verdict, so the exit voids nothing that could still be paid. The
+exit's work is bounded by the program's keys, not its commits (reservations, debts and owed claims are
+tracked lists):
 1. duplicates' and gap claims' reservations are released first, so they fund the owed claims;
 2. debts are funded in commit order from what is available;
-3. holders are paid what is reserved for them: in full, or in part when the escrow never covered them;
-4. open challenges are refunded;
-5. duplicates are confirmed and gap claims closed;
-6. the rest of the escrow is returned to the project's credit.
+3. owed claims are paid what is reserved for them: in full, or in part when the escrow never covered them;
+4. the rest of the escrow is returned to the project's credit.
 
-A program closed early as misconfigured (§5.3) exits at once: its in-flight verdicts are void and
-refunded.
+Then `close_commits(program_id, max)` (permissionless, paged) closes the other records: duplicates
+confirmed, gap claims closed. A program closed early as misconfigured (§5.3) exits at once; there
+`close_commits` also expires unrevealed commits, refunds in-flight verdicts and open challenges, and
+returns any bond that expired to the project. No program's size can exceed a call's gas.
 
 The part of a debt the project never covered is recorded as **defaulted**.
 

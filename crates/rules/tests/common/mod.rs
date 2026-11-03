@@ -101,6 +101,14 @@ impl W {
         self.now += secs;
     }
 
+    /// Closes every record of an exited program (`close_commits`, a page at a time).
+    pub fn close_all(&mut self, program: ProgramId) {
+        let ctx = self.ctx("anyone.testnet");
+        while let Ok(fx) = self.e.close_commits(&ctx, program, 3) {
+            self.log(&fx);
+        }
+    }
+
     pub fn log(&mut self, fx: &[Effect]) {
         for f in fx {
             if let Effect::Event { name, data } = f {

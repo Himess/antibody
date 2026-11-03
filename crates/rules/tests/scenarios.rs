@@ -469,6 +469,7 @@ fn exit_settles_everything() {
     w.allocate(p).unwrap();
     let r = w.e.exit(&w.ctx("anyone.testnet"), p);
     w.ok(r);
+    w.close_all(p);
     assert_eq!(w.end(unrevealed), Some(End::Expired));
     assert_eq!(w.end(in_flight), Some(End::Forfeited));
     assert!(matches!(w.end(paid_later), Some(End::Paid { amount: 100, .. })), "a final finding is paid, never voided");
@@ -490,6 +491,7 @@ fn misconfigured_program_closes() {
     assert!(w.e.commit(&ctx, p, 0, H32([4; 32]), true, 10, false).is_err());
     let r = w.e.exit(&w.ctx("anyone.testnet"), p);
     w.ok(r);
+    w.close_all(p);
     w.audit_ok(&[p]);
 }
 
@@ -738,6 +740,7 @@ fn exit_funds_owed_claims_before_releasing_duplicates() {
     w.tick(10_000 + 600);
     let r = w.e.exit(&w.ctx("anyone.testnet"), p);
     w.ok(r);
+    w.close_all(p);
     assert!(matches!(w.end(b), Some(End::Paid { amount: 100, .. })), "the duplicate's reservation funded the debt");
     assert_eq!(w.end(d), Some(End::DuplicateConfirmed));
     assert_eq!(w.program(p).defaulted, 0);
@@ -865,5 +868,29 @@ fn a_blob_nobody_can_read_for_the_whole_grace_forfeits() {
     let r = w.e.time_out(&ctx, c0);
     w.ok(r);
     assert_eq!(w.end(c0), Some(End::Forfeited));
+    w.audit_ok(&[p]);
+}
+
+#[test]
+fn the_exit_is_bounded_by_keys_and_records_close_in_pages() {
+    // Many copies of one held proof: the exit settles money through the tracked lists, and closing the
+    // copies' records takes pages of any size, so no program's size exceeds a call's gas.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (a, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    let copies: Vec<_> = (0..5).map(|_| w.finding(p, H2, Kind::Violation, &[(A, tag(1))], true).0).collect();
+    w.allocate(p).unwrap();
+    w.pay(a).unwrap();
+    w.tick(10_000 + 600);
+    let ctx = w.ctx("anyone.testnet");
+    let r = w.e.exit(&ctx, p);
+    w.ok(r);
+    assert!(matches!(w.commit(copies[4]).state, CommitState::Duplicate { reserved: 0, .. }), "closed later, a page at a time");
+    let mut pages = 0;
+    while w.e.close_commits(&ctx, p, 2).is_ok() {
+        pages += 1;
+    }
+    assert_eq!(pages, 3, "6 records, 2 per page");
+    assert!(copies.iter().all(|c| w.end(*c) == Some(End::DuplicateConfirmed)));
     w.audit_ok(&[p]);
 }

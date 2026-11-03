@@ -394,6 +394,21 @@ pub fn top_up(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
     ensure_ok(ctx, &out, "top_up")
 }
 
+/// After the deadline and its grace: the exit (bounded by the program's keys), then every commit record
+/// closed a page at a time (`close_commits`, permissionless).
+pub fn program_exit(ctx: &Ctx, program: u32) -> Result<Value> {
+    let exit = call(ctx, "exit", json!({"program_id": program}), 150)?;
+    let mut pages = Vec::new();
+    loop {
+        match call(ctx, "close_commits", json!({"program_id": program, "max": 100}), 300) {
+            Ok(s) => pages.push(s["tx"].clone()),
+            Err(e) if e.to_string().contains("nothing to close") => break,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(json!({"exit": exit, "close_pages": pages}))
+}
+
 /// Where the project's copy of a commit's sealed blob comes from. Blobs are public once revealed (the
 /// content key is not), and every source is checked against the committed hash.
 pub enum BlobFrom {
@@ -905,6 +920,17 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
 /// the debt queue.
 pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
     let mut steps = Vec::new();
+    // An exited program only has records left to close, a page at a time.
+    let prog = ctx.program(program)?;
+    if prog["phase"] == "Exited" {
+        if prog["close_cursor"].as_u64() < prog["commits"].as_u64() {
+            match call(ctx, "close_commits", json!({"program_id": program, "max": 100}), 300) {
+                Ok(s) => steps.push(json!({"close_commits": s["tx"]})),
+                Err(e) => steps.push(json!({"close_stopped": e.to_string()})),
+            }
+        }
+        return Ok(json!({"program": program, "steps": steps}));
+    }
     // Close what can no longer move, so allocation, and the exit, never wait on inaction: unrevealed
     // commits past their reveal window expire; runs past their timeout or grace time out.
     let windows = ctx.program(program)?["params"]["windows"].clone();

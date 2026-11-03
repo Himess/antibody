@@ -397,6 +397,8 @@ impl<S: Store> Engine<S> {
             defaulted: 0,
             dup_reserved: vec![],
             gap_reserved: vec![],
+            owed: vec![],
+            close_cursor: 0,
         };
         let mut t = self.store.totals();
         t.tokens_in += np.escrow;
@@ -1265,9 +1267,10 @@ impl<S: Store> Engine<S> {
                     }
                     // One promotion reservation per key: copies of a held proof cannot lock the escrow.
                     let key = (c.round, of_key.unwrap_or_default());
-                    let (reserved, _) = if p.dup_reserved.contains(&key) { (0, 0) } else { arith::cover(want, p.ledger.available, blocked) };
+                    let taken = p.dup_reserved.iter().any(|(r, k, _)| (*r, *k) == key);
+                    let (reserved, _) = if taken { (0, 0) } else { arith::cover(want, p.ledger.available, blocked) };
                     if reserved > 0 {
-                        p.dup_reserved.push(key);
+                        p.dup_reserved.push((key.0, key.1, cid));
                     }
                     p.ledger.reserve(reserved);
                     c.state = CommitState::Duplicate { of, amount: want, reserved };
@@ -1298,6 +1301,7 @@ impl<S: Store> Engine<S> {
                     p.debtors.push(cid);
                 }
                 c.state = CommitState::Holder { amount, reserved, debt, new_keys: new_keys.clone() };
+                p.owed.push(cid);
                 Ok(vec![ev(
                     "holder",
                     serde_json::json!({"commit_id": cid, "amount": amount.to_string(), "reserved": reserved.to_string(), "debt": debt.to_string(), "keys": new_keys}),
@@ -1308,10 +1312,10 @@ impl<S: Store> Engine<S> {
                     if f.protected_harm_usd_micro > g.threshold_usd_micro {
                         self.refund_bond(c);
                         // One gap reservation per round: a claim is keyed only once a round adds its rule.
-                        let (reserved, _) =
-                            if p.gap_reserved.contains(&c.round) { (0, 0) } else { arith::cover(g.claim_amount, p.ledger.available, blocked) };
+                        let taken = p.gap_reserved.iter().any(|(r, _)| *r == c.round);
+                        let (reserved, _) = if taken { (0, 0) } else { arith::cover(g.claim_amount, p.ledger.available, blocked) };
                         if reserved > 0 {
-                            p.gap_reserved.push(c.round);
+                            p.gap_reserved.push((c.round, cid));
                         }
                         p.ledger.reserve(reserved);
                         c.state = CommitState::GapClaim { amount: g.claim_amount, reserved };
@@ -1338,10 +1342,10 @@ impl<S: Store> Engine<S> {
                     let amount = p.params.base(severity);
                     // One key per round: the first such proof holds it, copies are its duplicates.
                     if let Some(of) = self.store.holder(p.id, c.round, &UNEVALUABLE_KEY) {
-                        let key = (c.round, UNEVALUABLE_KEY);
-                        let (reserved, _) = if p.dup_reserved.contains(&key) { (0, 0) } else { arith::cover(amount, p.ledger.available, blocked) };
+                        let taken = p.dup_reserved.iter().any(|(r, k, _)| *r == c.round && *k == UNEVALUABLE_KEY);
+                        let (reserved, _) = if taken { (0, 0) } else { arith::cover(amount, p.ledger.available, blocked) };
                         if reserved > 0 {
-                            p.dup_reserved.push(key);
+                            p.dup_reserved.push((c.round, UNEVALUABLE_KEY, cid));
                         }
                         p.ledger.reserve(reserved);
                         c.state = CommitState::Duplicate { of, amount, reserved };
@@ -1354,6 +1358,7 @@ impl<S: Store> Engine<S> {
                         p.debtors.push(cid);
                     }
                     c.state = CommitState::Holder { amount, reserved, debt, new_keys: vec![UNEVALUABLE_KEY] };
+                    p.owed.push(cid);
                     Ok(vec![ev("holder", serde_json::json!({"commit_id": cid, "amount": amount.to_string(), "unevaluable": true}))])
                 }
             },
@@ -1450,6 +1455,7 @@ impl<S: Store> Engine<S> {
                 e.3 = true;
             }
         }
+        p.owed.retain(|x| *x != commit);
         let beneficiary = c.beneficiary.clone();
         self.credit_tokens(&beneficiary, amount);
         self.credit_tokens(TREASURY, fee);
@@ -1868,6 +1874,7 @@ impl<S: Store> Engine<S> {
                     promoted_tags.push(*t);
                 }
                 c.state = CommitState::Promoted { round: r1, amount: amt, reserved: use_, debt };
+                p.owed.push(cid);
                 promoted.push(cid);
                 fx.push(ev("promoted", serde_json::json!({"commit_id": cid, "round": r1, "amount": amt.to_string()})));
             } else {
@@ -1902,6 +1909,7 @@ impl<S: Store> Engine<S> {
                     }
                     gate = false;
                     c.state = CommitState::Promoted { round: r1, amount, reserved: use_, debt };
+                    p.owed.push(cid);
                     promoted.push(cid);
                     fx.push(ev("gap_promoted", serde_json::json!({"commit_id": cid, "round": r1})));
                 }
@@ -1913,8 +1921,8 @@ impl<S: Store> Engine<S> {
             self.store.put_commit(&c);
         }
         // Every duplicate and gap claim of round r is promoted or closed: their reservations are settled.
-        p.dup_reserved.retain(|(x, _)| *x != r);
-        p.gap_reserved.retain(|x| *x != r);
+        p.dup_reserved.retain(|(x, _, _)| *x != r);
+        p.gap_reserved.retain(|(x, _)| *x != r);
         // 4. Holders of round r+1: carried keys and promotions.
         for (t, h) in &carried {
             self.store.set_holder(program, r1, t, Some(*h));
@@ -2006,39 +2014,41 @@ impl<S: Store> Engine<S> {
 
     // ------------------------------------------------------------------ exit (spec §14.3)
 
-    pub fn exit(&mut self, ctx: &Ctx, program: ProgramId) -> R<Vec<Effect>> {
+    /// An owed claim at the exit: paid in full when funded, else paid what is reserved and the rest
+    /// recorded as defaulted. Never a pro-rata cut among claims: earlier debtors were funded first.
+    fn settle_owed(&mut self, p: &mut Program, c: &mut Commit, now: Time) {
+        let (CommitState::Holder { amount, reserved, debt, .. } | CommitState::Promoted { amount, reserved, debt, .. }) = c.state.clone() else {
+            return;
+        };
+        let pay = if debt == 0 && reserved == amount { amount } else { reserved };
+        p.ledger.pay(pay);
+        self.escrow_out(pay);
+        let b = c.beneficiary.clone();
+        self.credit_tokens(&b, pay);
+        c.state = if pay == amount {
+            CommitState::Done(End::Paid { amount, instant: false, at: now })
+        } else {
+            p.defaulted += debt;
+            CommitState::Done(End::Defaulted { owed: debt })
+        };
+    }
+
+    /// After the exit, closes up to `max` commit records in commit order (permissionless): duplicates
+    /// confirmed, gap claims closed, and, for a program closed early, unrevealed commits expired and
+    /// in-flight verdicts refunded, with any open challenge's bond returned. Paged, so no program's size
+    /// can exceed a call's gas.
+    pub fn close_commits(&mut self, ctx: &Ctx, program: ProgramId, max: u32) -> R<Vec<Effect>> {
         let mut p = self.get_program(program)?;
-        let due = ctx.now >= p.params.windows.deadline + p.params.windows.exit_grace;
-        let early = p.phase == Phase::Closed;
-        if !(due || early) || matches!(p.phase, Phase::Exited | Phase::Rejected | Phase::Pending) {
-            return Err(Error::State("exit opens after the deadline and its grace"));
+        if p.phase != Phase::Exited {
+            return Err(Error::State("records are closed after the exit"));
         }
-        // Every commit is first final and allocated, or closed (expired, timed out): the exit voids
-        // nothing that could still be paid, so a commit held in flight cannot cancel later findings.
-        // The permissionless allocate, expire and time_out get there; the keeper bot calls them.
-        if !early && p.cursor < p.commits {
-            return Err(Error::State("exit waits until every commit is allocated or closed (allocate, expire, time_out)"));
+        if p.close_cursor >= p.commits {
+            return Err(Error::State("nothing to close"));
         }
-        let mut fx = vec![];
-        // Duplicates and gap claims can no longer be promoted: their reservations go back first, so they
-        // fund the owed claims' debts before anything returns to the project.
-        for i in 0..p.commits {
-            let cid = self.store.commit_at(program, i).unwrap();
-            let mut c = self.get_commit(cid)?;
-            if let CommitState::Duplicate { reserved, .. } | CommitState::GapClaim { reserved, .. } = &mut c.state {
-                if *reserved > 0 {
-                    p.ledger.unreserve(*reserved);
-                    *reserved = 0;
-                    self.store.put_commit(&c);
-                }
-            }
-        }
-        p.dup_reserved.clear();
-        p.gap_reserved.clear();
-        // Then debts, in commit order.
-        fx.extend(self.fund_debts(&mut p, u32::MAX)?);
-        for i in 0..p.commits {
-            let cid = self.store.commit_at(program, i).unwrap();
+        let from = p.close_cursor;
+        let mut n = 0;
+        while n < max && p.close_cursor < p.commits {
+            let cid = self.store.commit_at(program, p.close_cursor).ok_or(Error::NotFound("commit order"))?;
             let mut c = self.get_commit(cid)?;
             if let Some(ch) = c.challenge.take() {
                 let mut t = self.store.totals();
@@ -2055,25 +2065,6 @@ impl<S: Store> Engine<S> {
                     self.refund_bond(&c);
                     c.state = CommitState::Done(End::Refunded { reason: "no final verdict at exit".into() });
                 }
-                CommitState::Holder { amount, reserved, debt, .. } | CommitState::Promoted { amount, reserved, debt, .. } => {
-                    if debt == 0 && reserved == amount {
-                        // Owed and funded: paid.
-                        p.ledger.pay(amount);
-                        self.escrow_out(amount);
-                        let b = c.beneficiary.clone();
-                        self.credit_tokens(&b, amount);
-                        c.state = CommitState::Done(End::Paid { amount, instant: false, at: ctx.now });
-                    } else {
-                        // Pay what is reserved; the rest is recorded as defaulted. Never a pro-rata
-                        // cut among claims: earlier debtors were funded first.
-                        p.ledger.pay(reserved);
-                        self.escrow_out(reserved);
-                        let b = c.beneficiary.clone();
-                        self.credit_tokens(&b, reserved);
-                        p.defaulted += debt;
-                        c.state = CommitState::Done(End::Defaulted { owed: debt });
-                    }
-                }
                 CommitState::Duplicate { reserved, .. } => {
                     p.ledger.unreserve(reserved);
                     c.state = CommitState::Done(End::DuplicateConfirmed);
@@ -2082,12 +2073,64 @@ impl<S: Store> Engine<S> {
                     p.ledger.unreserve(reserved);
                     c.state = CommitState::Done(End::GapOpen);
                 }
+                CommitState::Holder { .. } | CommitState::Promoted { .. } => self.settle_owed(&mut p, &mut c, ctx.now),
                 CommitState::Done(_) => {}
             }
+            self.store.put_commit(&c);
+            p.close_cursor += 1;
+            n += 1;
+        }
+        // Bonds that expired here reach the escrow after the exit returned it: they go back too.
+        let ret = p.ledger.return_available();
+        self.escrow_out(ret);
+        let proj = p.project.clone();
+        self.credit_tokens(&proj, ret);
+        self.store.put_program(&p);
+        Ok(vec![ev("commits_closed", serde_json::json!({"program_id": program, "from": from, "to": p.close_cursor, "returned": ret.to_string()}))])
+    }
+
+    pub fn exit(&mut self, ctx: &Ctx, program: ProgramId) -> R<Vec<Effect>> {
+        let mut p = self.get_program(program)?;
+        let due = ctx.now >= p.params.windows.deadline + p.params.windows.exit_grace;
+        let early = p.phase == Phase::Closed;
+        if !(due || early) || matches!(p.phase, Phase::Exited | Phase::Rejected | Phase::Pending) {
+            return Err(Error::State("exit opens after the deadline and its grace"));
+        }
+        // Every commit is first final and allocated, or closed (expired, timed out): the exit voids
+        // nothing that could still be paid, so a commit held in flight cannot cancel later findings.
+        // The permissionless allocate, expire and time_out get there; the keeper bot calls them.
+        if !early && p.cursor < p.commits {
+            return Err(Error::State("exit waits until every commit is allocated or closed (allocate, expire, time_out)"));
+        }
+        let mut fx = vec![];
+        // Bounded by the program's keys, not its commits: reservations, debts and owed claims are
+        // tracked lists. The other commits' records are closed by `close_commits`, a page at a time.
+        // 1. Duplicates and gap claims can no longer be promoted: their reservations go back first, so
+        //    they fund the owed claims' debts before anything returns to the project.
+        let reserving: Vec<CommitId> = p.dup_reserved.iter().map(|x| x.2).chain(p.gap_reserved.iter().map(|x| x.1)).collect();
+        for cid in reserving {
+            let mut c = self.get_commit(cid)?;
+            if let CommitState::Duplicate { reserved, .. } | CommitState::GapClaim { reserved, .. } = &mut c.state {
+                if *reserved > 0 {
+                    p.ledger.unreserve(*reserved);
+                    *reserved = 0;
+                    self.store.put_commit(&c);
+                }
+            }
+        }
+        p.dup_reserved.clear();
+        p.gap_reserved.clear();
+        // 2. Debts, in commit order.
+        fx.extend(self.fund_debts(&mut p, u32::MAX)?);
+        // 3. Owed claims: paid what is reserved for them; the rest is recorded as defaulted.
+        for cid in std::mem::take(&mut p.owed) {
+            let mut c = self.get_commit(cid)?;
+            self.settle_owed(&mut p, &mut c, ctx.now);
             self.store.put_commit(&c);
         }
         p.debtors.clear();
         p.cursor = p.commits;
+        p.close_cursor = 0;
         let ret = p.ledger.return_available();
         self.escrow_out(ret);
         let proj = p.project.clone();
@@ -2171,6 +2214,7 @@ impl<S: Store> Engine<S> {
             p.debtors.push(cid);
         }
         c.state = CommitState::Promoted { round: c.round, amount, reserved, debt };
+        p.owed.push(cid);
         self.store.put_commit(&c);
         let _ = ctx;
         Ok(vec![ev("distinct_top_up", serde_json::json!({"commit_id": cid, "amount": amount.to_string()}))])
