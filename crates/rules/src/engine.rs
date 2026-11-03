@@ -399,6 +399,7 @@ impl<S: Store> Engine<S> {
             gap_reserved: vec![],
             owed: vec![],
             close_cursor: 0,
+            opening: None,
         };
         let mut t = self.store.totals();
         t.tokens_in += np.escrow;
@@ -550,6 +551,9 @@ impl<S: Store> Engine<S> {
         let mut p = self.get_program(program)?;
         if p.phase != Phase::Open {
             return Err(Error::State("the program is not open"));
+        }
+        if p.opening.is_some() {
+            return Err(Error::State("a round is opening: open_round finishes it"));
         }
         if ctx.now >= p.params.windows.deadline {
             return Err(Error::State("the deadline has passed"));
@@ -1409,6 +1413,9 @@ impl<S: Store> Engine<S> {
     pub fn pay(&mut self, ctx: &Ctx, commit: CommitId) -> R<Vec<Effect>> {
         let mut c = self.get_commit(commit)?;
         let mut p = self.get_program(c.program)?;
+        if p.opening.is_some() {
+            return Err(Error::State("a round is opening: open_round finishes it"));
+        }
         let (amount, reserved, debt, promoted) = match &c.state {
             CommitState::Holder { amount, reserved, debt, .. } => (*amount, *reserved, *debt, false),
             CommitState::Promoted { amount, reserved, debt, .. } => (*amount, *reserved, *debt, true),
@@ -1543,6 +1550,9 @@ impl<S: Store> Engine<S> {
         if ctx.caller != p.project {
             return Err(Error::Forbidden("only the project proposes a round"));
         }
+        if p.opening.is_some() {
+            return Err(Error::State("a round is opening: open_round finishes it"));
+        }
         if p.phase != Phase::Open || (p.proposal.is_some() && !self.proposal_stale(&p, ctx.now)) {
             return Err(Error::State("one proposal at a time, in an open program"));
         }
@@ -1624,6 +1634,9 @@ impl<S: Store> Engine<S> {
         let p = self.get_program(c.program)?;
         if p.phase != Phase::Open {
             return Err(Error::State("the program is not open"));
+        }
+        if p.opening.is_some() {
+            return Err(Error::State("a round is opening: open_round finishes it"));
         }
         let Some(accepted_at) = self.proposal_accepted_at(&p) else {
             return Err(Error::State("no T1-confirmed round proposal"));
@@ -1729,8 +1742,9 @@ impl<S: Store> Engine<S> {
         }
     }
 
-    /// Opens the next round (spec §8.3–§9). Permissionless.
-    pub fn open_round(&mut self, ctx: &Ctx, program: ProgramId) -> R<Vec<Effect>> {
+    /// Opens the next round (spec §8.3–§9). Permissionless. Works at most `max` commits per call and
+    /// keeps its progress (`Program::opening`); the call that finishes the last stage opens the round.
+    pub fn open_round(&mut self, ctx: &Ctx, program: ProgramId, max: u32) -> R<Vec<Effect>> {
         let mut p = self.get_program(program)?;
         if p.phase != Phase::Open {
             return Err(Error::State("the program is not open"));
@@ -1739,191 +1753,176 @@ impl<S: Store> Engine<S> {
             return Err(Error::State("no T1-confirmed round proposal"));
         };
         let pr = p.proposal.clone().unwrap();
-        if ctx.now < p.round_started_at + p.params.windows.round_min || ctx.now < accepted_at + p.params.windows.rerun_window {
-            return Err(Error::State("the round's minimum duration or re-run window has not passed"));
-        }
         let r = p.round;
-        // Nothing of the closing round may still decide a key.
-        for i in 0..p.commits {
-            let cid = self.store.commit_at(program, i).unwrap();
-            let c = self.get_commit(cid)?;
-            if c.round == r && matches!(c.state, CommitState::Committed | CommitState::Verifying) {
-                return Err(Error::State("every commit of the round must be allocated or closed first"));
-            }
-        }
         let r1 = pr.round;
-        // Gather the round's commits and their re-run results.
-        let mut ids = vec![];
-        for i in 0..p.commits {
-            let cid = self.store.commit_at(program, i).unwrap();
-            let c = self.get_commit(cid)?;
-            if c.round == r || self.holds_in(&p, &c, r) {
-                ids.push(cid);
-            }
-        }
-        // Re-runs still in flight hold the opening; a re-run without a T1 result after its timeout counts
-        // as an infrastructure failure, which carries its key (spec §8.3).
-        for i in 0..p.commits {
-            let c = self.get_commit(self.store.commit_at(program, i).unwrap())?;
-            if let Some(rr) = self.rerun_at(&c, r1) {
-                if rr.outcome == RunOutcome::Pending && ctx.now < rr.started_at + p.params.windows.run_timeout {
-                    return Err(Error::State("a re-run is still in flight"));
+        let mut o = match p.opening.take() {
+            Some(o) => o,
+            None => {
+                if ctx.now < p.round_started_at + p.params.windows.round_min || ctx.now < accepted_at + p.params.windows.rerun_window {
+                    return Err(Error::State("the round's minimum duration or re-run window has not passed"));
                 }
-                if let RunOutcome::Answered { at, tier: Tier::T0, facts, .. } = &rr.outcome {
-                    if facts.kind != Kind::InfraError && ctx.now <= at + p.params.windows.run_timeout {
-                        return Err(Error::State("a re-run is waiting for its quote"));
-                    }
+                // Nothing of the closing round may still decide a key: every commit is allocated or closed.
+                if p.cursor < p.commits {
+                    return Err(Error::State("every commit of the round must be allocated or closed first"));
                 }
+                Opening { stage: 1, gate: pr.canaries_ok, ..Opening::default() }
             }
-        }
-        let crit_high = |p: &Program, slot: u8| -> bool {
-            p.params.slot(slot).map(|s| s.severity >= Severity::High).unwrap_or(false)
         };
-        let mut released: Vec<H32> = vec![];
-        // Keys this fix stops count as fixed, for disclosure, only if the release gate holds (the fixed
-        // code ships): a disclosed proof must never work against the deployed code.
-        let mut fixed_now: Vec<H32> = vec![];
-        let mut carried: Vec<(H32, CommitId)> = vec![];
-        let mut gate = pr.canaries_ok;
+        let crit_high = |p: &Program, slot: u8| -> bool { p.params.slot(slot).map(|s| s.severity >= Severity::High).unwrap_or(false) };
         let mut fx = vec![];
-        // 1. Keys of round r: released or carried.
-        for &cid in &ids {
-            let c = self.get_commit(cid)?;
-            // Expired and void commits have no verdict and hold nothing.
-            let Some(f) = c.run.and_then(|rid| self.store.run(rid)).and_then(|r0| r0.facts().cloned()) else { continue };
-            let held: Vec<(H32, u8)> =
-                f.keys.iter().filter(|k| self.store.holder(program, r, &k.tag) == Some(cid)).map(|k| (k.tag, k.slot)).collect();
-            if held.is_empty() {
+        let mut budget = max.max(1);
+        while o.stage <= 5 && budget > 0 {
+            if o.cursor >= p.commits {
+                o.stage += 1;
+                o.cursor = 0;
                 continue;
             }
-            let tags: Vec<H32> = held.iter().map(|(t, _)| *t).collect();
-            match self.rerun_breaks(&c, &tags, r1) {
-                Some(false) => {
-                    released.extend(tags.iter().copied());
-                    fixed_now.extend(tags.iter().copied());
-                }
-                Some(true) => {
-                    for (t, s) in &held {
-                        carried.push((*t, cid));
-                        if crit_high(&p, *s) {
-                            gate = false;
+            let cid = self.store.commit_at(program, o.cursor).ok_or(Error::NotFound("commit order"))?;
+            let mut c = self.get_commit(cid)?;
+            let of_round = c.round == r || self.holds_in(&p, &c, r);
+            match o.stage {
+                // 1. Re-runs still in flight hold the opening; a re-run without a T1 result after its
+                //    timeout counts as an infrastructure failure, which carries its key.
+                1 => {
+                    if let Some(rr) = self.rerun_at(&c, r1) {
+                        if rr.outcome == RunOutcome::Pending && ctx.now < rr.started_at + p.params.windows.run_timeout {
+                            return Err(Error::State("a re-run is still in flight"));
                         }
-                    }
-                }
-                None => {
-                    if self.rerun_at(&c, r1).is_none() {
-                        // Nobody re-ran it: released by default, but it was never shown fixed.
-                        released.extend(tags.iter().copied());
-                        if held.iter().any(|(_, s)| crit_high(&p, *s)) {
-                            gate = false;
-                        }
-                    } else {
-                        // Requested and failed for infrastructure reasons: carried.
-                        for (t, s) in &held {
-                            carried.push((*t, cid));
-                            if crit_high(&p, *s) {
-                                gate = false;
+                        if let RunOutcome::Answered { at, tier: Tier::T0, facts, .. } = &rr.outcome {
+                            if facts.kind != Kind::InfraError && ctx.now <= at + p.params.windows.run_timeout {
+                                return Err(Error::State("a re-run is waiting for its quote"));
                             }
                         }
                     }
                 }
-            }
-        }
-        // Immune memory (spec §9): every paid PoC, and every holder of a Critical or High key, from any
-        // round, was re-run at this fix and shows no violation.
-        for i in 0..p.commits {
-            let c = self.get_commit(self.store.commit_at(program, i).unwrap())?;
-            let paid = matches!(c.state, CommitState::Done(End::Paid { .. }));
-            let held_crit_high = c.run.and_then(|rid| self.store.run(rid)).and_then(|run| run.facts().cloned()).is_some_and(|f| {
-                f.keys.iter().any(|k| crit_high(&p, k.slot) && (0..=r).any(|x| self.store.holder(program, x, &k.tag) == Some(c.id)))
-            });
-            if (paid || held_crit_high) && self.rerun_clean(&c, r1) != Some(true) {
-                gate = false;
-            }
-        }
-        // 2. Duplicates: promotion (the one-way appeal) or confirmation.
-        let mut promoted_tags: Vec<H32> = vec![];
-        let mut promoted: Vec<CommitId> = vec![];
-        for &cid in &ids {
-            let mut c = self.get_commit(cid)?;
-            let CommitState::Duplicate { amount, reserved, .. } = c.state.clone() else { continue };
-            let Some(f) = c.run.and_then(|rid| self.store.run(rid)).and_then(|r0| r0.facts().cloned()) else { continue };
-            let tags: Vec<H32> = f.keys.iter().map(|k| k.tag).collect();
-            let crit = f.keys.iter().any(|k| crit_high(&p, k.slot));
-            let breaks = self.rerun_breaks(&c, &tags, r1);
-            if crit && breaks != Some(false) {
-                // A Critical or High duplicate that is not shown fixed blocks the release.
-                gate = false;
-            }
-            let promotable: Vec<H32> =
-                tags.iter().copied().filter(|t| released.contains(t) && !promoted_tags.contains(t)).collect();
-            if !promotable.is_empty() && breaks == Some(true) {
-                let (nominal, slot) = self.nominal(&p, &f, Some(&promotable));
-                let slot = slot.unwrap();
-                let budget = self.slots_for(&p, r1).iter().find(|s| s.slot == slot).map(|s| s.budget).unwrap_or(0);
-                let spent = self.store.spent(program, r1, slot);
-                // Never above the duplicate's own amount, within the new round's budget.
-                let amt = arith::within_budget(nominal.min(amount), budget, spent);
-                self.store.set_spent(program, r1, slot, spent + amt);
-                let (use_, released, debt) = arith::refit(reserved, amt);
-                p.ledger.unreserve(released);
-                if debt > 0 {
-                    p.debtors.push(cid);
-                }
-                for t in &promotable {
-                    promoted_tags.push(*t);
-                }
-                c.state = CommitState::Promoted { round: r1, amount: amt, reserved: use_, debt };
-                p.owed.push(cid);
-                promoted.push(cid);
-                fx.push(ev("promoted", serde_json::json!({"commit_id": cid, "round": r1, "amount": amt.to_string()})));
-            } else {
-                p.ledger.unreserve(reserved);
-                c.state = CommitState::Done(End::DuplicateConfirmed);
-                fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid})));
-            }
-            self.store.put_commit(&c);
-        }
-        // 3. Gap claims: the earliest claim breaking a new key is promoted; later copies of it are its
-        // duplicates, so one gap bug is paid once.
-        let mut gap_keys: Vec<H32> = vec![];
-        for &cid in &ids {
-            let mut c = self.get_commit(cid)?;
-            let CommitState::GapClaim { amount, reserved } = c.state.clone() else { continue };
-            let keys = self.rerun_new_slot_keys(&p, &c).unwrap_or_default();
-            let fresh = !keys.is_empty() && keys.iter().any(|t| !gap_keys.contains(t));
-            if !keys.is_empty() && !fresh {
-                p.ledger.unreserve(reserved);
-                c.state = CommitState::Done(End::DuplicateConfirmed);
-                fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid, "gap": true})));
-                self.store.put_commit(&c);
-                continue;
-            }
-            gap_keys.extend(keys.iter().copied());
-            match fresh {
-                true => {
-                    let (use_, released, debt) = arith::refit(reserved, amount);
-                    p.ledger.unreserve(released);
-                    if debt > 0 {
-                        p.debtors.push(cid);
+                // 2. Keys of round r: released or carried.
+                2 if of_round => {
+                    // Expired and void commits have no verdict and hold nothing.
+                    if let Some(f) = c.run.and_then(|rid| self.store.run(rid)).and_then(|r0| r0.facts().cloned()) {
+                        let held: Vec<(H32, u8)> =
+                            f.keys.iter().filter(|k| self.store.holder(program, r, &k.tag) == Some(cid)).map(|k| (k.tag, k.slot)).collect();
+                        if !held.is_empty() {
+                            let tags: Vec<H32> = held.iter().map(|(t, _)| *t).collect();
+                            let any_crit = held.iter().any(|(_, s)| crit_high(&p, *s));
+                            match self.rerun_breaks(&c, &tags, r1) {
+                                Some(false) => {
+                                    o.released.extend(tags.iter().copied());
+                                    o.fixed_now.extend(tags.iter().copied());
+                                }
+                                Some(true) => {
+                                    o.carried.extend(tags.iter().map(|t| (*t, cid)));
+                                    o.gate &= !any_crit;
+                                }
+                                None if self.rerun_at(&c, r1).is_none() => {
+                                    // Nobody re-ran it: released by default, but it was never shown fixed.
+                                    o.released.extend(tags.iter().copied());
+                                    o.gate &= !any_crit;
+                                }
+                                None => {
+                                    // Requested and failed for infrastructure reasons: carried.
+                                    o.carried.extend(tags.iter().map(|t| (*t, cid)));
+                                    o.gate &= !any_crit;
+                                }
+                            }
+                        }
                     }
-                    gate = false;
-                    c.state = CommitState::Promoted { round: r1, amount, reserved: use_, debt };
-                    p.owed.push(cid);
-                    promoted.push(cid);
-                    fx.push(ev("gap_promoted", serde_json::json!({"commit_id": cid, "round": r1})));
                 }
-                _ => {
-                    p.ledger.unreserve(reserved);
-                    c.state = CommitState::Done(End::GapOpen);
+                // 3. Immune memory (spec §9): every paid PoC, and every holder of a Critical or High key,
+                //    from any round, was re-run at this fix and shows no violation.
+                3 => {
+                    let paid = matches!(c.state, CommitState::Done(End::Paid { .. }));
+                    let held_crit_high = c.run.and_then(|rid| self.store.run(rid)).and_then(|run| run.facts().cloned()).is_some_and(|f| {
+                        f.keys.iter().any(|k| crit_high(&p, k.slot) && (0..=r).any(|x| self.store.holder(program, x, &k.tag) == Some(c.id)))
+                    });
+                    if (paid || held_crit_high) && self.rerun_clean(&c, r1) != Some(true) {
+                        o.gate = false;
+                    }
                 }
+                // 4. Duplicates: promotion (the one-way appeal) or confirmation.
+                4 if of_round => {
+                    if let (CommitState::Duplicate { amount, reserved, .. }, Some(f)) =
+                        (c.state.clone(), c.run.and_then(|rid| self.store.run(rid)).and_then(|r0| r0.facts().cloned()))
+                    {
+                        let tags: Vec<H32> = f.keys.iter().map(|k| k.tag).collect();
+                        let crit = f.keys.iter().any(|k| crit_high(&p, k.slot));
+                        let breaks = self.rerun_breaks(&c, &tags, r1);
+                        if crit && breaks != Some(false) {
+                            // A Critical or High duplicate that is not shown fixed blocks the release.
+                            o.gate = false;
+                        }
+                        let promotable: Vec<H32> =
+                            tags.iter().copied().filter(|t| o.released.contains(t) && !o.promoted_tags.contains(t)).collect();
+                        if !promotable.is_empty() && breaks == Some(true) {
+                            let (nominal, slot) = self.nominal(&p, &f, Some(&promotable));
+                            let slot = slot.unwrap();
+                            let slot_budget = self.slots_for(&p, r1).iter().find(|s| s.slot == slot).map(|s| s.budget).unwrap_or(0);
+                            let spent = self.store.spent(program, r1, slot);
+                            // Never above the duplicate's own amount, within the new round's budget.
+                            let amt = arith::within_budget(nominal.min(amount), slot_budget, spent);
+                            self.store.set_spent(program, r1, slot, spent + amt);
+                            let (use_, freed, debt) = arith::refit(reserved, amt);
+                            p.ledger.unreserve(freed);
+                            if debt > 0 {
+                                p.debtors.push(cid);
+                            }
+                            o.promoted_tags.extend(promotable.iter().copied());
+                            c.state = CommitState::Promoted { round: r1, amount: amt, reserved: use_, debt };
+                            p.owed.push(cid);
+                            o.promoted.push(cid);
+                            fx.push(ev("promoted", serde_json::json!({"commit_id": cid, "round": r1, "amount": amt.to_string()})));
+                        } else {
+                            p.ledger.unreserve(reserved);
+                            c.state = CommitState::Done(End::DuplicateConfirmed);
+                            fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid})));
+                        }
+                        self.store.put_commit(&c);
+                    }
+                }
+                // 5. Gap claims: the earliest claim breaking a new key is promoted; later copies of it are
+                //    its duplicates, so one gap bug is paid once.
+                5 if of_round => {
+                    if let CommitState::GapClaim { amount, reserved } = c.state.clone() {
+                        let keys = self.rerun_new_slot_keys(&p, &c).unwrap_or_default();
+                        let fresh = keys.iter().any(|t| !o.gap_keys.contains(t));
+                        if keys.is_empty() {
+                            p.ledger.unreserve(reserved);
+                            c.state = CommitState::Done(End::GapOpen);
+                        } else if !fresh {
+                            p.ledger.unreserve(reserved);
+                            c.state = CommitState::Done(End::DuplicateConfirmed);
+                            fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid, "gap": true})));
+                        } else {
+                            o.gap_keys.extend(keys.iter().copied());
+                            let (use_, freed, debt) = arith::refit(reserved, amount);
+                            p.ledger.unreserve(freed);
+                            if debt > 0 {
+                                p.debtors.push(cid);
+                            }
+                            o.gate = false;
+                            c.state = CommitState::Promoted { round: r1, amount, reserved: use_, debt };
+                            p.owed.push(cid);
+                            o.promoted.push(cid);
+                            fx.push(ev("gap_promoted", serde_json::json!({"commit_id": cid, "round": r1})));
+                        }
+                        self.store.put_commit(&c);
+                    }
+                }
+                _ => {}
             }
-            self.store.put_commit(&c);
+            o.cursor += 1;
+            budget -= 1;
         }
+        if o.stage <= 5 {
+            fx.push(ev("round_opening", serde_json::json!({"program_id": program, "round": r1, "stage": o.stage, "cursor": o.cursor})));
+            p.opening = Some(o);
+            self.store.put_program(&p);
+            return Ok(fx);
+        }
+        let Opening { released, fixed_now, carried, gate, promoted_tags, promoted, .. } = o;
         // Every duplicate and gap claim of round r is promoted or closed: their reservations are settled.
         p.dup_reserved.retain(|(x, _, _)| *x != r);
         p.gap_reserved.retain(|(x, _)| *x != r);
-        // 4. Holders of round r+1: carried keys and promotions.
+        // Holders of round r+1: carried keys and promotions.
         for (t, h) in &carried {
             self.store.set_holder(program, r1, t, Some(*h));
         }
@@ -2095,6 +2094,9 @@ impl<S: Store> Engine<S> {
         let early = p.phase == Phase::Closed;
         if !(due || early) || matches!(p.phase, Phase::Exited | Phase::Rejected | Phase::Pending) {
             return Err(Error::State("exit opens after the deadline and its grace"));
+        }
+        if p.opening.is_some() {
+            return Err(Error::State("a round is opening: open_round finishes it"));
         }
         // Every commit is first final and allocated, or closed (expired, timed out): the exit voids
         // nothing that could still be paid, so a commit held in flight cannot cancel later findings.

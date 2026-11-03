@@ -405,7 +405,13 @@ impl Replay {
                 self.t1(run);
             }
             "OpenRound" => {
-                self.e.open_round(&ctx_keeper, self.pid)?;
+                // The model opens a round in one step; the engine works a page of commits per call.
+                loop {
+                    self.e.open_round(&ctx_keeper, self.pid, 3)?;
+                    if self.e.store.program(self.pid).unwrap().opening.is_none() {
+                        break;
+                    }
+                }
             }
             "Disclose" => {
                 let k = string(&pick(st, "k").unwrap());

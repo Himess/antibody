@@ -274,13 +274,18 @@ impl W {
         run
     }
 
+    /// Opens the next round, a page of 2 commits per call (as many calls as it takes).
     pub fn open_round(&mut self, program: ProgramId) -> Result<Vec<Effect>, Error> {
         let ctx = self.ctx("keeper.testnet");
-        let r = self.e.open_round(&ctx, program);
-        if let Ok(fx) = &r {
-            self.log(fx);
+        let mut all = vec![];
+        loop {
+            let fx = self.e.open_round(&ctx, program, 2)?;
+            self.log(&fx);
+            all.extend(fx);
+            if self.e.store.program(program).unwrap().opening.is_none() {
+                return Ok(all);
+            }
         }
-        r
     }
 
     /// Every conservation equation holds.

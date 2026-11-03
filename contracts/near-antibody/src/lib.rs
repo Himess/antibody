@@ -598,11 +598,13 @@ impl Contract {
         self.charge_storage(before, &ctx.caller);
     }
 
-    pub fn open_round(&mut self, program_id: u32) {
+    /// Works up to `max` commits (default 100, at most 400) of the round opening; the call that finishes
+    /// it opens the round. Permissionless; call until `get_program(..).opening` is null.
+    pub fn open_round(&mut self, program_id: u32, max: Option<u32>) {
         let ctx = self.ctx();
-        let opening = self.load_program(program_id).proposal.clone();
-        let fx = self.engine().open_round(&ctx, program_id).unwrap_or_else(|e| fail(e));
-        if opening.is_some() {
+        let fx = self.engine().open_round(&ctx, program_id, max.unwrap_or(100).min(400)).unwrap_or_else(|e| fail(e));
+        // The call that finishes the opening moves the proposal's manifest, releases and base to the round.
+        if self.load_program(program_id).proposal.is_none() {
             let mut meta = self.meta.get(&program_id).unwrap().clone();
             if let Some(m) = meta.proposal_manifest.take() {
                 meta.round_manifests.push(m);

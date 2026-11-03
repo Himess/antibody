@@ -223,6 +223,25 @@ pub struct Program {
     pub owed: Vec<CommitId>,
     /// After the exit: the next commit whose record `close_commits` closes.
     pub close_cursor: u32,
+    /// A round opening in progress: `open_round` works a page of commits per call (spec §8.3).
+    pub opening: Option<Opening>,
+}
+
+/// A round opening, worked a page of commits at a time so no program's size exceeds a call's gas. Its
+/// stages scan the commits in order: 1 re-runs still in flight (read only), 2 the round's keys,
+/// 3 immune memory, 4 duplicates, 5 gap claims; then it finalizes. While it runs, commits, re-runs,
+/// payments, proposals and the exit wait.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+pub struct Opening {
+    pub stage: u8,
+    pub cursor: u32,
+    pub released: Vec<H32>,
+    pub fixed_now: Vec<H32>,
+    pub carried: Vec<(H32, CommitId)>,
+    pub gate: bool,
+    pub promoted_tags: Vec<H32>,
+    pub promoted: Vec<CommitId>,
+    pub gap_keys: Vec<H32>,
 }
 
 impl Program {
