@@ -935,6 +935,8 @@ impl Live {
         let rederived = cmd::keygen_x25519_nep413(&acme, &again)?["public_key"] == self.s["program"]["project_key"]["public_key"];
         let (d_id, d_reveal) = reveal_of("D").ok_or_else(|| eyre!("no row for D"))?;
         let d_blob = cmd::blob_arg_in_tx(&acme, &d_reveal, &Self::acct("agent-d"), d_id)?;
+        // A 300 Tgas call: near-antibody must see it to refuse it (0.301 NEAR free again after the read).
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
         let d_refused = cmd::call(&acme, "release_wrap", json!({"commit_id": d_id, "blob": d_blob}), cmd::RUN_TGAS).err().map(|e| e.to_string()).unwrap_or_default();
         let ok = read["local_verdict"]["kind"] == json!("Violation") && read["receipt_matches_the_tee"] == json!(true) && rederived && d_refused.contains("only a paid finding");
         println!("project read A's proof (commit {a_id}): local verdict {}, receipt {} the TEE's; key re-derived: {rederived}; D's release wrap: {}",
