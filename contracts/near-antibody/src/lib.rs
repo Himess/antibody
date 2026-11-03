@@ -78,8 +78,10 @@ pub struct Pins {
     pub outlayer: AccountId,
     pub dcap_verifier: AccountId,
     pub accepted_tcb: Vec<String>,
-    /// OutLayer's approved worker images at creation.
-    pub images: Vec<Measurements>,
+    /// OutLayer's approved worker images at creation: how many images the deployment knew then. Its list
+    /// only grows (`on_images` appends), so the first `images_known` are the program's snapshot, with no
+    /// copy (111 images on testnet would cost each program about 0.6 NEAR of storage).
+    pub images_known: u32,
     /// Images approved later count only after this delay (longer than any challenge window), and only
     /// from this registry: the owner's later defaults never reach a live program (spec §15).
     pub image_delay_secs: u64,
@@ -470,13 +472,13 @@ impl Contract {
         require!(m.program.project == ctx.caller, "the manifest's project must create the program");
         let manifest_sha256 = H32(env::sha256_array(c.manifest.as_bytes()));
         let checkable = m.anchor.chain_id == d.light_client_chain_id && d.light_client.is_some();
-        let images = self.images.iter().map(|k| k.m.clone()).filter(|m| !self.vetoed.contains(m)).collect();
+        let images_known = self.images.len() as u32;
         let pins = Pins {
             verifier: d.verifier.clone(),
             outlayer: d.outlayer.clone(),
             dcap_verifier: d.dcap_verifier.clone(),
             accepted_tcb: d.accepted_tcb.clone(),
-            images,
+            images_known,
             image_delay_secs: d.image_delay_secs,
             image_registry: d.image_registry.clone(),
             light_client: d.light_client.clone(),
@@ -901,13 +903,17 @@ impl Contract {
         }
     }
 
-    /// The program's images at creation, plus later approvals older than the image delay, minus vetoes.
+    /// The program's images at creation, plus later approvals from its registry older than the image delay,
+    /// minus vetoes.
     fn image_allowed(&self, pins: &Pins, m: &Measurements) -> bool {
         if self.vetoed.contains(m) {
             return false;
         }
-        pins.images.contains(m)
-            || self.images.iter().any(|k| &k.m == m && k.registry == pins.image_registry.as_str() && k.added_at + pins.image_delay_secs <= now())
+        self.images.iter().enumerate().any(|(i, k)| {
+            &k.m == m
+                && ((i as u32) < pins.images_known
+                    || (k.registry == pins.image_registry.as_str() && k.added_at + pins.image_delay_secs <= now()))
+        })
     }
 
     // ---------------------------------------------------------------- OutLayer runs

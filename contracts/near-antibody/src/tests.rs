@@ -315,12 +315,34 @@ fn create_pins_the_defaults_and_charges_storage_to_the_project() {
     assert_eq!(p.params.run_deposit, RUN_DEPOSIT + RUN_STORAGE_ALLOWANCE);
     let pins = w.c.get_pins(id).unwrap();
     assert_eq!(pins.verifier.wasm_hash, wasm_hash());
-    assert_eq!(pins.images, vec![image(1)]);
+    assert_eq!(pins.images_known, 1, "the snapshot of the images: image 1");
     let meta = w.c.get_program_meta(id).unwrap();
     assert_eq!(meta.terms_sha256, terms());
     assert_eq!(meta.slots.len(), 2);
     let credit = w.c.get_account(project()).near;
     assert!(credit < NEAR && credit > NEAR - NEAR / 10, "storage came from the project's NEAR credit: {credit}");
+    assert!(w.c.audit_contract().ok);
+}
+
+#[test]
+fn a_programs_storage_does_not_grow_with_the_known_images() {
+    // A program records how many images the deployment knew, not a copy of them: with a hundred more
+    // known, the next program costs the same storage (on testnet, 111 copied images cost 0.6 NEAR).
+    fn create_spending(w: &mut W) -> (u32, u128) {
+        // `create` deposits one more NEAR of credit first.
+        let before = w.c.get_account(project()).near + NEAR;
+        let id = w.create();
+        (id, before - w.c.get_account(project()).near)
+    }
+    let mut w = W::new();
+    // The project's own entry is paid once, before either program.
+    w.register(&project());
+    let (first, spent_first) = create_spending(&mut w);
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), acc("owner.testnet"), Ok((2..=101).map(image).collect())), 100);
+    let (second, spent_second) = create_spending(&mut w);
+    assert_eq!(spent_second, spent_first);
+    assert_eq!((w.c.get_pins(first).unwrap().images_known, w.c.get_pins(second).unwrap().images_known), (1, 101));
     assert!(w.c.audit_contract().ok);
 }
 

@@ -844,7 +844,8 @@ of the manifest (§3.2); fees accrue to the deployment's treasury.
 The owner's setters change the **defaults for new programs only**.
 
 - **Measurements.** The set is a snapshot of OutLayer's approved images at creation (`sync_images`
-  copies a registry's list), and the program pins that registry. Anyone may sync, but only from a
+  copies a registry's list into the deployment's, which only grows; a program records how many entries
+  it held then, not a copy), and the program pins that registry. Anyone may sync, but only from a
   registry the owner named as a default, and the caller pays the new entries' storage from its NEAR
   credit (the owner's syncs come from the contract's balance). Later approvals count
   for a program only if its own registry lists them, and only after `image_delay`, which is longer than
