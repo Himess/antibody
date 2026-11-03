@@ -200,9 +200,9 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
     let mut links = vec![json!({"vend": vended["tx"]["explorer"]}), json!({"commit": submitted["commit"]["tx"]["explorer"]}),
                          json!({"reveal": submitted["reveal"]["tx"]["explorer"]})];
     for s in settled.as_array().into_iter().flatten() {
-        for (k, v) in s.as_object().into_iter().flatten() {
-            if v.get("explorer").is_some() {
-                links.push(json!({k: v["explorer"]}));
+        for k in ["allocate", "pay"] {
+            if let Some(h) = s[k].as_str() {
+                links.push(json!({k: ctx.near.explorer_tx(h)}));
             }
         }
     }
