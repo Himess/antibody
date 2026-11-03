@@ -22,12 +22,15 @@ STORY = {
 
 
 def label(state):
+    """The CLI's `state_label`: `Done:<end>` for a final state, else the state's name."""
     if isinstance(state, str):
         return state
     if isinstance(state, dict) and state:
         k, v = next(iter(state.items()))
-        if isinstance(v, dict) and v:
-            return f"{k}:{next(iter(v))}"
+        if k == "Done" and isinstance(v, dict) and v:
+            return f"Done:{next(iter(v))}"
+        if k == "Done" and isinstance(v, str):
+            return f"Done:{v}"
         return k
     return "-"
 
@@ -65,9 +68,23 @@ class Doc:
         return f"`{explorer.split(':', 1)[-1][:12]}…` ({explorer.split(':', 1)[0]})"
 
     def cli(self, args):
+        """A command as a reader types it. On testnet the binary has the deployment built in; in the
+        sandbox `…` stands for the flags given once at the top."""
         if self.net == "sandbox":
-            return f"antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json {args}"
+            return f"antibody … {args}"
+        if self.net == "testnet":
+            return f"antibody {args}"
         return f"antibody --network {self.net} {args}"
+
+    def net_args(self):
+        if self.net == "sandbox":
+            return ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030", "--deployments", "target/demo/deployments.json"]
+        return [] if self.net == "testnet" else ["--network", self.net]
+
+    def flags_note(self):
+        if self.net == "sandbox":
+            return ["In the commands below, `…` stands for `--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json`.", ""]
+        return []
 
     def header(self, title):
         started = self.r.get("started_unix")
@@ -93,8 +110,9 @@ def judges(d):
     main = progs[0] if progs else {}
     practice = r.get("practice", {})
 
-    out += ["## One look", "", "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.", "",
-            "```", d.cli("judge"), "```", ""]
+    out += ["## One look", "", "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.", ""]
+    out += d.flags_note()
+    out += ["```", d.cli("judge"), "```", ""]
     if j:
         locked = ", ".join(f"{c['role']} `{c['account']}` locked: {str(c.get('locked')).lower()}" for c in j.get("contracts", []))
         out += [f"Expected: {locked}; {len(progs)} programs."]
@@ -139,7 +157,7 @@ def judges(d):
         t = tries[0]
         links = ", ".join(f"{k} {d.tx(v.rsplit('/', 1)[-1].split(':')[-1] if isinstance(v, str) else v)}" for l in t.get("links", []) for k, v in l.items())
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
-                f"`{d.cli('try --vending ' + str(practice.get('vending', {}).get('vending')) + ' --program ' + str(practice.get('program_id')) + ' --name <you>')}` (sends transactions) | "
+                f"`{d.cli('try --name <you>')}` (sends transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
                 f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD, vault {t.get('vault_index')}, {t.get('seconds', 0):.0f} s | {links} |"]
     au = r.get("audit", {})
     if au:
@@ -169,14 +187,15 @@ def agents(d):
     out += ["Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified "
             "inside a TEE. An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the TEE judge it.", "",
             "## Start with the practice program", "",
-            "The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:", "",
-            "```", d.cli(f"try --vending {vending} --program {practice.get('program_id')} --name <you>"), "```", ""]
+            "The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:", ""]
+    out += d.flags_note()
+    out += ["```", d.cli("try --name <you>"), "```", ""]
     if practice.get("tries"):
         t = practice["tries"][0]
         out += [f"Expected (from the recorded run): `{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract, vault {t.get('vault_index')}, "
                 f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
     out += ["## Connect over MCP", "", "One config. Give the agent a function-call key (`antibody agent key add`): it may commit, reveal and retry, and it cannot withdraw or transfer.", "",
-            "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.cli("--account <agent>.<you>.testnet --key-file <agent-key>.json mcp --workspace <dir>").split()[1:]}}}, indent=2), "```", ""]
+            "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", "<agent>.<you>.testnet", "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
     names = mcp.get("tool_names") or []
     if names:
         out += [f"Tools ({len(names)}): " + ", ".join(f"`{n}`" for n in names) + ".", ""]
