@@ -188,7 +188,14 @@ fn wait_t1(ctx: &Ctx, run_id: u64, timeout_s: u64) -> Result<Value> {
 pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
     let mut steps = Vec::new();
     match cmd::call(ctx, "allocate", json!({"program_id": program, "max": 20}), ALLOCATE_TGAS) {
-        Ok(s) => steps.push(json!({"allocate": s["tx"]})),
+        Ok(s) => {
+            steps.push(json!({"allocate": s["tx"]}));
+            // Views read a final block, a moment behind the allocation just executed.
+            let t0 = Instant::now();
+            while cmd::state_label(&ctx.commit(commit)?["state"]) == "Verifying" && t0.elapsed().as_secs() < 20 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
         Err(e) if e.to_string().contains("nothing to allocate") => {}
         Err(e) => return Err(e),
     }
