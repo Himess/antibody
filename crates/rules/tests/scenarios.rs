@@ -851,3 +851,19 @@ fn a_rerun_without_a_quote_can_be_requested_again() {
     let fx = w.open_round(p).unwrap();
     assert!(fx.contains(&Effect::ReleasePermit { program: p, round: 1 }), "the T1 re-run is the evidence");
 }
+
+#[test]
+fn a_blob_nobody_can_read_for_the_whole_grace_forfeits() {
+    // The hunter named a location that never served its blob (an upload never broadcast): it held the
+    // cursor for the grace, and its bond goes to the escrow instead of back to it.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, run) = w.commit_reveal(p, H1);
+    w.answer_x(run, Kind::InfraError, &[], serde_json::json!({"reason": "blob: unavailable (no RPC served it)"}));
+    w.tick(301);
+    let ctx = w.ctx("keeper.testnet");
+    let r = w.e.time_out(&ctx, c0);
+    w.ok(r);
+    assert_eq!(w.end(c0), Some(End::Forfeited));
+    w.audit_ok(&[p]);
+}

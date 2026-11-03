@@ -230,12 +230,14 @@ fn read_blob(env: &Env, b: &BlobRef) -> Result<Vec<u8>, Stop> {
         }
         BlobRef::NearTx { near_tx, sha256: want } => {
             let want = hex32(want).ok_or_else(|| infra("bad blob hash"))?;
-            let bytes = (env.fetch)(near_tx).map_err(|e| infra(format!("fetch: {}", short(&e))))?;
+            // "blob:" marks a location nobody could read: if it lasts the whole infrastructure grace,
+            // near-antibody holds the hunter who named it responsible (spec §5.3).
+            let bytes = (env.fetch)(near_tx).map_err(|e| infra(format!("blob: unavailable ({})", short(&e))))?;
             if bytes.len() > MAX_BLOB_BYTES {
-                return Err(infra("blob too large"));
+                return Err(infra("blob: too large"));
             }
             if sha256(&bytes) != want {
-                return Err(infra("fetched bytes do not match their committed hash"));
+                return Err(infra("blob: does not match its committed hash"));
             }
             Ok(bytes)
         }

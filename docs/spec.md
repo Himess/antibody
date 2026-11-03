@@ -253,7 +253,7 @@ near-antibody records them as `InfraError`.
 | `InvalidPoC` | A failure the hunter can compute locally: wrong commitment or hunter, a blob that matches its hash but does not open or decode, a malformed bundle, a budget overrun | Bond forfeited to escrow |
 | `Unevaluable` | `check()` reverts or runs out of gas after the PoC | The manifest's `unevaluable` policy (§5.4) |
 | `ProgramMisconfigured` | The program's own inputs are broken: invariants fail at the anchor, the reserved address holds code or storage, a target's code hash differs | Bond refunded; the program closes |
-| `InfraError` | A failure that is not the hunter's: a blob or witness no RPC served, an RPC whose bytes do not match their hash, an unexpected verifier error | **Never forfeited.** Retried with priority kept, until `infra_grace` passes; then void and refunded |
+| `InfraError` | A failure that is not the hunter's: a blob or witness no RPC served, an RPC whose bytes do not match their hash, an unexpected verifier error | Retried with priority kept, until `infra_grace` passes; then void and refunded. One exception: a blob location the hunter named that no RPC could read (or whose bytes never matched) for the whole grace forfeits the bond, so a never-broadcast upload cannot hold the cursor for free |
 
 ### 5.4 `check()`
 

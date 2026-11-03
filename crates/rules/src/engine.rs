@@ -1148,11 +1148,24 @@ impl<S: Store> Engine<S> {
             }
             return Ok(fx);
         }
-        // Void after the grace: bond refunded, nothing paid.
-        self.refund_bond(&c);
-        c.state = CommitState::Done(End::Refunded { reason: "no verdict within the infrastructure grace".into() });
+        // A blob location the hunter named that nobody could read for the whole grace is the hunter's
+        // fault (a never-broadcast upload must not buy a free hold on the cursor): the bond goes to the
+        // escrow. Any other failure is nobody's: the bond is refunded.
+        let blob_missing = c.run.and_then(|r| self.store.run(r)).is_some_and(|r| {
+            matches!(&r.outcome, RunOutcome::Answered { facts, .. }
+                if facts.kind == Kind::InfraError && facts.reason.as_deref().is_some_and(|x| x.starts_with("blob:")))
+        });
+        let mut p = p;
+        if blob_missing {
+            self.forfeit_bond(&mut p, &c);
+            c.state = CommitState::Done(End::Forfeited);
+            fx.push(ev("forfeited", serde_json::json!({"commit_id": commit, "kind": "BlobUnavailable"})));
+        } else {
+            self.refund_bond(&c);
+            c.state = CommitState::Done(End::Refunded { reason: "no verdict within the infrastructure grace".into() });
+            fx.push(ev("commit_void", serde_json::json!({"commit_id": commit})));
+        }
         self.store.put_commit(&c);
-        fx.push(ev("commit_void", serde_json::json!({"commit_id": commit})));
         self.store.put_program(&p);
         Ok(fx)
     }
