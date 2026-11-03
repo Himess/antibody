@@ -11,6 +11,7 @@ import {IAntibodyInvariants} from "../antibody/IAntibodyInvariants.sol";
 contract PracticeVault {
     address public immutable owner;
 
+    // forge-lint: disable-next-line(missing-zero-check)
     constructor(address owner_) payable {
         owner = owner_;
     }
@@ -19,12 +20,16 @@ contract PracticeVault {
 
     /// @notice Meant for the owner.
     /// TUTORIAL BUG (missing access control): anyone can sweep the vault's ether to any address.
+    // The bug is the lesson: the linter flags it, deliberately left in.
+    // forge-lint: disable-next-item(missing-zero-check, arbitrary-send-eth)
     function sweep(address payable to) external {
         to.transfer(address(this).balance);
     }
 }
 
 /// @title PracticeFactory — the practice program's vaults, at CREATE2 addresses anyone can compute.
+/// The constructor hands its ether to the vaults; a remainder below `count` wei stays here.
+// forge-lint: disable-next-item(locked-ether, calls-loop)
 contract PracticeFactory {
     address public immutable owner;
     uint256 public immutable count;
@@ -44,12 +49,16 @@ contract PracticeFactory {
     }
 
     function vaultOf(address factory, address owner_, uint256 i) public pure returns (address) {
+        // The CREATE2 init code is the creation code followed by the encoded constructor argument.
+        // forge-lint: disable-next-line(encode-packed-collision)
         bytes32 init = keccak256(abi.encodePacked(type(PracticeVault).creationCode, abi.encode(owner_)));
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), factory, bytes32(i), init)))));
     }
 }
 
 /// @title PracticeInvariants — the practice program's one rule, as code.
+/// Its loops read `count` vault balances through the factory's pure address function (bounded by count).
+// forge-lint: disable-next-item(calls-loop)
 contract PracticeInvariants is IAntibodyInvariants {
     /// bit 0 — Low: no practice vault loses its ether
     uint256 public constant VAULT_KEEPS_ITS_ETHER = 1 << 0;
