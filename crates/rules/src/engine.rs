@@ -88,6 +88,10 @@ pub struct Engine<S: Store> {
 /// The distinctness top-up (spec §7.5) is off: see `request_distinct`.
 const DISTINCT_TOP_UP_OFF: bool = true;
 
+/// The key of an `Unevaluable` proof under the `violation` policy (spec §5.4): one per round, so the
+/// first such proof holds it and copies are its duplicates. No MAC output is this constant.
+pub const UNEVALUABLE_KEY: H32 = H32([0xEE; 32]);
+
 impl<S: Store> Engine<S> {
     pub fn new(store: S, contract: &str) -> Self {
         Engine { store, contract: contract.to_string() }
@@ -973,6 +977,16 @@ impl<S: Store> Engine<S> {
         }
     }
 
+    /// What a verdict would be paid: a violation's nominal amount, or, under the `violation` policy for
+    /// unevaluable proofs, that policy's severity (spec §5.4); 0 otherwise.
+    fn claim_amount(&self, p: &Program, f: &FactsSummary) -> Amount {
+        match (f.kind, &p.params.unevaluable) {
+            (Kind::Violation, _) => self.nominal(p, f, None).0,
+            (Kind::Unevaluable, UnevaluablePolicy::Violation { severity }) => p.params.base(*severity),
+            _ => 0,
+        }
+    }
+
     /// Whether a commit's current verdict is final.
     pub fn is_final(&self, now: Time, p: &Program, c: &Commit) -> bool {
         let Some(rid) = c.run else { return false };
@@ -981,7 +995,8 @@ impl<S: Store> Engine<S> {
         if facts.kind == Kind::InfraError || c.challenge.is_some() {
             return false;
         }
-        let above_cap = facts.kind == Kind::Violation && self.nominal(p, facts, None).0 > p.params.instant_cap;
+        // Above the instant cap a payout also needs an agreeing second run, whatever the lane.
+        let above_cap = self.claim_amount(p, facts) > p.params.instant_cap;
         (*tier == Tier::T1 && !above_cap) || (now > at + p.params.windows.challenge && (!above_cap || c.second_agrees))
     }
 
@@ -994,8 +1009,8 @@ impl<S: Store> Engine<S> {
         }
         let primary = self.get_run(c.run.ok_or(Error::State("no verdict"))?)?;
         let f = primary.facts().ok_or(Error::State("no verdict yet"))?;
-        if f.kind != Kind::Violation || self.nominal(&p, f, None).0 <= p.params.instant_cap {
-            return Err(Error::State("only a violation above the instant cap needs a second run"));
+        if self.claim_amount(&p, f) <= p.params.instant_cap {
+            return Err(Error::State("only a claim above the instant cap needs a second run"));
         }
         let run = self.new_run(&p, Some(commit), Mode::Second, c.round, &spec, ctx, &ctx.caller);
         let fx = self.request_run(&p, &run, &ctx.caller)?;
@@ -1308,12 +1323,24 @@ impl<S: Store> Engine<S> {
                 UnevaluablePolicy::Violation { severity } => {
                     self.refund_bond(c);
                     let amount = p.params.base(severity);
+                    // One key per round: the first such proof holds it, copies are its duplicates.
+                    if let Some(of) = self.store.holder(p.id, c.round, &UNEVALUABLE_KEY) {
+                        let key = (c.round, UNEVALUABLE_KEY);
+                        let (reserved, _) = if p.dup_reserved.contains(&key) { (0, 0) } else { arith::cover(amount, p.ledger.available, blocked) };
+                        if reserved > 0 {
+                            p.dup_reserved.push(key);
+                        }
+                        p.ledger.reserve(reserved);
+                        c.state = CommitState::Duplicate { of, amount, reserved };
+                        return Ok(vec![ev("duplicate", serde_json::json!({"commit_id": cid, "of": of, "reserved": reserved.to_string(), "unevaluable": true}))]);
+                    }
+                    self.store.set_holder(p.id, c.round, &UNEVALUABLE_KEY, Some(cid));
                     let (reserved, debt) = arith::cover(amount, p.ledger.available, blocked);
                     p.ledger.reserve(reserved);
                     if debt > 0 {
                         p.debtors.push(cid);
                     }
-                    c.state = CommitState::Holder { amount, reserved, debt, new_keys: vec![] };
+                    c.state = CommitState::Holder { amount, reserved, debt, new_keys: vec![UNEVALUABLE_KEY] };
                     Ok(vec![ev("holder", serde_json::json!({"commit_id": cid, "amount": amount.to_string(), "unevaluable": true}))])
                 }
             },

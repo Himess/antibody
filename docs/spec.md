@@ -261,7 +261,9 @@ near-antibody records them as `InfraError`.
   misconfigured) and after every entry call of the PoC.
 - A revert or an out-of-gas after the PoC is `Unevaluable`, handled by the committed policy:
   - `refund` (default): bond refunded, nothing paid, recorded;
-  - `violation`: treated as a violation of a reserved evaluability slot at the committed severity.
+  - `violation`: paid at the committed severity under one evaluability key per round: the first such
+    proof holds it, later ones are its duplicates, and above the instant cap it needs an agreeing second
+    run like any claim.
 - **Lint at creation:** the invariants' code may not use environment-dependent opcodes (`BLOCKHASH`,
   `COINBASE`, `PREVRANDAO`, `GASPRICE`, `GAS`, `BALANCE` of non-target accounts, `SELFBALANCE`, `CREATE`,
   `CREATE2`, `CALL`/`DELEGATECALL` outside the targets). Reads outside the targets are rejected.

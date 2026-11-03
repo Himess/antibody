@@ -768,3 +768,35 @@ fn one_gap_bug_is_promoted_once() {
     assert_eq!(w.end(claims[2]), Some(End::DuplicateConfirmed));
     w.audit_ok(&[p]);
 }
+
+#[test]
+fn an_unevaluable_violation_is_paid_once_per_round_and_waits_above_the_cap() {
+    // Under the `violation` policy, copies of an unevaluable proof are duplicates of the first, and a
+    // payout above the instant cap needs an agreeing second run like any other.
+    let mut w = W::new();
+    let mut prm = params();
+    prm.unevaluable = UnevaluablePolicy::Violation { severity: Severity::High };
+    prm.instant_cap = 50; // below the High payout of 100
+    let p = w.program_open(1_000, prm);
+    let (c0, _) = w.finding(p, H1, Kind::Unevaluable, &[], true);
+    let (c1, _) = w.finding(p, H2, Kind::Unevaluable, &[], true);
+    assert!(w.allocate(p).is_err(), "a T1 claim above the cap is not final without a second run");
+    let ctx = w.ctx("keeper.testnet");
+    let spec = w.spec();
+    let r = w.e.request_second(&ctx, c0, spec);
+    let run = last_run(&w.ok(r));
+    w.answer(run, Kind::Unevaluable, &[]);
+    w.t1(run);
+    w.tick(121);
+    let spec = w.spec();
+    let r = w.e.request_second(&ctx, c1, spec);
+    let run = last_run(&w.ok(r));
+    w.answer(run, Kind::Unevaluable, &[]);
+    w.t1(run);
+    w.tick(121);
+    w.allocate(p).unwrap();
+    assert!(matches!(w.commit(c0).state, CommitState::Holder { amount: 100, .. }));
+    assert!(matches!(w.commit(c1).state, CommitState::Duplicate { of, .. } if of == c0));
+    w.pay(c0).unwrap();
+    w.audit_ok(&[p]);
+}
