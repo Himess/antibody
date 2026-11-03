@@ -10,16 +10,16 @@ Antibody pays for **verified** proofs: a sealed proof that a program's own invar
 
 The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:
 
-Set this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story and keeps the chains up):
+Define this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story, then prints `--serve: near-sandbox http://127.0.0.1:3030 …` and keeps the chains up). It works in bash and zsh:
 
 ```bash
-A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"
+A() { ./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json "$@"; }
 ```
 
-The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil), and the API at `http://127.0.0.1:46659` (its port changes per run). The checks that read the EVM chains use `curl` only.
+The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil), and the API at `http://127.0.0.1:46659` (its port changes per run). The checks that read the EVM chains use `curl` only. Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path>`, from the serving run's results file (else the recorded one). On your own run, ids, states and amounts are these; hashes and times are your run's (regenerate this file: `python3 scripts/docs/judges.py target/demo/results.json`).
 
 ```
-$A try --name <you>
+A try --name <you>
 ```
 
 Over MCP, the `practice_try` tool does the same in one call, with no account configured.

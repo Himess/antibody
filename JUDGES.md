@@ -8,44 +8,44 @@ These are the results of the offline sandbox run (`make demo`: near-sandbox and 
 
 Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.
 
-Set this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story and keeps the chains up):
+Define this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story, then prints `--serve: near-sandbox http://127.0.0.1:3030 …` and keeps the chains up). It works in bash and zsh:
 
 ```bash
-A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"
+A() { ./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json "$@"; }
 ```
 
-The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil), and the API at `http://127.0.0.1:46659` (its port changes per run). The checks that read the EVM chains use `curl` only.
+The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil), and the API at `http://127.0.0.1:46659` (its port changes per run). The checks that read the EVM chains use `curl` only. Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path>`, from the serving run's results file (else the recorded one). On your own run, ids, states and amounts are these; hashes and times are your run's (regenerate this file: `python3 scripts/docs/judges.py target/demo/results.json`).
 
 ```
-$A judge
+A judge
 ```
 
 Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.test.near` locked: false, payout token `tusd.test.near` locked: false, near-guardian `guardian.test.near` locked: false; contract audit ok: true; 3 programs.
 - program 0 (Acme Lend v1 — pre-launch (sandbox demo)): phase `Open`, anchor `light-client`, 7 of 7 verdicts T1-confirmed, 4 payouts, 2 pause and 4 release permits, audit ok: true
-- program 1 (Practice program — a tutorial (sandbox demo)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true
+- program 1 (Practice program — a tutorial (sandbox demo)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout)
 - program 2 (Practice program in fork mode — a tutorial (sandbox demo)): phase `Open`, anchor `light-client`, 1 of 1 verdicts T1-confirmed, 1 payouts, 0 pause and 0 release permits, audit ok: true
 
 ## Claims
 
 | # | Claim | Check | Expected | Evidence |
 |---|---|---|---|---|
-| 1 | An AI agent's sealed proof, submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap | `$A status --commit 0` | `Violation`, tier `T1`, `Done:Paid`, paid 10,000 tUSD | commit `2qHyhmtNrX…`, reveal `45xzt5WH2G…`, pay `FedVjWF6nr…` |
-| 2 | A second planted bug (the unguarded fee sweep) is verified and paid after its window | `$A status --commit 1` | `Violation`, tier `T1`, `Done:Paid`, paid 3,000 tUSD | commit `DkBjGcHorc…`, reveal `AQvU1tPbLY…`, pay `9eVxie9Naq…` |
-| 3 | A prompt injection in the report earns nothing: the verifier never reads reports; NoViolation, and the bond goes to the escrow | `$A status --commit 2` | `NoViolation`, tier `T1`, `Done:Forfeited` | commit `FBrfF3rLQD…`, reveal `Esr3mzDDZx…` |
-| 4 | A duplicate of A is recorded with its own proof, then confirmed a duplicate at the fix | `$A status --commit 3` | `Violation`, tier `T1`, `Done:DuplicateConfirmed` | commit `2d6j1hnTg1…`, reveal `3pd5G56PmS…` |
-| 5 | A known issue the project declared (sealed) before opening is not paid again | `$A status --commit 4` | `Violation`, tier `T1`, `Done:Known` | commit `3USHvermks…`, reveal `9YwmGJ3Dys…` |
-| 6 | A distinct planted bug is paid | `$A status --commit 5` | `Violation`, tier `T1`, `Done:Paid`, paid 10,000 tUSD | commit `GWpHQ4DtkV…`, reveal `EsYbmwthHk…`, pay `FxEkHbzgyn…` |
-| 7 | The gap lane: harm to a protected user that no invariant catches is refunded and recorded; round 1 adds the invariant, and the claim is promoted and paid | `$A status --commit 6` | `NoViolation`, tier `T1`, `Done:Paid`, paid 1,000 tUSD | commit `6KjXg9FCiK…`, reveal `9Q823XiyeF…`, pay `Dy2C6WC93f…` |
-| 8 | The one moment: A's verdict pays A and pauses the fixture on both chains | `$A judge --program 0` (the permits); the times are the run's (`one_moment` in the results file) | 2 pause permits; from A's commit block: verdict 7.9 s, T1 11.5 s, paid 24.9 s (its block), pause permits signed at 21.2 s and 23.1 s, paused on 31337 at 22.7 s and on 31338 at 24.5 s (sandbox clock; MOCK MPC) | 31337: `0xa5ec38eefd…` (local-31337), 31338: `0x4c146f81fe…` (local-31338) |
-| 9 | Round 1: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | `$A status --program 0` (the round's gate and keys); the re-run count is the run's (`rounds` in the results file) | 5 re-runs (2 fixed); release gate false (no release permit); 1 key released, 2 carried | check run 10 |
-| 10 | Round 2: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | `$A status --program 0` (the round's gate and keys); the re-run count is the run's (`rounds` in the results file) | 4 re-runs (4 fixed); release gate true (release permits signed); 2 keys released, 0 carried | check run 16 |
-| 11 | The released code is the final fix on every chain, and B's exploit now reverts | each proxy's EIP-1967 slot with `curl` (commands below the table) | each proxy's implementation is its final fix on chains 31337, 31338: `true` | release permits in `$A judge --program 0` |
-| 12 | Anyone can run the loop with no account: the practice program (a tutorial) | `$A try --name <you>` (sends sandbox transactions; vending `practice.test.near`, program 1) | `Done:Paid`, 1 tUSD to the vending contract (it paid the bond and the run), a vault of its own (the run's first judge got vault 0), about 17 s | vend `DPxgcT58Jq…`, commit `FfQdrR8NtY…`, reveal `8Bjhndcn3p…`, allocate `CKz5LbEgVn…`, pay `4kCM7XqHpM…` |
-| 13 | The program's rules catch deliberately broken versions of its final fix (rule strength: it measures the rules, not the code's security) | `$A judge --program 0` (`rule_strength`) | caught 8 of 28 mutants (report sha256 `e26bf38a106f…`) | docs/rule-strength.md, the report in docs/results/ |
-| 14 | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | `$A status --commit 9`; `$A status --program 2`; the vault's code with `curl` (below the table) | `Done:Paid`, 1 tUSD; 25 targets; the vault's code on chain 31337: `0x` | commit `4tc35HTV5R…`, reveal `Aobt8T4FmC…` |
-| 15 | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | `$A view --contract dao-treasury.test.near --method get_state` | `frozen`: commit 0, slot 0; the run's next transfer was refused: `true` | report `4U26pfD29b…` |
-| 16 | The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped | `$A --account acme.test.near --key-file target/demo/keys/acme.test.near.json program read --commit 0 --project-key target/demo/keys/acme.x25519.json --out target/demo/read/you --reveal-tx 45xzt5WH2GNa66KVb1vg8ogqW2C5ynSqEaPiaJCM44Qo` (the wrap exists: no transaction) | local verdict `Violation`, its receipt equals the TEE's: `true`; the run's request to wrap commit 3 was refused: `true` | release wrap `CLmF4L5gsu…` |
-| 17 | Every conservation equation balances (the ledger's both sides) | `$A judge` (each program's `audit ok`, and the contract's) | contract: `true`, fork_mode: `true`, practice: `true`, program: `true` | view calls |
+| 1 | An AI agent's sealed proof, submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap | `A status --commit 0` | `Violation`, tier `T1`, `Done:Paid`, paid 10,000 tUSD | commit `2qHyhmtNrX…`, reveal `45xzt5WH2G…`, pay `FedVjWF6nr…` |
+| 2 | A second planted bug (the unguarded fee sweep) is verified and paid after its window | `A status --commit 1` | `Violation`, tier `T1`, `Done:Paid`, paid 3,000 tUSD | commit `DkBjGcHorc…`, reveal `AQvU1tPbLY…`, pay `9eVxie9Naq…` |
+| 3 | A prompt injection in the report earns nothing: the verifier never reads reports; NoViolation, and the bond goes to the escrow | `A status --commit 2` | `NoViolation`, tier `T1`, `Done:Forfeited` | commit `FBrfF3rLQD…`, reveal `Esr3mzDDZx…` |
+| 4 | A duplicate of A is recorded with its own proof, then confirmed a duplicate at the fix | `A status --commit 3` | `Violation`, tier `T1`, `Done:DuplicateConfirmed` | commit `2d6j1hnTg1…`, reveal `3pd5G56PmS…` |
+| 5 | A known issue the project declared (sealed) before opening is not paid again | `A status --commit 4` | `Violation`, tier `T1`, `Done:Known` | commit `3USHvermks…`, reveal `9YwmGJ3Dys…` |
+| 6 | A distinct planted bug is paid | `A status --commit 5` | `Violation`, tier `T1`, `Done:Paid`, paid 10,000 tUSD | commit `GWpHQ4DtkV…`, reveal `EsYbmwthHk…`, pay `FxEkHbzgyn…` |
+| 7 | The gap lane: harm to a protected user that no invariant catches is refunded and recorded; round 1 adds the invariant, and the claim is promoted and paid | `A status --commit 6` | `NoViolation`, tier `T1`, `Done:Paid`, paid 1,000 tUSD | commit `6KjXg9FCiK…`, reveal `9Q823XiyeF…`, pay `Dy2C6WC93f…` |
+| 8 | The one moment: A's verdict pays A and pauses the fixture on both chains | `A judge --program 0` (the permits); the times: `python3 scripts/docs/recorded.py one_moment.seconds_from_commit` | 2 pause permits; from A's commit block: verdict 7.9 s, T1 11.5 s, paid 24.9 s (its block), pause permits signed at 21.2 s and 23.1 s, paused on 31337 at 22.7 s and on 31338 at 24.5 s (sandbox clock; MOCK MPC) | 31337: `0xa5ec38eefd…` (local-31337), 31338: `0x4c146f81fe…` (local-31338) |
+| 9 | Round 1: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | `A status --program 0` (each round's gate and keys); the re-run counts: `python3 scripts/docs/recorded.py 'rounds.*.summary'` | 5 re-runs (2 fixed); release gate false (no release permit); 1 key released, 2 carried | check run 10 |
+| 10 | Round 2: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | `A status --program 0` (each round's gate and keys); the re-run counts: `python3 scripts/docs/recorded.py 'rounds.*.summary'` | 4 re-runs (4 fixed); release gate true (release permits signed); 2 keys released, 0 carried | check run 16 |
+| 11 | The released code is the final fix on every chain, and B's exploit now reverts | each proxy's EIP-1967 slot with `curl` (commands below the table) | each proxy's implementation is its final fix on chains 31337, 31338: `true`; B's exploit reverts on each: `python3 scripts/docs/recorded.py 'release.checks.*.b_exploit_reverts'` | release permits in `A judge --program 0` |
+| 12 | Anyone can run the loop with no account: the practice program (a tutorial) | `A try --name <you>` (sends sandbox transactions; vending `practice.test.near`, program 1) | `Done:Paid`, 1 tUSD to the vending contract (it paid the bond and the run), a vault of its own (each `try` gets the next free one), about 17 s; `<you>` is a new lowercase name (ann, bob are taken) | vend `DPxgcT58Jq…`, commit `FfQdrR8NtY…`, reveal `8Bjhndcn3p…`, allocate `CKz5LbEgVn…`, pay `4kCM7XqHpM…` |
+| 13 | The program's rules catch deliberately broken versions of its final fix (rule strength: it measures the rules, not the code's security) | `A judge --program 0` (`rule_strength`) | caught 8 of 28 mutants (report sha256 `e26bf38a106f…`) | docs/rule-strength.md, the report in docs/results/ |
+| 14 | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | `A status --commit 9`; `A status --program 2` (its targets); the vault's code with `curl` (below the table) | `Done:Paid`, 1 tUSD; 25 targets; the vault's code on chain 31337: `0x` | commit `4tc35HTV5R…`, reveal `Aobt8T4FmC…` |
+| 15 | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | `A view --contract dao-treasury.test.near --method get_state` | `frozen`: commit 0, slot 0; the run's next transfer was refused: `true` (`python3 scripts/docs/recorded.py verdict_consumer.transfer_after_refused`) | report `4U26pfD29b…` |
+| 16 | The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped | `A --account acme.test.near --key-file target/demo/keys/acme.test.near.json program read --commit 0 --project-key target/demo/keys/acme.x25519.json --out target/demo/read/you --reveal-tx 45xzt5WH2GNa66KVb1vg8ogqW2C5ynSqEaPiaJCM44Qo` (the wrap exists: no transaction) | local verdict `Violation`, its receipt equals the TEE's: `true`; the run's request to wrap commit 3 was refused: `true` (`python3 scripts/docs/recorded.py project_read.duplicate_refused`) | release wrap `CLmF4L5gsu…` |
+| 17 | Every conservation equation balances (the ledger's both sides) | `A judge` (each program's `audit ok`, and the contract's) | contract: `true`, fork_mode: `true`, practice: `true`, program: `true` | view calls |
 
 ### The EVM checks
 
@@ -79,24 +79,24 @@ Expected (a one-screen summary; `--json` for the full record): near-antibody `bo
 
 Each transaction behind the table, with the command that shows its status, events and failures:
 
-- A (MCP) commit: `$A admin tx 2qHyhmtNrXk1kdJW2WYzucUiLsotj4JQii4R9QjCw1fm --signer agent-a.test.near`
-- A (MCP) reveal: `$A admin tx 45xzt5WH2GNa66KVb1vg8ogqW2C5ynSqEaPiaJCM44Qo --signer agent-a.test.near`
-- A (MCP) pay: `$A admin tx FedVjWF6nr4ftuYxXYVqonratCzxcxS5kkCmnPJVuYx4 --signer keeper.test.near`
-- B commit: `$A admin tx DkBjGcHorcAJKnuN9Tj1YgeREDdTRgrib2HSbBp4Ejuc --signer agent-b.test.near`
-- B reveal: `$A admin tx AQvU1tPbLYA5qgAD29uXFowqvEJzFJGmSZCxtfarEteA --signer agent-b.test.near`
-- B pay: `$A admin tx 9eVxie9NaqWVCwcT2iMPJumSUEi9ZAvuAeg8L4k3k4Ak --signer keeper.test.near`
-- C commit: `$A admin tx FBrfF3rLQDMaXaETfNiJRiVj7ANxtG5K5cpwETeFW3vc --signer agent-c.test.near`
-- C reveal: `$A admin tx Esr3mzDDZxGtzgH4MwJSBteWWutZ58v9mXPu1HeHt1or --signer agent-c.test.near`
-- D commit: `$A admin tx 2d6j1hnTg1Lv9DJyRMzrTHfuPJUJSd4qahDdMT7TkX6W --signer agent-d.test.near`
-- D reveal: `$A admin tx 3pd5G56PmS469AKZxmqHet3vK88gUKw4e22PNbEjNL7W --signer agent-d.test.near`
-- E commit: `$A admin tx 3USHvermkskYmrfRTHwd4g1QLVXyJwiDtgUASVrhDrQq --signer agent-e.test.near`
-- E reveal: `$A admin tx 9YwmGJ3DysmnzEZGZHxLWm9BMshwgPVL44mwRzS2r9jr --signer agent-e.test.near`
-- F commit: `$A admin tx GWpHQ4DtkVGkMGs4juX58eDE86aV14hCXV6muqF3255v --signer agent-f.test.near`
-- F reveal: `$A admin tx EsYbmwthHkGQwsrRGNu9pzMj2gfaxZSEAhMR8pEDko8b --signer agent-f.test.near`
-- F pay: `$A admin tx FxEkHbzgynMSw7237GBPzxuGWaU6Mf8MydXYkRLZW46o --signer keeper.test.near`
-- G commit: `$A admin tx 6KjXg9FCiKbscX3KC9zdM39RB7H3WPZbH39BexR3gv4 --signer agent-g.test.near`
-- G reveal: `$A admin tx 9Q823XiyeFn8TodFnnSpKfwD39KYiDCmcgqJkQMR8KLG --signer agent-g.test.near`
-- G pay: `$A admin tx Dy2C6WC93fzSTibPe98VgHHbbdLhLvSJcAnZpiNqVZG5 --signer keeper.test.near`
+- A (MCP) commit: `A admin tx 2qHyhmtNrXk1kdJW2WYzucUiLsotj4JQii4R9QjCw1fm --signer agent-a.test.near`
+- A (MCP) reveal: `A admin tx 45xzt5WH2GNa66KVb1vg8ogqW2C5ynSqEaPiaJCM44Qo --signer agent-a.test.near`
+- A (MCP) pay: `A admin tx FedVjWF6nr4ftuYxXYVqonratCzxcxS5kkCmnPJVuYx4 --signer keeper.test.near`
+- B commit: `A admin tx DkBjGcHorcAJKnuN9Tj1YgeREDdTRgrib2HSbBp4Ejuc --signer agent-b.test.near`
+- B reveal: `A admin tx AQvU1tPbLYA5qgAD29uXFowqvEJzFJGmSZCxtfarEteA --signer agent-b.test.near`
+- B pay: `A admin tx 9eVxie9NaqWVCwcT2iMPJumSUEi9ZAvuAeg8L4k3k4Ak --signer keeper.test.near`
+- C commit: `A admin tx FBrfF3rLQDMaXaETfNiJRiVj7ANxtG5K5cpwETeFW3vc --signer agent-c.test.near`
+- C reveal: `A admin tx Esr3mzDDZxGtzgH4MwJSBteWWutZ58v9mXPu1HeHt1or --signer agent-c.test.near`
+- D commit: `A admin tx 2d6j1hnTg1Lv9DJyRMzrTHfuPJUJSd4qahDdMT7TkX6W --signer agent-d.test.near`
+- D reveal: `A admin tx 3pd5G56PmS469AKZxmqHet3vK88gUKw4e22PNbEjNL7W --signer agent-d.test.near`
+- E commit: `A admin tx 3USHvermkskYmrfRTHwd4g1QLVXyJwiDtgUASVrhDrQq --signer agent-e.test.near`
+- E reveal: `A admin tx 9YwmGJ3DysmnzEZGZHxLWm9BMshwgPVL44mwRzS2r9jr --signer agent-e.test.near`
+- F commit: `A admin tx GWpHQ4DtkVGkMGs4juX58eDE86aV14hCXV6muqF3255v --signer agent-f.test.near`
+- F reveal: `A admin tx EsYbmwthHkGQwsrRGNu9pzMj2gfaxZSEAhMR8pEDko8b --signer agent-f.test.near`
+- F pay: `A admin tx FxEkHbzgynMSw7237GBPzxuGWaU6Mf8MydXYkRLZW46o --signer keeper.test.near`
+- G commit: `A admin tx 6KjXg9FCiKbscX3KC9zdM39RB7H3WPZbH39BexR3gv4 --signer agent-g.test.near`
+- G reveal: `A admin tx 9Q823XiyeFn8TodFnnSpKfwD39KYiDCmcgqJkQMR8KLG --signer agent-g.test.near`
+- G pay: `A admin tx Dy2C6WC93fzSTibPe98VgHHbbdLhLvSJcAnZpiNqVZG5 --signer keeper.test.near`
 
 ## Timings
 

@@ -9,6 +9,9 @@ import datetime
 import json
 import pathlib
 
+# Prints a value the run recorded (timings, refusals, counts) from its results file.
+REC = "python3 scripts/docs/recorded.py"
+
 # What each finding of the story shows (all are planted, clearly labeled fixture bugs).
 STORY = {
     "A (MCP)": "An AI agent's sealed proof, submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
@@ -69,9 +72,9 @@ class Doc:
 
     def cli(self, args):
         """A command as a reader types it. On testnet the binary has the deployment built in; in the
-        sandbox `$A` is the binary with the sandbox's flags, set once at the top."""
+        sandbox `A` is a shell function for the binary with the sandbox's flags, defined once at the top."""
         if self.net == "sandbox":
-            return f"$A {args}"
+            return f"A {args}"
         if self.net == "testnet":
             return f"antibody {args}"
         return f"antibody --network {self.net} {args}"
@@ -87,10 +90,14 @@ class Doc:
     def flags_note(self):
         if self.net == "sandbox":
             api = self.r.get("api", {}).get("url")
-            return ["Set this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story and keeps the chains up):", "",
-                    "```bash", 'A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"', "```", "",
+            return ["Define this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story, then prints "
+                    "`--serve: near-sandbox http://127.0.0.1:3030 …` and keeps the chains up). It works in bash and zsh:", "",
+                    "```bash", 'A() { ./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json "$@"; }', "```", "",
                     "The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil)"
-                    + (f", and the API at `{api}` (its port changes per run)" if api else "") + ". The checks that read the EVM chains use `curl` only.", ""]
+                    + (f", and the API at `{api}` (its port changes per run)" if api else "") + ". The checks that read the EVM chains use `curl` only. "
+                    f"Values only the run records (timings, refusals, counts) print with `{REC} <path>`, from the serving run's results file "
+                    "(else the recorded one). On your own run, ids, states and amounts are these; hashes and times are your run's "
+                    "(regenerate this file: `python3 scripts/docs/judges.py target/demo/results.json`).", ""]
         return []
 
     def curl(self, rpc, method, params):
@@ -130,9 +137,10 @@ def judges(d):
         out += [f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; {len(progs)} programs."]
         for p in progs:
             v = p.get("verdicts", {})
+            each_try = " (each `try` adds one verdict and one payout)" if p.get("program_id") == practice.get("program_id") else ""
             out += [f"- program {p.get('program_id')} ({p.get('name', '')}): phase `{p.get('phase')}`, anchor `{p.get('anchor', {}).get('status')}`, "
                     f"{v.get('t1_confirmed')} of {v.get('runs')} verdicts T1-confirmed, {len(p.get('payouts', []))} payouts, "
-                    f"{p.get('pauses')} pause and {p.get('releases')} release permits, audit ok: {str(p.get('audit_ok')).lower()}"]
+                    f"{p.get('pauses')} pause and {p.get('releases')} release permits, audit ok: {str(p.get('audit_ok')).lower()}{each_try}"]
         out += [""]
 
     out += ["## Claims", "", "| # | Claim | Check | Expected | Evidence |", "|---|---|---|---|---|"]
@@ -149,7 +157,7 @@ def judges(d):
         permits = one.get("permits", {})
         ev = ", ".join(f"{p.get('chain_id')}: {d.evm_tx(p.get('explorer'))}" for p in permits.values() if p.get("kind") == "pause") or "—"
         out += [f"| {n} | The one moment: A's verdict pays A and pauses the fixture on both chains | `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` "
-                f"(the permits); the times are the run's (`one_moment` in the results file) | {main.get('pauses')} pause permits; from A's commit block: "
+                f"(the permits); the times: `python3 scripts/docs/recorded.py one_moment.seconds_from_commit` | {main.get('pauses')} pause permits; from A's commit block: "
                 f"verdict {secs.get('verdict', 0):.1f} s, T1 {secs.get('t1', 0):.1f} s, paid {secs.get('paid', 0):.1f} s (its block), pause permits signed at "
                 f"{secs.get('permit_signed_31337') or 0:.1f} s and {secs.get('permit_signed_31338') or 0:.1f} s, paused on 31337 at "
                 f"{secs.get('paused_31337') or 0:.1f} s and on 31338 at {secs.get('paused_31338') or 0:.1f} s (sandbox clock; MOCK MPC) | {ev} |"]
@@ -157,14 +165,14 @@ def judges(d):
         n += 1
         o = rd.get("opened", {})
         out += [f"| {n} | Round {rd.get('round')}: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | "
-                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` (the round's gate and keys); the re-run count is the run's (`rounds` in the results file) | "
+                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` (each round's gate and keys); the re-run counts: `python3 scripts/docs/recorded.py 'rounds.*.summary'` | "
                 f"{rd.get('summary')} | check run {rd.get('check_round_run')} |"]
     rel = r.get("release", {})
     if rel:
         n += 1
         chains = sorted({c.get("chain_id") for c in rel.get("checks", []) if c.get("chain_id")})
         out += [f"| {n} | The released code is the final fix on every chain, and B's exploit now reverts | each proxy's EIP-1967 slot with `curl` (commands below the table) | "
-                f"each proxy's implementation is its final fix on chains {', '.join(map(str, chains))}: `{str(rel.get('ok')).lower()}` | release permits in `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` |"]
+                f"each proxy's implementation is its final fix on chains {', '.join(map(str, chains))}: `{str(rel.get('ok')).lower()}`; B's exploit reverts on each: `python3 scripts/docs/recorded.py 'release.checks.*.b_exploit_reverts'` | release permits in `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` |"]
     tries = practice.get("tries", [])
     if tries:
         n += 1
@@ -175,7 +183,7 @@ def judges(d):
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
                 f"`{d.cli('try --name <you>')}` (sends sandbox transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
                 f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract (it paid the bond and the run), a vault of its own "
-                f"(the run's first judge got vault {t.get('vault_index')}), about {t.get('seconds', 0):.0f} s | {links} |"]
+                f"(each `try` gets the next free one), about {t.get('seconds', 0):.0f} s; `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken) | {links} |"]
     rs = main.get("rule_strength") or {}
     if rs.get("statement"):
         n += 1
@@ -187,7 +195,7 @@ def judges(d):
         n += 1
         txs = fm.get("txs", {})
         out += [f"| {n} | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | "
-                f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `{d.cli('status --program ' + str(fm.get('program_id')))}`; the vault's code with `curl` (below the table) | "
+                f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `{d.cli('status --program ' + str(fm.get('program_id')))}` (its targets); the vault's code with `curl` (below the table) | "
                 f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('targets')} targets; the vault's code on chain 31337: `{fm.get('vault_3_code_on_chain')}` | "
                 f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))} |"]
     vc = r.get("verdict_consumer", {})
@@ -196,7 +204,7 @@ def judges(d):
         fr = vc.get("frozen") or {}
         out += [f"| {n} | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | "
                 f"`{d.cli('view --contract ' + str(vc.get('contract')) + ' --method get_state')}` | `frozen`: commit {fr.get('commit_id')}, slot {fr.get('slot')}; "
-                f"the run's next transfer was refused: `{str(vc.get('transfer_after_refused')).lower()}` | report {d.tx(vc.get('report_tx'))} |"]
+                f"the run's next transfer was refused: `{str(vc.get('transfer_after_refused')).lower()}` (`python3 scripts/docs/recorded.py verdict_consumer.transfer_after_refused`) | report {d.tx(vc.get('report_tx'))} |"]
     pr = r.get("project_read", {})
     if pr:
         n += 1
@@ -211,7 +219,7 @@ def judges(d):
             cmdline = d.cli(f"--account <project> program read --commit {pr.get('commit')} --project-key <key file> --out <dir> --reveal-tx {reveal}")
         out += [f"| {n} | The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped | "
                 f"`{cmdline}` (the wrap exists: no transaction) | local verdict `{rd.get('local_verdict', {}).get('kind')}`, its receipt equals the TEE's: "
-                f"`{str(rd.get('receipt_matches_the_tee')).lower()}`; the run's request to wrap commit {pr.get('duplicate')} was refused: `{str(refused).lower()}` | "
+                f"`{str(rd.get('receipt_matches_the_tee')).lower()}`; the run's request to wrap commit {pr.get('duplicate')} was refused: `{str(refused).lower()}` (`python3 scripts/docs/recorded.py project_read.duplicate_refused`) | "
                 f"release wrap {d.tx((req.get('tx') or {}).get('tx'))} |"]
     au = r.get("audit", {})
     if au:

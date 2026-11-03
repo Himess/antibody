@@ -28,7 +28,7 @@ with a bond budget, and its proofs are judged like anyone's.
 
 **Pay on proof. Pause on proof. Ship only what survived.**
 
-## Check it in two minutes
+## Check it
 
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
@@ -40,19 +40,22 @@ from the offline sandbox run, and its commands run against the sandbox. On Linux
 make serve       # builds everything, runs the whole story (every outcome asserted), then keeps the sandbox up
 ```
 
-Then, in a second terminal in the repository:
+The first build takes a while (the verifier, the contracts, the CLI); the story then runs for about nine
+minutes and ends with `--serve: near-sandbox http://127.0.0.1:3030 …`. Then, in a second terminal in the
+repository (bash or zsh):
 
 ```bash
-A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"
-$A judge                 # view calls only: locked status, T1 confirmations, payouts, permits, audits (--json: everything)
-$A try --name <you>      # the practice program (a tutorial): no account, no key, no Ethereum RPC; paid in seconds
+A() { ./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json "$@"; }
+A judge                  # view calls only: locked status, T1 confirmations, payouts, permits, audits (--json: everything)
+A try --name <you>       # a new lowercase name: the practice program (a tutorial), no account, no key; paid in seconds
 ```
 
 `make demo` runs the same story once and stops (`docker build -t antibody-demo . && docker run --rm
 antibody-demo` elsewhere). Once testnet is live, the release binaries (`.github/workflows/release.yml`)
 have the deployment built in: `antibody judge` and `antibody try --name <you>`, nothing else.
 
-The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts every outcome of the story:
+The sandbox run (`target/demo/results.json`; the recorded one is in [docs/results/](docs/results/)) asserts
+every outcome of the story:
 
 | Step | What happens | Recorded |
 |---|---|---|
