@@ -62,8 +62,8 @@ const PRACTICE_ESCROW: &str = "0.03";
 /// A real OutLayer run and its T1 relay (DCAP on NEAR) take longer than the sandbox's MOCK.
 const T1_WAIT: Duration = Duration::from_secs(900);
 /// NEAR free of storage stake an account needs to send a 300 Tgas call (0.301 NEAR set aside up front,
-/// most of it refunded), with a margin for the calls before it.
-const FREE_FOR_RUNS: u128 = 360 * MILLI;
+/// most of it refunded), with a margin for the calls before it (a sealed blob's upload burns ~0.035).
+const FREE_FOR_RUNS: u128 = 400 * MILLI;
 /// What each vended practice account gets for its gas: its commit's and its reveal's set-aside gas
 /// (0.031 and 0.301 NEAR); it burns about a tenth of it, and keeps the rest.
 const PRACTICE_GAS_FUNDS: u128 = 340 * MILLI;
@@ -696,14 +696,24 @@ impl Live {
             let c = self.ctx_of(&format!("agent-{x}"));
             let me = Self::acct(&format!("agent-{x}"));
             self.ensure_liquid(&me, FREE_FOR_RUNS)?;
-            if wnear_of(&c, &me)? < 2 * MILLI {
+            // Each step only when missing: a stage that stopped part-way runs again.
+            let have = cmd::account(&c, &me)?;
+            if wnear_of(&c, &me)? + cmd::u128_of(&have["tokens"]) < 2 * MILLI {
                 wrap(&c, 3 * MILLI)?;
             }
             // A's MCP server signs with a function-call key, which attaches no deposit: A's credit covers
             // its commit and run up front.
-            let credit = if x == "a" { "0.07" } else { MIN_NEAR_CREDIT };
-            cmd::storage_deposit(&c, credit)?;
-            cmd::deposit(&c, "0.002")?;
+            let credit = cmd::parse_near(if x == "a" { "0.07" } else { MIN_NEAR_CREDIT })?;
+            let near_credit = cmd::u128_of(&have["near"]);
+            if near_credit < credit {
+                cmd::storage_deposit(&c, &cmd::fmt_tokens(credit - near_credit, 24))?;
+            }
+            let tokens = cmd::u128_of(&have["tokens"]);
+            if tokens < 2 * MILLI {
+                // An ft_transfer_call with 300 Tgas: 0.301 NEAR free again.
+                self.ensure_liquid(&me, FREE_FOR_RUNS)?;
+                cmd::deposit(&c, &cmd::fmt_tokens(2 * MILLI - tokens, 24))?;
+            }
             out.insert(me.clone(), cmd::account(&c, &me)?);
         }
         let agent_key = self.a.work.join("keys/agent-a.fc-key.json");
