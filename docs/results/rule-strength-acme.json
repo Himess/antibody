@@ -1,0 +1,563 @@
+{
+  "breaks_setup": 3,
+  "by_class": {
+    "dropped-guard": {
+      "caught": 2,
+      "total": 5
+    },
+    "flipped-comparison": {
+      "caught": 1,
+      "total": 4
+    },
+    "missing-access-check": {
+      "caught": 3,
+      "total": 4
+    },
+    "unchecked-transfer": {
+      "caught": 2,
+      "total": 15
+    }
+  },
+  "caught": 8,
+  "errored": 0,
+  "fuzz": {
+    "depth": 100,
+    "runs": 512,
+    "seed": 1
+  },
+  "invalid": 0,
+  "label": "rule strength: how many deliberately broken versions of the code the program's rules catch under the fuzzer; it measures the rules, not the code's security",
+  "mutants": [
+    {
+      "after": "acUSD.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!acUSD.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 0,
+      "line": 49,
+      "result": "caught",
+      "seconds": 3.066617279
+    },
+    {
+      "after": "acUSD.transfer(msg.sender, amount);",
+      "before": "if (!acUSD.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 1,
+      "line": 58,
+      "result": "survived",
+      "seconds": 18.375459802
+    },
+    {
+      "after": "acETH.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!acETH.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 2,
+      "line": 65,
+      "result": "survived",
+      "seconds": 17.248725775
+    },
+    {
+      "after": "",
+      "before": "if (!_healthy(msg.sender)) revert Unhealthy();",
+      "class": "dropped-guard",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 3,
+      "line": 73,
+      "result": "caught",
+      "seconds": 5.747865528
+    },
+    {
+      "after": "acETH.transfer(msg.sender, amount);",
+      "before": "if (!acETH.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 4,
+      "line": 74,
+      "result": "survived",
+      "seconds": 17.440486708
+    },
+    {
+      "after": "",
+      "before": "if (!_healthy(msg.sender)) revert Unhealthy();",
+      "class": "dropped-guard",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 5,
+      "line": 82,
+      "result": "caught",
+      "seconds": 4.120939796
+    },
+    {
+      "after": "acUSD.transfer(msg.sender, amount);",
+      "before": "if (!acUSD.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 6,
+      "line": 83,
+      "result": "survived",
+      "seconds": 17.653367683
+    },
+    {
+      "after": "return collateralOf[user] * collateralPrice() / 1e18 * LTV_BPS / 10_000 < debtOf[user];",
+      "before": "return collateralOf[user] * collateralPrice() / 1e18 * LTV_BPS / 10_000 >= debtOf[user];",
+      "class": "flipped-comparison",
+      "detail": "[FAIL: Unhealthy()] setUp() (gas: 0)",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 7,
+      "line": 114,
+      "result": "breaks-setup",
+      "seconds": 2.819251627
+    },
+    {
+      "after": "acUSD.transferFrom(from, address(this), assets);",
+      "before": "if (!acUSD.transferFrom(from, address(this), assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 8,
+      "line": 69,
+      "result": "survived",
+      "seconds": 17.422932136
+    },
+    {
+      "after": "shares = supply != 0 ? net : net * supply / totalAssets(); // rounds down: favours the vault",
+      "before": "shares = supply == 0 ? net : net * supply / totalAssets(); // rounds down: favours the vault",
+      "class": "flipped-comparison",
+      "detail": "[FAIL: panic: division or modulo by zero (0x12)] setUp() (gas: 0)",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 9,
+      "line": 74,
+      "result": "breaks-setup",
+      "seconds": 2.815335343
+    },
+    {
+      "after": "",
+      "before": "if (shares == 0) revert ZeroShares();",
+      "class": "dropped-guard",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 10,
+      "line": 75,
+      "result": "survived",
+      "seconds": 18.047914438
+    },
+    {
+      "after": "if (shares != 0) revert ZeroShares();",
+      "before": "if (shares == 0) revert ZeroShares();",
+      "class": "flipped-comparison",
+      "detail": "[FAIL: ZeroShares()] setUp() (gas: 0)",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 11,
+      "line": 75,
+      "result": "breaks-setup",
+      "seconds": 2.846895329
+    },
+    {
+      "after": "acUSD.transfer(msg.sender, assets);",
+      "before": "if (!acUSD.transfer(msg.sender, assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 12,
+      "line": 90,
+      "result": "survived",
+      "seconds": 16.575069354
+    },
+    {
+      "after": "acUSD.transferFrom(msg.sender, address(this), assets);",
+      "before": "if (!acUSD.transferFrom(msg.sender, address(this), assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 13,
+      "line": 96,
+      "result": "survived",
+      "seconds": 16.726575331
+    },
+    {
+      "after": "acUSD.transfer(treasury, amount);",
+      "before": "if (!acUSD.transfer(treasury, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 14,
+      "line": 105,
+      "result": "survived",
+      "seconds": 16.948825254
+    },
+    {
+      "after": "acUSD.transfer(to, amount);",
+      "before": "if (!acUSD.transfer(to, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 15,
+      "line": 114,
+      "result": "survived",
+      "seconds": 16.802879147
+    },
+    {
+      "after": "",
+      "before": "require(msg.sender == admin, \"treasury: not admin\");",
+      "class": "missing-access-check",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 16,
+      "line": 128,
+      "result": "caught",
+      "seconds": 4.245155337
+    },
+    {
+      "after": "",
+      "before": "require(ok, \"treasury: call failed\");",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 17,
+      "line": 130,
+      "result": "survived",
+      "seconds": 17.575440721
+    },
+    {
+      "after": "",
+      "before": "if (msg.sender != admin) revert NotAdmin();",
+      "class": "missing-access-check",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 18,
+      "line": 37,
+      "result": "survived",
+      "seconds": 18.639275138
+    },
+    {
+      "after": "",
+      "before": "if (!ethIn && tokenIn != address(acUSD)) revert BadToken();",
+      "class": "dropped-guard",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 19,
+      "line": 49,
+      "result": "survived",
+      "seconds": 17.86127371
+    },
+    {
+      "after": "if (!ethIn && tokenIn == address(acUSD)) revert BadToken();",
+      "before": "if (!ethIn && tokenIn != address(acUSD)) revert BadToken();",
+      "class": "flipped-comparison",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 20,
+      "line": 49,
+      "result": "survived",
+      "seconds": 16.974091699
+    },
+    {
+      "after": "",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "dropped-guard",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 21,
+      "line": 54,
+      "result": "survived",
+      "seconds": 17.409526394
+    },
+    {
+      "after": "if (amountOut != 0 || amountOut < minOut) revert Slippage();",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "flipped-comparison",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 22,
+      "line": 54,
+      "result": "survived",
+      "seconds": 17.049351458
+    },
+    {
+      "after": "if (amountOut == 0 || amountOut >= minOut) revert Slippage();",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "flipped-comparison",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 23,
+      "line": 54,
+      "result": "survived",
+      "seconds": 16.59104014
+    },
+    {
+      "after": "(ethIn ? acUSD : acETH).transfer(to, amountOut);",
+      "before": "if (!(ethIn ? acUSD : acETH).transfer(to, amountOut)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 24,
+      "line": 55,
+      "result": "survived",
+      "seconds": 17.440797646
+    },
+    {
+      "after": "token.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!token.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme/AcmePool.sol",
+      "id": 25,
+      "line": 71,
+      "result": "survived",
+      "seconds": 17.654119031
+    },
+    {
+      "after": "return spot >= referencePrice ? spot : referencePrice;",
+      "before": "return spot < referencePrice ? spot : referencePrice;",
+      "class": "flipped-comparison",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme-fixes/AcmeLendFixed.sol",
+      "id": 26,
+      "line": 29,
+      "result": "caught",
+      "seconds": 5.353366917
+    },
+    {
+      "after": "acUSD.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!acUSD.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "id": 27,
+      "line": 24,
+      "result": "caught",
+      "seconds": 2.884982566
+    },
+    {
+      "after": "",
+      "before": "if (msg.sender != admin) revert NotAdmin();",
+      "class": "missing-access-check",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "id": 28,
+      "line": 42,
+      "result": "caught",
+      "seconds": 0.608236053
+    },
+    {
+      "after": "acUSD.transfer(to, amount);",
+      "before": "if (!acUSD.transfer(to, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "detail": "",
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "id": 29,
+      "line": 45,
+      "result": "survived",
+      "seconds": 14.202833354
+    },
+    {
+      "after": "",
+      "before": "if (from != msg.sender) revert NotYourFunds();",
+      "class": "missing-access-check",
+      "detail": "[FAIL: a program rule breaks]",
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "id": 30,
+      "line": 50,
+      "result": "caught",
+      "seconds": 3.327973785
+    }
+  ],
+  "not_scored": "a mutant that does not compile, breaks the test's own setup (the fixture cannot even be deployed with it), errs or times out is listed but not scored",
+  "seconds": 212.305198442,
+  "sources": [
+    {
+      "file": "src/acme/AcmeLend.sol",
+      "sha256": "a010914ad968a3b24e4dabf2e27b929f7819ad151b804c7a967588c5e82184db"
+    },
+    {
+      "file": "src/acme/AcmeVault.sol",
+      "sha256": "4e359c32db20af4eb03962ec5a1fe2015d3a3d0f12ab69ba773da2a1a32d2f6e"
+    },
+    {
+      "file": "src/acme/AcmePool.sol",
+      "sha256": "709c03251fea9436d320172cdddadddf33c68e58bf6a0804ef49b3970cf9c558"
+    },
+    {
+      "file": "src/acme-fixes/AcmeLendFixed.sol",
+      "sha256": "8846b8bc2e45aa15050d59ad27252703813ac39287acdccf927c3c344e01317a"
+    },
+    {
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "sha256": "d91db770f9e93b7ba240fecc448bd474c33a58d5bf14d4b99c019be38384d238"
+    }
+  ],
+  "statement": "caught 8 of 28 mutants",
+  "survivors": [
+    {
+      "after": "acUSD.transfer(msg.sender, amount);",
+      "before": "if (!acUSD.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 1,
+      "line": 58
+    },
+    {
+      "after": "acETH.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!acETH.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 2,
+      "line": 65
+    },
+    {
+      "after": "acETH.transfer(msg.sender, amount);",
+      "before": "if (!acETH.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 4,
+      "line": 74
+    },
+    {
+      "after": "acUSD.transfer(msg.sender, amount);",
+      "before": "if (!acUSD.transfer(msg.sender, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeLend.sol",
+      "id": 6,
+      "line": 83
+    },
+    {
+      "after": "acUSD.transferFrom(from, address(this), assets);",
+      "before": "if (!acUSD.transferFrom(from, address(this), assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 8,
+      "line": 69
+    },
+    {
+      "after": "",
+      "before": "if (shares == 0) revert ZeroShares();",
+      "class": "dropped-guard",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 10,
+      "line": 75
+    },
+    {
+      "after": "acUSD.transfer(msg.sender, assets);",
+      "before": "if (!acUSD.transfer(msg.sender, assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 12,
+      "line": 90
+    },
+    {
+      "after": "acUSD.transferFrom(msg.sender, address(this), assets);",
+      "before": "if (!acUSD.transferFrom(msg.sender, address(this), assets)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 13,
+      "line": 96
+    },
+    {
+      "after": "acUSD.transfer(treasury, amount);",
+      "before": "if (!acUSD.transfer(treasury, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 14,
+      "line": 105
+    },
+    {
+      "after": "acUSD.transfer(to, amount);",
+      "before": "if (!acUSD.transfer(to, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 15,
+      "line": 114
+    },
+    {
+      "after": "",
+      "before": "require(ok, \"treasury: call failed\");",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmeVault.sol",
+      "id": 17,
+      "line": 130
+    },
+    {
+      "after": "",
+      "before": "if (msg.sender != admin) revert NotAdmin();",
+      "class": "missing-access-check",
+      "file": "src/acme/AcmePool.sol",
+      "id": 18,
+      "line": 37
+    },
+    {
+      "after": "",
+      "before": "if (!ethIn && tokenIn != address(acUSD)) revert BadToken();",
+      "class": "dropped-guard",
+      "file": "src/acme/AcmePool.sol",
+      "id": 19,
+      "line": 49
+    },
+    {
+      "after": "if (!ethIn && tokenIn == address(acUSD)) revert BadToken();",
+      "before": "if (!ethIn && tokenIn != address(acUSD)) revert BadToken();",
+      "class": "flipped-comparison",
+      "file": "src/acme/AcmePool.sol",
+      "id": 20,
+      "line": 49
+    },
+    {
+      "after": "",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "dropped-guard",
+      "file": "src/acme/AcmePool.sol",
+      "id": 21,
+      "line": 54
+    },
+    {
+      "after": "if (amountOut != 0 || amountOut < minOut) revert Slippage();",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "flipped-comparison",
+      "file": "src/acme/AcmePool.sol",
+      "id": 22,
+      "line": 54
+    },
+    {
+      "after": "if (amountOut == 0 || amountOut >= minOut) revert Slippage();",
+      "before": "if (amountOut == 0 || amountOut < minOut) revert Slippage();",
+      "class": "flipped-comparison",
+      "file": "src/acme/AcmePool.sol",
+      "id": 23,
+      "line": 54
+    },
+    {
+      "after": "(ethIn ? acUSD : acETH).transfer(to, amountOut);",
+      "before": "if (!(ethIn ? acUSD : acETH).transfer(to, amountOut)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmePool.sol",
+      "id": 24,
+      "line": 55
+    },
+    {
+      "after": "token.transferFrom(msg.sender, address(this), amount);",
+      "before": "if (!token.transferFrom(msg.sender, address(this), amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme/AcmePool.sol",
+      "id": 25,
+      "line": 71
+    },
+    {
+      "after": "acUSD.transfer(to, amount);",
+      "before": "if (!acUSD.transfer(to, amount)) revert TransferFailed();",
+      "class": "unchecked-transfer",
+      "file": "src/acme-fixes/AcmeFinalFix.sol",
+      "id": 29,
+      "line": 45
+    }
+  ],
+  "test": "AcmeStrengthTest",
+  "timeout": 0,
+  "total": 28
+}
