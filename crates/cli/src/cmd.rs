@@ -1824,8 +1824,13 @@ pub fn admin_delete_account(ctx: &Ctx, beneficiary: &str, confirm: &str) -> Resu
     }
     let a = ctx.near.account(&signer.account_id)?.ok_or_else(|| eyre!("no account {}", signer.account_id))?;
     let out = ctx.near.send(&signer, &signer.account_id, vec![Action::DeleteAccount { beneficiary: beneficiary.into() }], "EXECUTED_OPTIMISTIC")?;
-    let s = ensure_ok(ctx, &out, "delete_account")?;
-    Ok(json!({"deleted": signer.account_id, "beneficiary": beneficiary, "balance": fmt_tokens(u128_of(&a["amount"]), 24), "tx": s}))
+    // The account's own gas refunds for this transaction arrive once it is gone, and their receipts fail
+    // (AccountDoesNotExist): the deletion is read from the chain instead.
+    if ctx.near.account(&signer.account_id)?.is_some() {
+        ensure_ok(ctx, &out, "delete_account")?;
+        return Err(eyre!("{} still exists", signer.account_id));
+    }
+    Ok(json!({"deleted": signer.account_id, "beneficiary": beneficiary, "balance": fmt_tokens(u128_of(&a["amount"]), 24), "tx": tx_summary(ctx, &out)}))
 }
 
 pub fn admin_send_near(ctx: &Ctx, to: &str, amount_near: &str) -> Result<Value> {
