@@ -1,102 +1,95 @@
 # Project quickstart
 
-> **Testnet status.** The testnet deployment is not live yet; the commands below need it. To scaffold a
-> workspace, run `antibody init --out my-program --project <you>.testnet`. The whole flow can be
-> rehearsed on the local sandbox (`antibody-services demo --keep`).
+> **Testnet status.** The testnet deployment is not live yet. The whole flow can be rehearsed on the
+> local sandbox (`antibody-services demo --serve`); `antibody init --out my-program --project <you>.testnet`
+> scaffolds a workspace.
 
-Open a program before a launch or an upgrade. Your invariants are your bounty terms: a submission is paid
-only if it breaks one of them, at the severity you committed.
+Open a program before a launch or an upgrade, next to your existing bounty. Your rules are your terms: a
+proof is paid only if it breaks one of them, at the severity you committed, from an escrow you fund.
 
-## 1. Write invariants
+## 1. Write the rules
 
-Implement `IAntibodyInvariants` (`contracts/evm/src/antibody/IAntibodyInvariants.sol`) as a pure view
-contract. Point it at your contracts with immutables, and put the reference prices it needs into immutables
-too. The verifier injects its runtime code at a reserved address in its own fork; it is never deployed.
+Implement `IAntibodyInvariants` (`contracts/evm/src/antibody/IAntibodyInvariants.sol`) as a view
+contract: `snapshot()` reads what `check(pre)` compares against, and `check` returns a bitmask (bit i =
+rule i broken). Point it at your contracts with immutables. The verifier serves its runtime code at a
+reserved address; it is never deployed, and it has no storage. `contracts/evm/src/acme/AcmeInvariants.sol`
+is a complete example.
 
-- `snapshot()` returns what `check()` compares against, read at the anchor.
-- `check(pre)` returns a bitmask: bit *i* = invariant *i* broken.
+Other ways in:
+- **Foundry-style:** write `invariant_*()` view functions and generate the rules contract with
+  `antibody invariants from-foundry` (docs/foundry.md).
+- **A draft:** `antibody invariants draft --source <your contracts> --out draft/` (add `--ai` for a model's
+  extension), then review it (docs/invariants-drafting.md).
 
-`contracts/evm/src/acme/AcmeInvariants.sol` is a complete example: solvency at reference prices; accrued
-fees plus the treasury balance never decrease; the share price never falls.
+## 2. Choose where it runs
 
-To start from a draft, run `antibody invariants draft --source <your contracts> --out draft/`. Add `--ai`
-for Claude's extension. Review the draft, edit it and approve it (docs/invariants-drafting.md).
+- **On chain:** deploy to Sepolia (pause-only copies elsewhere if you want) and pick a finalized block
+  after the deployment as the anchor. Create the program while the light client still confirms it
+  (about a week); otherwise it is labelled project-attested.
+- **Fork mode:** commit your contracts' deployment in the manifest instead. The verifier deploys them on
+  top of the anchor's real state, so no staging deployment is needed (docs/fork-mode.md).
 
-## 2. Deploy staging and pick an anchor
+For pausing and releases, put your proxies behind the program's `AntibodyAdapter` (one per chain, at the
+same CREATE2 address) and register it with near-guardian.
 
-1. Deploy your contracts to Sepolia (and, if you want, pause-only copies elsewhere).
-2. Grant `PAUSER` to your guardian's EVM address (`scripts/guardian/derive.mjs` derives it from the guardian contract and path).
-3. Pick a finalized block `M` after the deployment: the anchor.
-4. Create the program within about 7 days of `M`. Then NEAR's testnet light client can confirm `M`'s hash on-chain; otherwise the program is labelled project-attested.
+## 3. Commit the terms, and check them
 
-## 3. Commit the rules
-
-Write `antibody.toml`; `fixtures/acme-local/antibody.toml` is a complete example. It contains:
-- the anchor;
-- the targets with their code hashes;
-- the invariants runtime code and its hash;
-- the severity per invariant;
-- the impact config;
-- the attacker capabilities;
-- the payout table, bond, reveal window, deadline and disclosure delay.
-
-Then:
+`fixtures/acme-local/antibody.toml` is a complete example: the anchor, the targets and their code hashes,
+the rules' code and the severity of each slot, the impact prices, the proofs' capabilities, and the
+settlement terms (payouts, bond, instant cap and budget, windows, the gap lane, known issues, the pause
+policy).
 
 ```bash
-antibody manifest antibody.toml --out manifest.json           # prints its sha256: the committed hash
-antibody keygen x25519 --out project.x25519.json              # findings are re-encrypted to this key; keep it secret
-antibody --account acme.testnet program create --manifest manifest.json --escrow 25000 \
-         --project-key project.x25519.json --guardian guardian.antibody-hq.testnet
+antibody manifest antibody.toml --out manifest.json         # prints its sha256: the committed hash
+antibody invariants validate --manifest manifest.json      # as creation and activation will check it; nothing sent
+antibody invariants strength --project <foundry dir> --test <your strength test> --mutate src/X.sol   # optional
+antibody keygen x25519 --out project.x25519.json            # findings are re-encrypted to it; keep it secret
+antibody --account you.testnet program create --manifest manifest.json --escrow <tokens> --project-key project.x25519.json
 ```
 
-`program create` uploads the manifest, escrows the tUSD and commits the manifest hash in one transaction.
-For a Sepolia anchor, near-antibody checks the anchor hash against the light client right away, and
-refunds the escrow if they differ.
+`program create` uploads the manifest with FastFS, escrows the tokens and commits the manifest hash;
+near-antibody checks the anchor against the light client.
 
-## 4. Declare known issues, then open
+## 4. Activate, declare known issues, open
 
 ```bash
-antibody --account acme.testnet program known --program <id> --bundle known-issue.json   # same TEE verification
-antibody --account acme.testnet program open --program <id>
+antibody --account you.testnet program activate --program <id>   # pins the base witness; the TEE checks the rules hold at the anchor
+antibody --account you.testnet program known --program <id> --bundle known-issue.json   # sealed, verified like any proof
+antibody --account you.testnet program open --program <id>
 ```
 
-Known issues claim their keys at t0. Nothing can be added after opening, and nothing can be claimed without a
-PoC that verifies.
+Known issues count only once T1-confirmed, and nothing is added after opening.
 
-## 5. Read and reward findings
+## 5. Findings
 
-```bash
-antibody --account acme.testnet decrypt --commit <id> --project-key project.x25519.json --out finding-<id>/
-antibody --account acme.testnet top-up --commit <id> --amount 500    # pay more, never less
-```
-
-You can decrypt any Violation; non-violations are never disclosed to you before disclosure time.
+A Violation's content key is wrapped to your project key, so you can read what you pay for;
+`antibody --account you.testnet program show --program <id>` lists every commit with its verdict.
+`program top-up` adds escrow. A Critical in your pause policy makes near-guardian sign pause permits for
+every registered chain; anyone relays them.
 
 ## 6. Ship a fix (rounds)
 
-When you fix a bug, commit the fix as a code override at the same anchor. Then a second, different bug
-in the same function can be found and paid (docs/rounds.md).
+Commit the fix as code at the same anchor; near-antibody has the TEE check it, every paid proof is
+re-run against it, and the release gate decides what may ship (docs/rounds.md).
 
 ```bash
-antibody manifest-round --base manifest.json --round 1 \
-         --override <target address>=<fixed runtime code hex file> --out round1.json
-antibody --account acme.testnet program round-propose --program <id> --manifest round1.json
-antibody --account acme.testnet program round-rerun --commit <id> --project-key project.x25519.json   # each claimed finding
-antibody --account acme.testnet program round-open --program <id>
+antibody manifest-round --base manifest.json --round 1 --override <target>=<fixed runtime code hex> \
+  [--invariants-code <new rules> --add-slot <bit>:<name>:<severity>] [--rule-strength strength.json] --out round1.json
+antibody --account you.testnet round propose --program <id> --manifest round1.json --release <proxy>:<implementation>:<code hash>
+antibody round rerun --commit <id>       # anyone; the keeper bot re-runs every eligible commit
+antibody round open --program <id>       # once the round's windows pass
 ```
 
-- **What the round may change.** Only target code. The contract rejects any other change to the
-  committed manifest.
-- **New commits** verify against the fix as soon as you propose it.
-- **Re-runs.** Each re-run executes the finder's own PoC against the fix in the TEE. Keys whose PoCs no
-  longer break are released when the round opens; the rest stay with their finders.
+- **What a round may change:** target code, and new slots appended to the rules. Everything else stays
+  byte-identical.
+- **The release gate:** every paid proof re-run against the fix and failing, the canaries passing, no
+  Critical or High key open. Then near-guardian signs a release permit per proxy and chain, for exactly
+  the code the re-runs ran.
 
 ## 7. Close
 
 ```bash
-antibody program disclose --program <id>           # anyone, after deadline + disclosure delay
-antibody --account acme.testnet program withdraw-escrow --program <id>
+antibody --account you.testnet program exit --program <id>   # after the deadline and its grace
 ```
 
-Disclosure makes every content key and `k_program` public, so anyone can re-verify every receipt and every
-duplicate decision. Escrow stays locked while any commit is pending.
+The rest of the escrow returns to you; nothing in flight is left behind (property 6).
