@@ -707,6 +707,9 @@ fn round_rules(base: &Manifest, round: &Manifest, n: u32) -> Result<(), String> 
     }
     r.round = 0;
     r.overrides.clear();
+    // A round's rule strength is measured at its own code (docs/rule-strength.md); nothing reads it here.
+    r.rule_strength = None;
+    b.rule_strength = None;
     // New invariants (a new contract with more slots) are allowed; the rest must be byte-identical.
     let added_slots = r.invariants.slots.len() > b.invariants.slots.len();
     if added_slots {
@@ -720,3 +723,19 @@ fn round_rules(base: &Manifest, round: &Manifest, n: u32) -> Result<(), String> 
     Ok(())
 }
 
+
+#[cfg(test)]
+mod round_rules_tests {
+    use super::*;
+
+    #[test]
+    fn a_round_may_carry_its_own_rule_strength_but_not_change_the_deployment() {
+        let base: Manifest = serde_json::from_str(include_str!("../tests/data/minimal_manifest.json")).unwrap();
+        let mut round = base.clone();
+        round.round = 1;
+        round.rule_strength = Some(serde_json::json!({"statement": "caught 8 of 28 mutants"}));
+        assert_eq!(round_rules(&base, &round, 1), Ok(()));
+        round.deploy = Some(crate::manifest::Deploy { txs: vec![] });
+        assert!(round_rules(&base, &round, 1).is_err(), "a round cannot change the deployment");
+    }
+}
