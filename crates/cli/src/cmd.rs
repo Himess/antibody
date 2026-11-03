@@ -835,6 +835,10 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
     let agent = !me["agent"].is_null();
     let from_credit = agent || u128_of(&me["tokens"]) >= bond;
     let (commit_id, summary) = if from_credit {
+        // The commit's storage comes from NEAR credit: an agent's owner's, anyone else's own.
+        if !agent {
+            ensure_near_credit(ctx, &signer, min_near_credit())?;
+        }
         // near-antibody burns about 11 Tgas on a commit (measured on testnet).
         let out = ctx.near.function_call(&signer, ctx.hunter_calls(), "commit",
             json!({"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}), 25, 0)?;
