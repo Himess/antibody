@@ -1144,7 +1144,9 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
     // pause policy covers gets its ticket (spec §10.1): one per round,
     // T1-confirmed, a key in the pause slots. Ineligible commits are refused by near-antibody.
     let p = ctx.program(program)?;
-    if !p["ticket_rounds"].as_array().is_some_and(|r| r.contains(&p["round"])) {
+    // A program with no pause slots (the practice program) never gets one: no call is wasted asking.
+    let pauses = p["params"]["pause_slots"].as_array().is_some_and(|s| !s.is_empty());
+    if pauses && !p["ticket_rounds"].as_array().is_some_and(|r| r.contains(&p["round"])) {
         for c in list_commits(ctx, program)? {
             let st = state_label(&c["state"]);
             if c["round"] == p["round"] && c["ticket"] == json!(false) && (st == "Holder" || st == "Done:Paid") {
