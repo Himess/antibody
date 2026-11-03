@@ -225,6 +225,33 @@ pub fn build_submission_from_base(base_envelope: &[u8], manifest_json: &[u8], bu
     Ok((bytes, meta, receipt))
 }
 
+/// Fork mode (docs/fork-mode.md): a manifest's deployment run at its anchor (state from `pool`), and the
+/// code it left at each of `addresses` (hash and bytes; empty where there is none), so a project can
+/// write its targets' code hashes and take its invariants' runtime code from a deployed instance.
+pub fn deployed_code(pool: &Pool, manifest: &Manifest, addresses: &[Address]) -> Result<Vec<(B256, Bytes)>> {
+    use revm::DatabaseRef;
+    let header = fetch_header(pool, manifest.anchor.block_number)?;
+    let spec = program_chain_spec(manifest.anchor.chain_id).map_err(|e| eyre!("{e}"))?;
+    let fdb = FetchingDb::new(pool.clone(), manifest.anchor.block_number, Seed::default());
+    let ddb = deployed(&header, manifest, spec, &fdb).map_err(|e| eyre!("the deployment fails at the anchor: {:?}", classify(&e)))?;
+    addresses
+        .iter()
+        .map(|a| {
+            let info = ddb.basic_ref(*a).map_err(|e| eyre!("{a}: {e}"))?;
+            Ok(match info {
+                Some(i) if i.code_hash != KECCAK_EMPTY => {
+                    let code = match i.code {
+                        Some(c) => c,
+                        None => ddb.code_by_hash_ref(i.code_hash).map_err(|e| eyre!("{a}: {e}"))?,
+                    };
+                    (i.code_hash, code.original_bytes())
+                }
+                _ => (KECCAK_EMPTY, Bytes::new()),
+            })
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BaseBuildMeta {
     pub anchor_block: u64,

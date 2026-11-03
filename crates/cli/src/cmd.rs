@@ -1004,6 +1004,12 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
 
 /// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code
 /// file)` replaces that target's runtime code at the same anchor (docs/rounds.md).
+/// Fork mode (docs/fork-mode.md): a manifest's deployment run at its anchor, from the Ethereum RPC, and
+/// the code it left at each address (hash and bytes; empty where there is none).
+pub fn deployed_code(ctx: &Ctx, m: &Manifest, addresses: &[alloy_primitives::Address]) -> Result<Vec<(B256, alloy_primitives::Bytes)>> {
+    antibody_witness::program::deployed_code(&ctx.eth_pool()?, m, addresses)
+}
+
 /// What a round manifest commits of a rule strength report (docs/rule-strength.md).
 pub fn rule_strength_summary(report: &Path) -> Result<Value> {
     let bytes = std::fs::read(report)?;
