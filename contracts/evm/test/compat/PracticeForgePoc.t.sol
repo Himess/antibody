@@ -26,12 +26,14 @@ contract PracticeForgePoc {
         factory = f == address(0) ? new PracticeFactory{value: 24 ether}(24) : PracticeFactory(f);
     }
 
-    /// The tutorial proof as a hunter would write it: one call, as their own sender, to vault 3.
+    /// The tutorial proof as a hunter would write it: one call, as their own sender, to vault 3. The
+    /// vault's address is read first: a prank applies to the next call, a view call included.
     function test_sweepMyVault() public {
         address me = address(0xA11CE);
+        PracticeVault vault = PracticeVault(payable(factory.vaultAt(3)));
         vm.deal(me, 0.01 ether);
         vm.prank(me, me);
-        PracticeVault(payable(factory.vaultAt(3))).sweep(payable(me));
+        vault.sweep(payable(me));
         require(me.balance > 0.01 ether, "the vault's ether reached me");
     }
 }
