@@ -139,6 +139,7 @@ def tokens(raw, decimals=6):
 
 def report(s):
     """The published table: one row per run, read from the chain, and the totals."""
+    d, sym = s.get("token_decimals", 6), s.get("token_symbol", "tUSD")
     lines = [f"# Measured agent runs: {s['network']}, {s['started']}", "",
              "An off-the-shelf agent (Claude Code, no built-in tools) with only Antibody's MCP server completes the practice "
              "program's loop with the tutorial proof (a public, textbook bug). This measures completing the loop: sealing, "
@@ -146,14 +147,14 @@ def report(s):
              f"- Runs: {s['runs']}; succeeded: {s['succeeded']} ({s['success_rate'] * 100:.0f}%)",
              f"- Wall time of a successful run: median {s['seconds']['median']} s (min {s['seconds']['min']}, max {s['seconds']['max']})",
              f"- Verification spent (all runs, NEAR, paid by the vending contract): {near(s['verification_spent_yocto_total'])}",
-             f"- Paid (all runs): {tokens(s['paid_raw_total'])}; bonds lost: {tokens(s['bonds_lost_total'])}",
+             f"- Paid (all runs): {tokens(s['paid_raw_total'], d)} {sym}; bonds lost: {tokens(s['bonds_lost_total'], d)} {sym}",
              f"- Agent cost (all runs, USD, as Claude Code reports it): {s['cost_usd_total']}; models: {', '.join(s['models']) or '-'}", "",
-             "| Run | Success | Final state | Seconds | Tool calls | Verification (NEAR) | Bonds lost | Paid | Net tokens | Cost (USD) |",
+             f"| Run | Success | Final state | Seconds | Tool calls | Verification (NEAR) | Bonds lost ({sym}) | Paid ({sym}) | Net ({sym}) | Cost (USD) |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for r in s["records"]:
         lines.append(f"| {r['run']} | {'yes' if r['success'] else 'no'} | {', '.join(r['states']) or '-'} | {r['seconds']} | "
                      f"{', '.join(t.removeprefix('mcp__antibody__') for t in r['tool_calls']) or '-'} | {near(r['verification_spent_yocto'])} | "
-                     f"{tokens(r['bonds_lost'])} | {tokens(r['paid_raw'])} | {tokens(r['net_tokens'])} | {r['cost_usd']} |")
+                     f"{tokens(r['bonds_lost'], d)} | {tokens(r['paid_raw'], d)} | {tokens(r['net_tokens'], d)} | {r['cost_usd']} |")
     lines += ["", "Full transcripts: `logs/run-NN.jsonl` (Claude Code's stream-json, local paths replaced).", "",
               "The prompt, the same for every run:", "", "> " + s["prompt"].replace("\n", " "), ""]
     return "\n".join(lines)
@@ -201,6 +202,7 @@ def main():
     secs = [r["seconds"] for r in ok]
     summary = {
         "network": a.network, "practice": practice, "runs": len(records), "succeeded": len(ok),
+        "token_decimals": dep.get("token_decimals", 6), "token_symbol": dep.get("token_symbol", "tUSD"),
         "success_rate": round(len(ok) / len(records), 3) if records else 0,
         "seconds": {"median": statistics.median(secs) if secs else None, "max": max(secs) if secs else None, "min": min(secs) if secs else None},
         "verification_spent_yocto_total": str(sum(int(r["verification_spent_yocto"] or 0) for r in records)),
