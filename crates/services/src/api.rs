@@ -269,10 +269,16 @@ async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
         // sealed until disclosure.
         let run = c["run"].as_u64().and_then(|r| cmd::run(&ctx, r).ok()).map(|r| cmd::run_view(&r)).unwrap_or(Value::Null);
         let sealed = !events.iter().any(|e| e["event"] == json!("disclosed"));
+        let mut check = vec![format!("antibody status --commit {id}"), "antibody tee check --request-id <the run's OutLayer request>".to_string()];
+        // OutLayer's own verifier re-checks the run's quote from the transaction that requested it
+        // (real TEE runs only: the sandbox's quotes are MOCK).
+        let requested_in = events.iter().find(|e| e["event"] == "run_requested" && e["data"]["run_id"] == c["run"]).and_then(|e| e["tx"].as_str());
+        if let (Some(tx), false) = (requested_in, a.near.network == "sandbox") {
+            check.push(format!("outlayer-verify tx {tx}"));
+        }
         Ok(json!({"commit": c, "row": row, "events": events,
                   "proof_card": {"facts": {"kind": run["kind"], "keys": run["keys"], "impact_usd_micro": run["impact_usd_micro"], "tier": run["tier"]},
-                                 "receipt_sha256": run["receipt_sha256"], "sealed_until_disclosure": sealed,
-                                 "check": [format!("antibody status --commit {id}"), "antibody tee check --request-id <the run's OutLayer request>".to_string()]}}))
+                                 "receipt_sha256": run["receipt_sha256"], "sealed_until_disclosure": sealed, "check": check}}))
     })
     .await
 }

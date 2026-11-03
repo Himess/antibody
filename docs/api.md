@@ -33,7 +33,7 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
 | `GET /v1/programs/{id}` | The program, its rules (each slot's severity and payout, the payout table, bond and instant terms, escrow coverage, the sealed known-issue count, the anchor and its check), its meta, its record (bait metrics), its audit, its commits and its events |
 | `GET /v1/programs/{id}/feed` | The sealed feed: who committed when, the state, the verdict (kind, tier, keys) and the payout. Never the PoC |
-| `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links, and its proof card (the facts, the receipt hash, whether its proof is still sealed, how to check it). Its `run_requested` events name the transactions that carried the sealed blob: `antibody program read --api` finds the blob there |
+| `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links, and its proof card (the facts, the receipt hash, whether its proof is still sealed, how to check it: `antibody status`, `antibody tee check`, and on testnet `outlayer-verify tx <the transaction that requested the run>`). Its `run_requested` events name the transactions that carried the sealed blob: `antibody program read --api` finds the blob there |
 | `GET /v1/runs/{id}` | One verification run: kind, keys, impact, tier |
 | `GET /v1/accounts/{id}` | Credit at near-antibody, the agent statement (bonds, verification spend, payouts, containment events), the token balance |
 | `GET /v1/leaderboard` | Paid findings and payouts by beneficiary, with duplicates and forfeited commits |

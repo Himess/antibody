@@ -8,6 +8,7 @@ sent; the mainnet explainer (`/v1/mock/mainnet`) is recorded data, marked `"mock
 | **The anchor block** | The Ethereum light client near-antibody reads at program creation (on testnet, `client-eth2.sepolia.testnet` and its single relayer). An anchor it cannot confirm is labelled project-attested | `antibody judge` shows each program's anchor and its check; compare the hash with any Sepolia RPC |
 | **State at the anchor** | Nothing: Merkle-Patricia proofs, verified inside the verifier against the anchor's state root, every trie node's kind validated (SA-3) | `antibody check` re-runs any proof locally |
 | **EVM semantics** | That revm 38 and reth 2.2, under the program's committed `evm_spec`, match the committed rules | Native and wasm runs are byte-identical; the receipt hash is reproducible |
+| **The verifier build** | Nothing beyond the source: a program pins the wasm's sha256 | `make verifier-wasm` (or `Dockerfile.verifier`) rebuilds it reproducibly and prints the hash to compare with the program's `wasm_hash` |
 | **Who runs the verifier** | **T0:** OutLayer's operator delivers the TEE worker's output. **T1:** the run's Intel TDX quote, verified on NEAR (below) | `antibody tee check --request-id <id>`, for any run; after disclosure, recompute every verdict |
 | **The verifier key (sealed proofs)** | OutLayer's keystore, which derives the program's key for the pinned wasm called by near-antibody | The verifier never outputs the seed; the program's sealing key counts only once its activation run is T1-confirmed |
 | **Confidentiality of proofs** | The TEE and the keystore until disclosure; the project reads only Violations it pays for | Disclosure publishes every content key: check nothing leaked earlier |
@@ -37,7 +38,10 @@ also needs an independent second run that agrees, and waits its challenge window
 
 **Evidence (no funds needed).** `antibody tee check --request-id 6496` checks a public OutLayer run end
 to end: the report_data binds the task, `verify_quote` (a free view call) returns `Verified` /
-`UpToDate`, and the worker image is in OutLayer's approved measurements. `fixtures/t1/` records it, and
+`UpToDate`, and the worker image is in OutLayer's approved measurements. Independently of Antibody's
+code, OutLayer's open-source `outlayer-verify` re-runs the same checks with Intel's root compiled in:
+`outlayer-verify job <request id> --network testnet`, or `outlayer-verify tx <the transaction that
+requested the run>` (testnet runs only; the sandbox's quotes are MOCK). `fixtures/t1/` records it, and
 the contract test `t1_accepts_a_real_quote_only_for_the_run_it_binds` accepts it only for the run it
 binds.
 
