@@ -50,6 +50,12 @@ jobs:
           java-version: 21
       - name: quint 0.33.1
         run: npm i -g @informalsystems/quint@0.33.1
+      # quint downloads its Rust evaluator and Apalache from GitHub releases on first use; kept between
+      # runs so an API rate limit cannot fail the job.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.quint
+          key: ${{ runner.os }}-quint-0.33.1
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
