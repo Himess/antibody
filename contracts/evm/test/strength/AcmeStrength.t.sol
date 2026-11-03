@@ -38,6 +38,11 @@ contract AcmeHandler {
         return lo + x % (hi - lo + 1);
     }
 
+    /// Usually within the actors' balances; one time in five far beyond them, so a transfer fails.
+    function _amount(uint256 x, uint256 lo, uint256 hi) internal pure returns (uint256) {
+        return x % 5 == 0 ? _bound(x, 1e24, 1e25) : _bound(x, lo, hi);
+    }
+
     function _gcd(uint256 a, uint256 b) internal pure returns (uint256) {
         while (b != 0) (a, b) = (b, a % b);
         return a;
@@ -47,7 +52,7 @@ contract AcmeHandler {
 
     function supply(uint256 s, uint256 amount) external {
         VM.prank(_actor(s));
-        d.lend.supply(_bound(amount, 1e18, 100_000e18));
+        d.lend.supply(_amount(amount, 1e18, 100_000e18));
     }
 
     function withdrawSupply(uint256 s, uint256 amount) external {
@@ -57,7 +62,7 @@ contract AcmeHandler {
 
     function depositCollateral(uint256 s, uint256 amount) external {
         VM.prank(_actor(s));
-        d.lend.depositCollateral(_bound(amount, 1e17, 50e18));
+        d.lend.depositCollateral(_amount(amount, 1e17, 50e18));
     }
 
     function withdrawCollateral(uint256 s, uint256 amount) external {
@@ -70,23 +75,41 @@ contract AcmeHandler {
         d.lend.borrow(_bound(amount, 1e18, 100_000e18));
     }
 
+    /// Up to the most the protocol itself would lend against the actor's collateral, at its own price.
+    function borrowToTheLimit(uint256 s, uint256 pct) external {
+        address a = _actor(s);
+        uint256 limit = d.lend.collateralOf(a) * d.lend.collateralPrice() / 1e18 * 8_000 / 10_000;
+        uint256 debt = d.lend.debtOf(a);
+        if (limit <= debt) return;
+        VM.prank(a);
+        d.lend.borrow((limit - debt) * _bound(pct, 50, 101) / 100);
+    }
+
+    function withdrawCollateralShare(uint256 s, uint256 pct) external {
+        address a = _actor(s);
+        uint256 amount = d.lend.collateralOf(a) * _bound(pct, 1, 100) / 100;
+        if (amount == 0) return;
+        VM.prank(a);
+        d.lend.withdrawCollateral(amount);
+    }
+
     function repay(uint256 s, uint256 amount) external {
         VM.prank(_actor(s));
-        d.lend.repay(_bound(amount, 1e18, 100_000e18));
+        d.lend.repay(_amount(amount, 1e18, 100_000e18));
     }
 
     // ---- AcmeVault
 
     function deposit(uint256 s, uint256 amount) external {
         VM.prank(_actor(s));
-        d.vault.deposit(_bound(amount, 1e18, 100_000e18));
+        d.vault.deposit(_amount(amount, 1e18, 100_000e18));
     }
 
     /// @dev `from` may be another actor or the protected saver: only `from` itself may deposit its funds.
     function depositFor(uint256 s, uint256 f, uint256 amount) external {
         address from = f % 4 == 3 ? address(d.saver) : _actor(f);
         VM.prank(_actor(s));
-        d.vault.depositFor(from, _bound(amount, 1e18, 5_000e18));
+        d.vault.depositFor(from, _amount(amount, 1e18, 5_000e18));
     }
 
     /// @dev An exact withdrawal: `assets * totalSupply` divides by `totalAssets`, so no share rounds
@@ -104,7 +127,7 @@ contract AcmeHandler {
 
     function donateYield(uint256 s, uint256 amount) external {
         VM.prank(_actor(s));
-        d.vault.donateYield(_bound(amount, 1e18, 10_000e18));
+        d.vault.donateYield(_amount(amount, 1e18, 10_000e18));
     }
 
     function collectFees(uint256 s) external {
@@ -128,7 +151,7 @@ contract AcmeHandler {
     function swap(uint256 s, bool ethIn, uint256 amount) external {
         address a = _actor(s);
         VM.prank(a);
-        d.pool.swap(ethIn ? address(d.eth) : address(d.usd), _bound(amount, 1e15, ethIn ? 20e18 : 40_000e18), 0, a);
+        d.pool.swap(ethIn ? address(d.eth) : address(d.usd), _bound(amount, 1e15, ethIn ? 40e18 : 100_000e18), 0, a);
     }
 
     function sync(uint256 s) external {
