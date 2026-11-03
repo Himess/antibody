@@ -128,6 +128,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          # Only the binaries and the verifier: a Docker build's record is an artifact of the run too.
+          pattern: antibody-*
           path: dist
           merge-multiple: true
       - run: ls -l dist && cat dist/*.sha256
