@@ -30,6 +30,9 @@ applied through `[patch.crates-io]` in the workspace `Cargo.toml`.
 - **Why:** revm's jump tables are `BitVec`s inside the witnesses the verifier decodes from untrusted
   input. The parser fuzz test (`a_mutated_witness_is_refused_or_decodes`) found a mutated witness that
   panicked while decoding; in wasm a panic is a trap, not a typed `InvalidPoC`.
+- **Manifest:** a `[lints.rust]` table allows the three lints today's compiler raises on the unchanged
+  code (about 300 warnings per build; a path dependency's warnings are not capped like a registry
+  crate's).
 - **Everything else:** unchanged, including the serialized format.
 
 ## revm-bytecode 10.0.0

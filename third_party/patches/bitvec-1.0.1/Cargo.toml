@@ -113,3 +113,10 @@ repository = "bitvecto-rs/bitvec"
 
 [badges.maintenance]
 status = "passively-maintained"
+
+# Antibody patch: a path dependency's warnings are not capped like a registry crate's; these are the
+# lints today's compiler raises on the unchanged upstream code.
+[lints.rust]
+unexpected_cfgs = "allow"
+mismatched_lifetime_syntaxes = "allow"
+unused_imports = "allow"
