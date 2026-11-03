@@ -514,6 +514,25 @@ fn above_cap(p: &Value, v: &Value) -> bool {
 }
 
 /// Waits until run `run_id` is T1 (the relayer thread relays its MOCK attestation).
+/// When an event happened on NEAR: the timestamp (ns) of the block holding the receipt that emitted it.
+fn event_time_ns(near: &Near, hash: &str, signer: &str, event: &str) -> Result<u128> {
+    let tx = near.tx_status(hash, signer)?;
+    let marker = format!("\"event\":\"{event}\"");
+    let block = tx["receipts_outcome"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|r| r["outcome"]["logs"].as_array().into_iter().flatten().any(|l| l.as_str().is_some_and(|l| l.contains(&marker))))
+        .and_then(|r| r["block_hash"].as_str().map(String::from))
+        .ok_or_else(|| eyre!("transaction {hash} emitted no {event} event"))?;
+    let b = near.call("block", json!({"block_id": block}))?;
+    b["header"]["timestamp_nanosec"].as_str().and_then(|t| t.parse().ok()).ok_or_else(|| eyre!("block {block} has no timestamp"))
+}
+
+fn now_ns() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+}
+
 fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
     let mut last = Value::Null;
     wait_for(&format!("T1 for run {run_id}"), Duration::from_secs(120), || {
@@ -590,8 +609,14 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
     let opened = cmd::round_open(keeper, pid)?["round_opened"].clone();
     // Release permits beyond one call's gas are queued at near-guardian; the keeper asks for them.
     let k2 = cmd::keeper(keeper, pid)?;
-    let summary = format!("{} re-runs ({} fixed), release gate {}, {} keys released, {} carried",
-        reruns.len(), reruns.iter().filter(|r| r["kind"] == "NoViolation").count(), opened["release_gate"], opened["released"], opened["carried"]);
+    // "Released" keys are open to new proofs in the next round; "carried" ones stay held (still broken).
+    // The release gate is the code's: only when it holds does near-guardian sign release permits.
+    let n = |v: &Value| v.as_u64().unwrap_or(0);
+    let key = |k: u64| if k == 1 { "key" } else { "keys" };
+    let summary = format!("{} re-runs ({} fixed); release gate {} ({}); {} {} released, {} carried",
+        reruns.len(), reruns.iter().filter(|r| r["kind"] == "NoViolation").count(), opened["release_gate"],
+        if opened["release_gate"] == json!(true) { "release permits signed" } else { "no release permit" },
+        n(&opened["released"]), key(n(&opened["released"])), n(&opened["carried"]));
     Ok(json!({"round": round, "manifest_sha256": proposed["manifest_sha256"], "check_round_run": check, "canaries_ok": rc["canaries_ok"],
               "releases": rel, "reruns": reruns, "opened": opened, "summary": summary, "keeper": [k, k2], "seconds": t.elapsed().as_secs_f64()}))
 }
@@ -862,36 +887,49 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::agent_key_add(&ctx_of("agent-a"), 2.0, &agent_key)?;
     let state_a = a.work.join("state/agent-a-mcp");
     std::fs::create_dir_all(&state_a)?;
-    let t = Instant::now();
     let sandbox_net = ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030"];
     let mcp = mcp_submit(&a.antibody_bin, &sandbox_net, &dep_file, &acct("agent-a"), &agent_key, Some("http://127.0.0.1:8545"), &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
-    let t_verdict = t.elapsed().as_secs_f64();
+    let verdict_ns = now_ns();
     results["mcp"] = json!({"tools": mcp["mcp_tools"], "tool_names": mcp["tool_names"], "commit_id": a_commit});
 
     step("The one moment: A's verdict is T1, A is paid in seconds, and both chains pause");
     wait_t1(&root_ctx, root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default())?;
-    let t_t1 = t.elapsed().as_secs_f64();
+    let t1_ns = now_ns();
     let keeper_a = cmd::keeper(&ctx_of("keeper"), pid)?;
-    let t_paid = t.elapsed().as_secs_f64();
     let paid_a = cmd::paid_of(&root_ctx.commit(a_commit)?);
-    let mut paused_at: BTreeMap<String, f64> = BTreeMap::new();
+    let mut confirmed: BTreeMap<String, Value> = BTreeMap::new();
     wait_for("pause() on both chains", Duration::from_secs(120), || {
         let st: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         for v in st.values() {
             if v["kind"] == "pause" && v["status"] == "confirmed" && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true)) {
-                paused_at.entry(v["chain_id"].to_string()).or_insert_with(|| t.elapsed().as_secs_f64());
+                confirmed.entry(v["chain_id"].to_string()).or_insert_with(|| v.clone());
             }
         }
-        paused_at.len() == 2
+        confirmed.len() == 2
     })?;
+    // Each moment on its own clock: the commit and the payment at their NEAR blocks, the verdict and T1
+    // when the demo saw them (it polls every 0.5 s), each pause when its chain's receipt came back.
+    let commit_tx = mcp["result"]["commit"]["tx"]["tx"].as_str().unwrap_or_default().to_string();
+    let committed_ns = event_time_ns(&near, &commit_tx, &acct("agent-a"), "commit")?;
+    let pay_tx = keeper_a["steps"].as_array().into_iter().flatten().find(|s| s["paid"] == json!(a_commit)).and_then(|s| s["tx"].as_str()).unwrap_or_default().to_string();
+    let paid_ns = event_time_ns(&near, &pay_tx, &acct("keeper"), "paid")?;
+    let since = |ns: u128| ns.saturating_sub(committed_ns) as f64 / 1e9;
+    let ms = |v: &Value, k: &str| v[k].as_u64().map(|m| since(m as u128 * 1_000_000));
+    let (t_verdict, t_t1, t_paid) = (since(verdict_ns), since(t1_ns), since(paid_ns));
+    let at = |c: &str, k: &str| confirmed.get(c).and_then(|v| ms(v, k));
+    let signed = |c: &str| confirmed.get(c).and_then(|v| v["signed_ns"].as_u64()).map(|n| since(n as u128));
     let relayed: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     let paused_both = evm_a.paused(dep_a["AcmeGuard"].as_str().unwrap_or_default())? && Evm::new("http://127.0.0.1:8546").paused(dep_b["AcmeGuard"].as_str().unwrap_or_default())?;
-    println!("A: commit→verdict {t_verdict:.1}s, T1 at {t_t1:.1}s, paid {} tUSD at {t_paid:.1}s; paused on 31337 at {:.1}s and 31338 at {:.1}s",
-             paid_a / ONE_TUSD, paused_at.get("31337").copied().unwrap_or(-1.0), paused_at.get("31338").copied().unwrap_or(-1.0));
-    rows.push(("A (MCP)".into(), a_commit, t_verdict, json!({"commit": mcp["result"]["commit"]["tx"]["tx"], "reveal": mcp["result"]["reveal"]["tx"]["tx"]})));
+    println!("A, from its commit's block: verdict {t_verdict:.1}s, T1 {t_t1:.1}s, paid {} tUSD at {t_paid:.1}s (its block); pause permits signed at {:.1}s and {:.1}s; paused on 31337 at {:.1}s and 31338 at {:.1}s",
+             paid_a / ONE_TUSD, signed("31337").unwrap_or(-1.0), signed("31338").unwrap_or(-1.0),
+             at("31337", "confirmed_ms").unwrap_or(-1.0), at("31338", "confirmed_ms").unwrap_or(-1.0));
+    rows.push(("A (MCP)".into(), a_commit, t_verdict, json!({"commit": commit_tx, "reveal": mcp["result"]["reveal"]["tx"]["tx"]})));
     results["one_moment"] = json!({"commit": a_commit, "seconds_from_commit": {"verdict": t_verdict, "t1": t_t1, "paid": t_paid,
-                                   "paused_31337": paused_at.get("31337"), "paused_31338": paused_at.get("31338")},
+                                   "permit_signed_31337": signed("31337"), "permit_signed_31338": signed("31338"),
+                                   "paused_31337": at("31337", "confirmed_ms"), "paused_31338": at("31338", "confirmed_ms")},
+                                   "clock": "from the commit's NEAR block: the payment at its NEAR block, each permit when near-guardian signed it, each pause when its chain's receipt came back; the verdict and T1 when the demo saw them (it polls every 0.5 s)",
+                                   "pay_tx": pay_tx,
                                    "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                    "paused_both": paused_both, "keeper": keeper_a, "permits": relayed});
 
@@ -1013,7 +1051,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         for (proxy, fix) in [("AcmeLend", "AcmeLendFinal"), ("AcmeVault", "AcmeVaultFixed")] {
             let word = evm.call("eth_getStorageAt", json!([dep[proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
             let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
-            released.push(json!({"chain_id": chain, "proxy": proxy, "implementation": now, "expected": dep[fix],
+            released.push(json!({"chain_id": chain, "rpc": rpc, "proxy": proxy, "address": dep[proxy], "implementation": now, "expected": dep[fix],
                                  "ok": now.eq_ignore_ascii_case(dep[fix].as_str().unwrap_or_default())}));
         }
         // B's exploit, the unguarded fee sweep, against the released code.
