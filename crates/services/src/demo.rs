@@ -658,6 +658,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         rpc: Some("http://127.0.0.1:3030".into()),
         eth_rpc: None,
         practice: None,
+        release: None,
     };
     let dep_file = a.work.join("deployments.json");
     std::fs::write(&dep_file, serde_json::to_vec_pretty(&dep)?)?;
@@ -1111,6 +1112,10 @@ pub fn run(a: DemoArgs) -> Result<Value> {
              judged["programs"][0]["pauses"], judged["programs"][0]["releases"]);
     ok &= judge_ok;
     results["judge"] = judged;
+    // A versioned deployment record, as `antibody admin record-deployment` writes it.
+    let record = antibody_cli::judge::deployment_record(&judge, None)?;
+    ok &= record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
+    results["deployment_record"] = record;
 
     step("API: the indexer reads every block's events, then each endpoint answers once (docs/openapi.yaml's examples)");
     let services_dir = a.work.join("services/api");

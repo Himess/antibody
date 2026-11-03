@@ -265,6 +265,16 @@ enum AdminCmd {
         #[arg(long)]
         signer: String,
     },
+    /// A versioned deployment record: each contract's code hash and locked status, the pinned verifier
+    /// and the source commit, written to the deployments file (`release`) and to deployments/history/
+    RecordDeployment {
+        /// The source commit the deployment was built from
+        #[arg(long)]
+        git_commit: Option<String>,
+        /// The deployments file to update (default: deployments/near-<network>.json)
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -741,6 +751,19 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Call { contract, method, args, deposit_yocto, gas_tgas } => cmd::admin_call(&c, contract, method, args, *deposit_yocto, *gas_tgas),
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
+                AdminCmd::RecordDeployment { git_commit, out } => {
+                    let record = antibody_cli::judge::deployment_record(&c, git_commit.as_deref())?;
+                    let root = ctx::repo_root().unwrap_or_default();
+                    let path = out.clone().unwrap_or_else(|| root.join(format!("deployments/near-{}.json", cli.network)));
+                    let mut dep = serde_json::to_value(&c.dep)?;
+                    dep["release"] = record.clone();
+                    std::fs::write(&path, serde_json::to_string_pretty(&dep)? + "\n")?;
+                    let hist = root.join("deployments/history");
+                    std::fs::create_dir_all(&hist)?;
+                    let h = hist.join(format!("near-{}-{}.json", cli.network, record["recorded_at"]));
+                    std::fs::write(&h, serde_json::to_string_pretty(&record)? + "\n")?;
+                    Ok(json!({"deployments": path, "history": h, "release": record}))
+                }
             }
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),

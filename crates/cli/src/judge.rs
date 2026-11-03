@@ -77,6 +77,25 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value]) -> Result<Value> {
     }))
 }
 
+/// A versioned deployment record (`antibody admin record-deployment`): what runs where, as the chain
+/// shows it now. Each contract's code hash and whether it is locked, the verifier build programs pin
+/// for new programs, and the source commit the operator names.
+pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
+    let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.tusd)?];
+    if let Some(g) = &ctx.dep.guardian {
+        contracts.push(contract(ctx, "near-guardian", g)?);
+    }
+    if let Some(p) = &ctx.dep.practice {
+        contracts.push(contract(ctx, "practice vending", &p.vending)?);
+    }
+    let defaults = ctx.view("get_defaults", json!({}))?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    Ok(json!({"recorded_at": now, "network": ctx.near.network, "git_commit": git_commit,
+              "contracts": contracts.iter().map(|c| json!({"role": c["role"], "account": c["account"], "code_hash": c["code_hash"], "locked": c["locked"]})).collect::<Vec<_>>(),
+              "verifier": {"wasm_hash": defaults["verifier"]["wasm_hash"], "wasm_url": defaults["verifier"]["wasm_url"]},
+              "outlayer": defaults["outlayer"], "light_client": defaults["light_client"]}))
+}
+
 /// The whole view: one program with `only`, otherwise every program.
 pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
     let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.tusd)?];

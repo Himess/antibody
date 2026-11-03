@@ -28,6 +28,9 @@ pub struct Deployments {
     /// The practice program (docs/practice.md): `antibody try` needs only a name.
     #[serde(default)]
     pub practice: Option<PracticeDeployment>,
+    /// The versioned record of what is deployed (`antibody admin record-deployment`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
