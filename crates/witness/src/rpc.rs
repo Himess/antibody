@@ -48,12 +48,14 @@ impl Provider {
         self.post_via(&self.client, body)
     }
 
-    /// A client that opens a new connection per request: a load balancer then picks a backend afresh.
+    /// A client that opens a new HTTP/1.1 connection per request: a load balancer then picks a backend
+    /// afresh (one public endpoint sends HTTP/2 connections to fewer backends).
     fn unpooled() -> reqwest::blocking::Client {
         reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(60))
             .user_agent("antibody-witness/0.1")
             .pool_max_idle_per_host(0)
+            .http1_only()
             .build()
             .expect("http client")
     }
@@ -118,10 +120,10 @@ impl Provider {
                 // A load-balanced endpoint whose backends differ (some keep no recent state for proofs):
                 // ask again from a new client (a new connection and TLS session, which a balancer may
                 // pin to a backend), which may reach another backend.
-                if elsewhere < 10 && msg.contains("proof window") {
+                if elsewhere < 30 && msg.contains("proof window") {
                     self.stats.lock().unwrap().retries += 1;
                     fresh = Some(Self::unpooled());
-                    std::thread::sleep(Duration::from_millis(150));
+                    std::thread::sleep(Duration::from_millis(150 * (1 + elsewhere as u64 / 3).min(10)));
                     elsewhere += 1;
                     continue;
                 }
