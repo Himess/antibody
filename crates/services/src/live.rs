@@ -444,7 +444,7 @@ impl Live {
             let has = |a: &Value| evm.call("eth_getCode", json!([a, format!("{n:#x}")])).ok().and_then(|c| c.as_str().map(|c| c.len() > 2)).unwrap_or(false);
             last.iter().all(has).then_some(n)
         })?;
-        let b = evm.call("eth_getBlockByNumber", json!([format!("{n:#x}"), false]))?;
+        let b = evm.read("eth_getBlockByNumber", json!([format!("{n:#x}"), false]))?;
         println!("anchor: Sepolia block {n} ({})", b["hash"]);
         self.s["anchor"] = json!({"block": n, "hash": b["hash"], "timestamp": hex_u64(&b["timestamp"])?, "chosen_unix": unix()});
         Ok(())
@@ -458,7 +458,7 @@ impl Live {
         let n = self.s["anchor"]["block"].as_u64().ok_or_else(|| eyre!("no anchor"))?;
         let h: B256 = self.s["anchor"]["hash"].as_str().unwrap_or_default().parse()?;
         let evm = Evm::new(&self.proofs());
-        let head = hex_u64(&evm.call("eth_blockNumber", json!([]))?)?;
+        let head = hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
         if head > n + 90 {
             return Err(eyre!("the anchor {n} is {} blocks old, and public RPCs prove about 128 back: rerun for a new anchor", head - n));
         }
@@ -508,7 +508,7 @@ impl Live {
             let mut flags = Vec::new();
             for (target, fix) in round_code(round).0 {
                 let file = dir.join(format!("{fix}.runtime.hex"));
-                std::fs::write(&file, evm.call("eth_getCode", json!([dep_a[*fix], format!("{n:#x}")]))?.as_str().unwrap_or_default())?;
+                std::fs::write(&file, evm.read("eth_getCode", json!([dep_a[*fix], format!("{n:#x}")]))?.as_str().unwrap_or_default())?;
                 flags.push(format!("{}={}", dep_a[*target].as_str().unwrap_or_default(), file.display()));
             }
             let inv = dir.join("invariants.hex");
@@ -535,7 +535,7 @@ impl Live {
         built.insert("practice_base".into(), json!({"bytes": pb.len()}));
         built.insert("fork_base".into(), json!({"bytes": fb.len()}));
 
-        let head_after = hex_u64(&evm.call("eth_blockNumber", json!([]))?)?;
+        let head_after = hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
         println!("prebuilt {} witnesses in {:.0} s; the anchor is now {} blocks back", built.len(), t.elapsed().as_secs_f64(), head_after - n);
         self.s["prebuild"]["witnesses"] = Value::Object(built);
         self.s["prebuild"]["seconds"] = json!(t.elapsed().as_secs_f64());
@@ -919,7 +919,7 @@ impl Live {
         for (chain, rpc, dep) in [(SEPOLIA, self.sepolia(), &self.s["evm"]["acme"]), (BASE_SEPOLIA, self.a.base_rpc.clone(), &self.s["evm"]["acme_base_sepolia"])] {
             let evm = Evm::new(&rpc);
             for (proxy, fix) in round_code(2).1 {
-                let word = evm.call("eth_getStorageAt", json!([dep[*proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
+                let word = evm.read("eth_getStorageAt", json!([dep[*proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
                 let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
                 released.push(json!({"chain_id": chain, "rpc": rpc, "proxy": proxy, "address": dep[*proxy], "implementation": now, "expected": dep[*fix],
                                      "ok": now.eq_ignore_ascii_case(dep[*fix].as_str().unwrap_or_default())}));
@@ -1010,7 +1010,7 @@ impl Live {
         demo::wait_t1_for(&root_ctx, fact["run_id"].as_u64().unwrap_or_default(), T1_WAIT)?;
         cmd::program_open(&root_ctx, fpid)?;
         let vault3 = fm.targets.iter().find(|x| x.name == "vault-3").map(|x| format!("{:#x}", x.address)).ok_or_else(|| eyre!("no vault-3"))?;
-        let on_chain = Evm::new(&self.sepolia()).call("eth_getCode", json!([vault3, "latest"]))?;
+        let on_chain = Evm::new(&self.sepolia()).read("eth_getCode", json!([vault3, "latest"]))?;
         let bundle = self.a.work.join("fork-tutorial.bundle.json");
         std::fs::write(&bundle, serde_json::to_vec_pretty(&practice::tutorial_bundle(&vault3))?)?;
         // Agent C (its own proof forfeited its bond, not its NEAR) submits the tutorial proof.

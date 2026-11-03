@@ -40,6 +40,20 @@ impl Evm {
         Ok(v["result"].clone())
     }
 
+    /// A read, tried up to five times with backoff: a public RPC's load balancer sometimes answers from
+    /// a backend that is behind, or refuses a burst. Reads only (a failing `eth_call` fails five times).
+    pub fn read(&self, method: &str, params: Value) -> Result<Value> {
+        let mut last = None;
+        for attempt in 0..5u32 {
+            match self.call(method, params.clone()) {
+                Ok(v) => return Ok(v),
+                Err(e) => last = Some(e),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500 << attempt));
+        }
+        Err(last.unwrap_or_else(|| eyre!("{method}: no attempt")))
+    }
+
     pub fn chain_id(&self) -> Result<u64> {
         hex_u64(&self.call("eth_chainId", json!([]))?)
     }

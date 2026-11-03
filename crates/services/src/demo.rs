@@ -223,7 +223,7 @@ pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path,
 }
 
 pub(crate) fn code_hash(evm: &Evm, addr: &str, block: u64) -> Result<B256> {
-    let p = evm.call("eth_getProof", json!([addr, [], format!("{block:#x}")]))?;
+    let p = evm.read("eth_getProof", json!([addr, [], format!("{block:#x}")]))?;
     Ok(p["codeHash"].as_str().ok_or_else(|| eyre!("codeHash"))?.parse()?)
 }
 
