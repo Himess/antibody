@@ -180,11 +180,20 @@ verifier can open it, until disclosure.
 ### 4.4 Witnesses
 
 - **Base witness.** The anchor header, the invariants and proofs for every account, slot and code the
-  activation checks read (`antibody program activate` builds it by tracing them), published by the
-  project with FastFS and pinned at activation. Re-runs and duplicates all use it.
+  activation checks read (`antibody program activate` builds it by tracing them), plus the anchor's fee
+  recipient, which every transaction of a PoC credits. Published by the project with FastFS and pinned
+  at activation. Re-runs and duplicates all use it.
 - **Extra witness.** Proofs for any other account or slot the PoC touches. It travels inside the sealed
   blob, so disclosure releases everything a re-run needs. A sealed blob may also carry a complete program
   witness; the verifier merges an extra witness with the base and uses a complete one as it is.
+- **Senders.** A sender's address is a hash of the bundle's salt, so no salt reaches an account that
+  exists (that would take a keccak preimage). The verifier sets each sender's account (the endowment, no
+  code, nonce 0) and never reads it at the anchor, so no witness carries senders.
+- **Proofs that read only base state.** When a PoC reads nothing the base does not prove, its extra
+  witness proves nothing (the state root's digest alone) and the sealed blob is little more than the
+  bundle. The CLI tries this first: it fetches the pinned base and checks the PoC on it locally, so such
+  a proof needs no Ethereum RPC at all, however old the anchor. Otherwise it builds the extra witness from
+  an RPC at the anchor, which for an old anchor must keep historical state.
 
 The verifier fetches `near-tx` blobs and the base witness from at least two NEAR RPCs and accepts only
 bytes that match the committed hash.
