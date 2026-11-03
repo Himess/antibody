@@ -651,7 +651,9 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let dep = Deployments {
         network: "sandbox".into(),
         antibody: acct("bounty"),
-        tusd: acct("tusd"),
+        token: acct("tusd"),
+        token_decimals: None,
+        token_symbol: None,
         guardian: Some(acct("guardian")),
         outlayer: Some(acct("outlayer")),
         light_client: Some(acct("lc")),

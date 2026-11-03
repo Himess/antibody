@@ -94,12 +94,12 @@ enum RoundCmd {
 
 #[derive(Subcommand)]
 enum ProgramCmd {
-    /// Create a program: upload the manifest (v2), escrow tUSD and commit the manifest hash (one
+    /// Create a program: upload the manifest (v2), escrow the payout token and commit the manifest hash (one
     /// transaction); NEAR credit for storage is added first if needed
     Create {
         #[arg(long)]
         manifest: PathBuf,
-        /// Escrow in tUSD (e.g. 25000)
+        /// Escrow in the payout token's units (tUSD in the sandbox, wNEAR on testnet)
         #[arg(long)]
         escrow: String,
         #[arg(long)]
@@ -218,7 +218,7 @@ enum AgentCmd {
     Register {
         #[arg(long)]
         agent: String,
-        /// Total bonds the agent may have locked at once (tUSD)
+        /// Total bonds the agent may have locked at once (payout-token units)
         #[arg(long)]
         budget: String,
         #[arg(long)]
@@ -396,14 +396,14 @@ enum Cmd {
         #[arg(long, default_value = "0.5")]
         near: String,
     },
-    /// Move tUSD into your credit at near-antibody (bonds, and your agents' bonds, come from it)
+    /// Move payout tokens into your credit at near-antibody (bonds, and your agents' bonds, come from it)
     Deposit {
         #[arg(long)]
         amount: String,
     },
-    /// 500 tUSD per day (testnet token, no value)
+    /// Sandbox tUSD only: 500 per day (a test token with no value)
     Faucet,
-    /// Withdraw tUSD credit (payouts, returned bonds) to your wallet
+    /// Withdraw token credit (payouts, returned bonds) to your wallet
     Withdraw {
         #[arg(long)]
         amount: String,
@@ -768,17 +768,20 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Practice {
             cmd: PracticeCmd::Deploy { ref wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance },
         } => {
+            let c = mk()?;
             let terms = antibody_cli::practice::Terms {
                 gas_funds: cmd::parse_near(gas_funds)?,
                 allowance: cmd::parse_near(allowance)?,
-                bond_budget: cmd::parse_tusd(bond_budget)?,
-                per_commit_cap: cmd::parse_tusd(per_commit_cap)?,
+                bond_budget: cmd::parse_tokens(bond_budget, c.dep.decimals())?,
+                per_commit_cap: cmd::parse_tokens(per_commit_cap, c.dep.decimals())?,
                 per_hour,
             };
-            antibody_cli::practice::deploy(&mk()?, wasm, owner, program, vaults, &terms, cmd::parse_near(vend_allowance)?)
+            antibody_cli::practice::deploy(&c, wasm, owner, program, vaults, &terms, cmd::parse_near(vend_allowance)?)
         }
         Cmd::Practice { cmd: PracticeCmd::Fund { ref vending, ref near, ref tokens } } => {
-            antibody_cli::practice::fund(&mk()?, vending, cmd::parse_near(near)?, cmd::parse_tusd(tokens)?)
+            let c = mk()?;
+            let raw = cmd::parse_tokens(tokens, c.dep.decimals())?;
+            antibody_cli::practice::fund(&c, vending, cmd::parse_near(near)?, raw)
         }
         Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
         Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
@@ -901,6 +904,10 @@ mod tests {
         assert_eq!(cmd::parse_tusd("0.5").unwrap(), 500_000);
         assert!(cmd::parse_tusd("1.0000001").is_err());
         assert_eq!(cmd::fmt_tusd(3_000_000_000), "3000.000000");
+        // wNEAR: 24 decimals
+        assert_eq!(cmd::parse_tokens("0.07", 24).unwrap(), 70_000_000_000_000_000_000_000);
+        assert_eq!(cmd::fmt_tokens(1_500_000_000_000_000_000_000_000, 24), "1.500000000000000000000000");
+        assert!(cmd::parse_tokens("1.0000000000000000000000001", 24).is_err());
     }
 
     #[test]

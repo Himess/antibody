@@ -27,16 +27,33 @@ pub const MAX_INLINE_BLOB: usize = 15 * 1024;
 /// NEAR credit kept for storage and verification runs (NEP-145 style; unused credit is withdrawable).
 pub const MIN_NEAR_CREDIT: u128 = ONE_NEAR / 4;
 
-pub fn parse_tusd(s: &str) -> Result<u128> {
+/// A token amount in whole units (`"12.5"`) as raw units at `decimals`.
+pub fn parse_tokens(s: &str, decimals: u32) -> Result<u128> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
-    if f.len() > TUSD_DECIMALS as usize || i.is_empty() || !i.chars().chain(f.chars()).all(|c| c.is_ascii_digit()) {
-        return Err(eyre!("bad tUSD amount {s:?}"));
+    if f.len() > decimals as usize || i.is_empty() || !i.chars().chain(f.chars()).all(|c| c.is_ascii_digit()) {
+        return Err(eyre!("bad token amount {s:?} ({decimals} decimals)"));
     }
-    Ok(i.parse::<u128>()? * 10u128.pow(TUSD_DECIMALS) + format!("{f:0<6}").parse::<u128>()?)
+    let frac = if f.is_empty() { 0 } else { f.parse::<u128>()? * 10u128.pow(decimals - f.len() as u32) };
+    i.parse::<u128>()?
+        .checked_mul(10u128.pow(decimals))
+        .and_then(|x| x.checked_add(frac))
+        .ok_or_else(|| eyre!("token amount {s:?} overflows"))
+}
+
+pub fn fmt_tokens(raw: u128, decimals: u32) -> String {
+    let unit = 10u128.pow(decimals);
+    match decimals {
+        0 => raw.to_string(),
+        d => format!("{}.{:0width$}", raw / unit, raw % unit, width = d as usize),
+    }
+}
+
+pub fn parse_tusd(s: &str) -> Result<u128> {
+    parse_tokens(s, TUSD_DECIMALS)
 }
 
 pub fn fmt_tusd(raw: u128) -> String {
-    format!("{}.{:06}", raw / 1_000_000, raw % 1_000_000)
+    fmt_tokens(raw, TUSD_DECIMALS)
 }
 
 pub fn u128_of(v: &Value) -> u128 {
@@ -78,7 +95,7 @@ pub fn run_of(summary: &Value) -> Result<u64> {
 fn ft_transfer_call(ctx: &Ctx, signer: &Signer, amount: u128, msg: Value) -> Result<Value> {
     ctx.near.function_call(
         signer,
-        &ctx.dep.tusd,
+        &ctx.dep.token,
         "ft_transfer_call",
         json!({"receiver_id": ctx.dep.antibody, "amount": amount.to_string(), "msg": msg.to_string()}),
         300,
@@ -282,7 +299,7 @@ pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Pa
     let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
     let msg = json!({"create_program": {"manifest": String::from_utf8(bytes.clone())?, "manifest_url": upload["location"],
                      "project_pk": project_public(project_key)?}});
-    let out = ft_transfer_call(ctx, &signer, parse_tusd(escrow)?, msg)?;
+    let out = ft_transfer_call(ctx, &signer, parse_tokens(escrow, ctx.dep.decimals())?, msg)?;
     let s = ensure_ok(ctx, &out, "create_program")?;
     let created = event(&s, "program_created").ok_or_else(|| eyre!("no program_created event"))?;
     Ok(json!({"program": created, "anchor": event(&s, "anchor_checked").or_else(|| event(&s, "program_rejected")),
@@ -339,8 +356,8 @@ pub fn programs(ctx: &Ctx, from: u32, limit: u32) -> Result<Value> {
         let m = meta(ctx, id)?;
         let l = &p["ledger"];
         rows.push(json!({"id": id, "key": p["key"], "name": m["name"], "project": p["project"], "phase": p["phase"], "anchor": p["anchor"],
-                         "round": p["round"], "commits": p["commits"], "escrow_tusd": fmt_tusd(u128_of(&l["available"]) + u128_of(&l["reserved"])),
-                         "paid_tusd": fmt_tusd(u128_of(&l["paid"]))}));
+                         "round": p["round"], "commits": p["commits"], "token": ctx.dep.symbol(), "escrow": fmt_tokens(u128_of(&l["available"]) + u128_of(&l["reserved"]), ctx.dep.decimals()),
+                         "paid": fmt_tokens(u128_of(&l["paid"]), ctx.dep.decimals())}));
     }
     Ok(json!({"contract": ctx.dep.antibody, "programs": rows, "stats": ctx.view("get_stats", json!({}))?}))
 }
@@ -366,14 +383,14 @@ pub fn program_show(ctx: &Ctx, program: u32) -> Result<Value> {
             None => Value::Null,
         };
         rows.push(json!({"id": c["id"], "index": c["index"], "round": c["round"], "hunter": c["hunter"], "state": state_label(&c["state"]),
-                         "paid_tusd": fmt_tusd(paid_of(&c)), "verdict": verdict}));
+                         "paid": fmt_tokens(paid_of(&c), ctx.dep.decimals()), "verdict": verdict}));
     }
     Ok(json!({"program": p, "meta": meta(ctx, program)?, "record": ctx.view("program_record", json!({"program_id": program}))?,
               "audit": ctx.view("audit", json!({"program_id": program}))?, "commits": rows}))
 }
 
 pub fn top_up(ctx: &Ctx, program: u32, amount: &str) -> Result<Value> {
-    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tusd(amount)?, json!({"top_up": {"program_id": program}}))?;
+    let out = ft_transfer_call(ctx, &ctx.signer()?, parse_tokens(amount, ctx.dep.decimals())?, json!({"top_up": {"program_id": program}}))?;
     ensure_ok(ctx, &out, "top_up")
 }
 
@@ -629,21 +646,37 @@ pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &
 pub fn deposit(ctx: &Ctx, amount: &str) -> Result<Value> {
     let signer = ctx.signer()?;
     let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
-    let out = ft_transfer_call(ctx, &signer, parse_tusd(amount)?, json!("deposit"))?;
+    let out = ft_transfer_call(ctx, &signer, parse_tokens(amount, ctx.dep.decimals())?, json!("deposit"))?;
     let mut s = ensure_ok(ctx, &out, "deposit")?;
     s["storage_deposit"] = credit.unwrap_or(Value::Null);
     Ok(s)
 }
 
 pub fn faucet(ctx: &Ctx) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.tusd, "faucet", json!({}), 30, 0)?;
+    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.token, "faucet", json!({}), 30, 0)?;
     ensure_ok(ctx, &out, "faucet")
+}
+
+/// Registers `account` with the payout token's storage (NEP-145) where the token needs it, so a transfer
+/// to it cannot fail for want of one (wNEAR needs it; the sandbox's tUSD does not).
+pub fn ensure_token_registered(ctx: &Ctx, payer: &Signer, account: &str) -> Result<Option<Value>> {
+    let token = &ctx.dep.token;
+    let min = u128_of(&ctx.near.view(token, "storage_balance_bounds", json!({}))?["min"]);
+    if min == 0 || !ctx.near.view(token, "storage_balance_of", json!({"account_id": account}))?.is_null() {
+        return Ok(None);
+    }
+    let out = ctx.near.function_call(payer, token, "storage_deposit", json!({"account_id": account, "registration_only": true}), 30, min)?;
+    Ok(Some(ensure_ok(ctx, &out, "storage_deposit")?))
 }
 
 /// Credit, then withdraw (one yoctoNEAR: only a full-access key withdraws).
 pub fn withdraw(ctx: &Ctx, amount: &str) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, "withdraw", json!({"amount": parse_tusd(amount)?.to_string()}), 60, ONE_YOCTO)?;
-    ensure_ok(ctx, &out, "withdraw")
+    let signer = ctx.signer()?;
+    let registered = ensure_token_registered(ctx, &signer, &signer.account_id)?;
+    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "withdraw", json!({"amount": parse_tokens(amount, ctx.dep.decimals())?.to_string()}), 60, ONE_YOCTO)?;
+    let mut s = ensure_ok(ctx, &out, "withdraw")?;
+    s["token_registration"] = registered.unwrap_or(Value::Null);
+    Ok(s)
 }
 
 /// `SHA-256("antibody/commit/v2" ‖ u32_be(len) ‖ program_key ‖ u32_be(round) ‖ u32_be(len) ‖ hunter ‖ blob_sha256)`,
@@ -845,7 +878,7 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
     let mut out = json!({});
     if let Some(c) = commit {
         let cv = ctx.commit(c)?;
-        out["commit"] = json!({"state": state_label(&cv["state"]), "paid_tusd": fmt_tusd(paid_of(&cv)), "raw": cv});
+        out["commit"] = json!({"state": state_label(&cv["state"]), "paid": fmt_tokens(paid_of(&cv), ctx.dep.decimals()), "raw": cv});
         if let Some(r) = cv["run"].as_u64() {
             out["verdict"] = run_view(&run(ctx, r)?);
         }
@@ -858,9 +891,9 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
     }
     if let Some(a) = of.or_else(|| ctx.account.clone()) {
         let acc = account(ctx, &a)?;
-        out["account"] = json!({"id": a, "credit_tusd": fmt_tusd(u128_of(&acc["tokens"])), "near_credit": acc["near"],
+        out["account"] = json!({"id": a, "token": ctx.dep.symbol(), "credit": fmt_tokens(u128_of(&acc["tokens"]), ctx.dep.decimals()), "near_credit": acc["near"],
                                 "agent": ctx.view("agent_statement", json!({"agent": a}))?,
-                                "tusd_balance": fmt_tusd(u128_of(&ctx.near.view(&ctx.dep.tusd, "ft_balance_of", json!({"account_id": a}))?))});
+                                "wallet": fmt_tokens(u128_of(&ctx.near.view(&ctx.dep.token, "ft_balance_of", json!({"account_id": a}))?), ctx.dep.decimals())});
     }
     Ok(out)
 }
@@ -1367,7 +1400,7 @@ pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str
         &signer,
         &ctx.dep.antibody,
         "register_agent",
-        json!({"agent": agent, "bond_budget": parse_tusd(budget)?.to_string(), "per_commit_cap": parse_tusd(per_commit_cap)?.to_string()}),
+        json!({"agent": agent, "bond_budget": parse_tokens(budget, ctx.dep.decimals())?.to_string(), "per_commit_cap": parse_tokens(per_commit_cap, ctx.dep.decimals())?.to_string()}),
         30,
         ONE_YOCTO,
     )?;

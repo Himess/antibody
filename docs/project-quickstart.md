@@ -48,7 +48,8 @@ antibody --account you.testnet program create --manifest manifest.json --escrow 
 ```
 
 `program create` uploads the manifest with FastFS, escrows the tokens and commits the manifest hash;
-near-antibody checks the anchor against the light client.
+near-antibody checks the anchor against the light client. The escrow is in the deployment's payout token
+(wNEAR on testnet: wrap NEAR with `near_deposit` on `wrap.testnet` first).
 
 ## 4. Activate, declare known issues, open
 
@@ -66,7 +67,8 @@ Known issues count only once T1-confirmed, and nothing is added after opening.
 read exactly what you pay for:
 
 ```bash
-antibody --account you.testnet program read --commit <id> --project-key project.x25519.json   --out finding-<id>/ --reveal-tx <the commit's reveal transaction>      # or --api <Antibody API>, or --blob <file>
+antibody --account you.testnet program read --commit <id> --project-key project.x25519.json \
+  --out finding-<id>/ --reveal-tx <the commit's reveal transaction>   # or --api <Antibody API>, or --blob <file>
 ```
 
 The first read asks near-antibody to wrap the finding's content key to your key (`release_wrap`, a

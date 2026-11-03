@@ -81,7 +81,7 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value]) -> Result<Value> {
 /// shows it now. Each contract's code hash and whether it is locked, the verifier build programs pin
 /// for new programs, and the source commit the operator names.
 pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
-    let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.tusd)?];
+    let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.token)?];
     if let Some(g) = &ctx.dep.guardian {
         contracts.push(contract(ctx, "near-guardian", g)?);
     }
@@ -98,7 +98,15 @@ pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
 
 /// The whole view: one program with `only`, otherwise every program.
 pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
-    let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.tusd)?];
+    if ctx.near.account(&ctx.dep.antibody)?.is_none() {
+        return Err(eyre::eyre!(
+            "near-antibody is not deployed at {} on {} yet (the README's Status says when it is); \
+             the sandbox runs the same checks: antibody-services demo --serve, then antibody --network sandbox \
+             --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json judge",
+            ctx.dep.antibody, ctx.near.network
+        ));
+    }
+    let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.token)?];
     let mut signed = Vec::new();
     let mut guardian = Value::Null;
     if let Some(g) = &ctx.dep.guardian {

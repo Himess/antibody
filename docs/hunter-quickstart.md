@@ -29,7 +29,9 @@ antibody --account you.testnet storage-deposit --near 0.5   # credit for storage
 antibody --account you.testnet deposit --amount <tokens>    # token credit: each commit locks the program's bond
 ```
 
-Unused credit is yours: `antibody withdraw`.
+Unused credit is yours: `antibody withdraw`. Amounts are in whole tokens of the deployment's payout
+token: tUSD in the sandbox; on testnet wNEAR (`wrap.testnet`, 24 decimals), which you get by wrapping
+NEAR with its `near_deposit`.
 
 ## 3. Pick a program and fork its anchor
 

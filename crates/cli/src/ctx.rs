@@ -12,7 +12,14 @@ use crate::near::{Near, Signer};
 pub struct Deployments {
     pub network: String,
     pub antibody: String,
-    pub tusd: String,
+    /// The payout token (NEP-141): tUSD in the sandbox, wNEAR on testnet.
+    #[serde(alias = "tusd")]
+    pub token: String,
+    /// Its decimals and symbol (default: tUSD's 6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_decimals: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_symbol: Option<String>,
     #[serde(default)]
     pub guardian: Option<String>,
     #[serde(default)]
@@ -31,6 +38,16 @@ pub struct Deployments {
     /// The versioned record of what is deployed (`antibody admin record-deployment`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<serde_json::Value>,
+}
+
+impl Deployments {
+    pub fn decimals(&self) -> u32 {
+        self.token_decimals.unwrap_or(6)
+    }
+
+    pub fn symbol(&self) -> &str {
+        self.token_symbol.as_deref().unwrap_or("tUSD")
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

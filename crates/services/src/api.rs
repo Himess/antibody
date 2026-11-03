@@ -296,7 +296,7 @@ async fn account(State(a): State<Shared>, Path(id): Path<String>) -> Response {
         Ok(json!({"account": id,
                   "credit": a.near.view(&a.dep.antibody, "get_account", json!({"account_id": id}))?,
                   "agent": a.near.view(&a.dep.antibody, "agent_statement", json!({"agent": id}))?,
-                  "token_balance_raw": a.near.view(&a.dep.tusd, "ft_balance_of", json!({"account_id": id}))?}))
+                  "token_balance_raw": a.near.view(&a.dep.token, "ft_balance_of", json!({"account_id": id}))?}))
     })
     .await
 }

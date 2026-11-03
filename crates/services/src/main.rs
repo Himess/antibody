@@ -219,7 +219,7 @@ fn explorer(chain_id: u64) -> String {
 
 fn indexer(cli: &Cli, dep: &Deployments, source: &str, from_block: u64) -> Result<indexer::Indexer> {
     let near = near_for(cli, dep);
-    let mut contracts = vec![dep.antibody.clone(), dep.tusd.clone()];
+    let mut contracts = vec![dep.antibody.clone(), dep.token.clone()];
     contracts.extend(dep.guardian.clone());
     let source = match source {
         "fastnear" => indexer::Source::FastNear {

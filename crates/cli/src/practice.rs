@@ -165,8 +165,16 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
 /// The vending contract and practice program to try: as given, else the deployment's.
 pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Result<(String, u32)> {
     let dep = ctx.dep.practice.as_ref();
-    let vending = vending.or_else(|| dep.map(|p| p.vending.clone())).ok_or_else(|| eyre!("no practice program in the deployment: pass --vending"))?;
-    let program = program.or_else(|| dep.map(|p| p.program)).ok_or_else(|| eyre!("no practice program in the deployment: pass --program"))?;
+    let none = || {
+        eyre!(
+            "the {} deployment has no practice program yet (the README's Status says when it is); the sandbox has one: \
+             antibody-services demo --serve, then antibody --network sandbox --rpc http://127.0.0.1:3030 \
+             --deployments target/demo/deployments.json try --name <you>",
+            ctx.near.network
+        )
+    };
+    let vending = vending.or_else(|| dep.map(|p| p.vending.clone())).ok_or_else(none)?;
+    let program = program.or_else(|| dep.map(|p| p.program)).ok_or_else(none)?;
     Ok((vending, program))
 }
 
@@ -227,7 +235,7 @@ pub fn deploy(ctx: &Ctx, wasm: &Path, owner: &str, program: u32, vaults: u32, te
             Action::DeployContract(std::fs::read(wasm)?),
             Action::FunctionCall {
                 method: "new".into(),
-                args: new_args(owner, &ctx.dep.antibody, &ctx.dep.tusd, program, vaults, terms),
+                args: new_args(owner, &ctx.dep.antibody, &ctx.dep.token, program, vaults, terms),
                 gas: 30 * TGAS,
                 deposit: 0,
             },
@@ -247,7 +255,7 @@ pub fn deploy(ctx: &Ctx, wasm: &Path, owner: &str, program: u32, vaults: u32, te
 /// and storage, and `tokens` raw units of the payout token moved into its credit there for their bonds.
 pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result<Value> {
     let owner = ctx.signer()?;
-    let token = ctx.dep.tusd.clone();
+    let token = ctx.dep.token.clone();
     let mut res = json!({"vending": vending});
     if near_credit > 0 {
         let out = ctx.near.function_call(&owner, &ctx.dep.antibody, "storage_deposit", json!({"account_id": vending}), 30, near_credit)?;
@@ -255,10 +263,8 @@ pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result
     }
     if tokens > 0 {
         // The token's own storage registration for the vending contract, where it needs one.
-        let min = cmd::u128_of(&ctx.near.view(&token, "storage_balance_bounds", json!({}))?["min"]);
-        if min > 0 && ctx.near.view(&token, "storage_balance_of", json!({"account_id": vending}))?.is_null() {
-            let out = ctx.near.function_call(&owner, &token, "storage_deposit", json!({"account_id": vending, "registration_only": true}), 30, min)?;
-            res["token_registration"] = cmd::ensure_ok(ctx, &out, "storage_deposit")?;
+        if let Some(r) = cmd::ensure_token_registered(ctx, &owner, vending)? {
+            res["token_registration"] = r;
         }
         let out = ctx.near.function_call(&owner, &token, "ft_transfer", json!({"receiver_id": vending, "amount": tokens.to_string()}), 30, ONE_YOCTO)?;
         res["tokens_sent"] = cmd::ensure_ok(ctx, &out, "ft_transfer")?;

@@ -1,8 +1,10 @@
 {
   "network": "testnet",
-  "antibody": "bounty.antibody-hq.testnet",
-  "tusd": "tusd.antibody-hq.testnet",
-  "guardian": "guardian.antibody-hq.testnet",
+  "antibody": "bounty.antibody.testnet",
+  "token": "wrap.testnet",
+  "token_decimals": 24,
+  "token_symbol": "wNEAR",
+  "guardian": "guardian.antibody.testnet",
   "outlayer": "outlayer.testnet",
   "light_client": "client-eth2.sepolia.testnet",
   "rpc": "https://rpc.testnet.fastnear.com"
