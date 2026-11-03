@@ -880,7 +880,7 @@ impl Live {
             for (proxy, fix) in round_code(2).1 {
                 let word = evm.call("eth_getStorageAt", json!([dep[*proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
                 let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
-                released.push(json!({"chain_id": chain, "proxy": proxy, "address": dep[*proxy], "implementation": now, "expected": dep[*fix],
+                released.push(json!({"chain_id": chain, "rpc": rpc, "proxy": proxy, "address": dep[*proxy], "implementation": now, "expected": dep[*fix],
                                      "ok": now.eq_ignore_ascii_case(dep[*fix].as_str().unwrap_or_default())}));
             }
             // B's exploit, the unguarded fee sweep, against the released code.
