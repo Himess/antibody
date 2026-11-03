@@ -9,7 +9,6 @@ use sha2::{Digest, Sha256};
 use crate::{bundle::CallOutcome, manifest::Severity, receipt::VerifierInfo};
 
 pub const RECEIPT_V2_SCHEMA: &str = "antibody.receipt.v2";
-pub const FACTS_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Kind {
@@ -120,29 +119,6 @@ pub struct ProgramReceipt {
     pub impact: Option<ImpactV2>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FpTag {
-    pub slot: u8,
-    pub tag: String,
-}
-
-/// Public output of a TEE run (≤ 1 KB). Facts only; the NEAR contract applies the rules.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Facts {
-    pub v: u8,
-    pub program: String,
-    pub commit_id: u64,
-    pub poc_hash: String,
-    pub kind: Kind,
-    pub broken_mask: String,
-    pub fp_tags: Vec<FpTag>,
-    pub impact_usd_micro: String,
-    pub project_wrap: Option<String>,
-    pub receipt_hash: String,
-    pub manifest_hash: String,
-    pub wasm_hash: Option<String>,
-}
-
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
@@ -163,23 +139,6 @@ pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     }
     let inner = Sha256::new().chain_update(ipad).chain_update(msg).finalize();
     Sha256::new().chain_update(opad).chain_update(inner).finalize().into()
-}
-
-/// Per-program fingerprint key, derived inside the TEE from its protected secret.
-pub fn derive_k_program(secret: &[u8], program_id: &str) -> [u8; 32] {
-    let mut m = b"antibody/k_program/v1".to_vec();
-    m.extend_from_slice(program_id.as_bytes());
-    hmac_sha256(secret, &m)
-}
-
-/// `fp_tag = HMAC(k_program, "antibody/fp/v1" ‖ slot ‖ target ‖ selector)`: equal tags prove
-/// "same rule, same function" without revealing which function until `k_program` is disclosed.
-pub fn fp_tag(k_program: &[u8; 32], slot: u8, target: Address, selector: [u8; 4]) -> [u8; 32] {
-    let mut m = b"antibody/fp/v1".to_vec();
-    m.push(slot);
-    m.extend_from_slice(target.as_slice());
-    m.extend_from_slice(&selector);
-    hmac_sha256(k_program, &m)
 }
 
 /// At most this many root-cause keys per verdict (spec §5.2): facts stay under 1 KB.
@@ -216,31 +175,6 @@ impl ProgramReceipt {
 
     pub fn hash(&self) -> [u8; 32] {
         sha256(&self.canonical())
-    }
-
-    pub fn facts(&self, k_program: Option<&[u8; 32]>, project_wrap: Option<String>, wasm_hash: Option<String>) -> Facts {
-        let fp_tags = match (self.kind, k_program) {
-            (Kind::Violation, Some(k)) => self
-                .broken
-                .iter()
-                .map(|f| FpTag { slot: f.slot, tag: hex::encode(fp_tag(k, f.slot, f.target, parse_selector(&f.selector))) })
-                .collect(),
-            _ => Vec::new(),
-        };
-        Facts {
-            v: FACTS_VERSION,
-            program: self.program.clone(),
-            commit_id: self.commit_id,
-            poc_hash: self.poc_hash.clone(),
-            kind: self.kind,
-            broken_mask: self.broken_mask.clone(),
-            fp_tags,
-            impact_usd_micro: self.impact.as_ref().map(|i| i.impact_usd_micro.clone()).unwrap_or_else(|| "0".into()),
-            project_wrap,
-            receipt_hash: hex::encode(self.hash()),
-            manifest_hash: hex::encode(self.manifest_hash),
-            wasm_hash,
-        }
     }
 }
 

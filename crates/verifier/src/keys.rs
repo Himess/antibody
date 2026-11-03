@@ -95,11 +95,6 @@ impl<'a> ProgramKeys<'a> {
     pub fn disclose(&self, tag: &[u8; 32]) -> Result<[u8; 32], String> {
         self.mac.mac(&label("antibody/v2/disclose", self.program_key, tag))
     }
-
-    /// Deterministic ephemeral secret for a commit's project wrap, so the output is reproducible.
-    pub fn wrap_ephemeral(&self, commit_id: u64) -> Result<[u8; 32], String> {
-        self.mac.mac(&label("antibody/v2/wrap-eph", self.program_key, &commit_id.to_be_bytes()))
-    }
 }
 
 /// The group bytes of a root cause (spec §7.2): a committed group's id, or the target and selector.

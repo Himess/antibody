@@ -1,4 +1,5 @@
-//! Sealed submissions — implements docs/crypto-spec.md §3–§8 exactly.
+//! Sealed submissions (docs/crypto-spec.md §4–§7): the `ABSEAL1` blob sealed to a program's sealing
+//! key, the project wrap, and the AEAD the disclosure wrap uses.
 //!
 //! The verifier itself never needs randomness: hunters (the CLI) supply the ephemeral key and the
 //! nonces when sealing; the project wrap derives its ephemeral key from the content key.
@@ -33,23 +34,13 @@ impl std::fmt::Display for SealError {
     }
 }
 
-fn hkdf_expand(ikm: &[u8], salt: &[u8], info: &[u8], out: &mut [u8]) {
+/// HKDF-SHA256 (RFC 5869): extract with `salt`, expand with `info` into `out`.
+pub fn hkdf_expand(ikm: &[u8], salt: &[u8], info: &[u8], out: &mut [u8]) {
     Hkdf::<Sha256>::new(Some(salt), ikm).expand(info, out).expect("HKDF output length");
 }
 
 fn cat(a: &[u8], b: &[u8]) -> Vec<u8> {
     [a, b].concat()
-}
-
-/// sk_v = HKDF(S, salt "antibody/v1", info "antibody/verifier-x25519/v1").
-pub fn verifier_secret(seed: &[u8; 32]) -> StaticSecret {
-    let mut k = [0u8; 32];
-    hkdf_expand(seed, b"antibody/v1", b"antibody/verifier-x25519/v1", &mut k);
-    StaticSecret::from(k)
-}
-
-pub fn verifier_public(seed: &[u8; 32]) -> [u8; 32] {
-    PublicKey::from(&verifier_secret(seed)).to_bytes()
 }
 
 fn aead_seal(key: &[u8; 32], nonce: &[u8; 12], msg: &[u8], ad: &[u8]) -> Vec<u8> {
@@ -72,7 +63,7 @@ fn dh(secret: &StaticSecret, public: &[u8; 32]) -> Result<[u8; 32], SealError> {
     Ok(shared.to_bytes())
 }
 
-/// §4.3 — wraps the content key to the verifier. `e` and `nonce_w` come from the sealer's CSPRNG.
+/// §4.3 — wraps the content key to the program's sealing key. `e` and `nonce_w` come from the sealer's CSPRNG.
 pub fn wrap_v(k: &[u8; 32], pk_v: &[u8; 32], program_key: &str, e: [u8; 32], nonce_w: [u8; 12]) -> [u8; WRAP_V_LEN] {
     let e = StaticSecret::from(e);
     let epk = PublicKey::from(&e).to_bytes();
@@ -200,7 +191,7 @@ pub fn open(blob: &[u8], sk_v: &StaticSecret, program_key: &str) -> Result<([u8;
     Ok((k, open_with_key(blob, &k, program_key)?))
 }
 
-/// §7 — deterministic re-encryption of the content key to the project.
+/// §6 — deterministic re-encryption of the content key to the project.
 pub fn project_wrap(k: &[u8; 32], pk_p: &[u8; 32], program_key: &str) -> [u8; PROJECT_WRAP_LEN] {
     let mut e = [0u8; 32];
     hkdf_expand(k, pk_p, b"antibody/wrap-p-eph/v1", &mut e);
@@ -216,7 +207,7 @@ pub fn project_wrap(k: &[u8; 32], pk_p: &[u8; 32], program_key: &str) -> [u8; PR
     out
 }
 
-/// The project's side of §7 (CLI `antibody decrypt`).
+/// The project's side of §6 (CLI `antibody decrypt`).
 pub fn project_unwrap(wrap: &[u8], sk_p: &StaticSecret, program_key: &str) -> Result<[u8; 32], SealError> {
     if wrap.len() != PROJECT_WRAP_LEN {
         return Err(SealError::Format("project wrap must be 80 bytes"));
@@ -230,7 +221,7 @@ pub fn project_unwrap(wrap: &[u8], sk_p: &StaticSecret, program_key: &str) -> Re
     k.try_into().map_err(|_| SealError::Format("content key must be 32 bytes"))
 }
 
-/// AEAD seal for callers outside this module (the disclosure wrap, docs/spec.md §11.6).
+/// AEAD seal for callers outside this module (the disclosure wrap, §7).
 pub fn aead_seal_pub(key: &[u8; 32], nonce: &[u8; 12], msg: &[u8], ad: &[u8]) -> Vec<u8> {
     aead_seal(key, nonce, msg, ad)
 }
@@ -239,7 +230,7 @@ pub fn aead_open_pub(key: &[u8; 32], nonce: &[u8; 12], ct: &[u8], ad: &[u8]) -> 
     aead_open(key, nonce, ct, ad)
 }
 
-/// A public key whose shared secrets are contributory: low-order points are refused (spec §11.5).
+/// A public key whose shared secrets are contributory: low-order points are refused (§3.3).
 pub fn is_contributory(pk: &[u8; 32]) -> bool {
     let probe = StaticSecret::from([0x42u8; 32]);
     probe.diffie_hellman(&PublicKey::from(*pk)).was_contributory()
@@ -266,21 +257,21 @@ mod tests {
 
     #[test]
     fn seal_open_round_trip_and_project_wrap() {
-        let seed = [42u8; 32];
-        let pk_v = verifier_public(&seed);
+        let sk = StaticSecret::from([42u8; 32]);
+        let pk_v = PublicKey::from(&sk).to_bytes();
         let k = [9u8; 32];
         let w = wrap_v(&k, &pk_v, PK, [3u8; 32], [4u8; 12]);
         let blob = seal(&k, &payload(), &w, [5u8; 12]);
-        let (k2, p) = open(&blob, &verifier_secret(&seed), PK).unwrap();
+        let (k2, p) = open(&blob, &sk, PK).unwrap();
         assert_eq!((k2, p), (k, payload()));
         // bound to the program key
-        assert!(open(&blob, &verifier_secret(&seed), "bounty.antibody-hq.testnet/1").is_err());
-        // a different verifier key cannot open it
-        assert!(open(&blob, &verifier_secret(&[43u8; 32]), PK).is_err());
+        assert!(open(&blob, &sk, "bounty.antibody-hq.testnet/1").is_err());
+        // a different sealing key cannot open it
+        assert!(open(&blob, &StaticSecret::from([43u8; 32]), PK).is_err());
         // tampering with the body is detected
         let mut t = blob.clone();
         *t.last_mut().unwrap() ^= 1;
-        assert!(open(&t, &verifier_secret(&seed), PK).is_err());
+        assert!(open(&t, &sk, PK).is_err());
         // project wrap is deterministic and opens with the project's key only
         let sk_p = [11u8; 32];
         let pk_p = x25519_public(sk_p);
@@ -296,6 +287,6 @@ mod tests {
     fn low_order_points_are_rejected() {
         let mut blob = MAGIC.to_vec();
         blob.extend([0u8; WRAP_V_LEN + 12 + 16]);
-        assert!(open(&blob, &verifier_secret(&[1u8; 32]), PK).is_err());
+        assert!(open(&blob, &StaticSecret::from([1u8; 32]), PK).is_err());
     }
 }
