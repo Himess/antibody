@@ -1,0 +1,1298 @@
+{
+  "activation": {
+    "base": {
+      "bytes": 39209,
+      "fixpoint_passes": 1,
+      "sha256": "4556d35af6328d675de5ff7a916813d0d078592699efc3fee6639c280056a16b",
+      "upload": {
+        "bytes": 39209,
+        "explorer": "sandbox:8hUZmdVQQmdM14LBMq5H3bYKVmKQsWbaE4zwVbiAZxsS",
+        "gateway_serves_it": false,
+        "gateway_url": "",
+        "location": "near-tx:8hUZmdVQQmdM14LBMq5H3bYKVmKQsWbaE4zwVbiAZxsS:acme.test.near",
+        "near_tx": "near-tx:8hUZmdVQQmdM14LBMq5H3bYKVmKQsWbaE4zwVbiAZxsS:acme.test.near",
+        "upload_tx": "8hUZmdVQQmdM14LBMq5H3bYKVmKQsWbaE4zwVbiAZxsS"
+      }
+    },
+    "key_epoch": "aa4cba671e513112",
+    "run_id": 0,
+    "sealing_pk": "b81a25155f1c243ba15bda3cff79677ca812bfd541b7fb11dec3e970df2bf274",
+    "seconds": 13.355058568
+  },
+  "all_ok": true,
+  "audit": {
+    "contract": {
+      "bonds_locked": "0",
+      "challenge_bonds_locked": "0",
+      "credits": "21679000000",
+      "escrow": "16053000000",
+      "liabilities": "37732000000",
+      "near_credits": "10147790000000000000000000",
+      "ok": true,
+      "tokens_held": "37732000000"
+    },
+    "practice": {
+      "accounted": "30000000",
+      "available": "28000000",
+      "debt": "0",
+      "defaulted": "0",
+      "fees": "0",
+      "funded": "30000000",
+      "ok": true,
+      "paid": "2000000",
+      "program_id": 1,
+      "reservations": "0",
+      "reserved": "0",
+      "returned": "0"
+    },
+    "program": {
+      "accounted": "40025000000",
+      "available": "16025000000",
+      "debt": "0",
+      "defaulted": "0",
+      "fees": "0",
+      "funded": "40025000000",
+      "ok": true,
+      "paid": "24000000000",
+      "program_id": 0,
+      "reservations": "0",
+      "reserved": "0",
+      "returned": "0"
+    }
+  },
+  "deployment": {
+    "guardian": "guardian.test.near",
+    "images": [
+      [
+        {
+          "added_at": 1793664881,
+          "m": {
+            "mrtd": "214165c3b88d4089c162f41a2b9baf8769aaa74cd8ae79a561bb4e86e1e84a80e8cfdb42ab7fc1ae40a7c0bf5c04dad6",
+            "rtmr0": "d1a4319888e0c4805d966029fe48508bcb3a3598b8146cd0136ca893b916a86c0e93bf03710e4fd82b78569ef28345a8",
+            "rtmr1": "f8ae0306ea610062970d40f1a209873ae335b2bcf49cf78e070e994e07870a35b950ff64ca2bcf9370e5b2b6357a496f",
+            "rtmr2": "32e87f62ead0fa1526b45543c97ed40668ae07f7bb1c7827b0b2e78fe96f4e31f72899b6469364382d02a5579d912ff3",
+            "rtmr3": "23340d503fcaaf9665fdff031cf07654048e0ee7c1efb1cd38f28ea270e4b937429480ad3ef0cc26be2356790280e3e3"
+          }
+        }
+      ],
+      []
+    ],
+    "near_antibody": "bounty.test.near",
+    "network": "sandbox",
+    "token": "tusd.test.near",
+    "verifier_wasm_sha256": "02788873058435843e7acddf958b51e70cb1be4e8455c8e335848627e4012caf"
+  },
+  "guardian": {
+    "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+    "guardian_address": "0xf4289a64fdf32e587536e6a1d4bf5bf82c8915ef",
+    "proxies": [
+      "0x86a7ae34ac860f0eb62765ae374e92b17254a587",
+      "0x4c1255a0adff6bbecaf8c257305065f19436ec7d"
+    ],
+    "register_tx": {
+      "guardian_address": "0xf4289a64fdf32e587536e6a1d4bf5bf82c8915ef",
+      "program_key": "bounty.test.near/0",
+      "project": "acme.test.near"
+    }
+  },
+  "judge": {
+    "contracts": [
+      {
+        "account": "bounty.test.near",
+        "code_hash": "Ad1cD7GZLPYG6k9D7hXncxFH3BPxrs5BfszpLbXdT72M",
+        "exists": true,
+        "full_access_keys": [
+          "ed25519:E3YVmTqKsPzJFsnn3wNyj25ta6t3tvmgQh6HUnQri7JN"
+        ],
+        "link": "sandbox:bounty.test.near",
+        "locked": false,
+        "role": "near-antibody"
+      },
+      {
+        "account": "tusd.test.near",
+        "code_hash": "733UUKvvvV3cyHhNPiPHNMdkKsXuSzYikmk492v6bHPf",
+        "exists": true,
+        "full_access_keys": [
+          "ed25519:C1EmvAL4K764M4okVKFednXH62LpCMPNGEQGbcdrbgGW"
+        ],
+        "link": "sandbox:tusd.test.near",
+        "locked": false,
+        "role": "payout token"
+      },
+      {
+        "account": "guardian.test.near",
+        "code_hash": "D2LzEnkX7uJB4gAjSxhFS77SnEwQyAy5r7DA1DPM2oqp",
+        "exists": true,
+        "full_access_keys": [
+          "ed25519:AvW1xXJhM4zmidQrKHw99qYW8ehCoLUqGhz92oXTEqj9"
+        ],
+        "link": "sandbox:guardian.test.near",
+        "locked": false,
+        "role": "near-guardian"
+      }
+    ],
+    "defaults": {
+      "accepted_tcb": [
+        "UpToDate"
+      ],
+      "dcap_verifier": "dcap.test.near",
+      "guardian": "guardian.test.near",
+      "image_delay_secs": 3600,
+      "image_registry": "outlayer.test.near",
+      "light_client": "lc.test.near",
+      "light_client_chain_id": 31337,
+      "outlayer": "outlayer.test.near",
+      "treasury": "test.near",
+      "verifier": {
+        "deposit": "10000000000000000000000",
+        "max_execution_seconds": 60,
+        "max_instructions": 5000000000,
+        "max_memory_mb": 512,
+        "wasm_hash": "02788873058435843e7acddf958b51e70cb1be4e8455c8e335848627e4012caf",
+        "wasm_url": "https://github.com/Himess/antibody/releases/download/sandbox/antibody-verify.wasm"
+      }
+    },
+    "guardian": {
+      "config": {
+        "antibody": "bounty.test.near",
+        "failures": 0,
+        "mpc": "mpc.test.near",
+        "owner": "test.near",
+        "permit_ttl_secs": 604800,
+        "permits": 6,
+        "sign_fee": "1"
+      },
+      "pending_permits": []
+    },
+    "images": [
+      [
+        {
+          "added_at": 1793664881,
+          "m": {
+            "mrtd": "214165c3b88d4089c162f41a2b9baf8769aaa74cd8ae79a561bb4e86e1e84a80e8cfdb42ab7fc1ae40a7c0bf5c04dad6",
+            "rtmr0": "d1a4319888e0c4805d966029fe48508bcb3a3598b8146cd0136ca893b916a86c0e93bf03710e4fd82b78569ef28345a8",
+            "rtmr1": "f8ae0306ea610062970d40f1a209873ae335b2bcf49cf78e070e994e07870a35b950ff64ca2bcf9370e5b2b6357a496f",
+            "rtmr2": "32e87f62ead0fa1526b45543c97ed40668ae07f7bb1c7827b0b2e78fe96f4e31f72899b6469364382d02a5579d912ff3",
+            "rtmr3": "23340d503fcaaf9665fdff031cf07654048e0ee7c1efb1cd38f28ea270e4b937429480ad3ef0cc26be2356790280e3e3"
+          }
+        }
+      ],
+      []
+    ],
+    "network": "sandbox",
+    "note": "view calls only: no account and no key",
+    "programs": [
+      {
+        "anchor": {
+          "block": 30,
+          "chain_id": 31337,
+          "hash": "dd2c35b6f7d6a85881bf0aff1909cea92e70bfe99affb1777050f37f418b5f5f",
+          "status": "light-client"
+        },
+        "audit_ok": true,
+        "commits": {
+          "Done:DuplicateConfirmed": 1,
+          "Done:Forfeited": 1,
+          "Done:Known": 1,
+          "Done:Paid": 4
+        },
+        "link": "sandbox:acme.test.near",
+        "name": "Acme Lend v1 — pre-launch (sandbox demo)",
+        "pauses": 2,
+        "payouts": [
+          {
+            "amount_raw": "10000000000",
+            "commit": 0,
+            "hunter": "agent-a.test.near",
+            "link": "sandbox:agent-a.test.near",
+            "paid_to": "agent-a.test.near"
+          },
+          {
+            "amount_raw": "3000000000",
+            "commit": 1,
+            "hunter": "agent-b.test.near",
+            "link": "sandbox:agent-b.test.near",
+            "paid_to": "agent-b.test.near"
+          },
+          {
+            "amount_raw": "10000000000",
+            "commit": 5,
+            "hunter": "agent-f.test.near",
+            "link": "sandbox:agent-f.test.near",
+            "paid_to": "agent-f.test.near"
+          },
+          {
+            "amount_raw": "1000000000",
+            "commit": 6,
+            "hunter": "agent-g.test.near",
+            "link": "sandbox:agent-g.test.near",
+            "paid_to": "agent-g.test.near"
+          }
+        ],
+        "permits": [
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Pause": {
+                "ticket": 0
+              }
+            },
+            "chain_id": 31337,
+            "deadline": 1794269794,
+            "id": 0,
+            "round": 0
+          },
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Pause": {
+                "ticket": 0
+              }
+            },
+            "chain_id": 31338,
+            "deadline": 1794269794,
+            "id": 1,
+            "round": 0
+          },
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Release": {
+                "code_hash": "0x144069b903f9c72fbbab3d74d383bfcec406a9e01f5812867b293d80542581cd",
+                "proxy": "0x86a7ae34ac860f0eb62765ae374e92b17254a587"
+              }
+            },
+            "chain_id": 31337,
+            "deadline": 1794270562,
+            "id": 2,
+            "round": 2
+          },
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Release": {
+                "code_hash": "0x389bcf636e17b1ff840fe234a507aa5e5154073b459c343409023794d570553d",
+                "proxy": "0x4c1255a0adff6bbecaf8c257305065f19436ec7d"
+              }
+            },
+            "chain_id": 31337,
+            "deadline": 1794270562,
+            "id": 3,
+            "round": 2
+          },
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Release": {
+                "code_hash": "0x144069b903f9c72fbbab3d74d383bfcec406a9e01f5812867b293d80542581cd",
+                "proxy": "0x86a7ae34ac860f0eb62765ae374e92b17254a587"
+              }
+            },
+            "chain_id": 31338,
+            "deadline": 1794270562,
+            "id": 4,
+            "round": 2
+          },
+          {
+            "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+            "body": {
+              "Release": {
+                "code_hash": "0x389bcf636e17b1ff840fe234a507aa5e5154073b459c343409023794d570553d",
+                "proxy": "0x4c1255a0adff6bbecaf8c257305065f19436ec7d"
+              }
+            },
+            "chain_id": 31338,
+            "deadline": 1794270573,
+            "id": 5,
+            "round": 2
+          }
+        ],
+        "phase": "Open",
+        "pins": {
+          "accepted_tcb": [
+            "UpToDate"
+          ],
+          "dcap_verifier": "dcap.test.near",
+          "guardian": "guardian.test.near",
+          "image_delay_secs": 3600,
+          "images": [
+            {
+              "mrtd": "214165c3b88d4089c162f41a2b9baf8769aaa74cd8ae79a561bb4e86e1e84a80e8cfdb42ab7fc1ae40a7c0bf5c04dad6",
+              "rtmr0": "d1a4319888e0c4805d966029fe48508bcb3a3598b8146cd0136ca893b916a86c0e93bf03710e4fd82b78569ef28345a8",
+              "rtmr1": "f8ae0306ea610062970d40f1a209873ae335b2bcf49cf78e070e994e07870a35b950ff64ca2bcf9370e5b2b6357a496f",
+              "rtmr2": "32e87f62ead0fa1526b45543c97ed40668ae07f7bb1c7827b0b2e78fe96f4e31f72899b6469364382d02a5579d912ff3",
+              "rtmr3": "23340d503fcaaf9665fdff031cf07654048e0ee7c1efb1cd38f28ea270e4b937429480ad3ef0cc26be2356790280e3e3"
+            }
+          ],
+          "light_client": "lc.test.near",
+          "light_client_chain_id": 31337,
+          "outlayer": "outlayer.test.near",
+          "verifier": {
+            "deposit": "10000000000000000000000",
+            "max_execution_seconds": 60,
+            "max_instructions": 5000000000,
+            "max_memory_mb": 512,
+            "wasm_hash": "02788873058435843e7acddf958b51e70cb1be4e8455c8e335848627e4012caf",
+            "wasm_url": "https://github.com/Himess/antibody/releases/download/sandbox/antibody-verify.wasm"
+          }
+        },
+        "program_id": 0,
+        "program_key": "bounty.test.near/0",
+        "project": "acme.test.near",
+        "record": {
+          "anchor": "light-client",
+          "at_stake": "16025000000",
+          "defaulted": "0",
+          "paid_findings": 4,
+          "phase": "Open",
+          "program_id": 0,
+          "release_permits": 1,
+          "rounds": 2,
+          "share_claimed_first_hour_bps": 6000,
+          "survived_secs": 83,
+          "time_to_first_claim_secs": 51,
+          "verified_attempts": 7
+        },
+        "releases": 4,
+        "round": 2,
+        "terms_sha256": "a0e6911772dfe288214c8a395460ab66b1b4ec238222cef9e6af9a1de6ca6292",
+        "verdicts": {
+          "runs": 7,
+          "t1_confirmed": 7
+        }
+      },
+      {
+        "anchor": {
+          "block": 30,
+          "chain_id": 31337,
+          "hash": "dd2c35b6f7d6a85881bf0aff1909cea92e70bfe99affb1777050f37f418b5f5f",
+          "status": "light-client"
+        },
+        "audit_ok": true,
+        "commits": {
+          "Done:Paid": 2
+        },
+        "link": "sandbox:test.near",
+        "name": "Practice program — a tutorial (sandbox demo)",
+        "pauses": 0,
+        "payouts": [
+          {
+            "amount_raw": "1000000",
+            "commit": 7,
+            "hunter": "ann.practice.test.near",
+            "link": "sandbox:practice.test.near",
+            "paid_to": "practice.test.near"
+          },
+          {
+            "amount_raw": "1000000",
+            "commit": 8,
+            "hunter": "bob.practice.test.near",
+            "link": "sandbox:practice.test.near",
+            "paid_to": "practice.test.near"
+          }
+        ],
+        "permits": [],
+        "phase": "Open",
+        "pins": {
+          "accepted_tcb": [
+            "UpToDate"
+          ],
+          "dcap_verifier": "dcap.test.near",
+          "guardian": "guardian.test.near",
+          "image_delay_secs": 3600,
+          "images": [
+            {
+              "mrtd": "214165c3b88d4089c162f41a2b9baf8769aaa74cd8ae79a561bb4e86e1e84a80e8cfdb42ab7fc1ae40a7c0bf5c04dad6",
+              "rtmr0": "d1a4319888e0c4805d966029fe48508bcb3a3598b8146cd0136ca893b916a86c0e93bf03710e4fd82b78569ef28345a8",
+              "rtmr1": "f8ae0306ea610062970d40f1a209873ae335b2bcf49cf78e070e994e07870a35b950ff64ca2bcf9370e5b2b6357a496f",
+              "rtmr2": "32e87f62ead0fa1526b45543c97ed40668ae07f7bb1c7827b0b2e78fe96f4e31f72899b6469364382d02a5579d912ff3",
+              "rtmr3": "23340d503fcaaf9665fdff031cf07654048e0ee7c1efb1cd38f28ea270e4b937429480ad3ef0cc26be2356790280e3e3"
+            }
+          ],
+          "light_client": "lc.test.near",
+          "light_client_chain_id": 31337,
+          "outlayer": "outlayer.test.near",
+          "verifier": {
+            "deposit": "10000000000000000000000",
+            "max_execution_seconds": 60,
+            "max_instructions": 5000000000,
+            "max_memory_mb": 512,
+            "wasm_hash": "02788873058435843e7acddf958b51e70cb1be4e8455c8e335848627e4012caf",
+            "wasm_url": "https://github.com/Himess/antibody/releases/download/sandbox/antibody-verify.wasm"
+          }
+        },
+        "program_id": 1,
+        "program_key": "bounty.test.near/1",
+        "project": "test.near",
+        "record": {
+          "anchor": "light-client",
+          "at_stake": "28000000",
+          "defaulted": "0",
+          "paid_findings": 2,
+          "phase": "Open",
+          "program_id": 1,
+          "release_permits": 0,
+          "rounds": 0,
+          "share_claimed_first_hour_bps": 666,
+          "survived_secs": 44,
+          "time_to_first_claim_secs": 25,
+          "verified_attempts": 2
+        },
+        "releases": 0,
+        "round": 0,
+        "terms_sha256": "e9fe8ebf88ce73553458b1018b7d38065afee6a5a4387bb50d43f808a53bb2cd",
+        "verdicts": {
+          "runs": 2,
+          "t1_confirmed": 2
+        }
+      }
+    ]
+  },
+  "keeper": {
+    "program": 0,
+    "steps": [
+      {
+        "allocate": "AB38ZoE2MQMDNqmz5kQ3MTWHtAeANoqojbCBPzKN2Jxx",
+        "events": 6
+      },
+      {
+        "event": {
+          "amount": "3000000000",
+          "beneficiary": "agent-b.test.near",
+          "commit_id": 1,
+          "fee": "0",
+          "instant": false,
+          "program_id": 0
+        },
+        "paid": 1,
+        "tx": "3wBNpyFH1VXmLDBoYsGZAxhD1hVAMJnUU67kFaoH65Gc"
+      },
+      {
+        "event": {
+          "amount": "10000000000",
+          "beneficiary": "agent-f.test.near",
+          "commit_id": 5,
+          "fee": "0",
+          "instant": false,
+          "program_id": 0
+        },
+        "paid": 5,
+        "tx": "C79UF9xSqbF8Cp3hN26Y1WQzHeLA7zHrHYEW9x9fwHb1"
+      }
+    ]
+  },
+  "keeper_runs": [
+    {
+      "program": 0,
+      "steps": [
+        {
+          "allocate": "AB38ZoE2MQMDNqmz5kQ3MTWHtAeANoqojbCBPzKN2Jxx",
+          "events": 6
+        },
+        {
+          "event": {
+            "amount": "3000000000",
+            "beneficiary": "agent-b.test.near",
+            "commit_id": 1,
+            "fee": "0",
+            "instant": false,
+            "program_id": 0
+          },
+          "paid": 1,
+          "tx": "3wBNpyFH1VXmLDBoYsGZAxhD1hVAMJnUU67kFaoH65Gc"
+        },
+        {
+          "event": {
+            "amount": "10000000000",
+            "beneficiary": "agent-f.test.near",
+            "commit_id": 5,
+            "fee": "0",
+            "instant": false,
+            "program_id": 0
+          },
+          "paid": 5,
+          "tx": "C79UF9xSqbF8Cp3hN26Y1WQzHeLA7zHrHYEW9x9fwHb1"
+        }
+      ]
+    }
+  ],
+  "mcp": {
+    "commit_id": 0,
+    "tool_names": [
+      "list_programs",
+      "get_program",
+      "fetch_env",
+      "check_poc",
+      "commit",
+      "submit",
+      "status",
+      "practice_try"
+    ],
+    "tools": 8
+  },
+  "one_moment": {
+    "commit": 0,
+    "instant": true,
+    "keeper": {
+      "program": 0,
+      "steps": [
+        {
+          "allocate": "Fn6ri9UPgcfthJhDXHMixbTUtvSLfoHWWo6WdoDdznT3",
+          "events": 1
+        },
+        {
+          "event": {
+            "amount": "10000000000",
+            "beneficiary": "agent-a.test.near",
+            "commit_id": 0,
+            "fee": "0",
+            "instant": true,
+            "program_id": 0
+          },
+          "paid": 0,
+          "tx": "7eLBXGg2Yqg696NcHbdaXRYc88rVmHZJhXMcECYsFJLa"
+        },
+        {
+          "pause_ticket": 0,
+          "permit_requested": {
+            "guardian": "guardian.test.near",
+            "method": "issue_pause",
+            "program_id": 0,
+            "round": 0,
+            "ticket": 0
+          },
+          "tx": "7KmEeMQXeTDCndc8jhhKouXaRUHjhGUkxuXXbPjhuudS"
+        }
+      ]
+    },
+    "paid_raw": "10000000000",
+    "paused_both": true,
+    "permits": {
+      "0": {
+        "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+        "block": "0x24",
+        "chain_id": 31337,
+        "confirmed_ms": 1793664999364,
+        "explorer": "local-31337:0x12daa4c05273e9e0443e02dc9bfea29af45569a29f2476764e92e9b75e58cdc8",
+        "first_seen_ms": 1793664998838,
+        "gas_used": "0x15597",
+        "kind": "pause",
+        "permit_id": 0,
+        "program_key": "bounty.test.near/0",
+        "round": 0,
+        "sent_ms": 1793664998844,
+        "signed_ns": 1793664997890175611,
+        "status": "confirmed",
+        "targets_paused": [
+          true
+        ],
+        "tx_hash": "0x12daa4c05273e9e0443e02dc9bfea29af45569a29f2476764e92e9b75e58cdc8"
+      },
+      "1": {
+        "adapter": "0x66c18fc52be65ea9fa3fb38c53c456716f007932",
+        "block": "0x22",
+        "chain_id": 31338,
+        "confirmed_ms": 1793665000929,
+        "explorer": "local-31338:0x5f01a3183cea9c850d66cc60c7667044bdfd144d235f1dd53b1411ba41250d3b",
+        "first_seen_ms": 1793665000401,
+        "gas_used": "0x155ab",
+        "kind": "pause",
+        "permit_id": 1,
+        "program_key": "bounty.test.near/0",
+        "round": 0,
+        "sent_ms": 1793665000407,
+        "signed_ns": 1793664999700928255,
+        "status": "confirmed",
+        "targets_paused": [
+          true
+        ],
+        "tx_hash": "0x5f01a3183cea9c850d66cc60c7667044bdfd144d235f1dd53b1411ba41250d3b"
+      }
+    },
+    "seconds_from_commit": {
+      "paid": 26.675406559,
+      "paused_31337": 26.679739186,
+      "paused_31338": 27.680634614,
+      "t1": 13.798258432,
+      "verdict": 9.725918223
+    }
+  },
+  "practice": {
+    "create_tx": "HVabPVVAjn7N9W3H2dGDLKm6SjzsjXV81RXFJCaAdtMV",
+    "fund": {
+      "credit": {
+        "agent": null,
+        "near": "1999040000000000000000000",
+        "tokens": "2000000"
+      },
+      "fund": {
+        "events": [
+          {
+            "data": [
+              {
+                "amount": "2000000",
+                "memo": null,
+                "new_owner_id": "bounty.test.near",
+                "old_owner_id": "practice.test.near"
+              }
+            ],
+            "event": "ft_transfer",
+            "standard": "nep141",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "sandbox:AhFfZ2cDuVG7N9ZA3y4YqULrEunWcwqKVajTVK8eqKpx",
+        "failures": [],
+        "tx": "AhFfZ2cDuVG7N9ZA3y4YqULrEunWcwqKVajTVK8eqKpx"
+      },
+      "near_credit": {
+        "events": [],
+        "explorer": "sandbox:AVdbr7ijyzsKSGJr5o2cgqJmv5PPi8iTgjA3FB2wt9Ng",
+        "failures": [],
+        "tx": "AVdbr7ijyzsKSGJr5o2cgqJmv5PPi8iTgjA3FB2wt9Ng"
+      },
+      "tokens_sent": {
+        "events": [
+          {
+            "data": [
+              {
+                "amount": "2000000",
+                "memo": null,
+                "new_owner_id": "practice.test.near",
+                "old_owner_id": "test.near"
+              }
+            ],
+            "event": "ft_transfer",
+            "standard": "nep141",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "sandbox:DnyTBsMz8DKXNEX68yftVsxJhhC362ybgfwi7TNUoVWz",
+        "failures": [],
+        "tx": "DnyTBsMz8DKXNEX68yftVsxJhhC362ybgfwi7TNUoVWz"
+      },
+      "vending": "practice.test.near"
+    },
+    "manifest_sha256": "0625051668035887063d2792f02f184be90b8538dc6abc10f10203d64903c403",
+    "ok": true,
+    "program_id": 1,
+    "seconds": 66.821337166,
+    "tries": [
+      {
+        "account": "ann.practice.test.near",
+        "beneficiary": "practice.test.near",
+        "commit_id": 7,
+        "links": [
+          {
+            "vend": "sandbox:Dw6di2iToRfq5cvC1gP2kX9Rn429GHpyVLeYx57baCcg"
+          },
+          {
+            "commit": "sandbox:7aEwrqdX8bkC8UBDGUghjtT6jdNHMEzyronZzqgy9D9V"
+          },
+          {
+            "reveal": "sandbox:FN4AThfhvVojC9Zn7FMA7Hq6ZcKgNGGZ53kdodNDbxj1"
+          }
+        ],
+        "paid_raw": "1000000",
+        "run_id": 21,
+        "seconds": 17.153029164,
+        "settle": [
+          {
+            "allocate": "3oEtpixv916knpbZcK6hEaFKK7FjgWA4xjWHEs9prE7V"
+          },
+          {
+            "paid": {
+              "amount": "1000000",
+              "beneficiary": "practice.test.near",
+              "commit_id": 7,
+              "fee": "0",
+              "instant": true,
+              "program_id": 1
+            },
+            "pay": "6P5BTU1AREBBHrEVczFZ4gxQNig8YvCuUYwqVoZt6KeS"
+          }
+        ],
+        "state": "Done:Paid",
+        "t1": {
+          "answered_at": 1793665820,
+          "commit_id": 7,
+          "impact_usd_micro": "0",
+          "keys": [
+            {
+              "slot": 0,
+              "tag": "0104df1daed7d167ddd24e9f72a77f68336749227380caffa2666db9e30094ba"
+            }
+          ],
+          "kind": "Violation",
+          "mode": "verify",
+          "protected_harm_usd_micro": "0",
+          "reason": null,
+          "receipt_sha256": "4666636fbed897adf023c4509348c8581bad7fe3871d5a6e8624ab22d994841e",
+          "run_id": 21,
+          "tier": "T1"
+        },
+        "vault": "0x48c66bc2189dbe2f031547654642f2229b1195aa",
+        "vault_index": 0,
+        "vended_by": "practice.test.near",
+        "verdict": {
+          "answered_at": 1793665820,
+          "commit_id": 7,
+          "impact_usd_micro": "0",
+          "keys": [
+            {
+              "slot": 0,
+              "tag": "0104df1daed7d167ddd24e9f72a77f68336749227380caffa2666db9e30094ba"
+            }
+          ],
+          "kind": "Violation",
+          "mode": "verify",
+          "protected_harm_usd_micro": "0",
+          "reason": null,
+          "receipt_sha256": "4666636fbed897adf023c4509348c8581bad7fe3871d5a6e8624ab22d994841e",
+          "run_id": 21,
+          "seconds": 0,
+          "tier": "T0"
+        },
+        "witness_bytes": 363,
+        "witness_source": "base"
+      },
+      {
+        "account": "bob.practice.test.near",
+        "beneficiary": "practice.test.near",
+        "commit_id": 8,
+        "links": [
+          {
+            "vend": "sandbox:DxLssUM8D6M4mxpjjtcRpuTRcCs7FPDoPzp8BAFtTpc5"
+          },
+          {
+            "commit": "sandbox:FgLzZCjGLWe2mLJRw9DZiDeZPs8HtSxA4LacRaJMDci5"
+          },
+          {
+            "reveal": "sandbox:9WnPjk3bmqbMcPUxr3PDvwUFfDd1qtNa9o8y7oz5QeJ1"
+          }
+        ],
+        "paid_raw": "1000000",
+        "run_id": 22,
+        "seconds": 16.746708573,
+        "settle": [
+          {
+            "allocate": "7dhcppYC9tKkQBZiiL32ZdTFMwfcKzbcqHYUHUnt7egK"
+          },
+          {
+            "paid": {
+              "amount": "1000000",
+              "beneficiary": "practice.test.near",
+              "commit_id": 8,
+              "fee": "0",
+              "instant": true,
+              "program_id": 1
+            },
+            "pay": "CkFieFLay9QXNNHwZM77retZgdridL9M8L6mArtCJqMb"
+          }
+        ],
+        "state": "Done:Paid",
+        "t1": {
+          "answered_at": 1793665837,
+          "commit_id": 8,
+          "impact_usd_micro": "0",
+          "keys": [
+            {
+              "slot": 0,
+              "tag": "07dc5373436d7aabc3e3c3342b924369f65d15c9f241a7bb320b0f9096d628ed"
+            }
+          ],
+          "kind": "Violation",
+          "mode": "verify",
+          "protected_harm_usd_micro": "0",
+          "reason": null,
+          "receipt_sha256": "1e3e01a597c035076dce0c3ab6656c439589a6b7a826aa409432708ecc38a014",
+          "run_id": 22,
+          "tier": "T1"
+        },
+        "vault": "0x5c91b96f4e7154183b6e03e623de347d2f0490f6",
+        "vault_index": 1,
+        "vended_by": "practice.test.near",
+        "verdict": {
+          "answered_at": 1793665837,
+          "commit_id": 8,
+          "impact_usd_micro": "0",
+          "keys": [
+            {
+              "slot": 0,
+              "tag": "07dc5373436d7aabc3e3c3342b924369f65d15c9f241a7bb320b0f9096d628ed"
+            }
+          ],
+          "kind": "Violation",
+          "mode": "verify",
+          "protected_harm_usd_micro": "0",
+          "reason": null,
+          "receipt_sha256": "1e3e01a597c035076dce0c3ab6656c439589a6b7a826aa409432708ecc38a014",
+          "run_id": 22,
+          "seconds": 0,
+          "tier": "T0"
+        },
+        "witness_bytes": 363,
+        "witness_source": "base"
+      }
+    ],
+    "vending": {
+      "owner": "test.near",
+      "program": 1,
+      "public_vend_key": "ed25519:Cmjd9jZ6SXAsAGGtwohymo9ZGKAjgsMxLN1sQWcy8xLF",
+      "tx": {
+        "events": [],
+        "explorer": "sandbox:6oLUXHFZgDcfz4gQe3nbpMWD2JYoMjF38XLpgeG4nWoa",
+        "failures": [],
+        "tx": "6oLUXHFZgDcfz4gQe3nbpMWD2JYoMjF38XLpgeG4nWoa"
+      },
+      "vaults": 24,
+      "vend_allowance": "5000000000000000000000000",
+      "vending": "practice.test.near"
+    }
+  },
+  "program": {
+    "anchor": {
+      "anchor": "LightClient",
+      "program_id": 0
+    },
+    "anchor_block": 30,
+    "anchor_hash": "0xdd2c35b6f7d6a85881bf0aff1909cea92e70bfe99affb1777050f37f418b5f5f",
+    "create_tx": "AFdnQJETDaw7AahgmKgbuCU3JzHa9sAhxESHe5ae9jY8",
+    "manifest_sha256": "b02fada777aed4a9224686299fb171b4c028d3e5a12bbf38c739d34b2a7367b7",
+    "program_id": 0
+  },
+  "record": {
+    "anchor": "light-client",
+    "at_stake": "16025000000",
+    "defaulted": "0",
+    "paid_findings": 4,
+    "phase": "Open",
+    "program_id": 0,
+    "release_permits": 1,
+    "rounds": 2,
+    "share_claimed_first_hour_bps": 6000,
+    "survived_secs": 83,
+    "time_to_first_claim_secs": 51,
+    "verified_attempts": 7
+  },
+  "release": {
+    "checks": [
+      {
+        "chain_id": 31337,
+        "expected": "0xfaDCd7fB4FBCD7576bcE110B7D2Cb7Bc32A39D94",
+        "implementation": "0xfadcd7fb4fbcd7576bce110b7d2cb7bc32a39d94",
+        "ok": true,
+        "proxy": "AcmeLend"
+      },
+      {
+        "chain_id": 31337,
+        "expected": "0xd1E601a17b5aa1D0e614d0d8b69F45F73b370f29",
+        "implementation": "0xd1e601a17b5aa1d0e614d0d8b69f45f73b370f29",
+        "ok": true,
+        "proxy": "AcmeVault"
+      },
+      {
+        "b_exploit_reverts": true,
+        "chain_id": 31337
+      },
+      {
+        "chain_id": 31338,
+        "expected": "0xfaDCd7fB4FBCD7576bcE110B7D2Cb7Bc32A39D94",
+        "implementation": "0xfadcd7fb4fbcd7576bce110b7d2cb7bc32a39d94",
+        "ok": true,
+        "proxy": "AcmeLend"
+      },
+      {
+        "chain_id": 31338,
+        "expected": "0xd1E601a17b5aa1D0e614d0d8b69F45F73b370f29",
+        "implementation": "0xd1e601a17b5aa1d0e614d0d8b69f45f73b370f29",
+        "ok": true,
+        "proxy": "AcmeVault"
+      },
+      {
+        "b_exploit_reverts": true,
+        "chain_id": 31338
+      }
+    ],
+    "ok": true,
+    "seconds": 1.015416772
+  },
+  "rounds": [
+    {
+      "canaries_ok": true,
+      "check_round_run": 9,
+      "keeper": [
+        {
+          "program": 0,
+          "steps": [
+            {
+              "rerun": 0,
+              "run_id": 10
+            },
+            {
+              "rerun": 1,
+              "run_id": 11
+            },
+            {
+              "rerun": 3,
+              "run_id": 12
+            },
+            {
+              "rerun": 5,
+              "run_id": 13
+            },
+            {
+              "rerun": 6,
+              "run_id": 14
+            }
+          ]
+        },
+        {
+          "program": 0,
+          "steps": [
+            {
+              "event": {
+                "amount": "1000000000",
+                "beneficiary": "agent-g.test.near",
+                "commit_id": 6,
+                "fee": "0",
+                "instant": false,
+                "program_id": 0
+              },
+              "paid": 6,
+              "tx": "8WzrPcWvaGndDLp93ecmL36giXFihD7yDWeS53ZwP1uu"
+            }
+          ]
+        }
+      ],
+      "manifest_sha256": "d64fb2024093ef1ebcfb73afa61ff8385287e50a4db5941337a16af40d16c73f",
+      "opened": {
+        "carried": 2,
+        "program_id": 0,
+        "promoted": 1,
+        "release_gate": false,
+        "released": 1,
+        "round": 1
+      },
+      "releases": [
+        {
+          "code_hash": "0xbe804b4be2cefc08ee73799f9b0b1859f201c962d14d67b0becbd31ac0f20f65",
+          "implementation": "0xD4Bd8BE52735732307B4836851A6e100aaAc798b",
+          "proxy": "0x86a7ae34aC860f0Eb62765Ae374e92b17254A587"
+        }
+      ],
+      "reruns": [
+        {
+          "commit": 0,
+          "kind": "NoViolation",
+          "run": 10,
+          "tier": "T1"
+        },
+        {
+          "commit": 1,
+          "kind": "Violation",
+          "run": 11,
+          "tier": "T1"
+        },
+        {
+          "commit": 3,
+          "kind": "NoViolation",
+          "run": 12,
+          "tier": "T1"
+        },
+        {
+          "commit": 5,
+          "kind": "Violation",
+          "run": 13,
+          "tier": "T1"
+        },
+        {
+          "commit": 6,
+          "kind": "Violation",
+          "run": 14,
+          "tier": "T1"
+        }
+      ],
+      "round": 1,
+      "seconds": 64.299991052,
+      "summary": "5 re-runs (2 fixed), release gate false, 1 keys released, 2 carried"
+    },
+    {
+      "canaries_ok": true,
+      "check_round_run": 15,
+      "keeper": [
+        {
+          "program": 0,
+          "steps": [
+            {
+              "rerun": 0,
+              "run_id": 16
+            },
+            {
+              "rerun": 1,
+              "run_id": 17
+            },
+            {
+              "rerun": 5,
+              "run_id": 18
+            },
+            {
+              "rerun": 6,
+              "run_id": 19
+            }
+          ]
+        },
+        {
+          "program": 0,
+          "steps": [
+            {
+              "issue_pending": "CYN42Dyb1qWgcDiQskXKu5Tm1C7pW5UUXiyUCK9HQc3L"
+            }
+          ]
+        }
+      ],
+      "manifest_sha256": "3a7810661e0c67a9e5160df56b6cd70646c3e3d6125d79b34091cee12bb73ec5",
+      "opened": {
+        "carried": 0,
+        "program_id": 0,
+        "promoted": 0,
+        "release_gate": true,
+        "released": 2,
+        "round": 2
+      },
+      "releases": [
+        {
+          "code_hash": "0x144069b903f9c72fbbab3d74d383bfcec406a9e01f5812867b293d80542581cd",
+          "implementation": "0xfaDCd7fB4FBCD7576bcE110B7D2Cb7Bc32A39D94",
+          "proxy": "0x86a7ae34aC860f0Eb62765Ae374e92b17254A587"
+        },
+        {
+          "code_hash": "0x389bcf636e17b1ff840fe234a507aa5e5154073b459c343409023794d570553d",
+          "implementation": "0xd1E601a17b5aa1D0e614d0d8b69F45F73b370f29",
+          "proxy": "0x4C1255A0AdFf6BBecAF8C257305065f19436Ec7d"
+        }
+      ],
+      "reruns": [
+        {
+          "commit": 0,
+          "kind": "NoViolation",
+          "run": 16,
+          "tier": "T1"
+        },
+        {
+          "commit": 1,
+          "kind": "NoViolation",
+          "run": 17,
+          "tier": "T1"
+        },
+        {
+          "commit": 5,
+          "kind": "NoViolation",
+          "run": 18,
+          "tier": "T1"
+        },
+        {
+          "commit": 6,
+          "kind": "NoViolation",
+          "run": 19,
+          "tier": "T1"
+        }
+      ],
+      "round": 2,
+      "seconds": 69.672991004,
+      "summary": "4 re-runs (4 fixed), release gate true, 2 keys released, 0 carried"
+    }
+  ],
+  "second_runs": [],
+  "seconds": 453.054241657,
+  "started_unix": 1793664826,
+  "submissions": [
+    {
+      "agent": "A (MCP)",
+      "commit": 0,
+      "keys": [
+        {
+          "slot": 0,
+          "tag": "75fee290411ffdf796e42ac7e352851e8e13caec4006b7fe988d083da07dd4b9"
+        }
+      ],
+      "ok": true,
+      "paid_raw": "10000000000",
+      "run": 2,
+      "seconds": 9.725918223,
+      "state": {
+        "Done": {
+          "Paid": {
+            "amount": "10000000000",
+            "at": 1793664991,
+            "instant": true
+          }
+        }
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "GswG3DxAe1RsKKBb8juqPWF7D3XacAmPc1usqmR1GtnK",
+        "pay": "7eLBXGg2Yqg696NcHbdaXRYc88rVmHZJhXMcECYsFJLa",
+        "reveal": "5pgHoTiqfhToKFDABN97yzK6jZnF2RfwVuEfyeHbiWmw"
+      },
+      "verdict": "Violation"
+    },
+    {
+      "agent": "B",
+      "commit": 1,
+      "keys": [
+        {
+          "slot": 1,
+          "tag": "f2d9df62b38febd4d2fcc1f5e33c05172d93f033f53f79ac3337f3ac3782a481"
+        }
+      ],
+      "ok": true,
+      "paid_raw": "3000000000",
+      "run": 3,
+      "seconds": 9.903827677,
+      "state": {
+        "Done": {
+          "Paid": {
+            "amount": "3000000000",
+            "at": 1793665123,
+            "instant": false
+          }
+        }
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "EE5kHA8FYanpmZv3bh14cygavjdtqkDYQJxZqrAfqMxX",
+        "pay": "3wBNpyFH1VXmLDBoYsGZAxhD1hVAMJnUU67kFaoH65Gc",
+        "reveal": "FkKzmoX1XR5EVeKgK12Nt1VRVyErcH8dEVi3FbQCkV82"
+      },
+      "verdict": "Violation"
+    },
+    {
+      "agent": "C",
+      "commit": 2,
+      "keys": [],
+      "ok": true,
+      "paid_raw": "0",
+      "run": 4,
+      "seconds": 10.278440975,
+      "state": {
+        "Done": "Forfeited"
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "BvPEks9WPFGUbc4698Q9TPEvHWgPnuaJtorN2Q4b7AQC",
+        "pay": null,
+        "reveal": "93KnVKVPoVVj9Kr1AsUKsAUBsTdGBNn22uo4GZWC6YiL"
+      },
+      "verdict": "NoViolation"
+    },
+    {
+      "agent": "D",
+      "commit": 3,
+      "keys": [
+        {
+          "slot": 0,
+          "tag": "75fee290411ffdf796e42ac7e352851e8e13caec4006b7fe988d083da07dd4b9"
+        }
+      ],
+      "ok": true,
+      "paid_raw": "0",
+      "run": 5,
+      "seconds": 10.298652215,
+      "state": {
+        "Done": "DuplicateConfirmed"
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "8yy2yNGaEQyNwmUzAHMXveVNjxuDnoFUs4KaiQTAvXiv",
+        "pay": null,
+        "reveal": "5m4ch3tb72DhCJCbTqumUo3PWqZUzCZY1tofSj9cDBo8"
+      },
+      "verdict": "Violation"
+    },
+    {
+      "agent": "E",
+      "commit": 4,
+      "keys": [
+        {
+          "slot": 2,
+          "tag": "d5e597028002a636f1cfc23dbd0a9d9164b8e01a5d3e9951cb0d740cc3b8a8de"
+        }
+      ],
+      "ok": true,
+      "paid_raw": "0",
+      "run": 6,
+      "seconds": 10.284795958,
+      "state": {
+        "Done": "Known"
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "EWKMNnZ21krhNg1wdbyBLBKW9QFrMSNqqDfJKqsCSst5",
+        "pay": null,
+        "reveal": "CuCfnztEh8D8BwohLjicABdqrpz4xsdQLT8minyPCm3M"
+      },
+      "verdict": "Violation"
+    },
+    {
+      "agent": "F",
+      "commit": 5,
+      "keys": [
+        {
+          "slot": 0,
+          "tag": "27aa1f2d733f6498b8b19c2045b75df46f934baab9d8f81264def68b68e9d110"
+        }
+      ],
+      "ok": true,
+      "paid_raw": "10000000000",
+      "run": 7,
+      "seconds": 10.298619122,
+      "state": {
+        "Done": {
+          "Paid": {
+            "amount": "10000000000",
+            "at": 1793665125,
+            "instant": false
+          }
+        }
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "BfXqdHnBcjesSd9C9zMQXsGfGJeaJ7SrqwhkZ33WwneN",
+        "pay": "C79UF9xSqbF8Cp3hN26Y1WQzHeLA7zHrHYEW9x9fwHb1",
+        "reveal": "EMu1qQVVXqqbjiWCHwpwS3niLTnH5a4pfi64jDjFKJfP"
+      },
+      "verdict": "Violation"
+    },
+    {
+      "agent": "G",
+      "commit": 6,
+      "keys": [],
+      "ok": true,
+      "paid_raw": "1000000000",
+      "run": 8,
+      "seconds": 10.284021326,
+      "state": {
+        "Done": {
+          "Paid": {
+            "amount": "1000000000",
+            "at": 1793665452,
+            "instant": false
+          }
+        }
+      },
+      "tier": "T1",
+      "txs": {
+        "commit": "XsHQ7hpQHV2wqyBsmogjtSVsXh3De4KEytRUDCN3eg3",
+        "pay": "8WzrPcWvaGndDLp93ecmL36giXFihD7yDWeS53ZwP1uu",
+        "reveal": "DyQt6bRN8LdahR9qdeMakVkbSDQaNfRkAWExi6Hur42e"
+      },
+      "verdict": "NoViolation"
+    }
+  ],
+  "withdrawal": {
+    "account": "agent-b.test.near",
+    "wallet_after": "3100.000000",
+    "wallet_before": "100.000000"
+  }
+}
