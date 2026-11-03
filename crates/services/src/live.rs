@@ -1276,8 +1276,8 @@ impl Live {
         // in commit order (one never revealed waits out its reveal window), and the keeper moves it on:
         // each try's final state, once the keeper has run on the program.
         if tries.iter().any(|r| r["final_state"].as_str().is_none_or(|f| !f.starts_with("Done:"))) {
-            // expire, allocate and pay: 30, 40 and 30 Tgas set aside, one after another.
-            self.ensure_liquid(&Self::acct("keeper"), 100 * MILLI)?;
+            // The keeper's calls set aside up to 300 Tgas (allocate 150, a pause ticket 300).
+            self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
             let keeper = self.ctx_of("keeper");
             let window = |k: &str| pm.settlement.as_ref().and_then(|s| s["windows"][k].as_u64()).unwrap_or(600);
             let until = Instant::now() + Duration::from_secs(window("reveal") + window("challenge") + 600);
@@ -1296,8 +1296,14 @@ impl Live {
                 if done || Instant::now() > until {
                     break;
                 }
-                if let Err(e) = cmd::keeper(&keeper, ppid) {
-                    println!("  keeper on program {ppid}: {e}");
+                match cmd::keeper(&keeper, ppid) {
+                    // What it did, and what stopped it (a call refused, or one it could not pay for).
+                    Ok(k) => {
+                        for st in k["steps"].as_array().into_iter().flatten() {
+                            println!("  keeper on program {ppid}: {}", st.to_string().chars().take(300).collect::<String>());
+                        }
+                    }
+                    Err(e) => println!("  keeper on program {ppid}: {e}"),
                 }
                 std::thread::sleep(Duration::from_secs(30));
             }
