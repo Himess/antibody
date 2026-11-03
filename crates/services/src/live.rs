@@ -1173,7 +1173,7 @@ impl Live {
         }
         let vending = Self::acct("practice");
         let wasm = deployable(&self.a.root, "antibody_practice_vending", "contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm")?;
-        let account_wasm = self.a.root.join("contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm");
+        let account_wasm = deployable(&self.a.root, "antibody_practice_account", "contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm")?;
         let code_bytes = std::fs::metadata(&wasm)?.len() as u128 + std::fs::metadata(&account_wasm)?.len() as u128;
         match self.near.account(&vending)? {
             None => {
