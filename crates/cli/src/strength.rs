@@ -4,7 +4,8 @@
 //! - `missing-access-check`: a caller check is deleted (an `only…` modifier, or a `require`/`if … revert`
 //!   on `msg.sender`);
 //! - `flipped-comparison`: a comparison in a condition is negated (`<` becomes `>=`, `==` becomes `!=`);
-//! - `unchecked-transfer`: a token transfer's (or a low-level call's) success check is dropped.
+//! - `unchecked-transfer`: a token transfer's (or a low-level call's) success check is dropped;
+//! - `dropped-guard`: any other guard (`require`, `if … revert`), such as a health check, is deleted.
 //!
 //! The project's own Foundry invariant test, which asserts the program's rules (`check(snapshot()) == 0`),
 //! runs on every mutant with a fixed seed. A mutant is **caught** when the fuzzer breaks a rule within the
@@ -142,10 +143,19 @@ fn checked_transfer(code: &str, line: &str) -> Option<String> {
     None
 }
 
-/// Whether a statement checks the caller: a `require`/`if … revert` that reads `msg.sender`.
+/// Whether a statement checks the caller: a `require`/`if … revert` whose condition compares
+/// `msg.sender`, looks it up (`isPauser[msg.sender]`) or asks for its role.
 fn caller_check(code: &str) -> bool {
     let t = code.trim();
-    t.contains("msg.sender") && ((t.starts_with("if (") && t.contains(") revert") && t.ends_with(';')) || (t.starts_with("require(") && t.ends_with(");")))
+    let statement = (t.starts_with("if (") && t.contains(") revert") && t.ends_with(';')) || (t.starts_with("require(") && t.ends_with(");"));
+    let compares = ["msg.sender ==", "msg.sender !=", "== msg.sender", "!= msg.sender", "[msg.sender]", "hasRole("].iter().any(|p| t.contains(p));
+    statement && compares
+}
+
+/// Whether a statement is a one-line guard: `require(…);` or `if (…) revert …;`.
+fn guard(code: &str) -> bool {
+    let t = code.trim();
+    (t.starts_with("if (") && t.contains(") revert") && t.ends_with(';')) || (t.starts_with("require(") && t.ends_with(");"))
 }
 
 /// Whether a statement checks a low-level call's success (`require(ok…)`, `if (!ok) revert …`).
@@ -212,14 +222,20 @@ pub fn mutate(file: &str, src: &str, first_id: usize) -> Vec<(Mutant, String)> {
             }
             continue;
         }
+        if let Some(after) = checked_transfer(code, line) {
+            push("unchecked-transfer", i, after);
+            continue;
+        }
+        if call_success_check(code, &codes[..i]) {
+            push("unchecked-transfer", i, String::new());
+            continue;
+        }
         if caller_check(code) {
             push("missing-access-check", i, String::new());
             continue;
         }
-        if let Some(after) = checked_transfer(code, line) {
-            push("unchecked-transfer", i, after);
-        } else if call_success_check(code, &codes[..i]) {
-            push("unchecked-transfer", i, String::new());
+        if guard(code) {
+            push("dropped-guard", i, String::new());
         }
         if t.starts_with("for (") {
             continue;
@@ -309,6 +325,9 @@ fn forge_test(o: &Opts, dir: &Path) -> Result<(&'static str, String)> {
         if l.contains("a program rule breaks") {
             return Ok(("caught", detail));
         }
+        if l.contains("setUp()") {
+            return Ok(("breaks-setup", detail));
+        }
         return Ok(("errored", detail));
     }
     if text.lines().any(|l| l.contains("[PASS]")) {
@@ -379,7 +398,8 @@ pub fn run(o: Opts) -> Result<Value> {
     Ok(json!({
         "statement": format!("caught {caught} of {total} mutants"),
         "label": "rule strength: how many deliberately broken versions of the code the program's rules catch under the fuzzer; it measures the rules, not the code's security",
-        "caught": caught, "total": total, "invalid": count("invalid"), "errored": count("errored"), "timeout": count("timeout"),
+        "caught": caught, "total": total, "breaks_setup": count("breaks-setup"), "invalid": count("invalid"), "errored": count("errored"), "timeout": count("timeout"),
+        "not_scored": "a mutant that does not compile, breaks the test's own setup (the fixture cannot even be deployed with it), errs or times out is listed but not scored",
         "by_class": by_class.iter().map(|(k, (c, t))| (k.to_string(), json!({"caught": c, "total": t}))).collect::<BTreeMap<_, _>>(),
         "test": o.test, "sources": sources, "fuzz": {"runs": o.runs, "depth": o.depth, "seed": o.seed},
         "survivors": results.iter().filter(|r| r.result == "survived").map(|r| json!({"id": r.mutant.id, "class": r.mutant.class, "file": r.mutant.file, "line": r.mutant.line, "before": r.mutant.before, "after": r.mutant.after})).collect::<Vec<_>>(),
@@ -410,6 +430,22 @@ mod tests {
     }
 
     #[test]
+    fn a_transfer_to_the_caller_is_not_a_caller_check() {
+        let m = classes("        if (!acUSD.transfer(msg.sender, amount)) revert TransferFailed();\n");
+        assert_eq!(m, vec![("unchecked-transfer", "acUSD.transfer(msg.sender, amount);".to_string())]);
+        assert_eq!(classes("        if (!_healthy(msg.sender)) revert Unhealthy();\n")[0].0, "dropped-guard");
+        assert_eq!(classes("        if (!isPauser[msg.sender] && msg.sender != admin) revert NotPauser();\n")[0].0, "missing-access-check");
+    }
+
+    #[test]
+    fn another_guard_is_dropped_and_its_comparisons_negated() {
+        let m = classes("        if (!_healthy(msg.sender)) revert Unhealthy();\n");
+        assert_eq!(m, vec![("dropped-guard", String::new())]);
+        let r = classes("        if (shares == 0) revert ZeroShares();\n");
+        assert_eq!(r.iter().map(|x| x.0).collect::<Vec<_>>(), vec!["dropped-guard", "flipped-comparison"]);
+    }
+
+    #[test]
     fn a_transfer_check_is_dropped() {
         let m = classes("        if (!acUSD.transfer(to, amount)) revert TransferFailed();\n");
         assert_eq!(m, vec![("unchecked-transfer", "acUSD.transfer(to, amount);".to_string())]);
@@ -423,6 +459,7 @@ mod tests {
     fn comparisons_in_conditions_are_negated_once_each() {
         let m = classes("        if (amountOut == 0 || amountOut < minOut) revert Slippage();\n");
         assert_eq!(m, vec![
+            ("dropped-guard", String::new()),
             ("flipped-comparison", "if (amountOut != 0 || amountOut < minOut) revert Slippage();".to_string()),
             ("flipped-comparison", "if (amountOut == 0 || amountOut >= minOut) revert Slippage();".to_string()),
         ]);
@@ -430,9 +467,10 @@ mod tests {
 
     #[test]
     fn strings_comments_loops_shifts_and_mappings_are_left_alone() {
-        assert!(classes("        require(x, \"a < b\"); // c == d\n").is_empty());
+        // The guard itself may be dropped; the operators in its string and comment are never touched.
+        assert_eq!(classes("        require(x, \"a < b\"); // c == d\n"), vec![("dropped-guard", String::new())]);
         assert!(classes("        for (uint256 i; i < n; ++i) {\n").is_empty());
-        assert!(classes("        if (x << 2 > y) revert E();\n").len() == 1);
+        assert_eq!(classes("        if (x << 2 > y) revert E();\n").iter().filter(|m| m.0 == "flipped-comparison").count(), 1);
         assert!(classes("    mapping(address => uint256) public balanceOf;\n").is_empty());
     }
 }
