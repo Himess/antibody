@@ -195,9 +195,10 @@ enum PracticeCmd {
         #[arg(long, default_value_t = 24)]
         vaults: u32,
         /// NEAR each practice account gets: its contract's storage and its calls' gas, which NEAR sets
-        /// aside up front at ten times the gas price (the 200 Tgas reveal: 0.2 NEAR); closing the
-        /// account returns what is left. The key's allowance counts every call's set-aside gas
-        #[arg(long, default_value = "0.25")]
+        /// aside up front at ten times the gas price (the commit's 0.025 may not be back when the 200 Tgas
+        /// reveal sets aside 0.2); closing the account returns what is left. The key's allowance counts
+        /// every call's set-aside gas
+        #[arg(long, default_value = "0.28")]
         gas_funds: String,
         #[arg(long, default_value = "0.4")]
         allowance: String,
@@ -224,7 +225,7 @@ enum PracticeCmd {
         program: u32,
         #[arg(long, default_value_t = 24)]
         vaults: u32,
-        #[arg(long, default_value = "0.25")]
+        #[arg(long, default_value = "0.28")]
         gas_funds: String,
         #[arg(long, default_value = "0.4")]
         allowance: String,

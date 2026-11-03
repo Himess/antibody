@@ -65,9 +65,10 @@ const T1_WAIT: Duration = Duration::from_secs(900);
 /// aside up front at ten times the gas price: 0.2 NEAR, most of it refunded), with a margin for the
 /// calls before it (a sealed blob's upload burns about 0.035).
 const FREE_FOR_RUNS: u128 = 300 * MILLI;
-/// What each vended practice account gets: its contract's storage and its largest call's set-aside gas
-/// (the reveal, 0.2 NEAR); closing the account after its try returns what is left to the vending contract.
-const PRACTICE_GAS_FUNDS: u128 = 250 * MILLI;
+/// What each vended practice account gets: its contract's storage (0.03), and the gas its commit and its
+/// reveal set aside (0.025 and 0.201: the reveal goes out before the commit's unused gas has come back);
+/// closing the account after its try returns what is left to the vending contract.
+const PRACTICE_GAS_FUNDS: u128 = 280 * MILLI;
 /// A vended practice account's key allowance: every call's set-aside gas counts against it (about 0.31).
 const PRACTICE_ALLOWANCE: u128 = 400 * MILLI;
 /// The practice tries' names (with the program's id, each names a new practice account).
@@ -1191,6 +1192,7 @@ impl Live {
                 }
                 let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
                 self.s["practice"]["vending"] = practice::retarget(&root_ctx, &vending, &account_wasm, ppid, 24, &terms)?;
+                self.s["practice"]["vending_terms"] = json!({"program": ppid, "gas_funds": PRACTICE_GAS_FUNDS.to_string(), "allowance": PRACTICE_ALLOWANCE.to_string()});
                 // Two tries' gas funds at once, and the margin a vend needs.
                 let free = cmd::u128_of(&a["amount"]).saturating_sub(cmd::u128_of(&a["storage_usage"]) * 10u128.pow(19));
                 let want = 2 * PRACTICE_GAS_FUNDS + 150 * MILLI;
@@ -1201,11 +1203,19 @@ impl Live {
             }
             Some(_) => {}
         }
+        let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
+        let want_terms = json!({"program": ppid, "gas_funds": PRACTICE_GAS_FUNDS.to_string(), "allowance": PRACTICE_ALLOWANCE.to_string()});
         if self.s["practice"]["vending"].is_null() {
-            let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
             // The public vend key's allowance is a ceiling (each vend counts its 60 Tgas set aside): a locked
             // vending contract's key cannot be given more.
             self.s["practice"]["vending"] = practice::deploy(&self.ctx_of("practice"), &wasm, &account_wasm, HQ, ppid, 24, &terms, 10 * ONE_NEAR)?;
+            self.s["practice"]["vending_terms"] = want_terms.clone();
+            self.save()?;
+        }
+        if self.s["practice"]["vending_terms"] != want_terms {
+            // Terms this build changed since the vending contract got them: its owner sets them again.
+            self.s["practice"]["retargeted"] = practice::retarget(&root_ctx, &vending, &account_wasm, ppid, 24, &terms)?;
+            self.s["practice"]["vending_terms"] = want_terms;
             self.save()?;
         }
         if self.s["practice"]["fund"].is_null() {
@@ -1219,13 +1229,31 @@ impl Live {
         let judge = self.judge_ctx(&served);
         let mut tries = self.s["practice"]["tries"].as_array().cloned().unwrap_or_default();
         for t in TRIERS {
-            // A vending contract keeps the names it vended: each program's tries have their own.
-            let name = format!("{t}-p{ppid}");
-            if tries.iter().any(|r| r["account"] == json!(format!("{name}.{vending}"))) {
+            if tries.iter().any(|r| r["trier"] == json!(t)) {
                 continue;
             }
+            // A vending contract keeps the names it vended: each program's tries have their own, and a try
+            // that stopped part-way leaves its name taken (its account closed), so the next one is free.
+            let base = format!("{t}-p{ppid}");
+            let mut name = base.clone();
+            for k in 2.. {
+                if practice::vault_of(&root_ctx, &vending, &format!("{name}.{vending}"))?.is_none() {
+                    break;
+                }
+                name = format!("{base}-{k}");
+            }
             let before = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
-            let mut r = practice::try_it(&judge, &vending, ppid, &name)?;
+            let mut r = match practice::try_it(&judge, &vending, ppid, &name) {
+                Ok(r) => r,
+                Err(e) => {
+                    let mut failed = self.s["practice"]["failed_tries"].as_array().cloned().unwrap_or_default();
+                    failed.push(json!({"trier": t, "account": format!("{name}.{vending}"), "error": format!("{e:#}")}));
+                    self.s["practice"]["failed_tries"] = Value::Array(failed);
+                    self.save()?;
+                    return Err(e);
+                }
+            };
+            r["trier"] = json!(t);
             // What the try cost the vending contract, once its account closed (its NEAR came back).
             let after = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
             r["vending_spent_yocto"] = json!(before.saturating_sub(after).to_string());

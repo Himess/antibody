@@ -96,11 +96,12 @@ ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f agen
 # NEAR sets aside a call's prepaid gas at ten times the gas price before running it: a 300 Tgas call (an
 # activation, a T1 relay) needs 0.301 NEAR free, a 200 Tgas reveal 0.201, and each burns about a tenth of
 # it. The live run (`antibody-services live`) tops each account up to 0.3 NEAR free from the root before
-# such calls and returns the agents' floats after their proofs. A vended practice account gets 0.25 (its
-# contract's storage and its reveal's set-aside gas); closing it after its try returns what is left.
+# such calls and returns the agents' floats after their proofs. A vended practice account gets 0.28 (its
+# contract's storage, and its commit's and its reveal's set-aside gas: the reveal goes out before the
+# commit's unused gas is back); closing it after its try returns what is left.
 # The vending contract: its code, the practice-account code it keeps, its state, two tries' gas funds at
-# once (0.25 each, back when each account closes), and a margin for the deploy.
-PRACTICE_AMOUNT="$(stake "$VENDING_WASM" "$(( $(stat -c %s "$ACCOUNT_WASM") + 8000 ))" 0.65)"
+# once (0.28 each, back when each account closes), and a margin for the deploy.
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" "$(( $(stat -c %s "$ACCOUNT_WASM") + 8000 ))" 0.71)"
 
 plan() {
   local total=0 a
