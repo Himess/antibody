@@ -84,8 +84,11 @@ def one_run(a, i, practice, stamp):
         server = [str(pathlib.Path(server[0]).resolve())] + server[1:]
     cfg = {"mcpServers": {"antibody": {"command": server[0], "args": server[1:]}}}
     (ws / "mcp.json").write_text(json.dumps(cfg), encoding="utf-8")
+    # Off the shelf, and nothing of this machine's own setup: no built-in tools, only this MCP server, and
+    # no user settings or hooks (the workspace has no project settings).
     cmd = [a.claude, "-p", PROMPT.format(name=name), "--mcp-config", str(ws / "mcp.json"), "--strict-mcp-config", "--tools", "",
-           "--allowedTools", "mcp__antibody", "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
+           "--allowedTools", "mcp__antibody", "--setting-sources", "project", "--output-format", "stream-json", "--verbose",
+           "--no-session-persistence"]
     if a.model:
         cmd += ["--model", a.model]
     t0 = time.time()
@@ -192,6 +195,8 @@ def main():
         shutil.rmtree(ws, ignore_errors=True)
         records.append(r)
         print(f"run {i}: success={r['success']} states={r['states']} {r['seconds']} s, {len(r['tool_calls'])} tool calls, cost {r['cost_usd']}")
+        if "Failed to authenticate" in r["final_text"]:
+            raise SystemExit(f"the agent could not authenticate ({r['final_text'][:120]}): log in to Claude Code, then run again")
     ok = [r for r in records if r["success"]]
     secs = [r["seconds"] for r in ok]
     summary = {

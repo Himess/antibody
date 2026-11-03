@@ -81,6 +81,9 @@ class Doc:
             return ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030", "--deployments", "target/demo/deployments.json"]
         return [] if self.net == "testnet" else ["--network", self.net]
 
+    def account(self, prefix):
+        return f"{prefix}.test.near" if self.net == "sandbox" else f"{prefix}.{'near' if self.net == 'mainnet' else 'testnet'}"
+
     def flags_note(self):
         if self.net == "sandbox":
             return ["In the commands below, `…` stands for `--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json`.", ""]
@@ -143,7 +146,7 @@ def judges(d):
         n += 1
         o = rd.get("opened", {})
         out += [f"| {n} | Round {rd.get('round')}: the TEE checks the fix, the keeper re-runs every paid proof at it, releases wait for the gate | "
-                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` | {rd.get('summary')}; release gate `{str(o.get('release_gate')).lower()}` | "
+                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` | {rd.get('summary')} | "
                 f"check run {rd.get('check_round_run')} |"]
     rel = r.get("release", {})
     if rel:
@@ -155,7 +158,9 @@ def judges(d):
     if tries:
         n += 1
         t = tries[0]
-        links = ", ".join(f"{k} {d.tx(v.rsplit('/', 1)[-1].split(':')[-1] if isinstance(v, str) else v)}" for l in t.get("links", []) for k, v in l.items())
+        hashes = [(k, v.rsplit('/', 1)[-1].split(':')[-1]) for l in t.get("links", []) for k, v in l.items() if isinstance(v, str)]
+        hashes += [(k, v) for st in t.get("settle", []) for k, v in st.items() if k in ("allocate", "pay") and isinstance(v, str) and (k, v) not in hashes]
+        links = ", ".join(f"{k} {d.tx(h)}" for k, h in hashes)
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
                 f"`{d.cli('try --name <you>')}` (sends transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
                 f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD, vault {t.get('vault_index')}, {t.get('seconds', 0):.0f} s | {links} |"]
@@ -189,13 +194,14 @@ def agents(d):
             "## Start with the practice program", "",
             "The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:", ""]
     out += d.flags_note()
-    out += ["```", d.cli("try --name <you>"), "```", ""]
+    out += ["```", d.cli("try --name <you>"), "```", "",
+            "Over MCP, the `practice_try` tool does the same in one call, with no account configured.", ""]
     if practice.get("tries"):
         t = practice["tries"][0]
         out += [f"Expected (from the recorded run): `{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract, vault {t.get('vault_index')}, "
                 f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
     out += ["## Connect over MCP", "", "One config. Give the agent a function-call key (`antibody agent key add`): it may commit, reveal and retry, and it cannot withdraw or transfer.", "",
-            "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", "<agent>.<you>.testnet", "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
+            "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", d.account("<agent>.<you>"), "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
     names = mcp.get("tool_names") or []
     if names:
         out += [f"Tools ({len(names)}): " + ", ".join(f"`{n}`" for n in names) + ".", ""]
