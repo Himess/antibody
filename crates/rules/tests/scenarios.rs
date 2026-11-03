@@ -591,7 +591,7 @@ fn an_agent_commits_only_to_its_programs() {
 }
 
 #[test]
-fn per_invariant_budget_and_distinct_top_up() {
+fn per_invariant_budget_and_no_distinct_top_up() {
     let mut w = W::new();
     let mut prm = params();
     prm.slots[0].budget = 200; // one Critical payout per round for slot 0
@@ -601,14 +601,11 @@ fn per_invariant_budget_and_distinct_top_up() {
     w.allocate(p).unwrap();
     w.pay(c0).unwrap();
     assert_eq!(w.end(c1), Some(End::Exhausted));
+    // The distinctness top-up is off: a patch the requester chooses could read the earlier sealed proof.
     let ctx = w.ctx(H2);
     let spec = w.spec();
-    let r = w.e.request_distinct(&ctx, c1, spec);
-    let run = last_run(&w.ok(r));
-    w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"distinct": true}));
-    w.t1(run);
-    w.pay(c1).unwrap();
-    assert!(matches!(w.end(c1), Some(End::Paid { amount: 200, .. })));
+    assert!(w.e.request_distinct(&ctx, c1, spec).is_err());
+    assert_eq!(w.end(c1), Some(End::Exhausted));
     w.audit_ok(&[p]);
 }
 

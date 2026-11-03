@@ -85,6 +85,9 @@ pub struct Engine<S: Store> {
     pub contract: AccountId,
 }
 
+/// The distinctness top-up (spec §7.5) is off: see `request_distinct`.
+const DISTINCT_TOP_UP_OFF: bool = true;
+
 impl<S: Store> Engine<S> {
     pub fn new(store: S, contract: &str) -> Self {
         Engine { store, contract: contract.to_string() }
@@ -2053,8 +2056,14 @@ impl<S: Store> Engine<S> {
     }
 
     /// A finding whose invariant budget was exhausted proves, with a patch, that its bug is distinct
-    /// (spec §7.5). The hunter pays the run.
+    /// (spec §7.5). Off: the requester chooses both the earlier finding and the patch, so a patch that
+    /// breaks the slot only on some property of the earlier sealed proof reads it one bit per run, and an
+    /// earlier finding that never broke the slot passes any no-op patch. The run handling below stays for
+    /// a design that judges against a T1-checked round's code and the holder that used up the budget.
     pub fn request_distinct(&mut self, ctx: &Ctx, commit: CommitId, spec: RunSpec) -> R<Vec<Effect>> {
+        if DISTINCT_TOP_UP_OFF {
+            return Err(Error::State("the distinctness top-up is off (spec §7.5)"));
+        }
         let c = self.get_commit(commit)?;
         let p = self.get_program(c.program)?;
         if c.state != CommitState::Done(End::Exhausted) {

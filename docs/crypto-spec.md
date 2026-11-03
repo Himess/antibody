@@ -222,7 +222,7 @@ requests (`request_disclosure(program_id, tags)`, at most eight tags) only once 
 | Fork-mode deployer | `keccak256("antibody/deployer/v1")[12..]`: the sender of a manifest's deployment transactions |
 | Activation receipt | `SHA-256("antibody/v2/activation" ‖ program_key ‖ manifest hash ‖ seal_pk)` |
 | Round-check receipt | `SHA-256("antibody/v2/round-check" ‖ SHA-256(round manifest) ‖ u8(ok) ‖ u8(canaries_ok))` |
-| Distinctness receipt | `SHA-256("antibody/v2/distinct" ‖ SHA-256(patch) ‖ u64(commit) ‖ u64(earlier commit) ‖ u8(distinct))` |
+| Distinctness receipt (the top-up is off, spec §7.5) | `SHA-256("antibody/v2/distinct" ‖ SHA-256(patch) ‖ u64(commit) ‖ u64(earlier commit) ‖ u8(distinct))` |
 | Disclosure receipt | `SHA-256("antibody/v2/disclose" ‖ hex tags)` |
 
 ## 9. Tiers (who vouches for the facts)

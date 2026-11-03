@@ -422,13 +422,16 @@ highest-severity key. **Each invariant has a budget per round**, so many entry p
 cannot drain the escrow. A holder whose budget is exhausted holds its keys and is paid nothing
 (`exhausted`), unless it proves distinctness (§7.5).
 
-### 7.5 Distinctness top-up (optional)
+### 7.5 Distinctness top-up (off)
 
-A hunter whose invariant budget is exhausted may supply a patch: a code override of the targets. A
-`distinct` run, inside the TEE, re-runs the earlier holder's sealed PoC and the hunter's own PoC at the
-patched code. If the patch stops the earlier key's PoC and not the hunter's, the bugs are distinct, and
-the hunter is paid `nominal` beyond the budget (still subject to the escrow). The earlier PoC stays
-sealed, and the patch is published with the result.
+The design: a hunter whose invariant budget is exhausted supplies a patch, and a `distinct` run re-runs
+the earlier holder's sealed PoC and the hunter's own at the patched code; if the patch stops the earlier
+PoC and not the hunter's, the bugs are distinct and the hunter is paid beyond the budget. It is **off**
+(`request_distinct` is refused): the requester chooses both the earlier finding and the patch, so a
+patch that breaks the slot only on some property of the earlier sealed PoC reads it one bit per run,
+and an earlier finding that never broke the slot passes a no-op patch. An exhausted finding is recorded
+(`exhausted`); the next round's fix shows whether its bug was distinct (§8.4). A safe version would judge
+only against a T1-checked round's code and the holder that used up the budget (roadmap).
 
 ### 7.6 Known issues (sealed)
 

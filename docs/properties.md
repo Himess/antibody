@@ -47,7 +47,7 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
 | # | Property | Model invariant | Scenarios (model / code); Kani proofs |
 |---|---|---|---|
 | 1 | **Escrow conservation.** Per program, `funded = available + reserved + paid + fees + returned`, and `reserved` is the sum of the commits' reservations. For the contract, `tokens held = escrow + credits + locked bonds + locked challenge bonds` | `p1_escrow`, `p1_tokens` | every scenario; `audit()` after every replayed step; Kani: every ledger movement |
-| 2 | **At most one payout per key per round, within each invariant's budget** | `p2_onePerKey`, `p2_budget` | `appealPromotesDistinctBugTest` / `per_invariant_budget_and_distinct_top_up`; Kani: `a_slot_never_pays_past_its_budget` |
+| 2 | **At most one payout per key per round, within each invariant's budget** | `p2_onePerKey`, `p2_budget` | `appealPromotesDistinctBugTest` / `per_invariant_budget_and_no_distinct_top_up`; Kani: `a_slot_never_pays_past_its_budget` |
 | 3 | **Payment goes to the earliest valid commit once the reveal windows close**: a duplicate always duplicates an earlier holder, and no holder is later than a duplicate of its key | `p3_priority` | `challengeTimeoutKeepsPriorityTest` / `challenge_timeout_keeps_priority` |
 | 4 | **Duplicates are never paid, except through the one-way appeal**: a promotion needs a released key and a re-run that still breaks it | `p4_dups` | `appealPromotesDistinctBugTest`, `confirmedDuplicateReleasesReservationTest` |
 | 5 | **A round never removes a payment or an invariant** | `p5_monotone` | `gapLanePromotedTest` / `gap_lane_promoted` |
