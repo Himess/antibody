@@ -116,10 +116,11 @@ impl Provider {
                     continue;
                 }
                 // A load-balanced endpoint whose backends differ (some keep no recent state for proofs):
-                // ask again on a new connection, which may reach another backend.
+                // ask again from a new client (a new connection and TLS session, which a balancer may
+                // pin to a backend), which may reach another backend.
                 if elsewhere < 10 && msg.contains("proof window") {
                     self.stats.lock().unwrap().retries += 1;
-                    fresh.get_or_insert_with(Self::unpooled);
+                    fresh = Some(Self::unpooled());
                     std::thread::sleep(Duration::from_millis(150));
                     elsewhere += 1;
                     continue;

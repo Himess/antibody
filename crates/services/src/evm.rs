@@ -44,17 +44,23 @@ impl Evm {
     }
 
     /// A read, tried up to eight times: a public RPC's load balancer may answer from a backend without
-    /// the block's state, or refuse a burst. Each retry opens a new connection (another backend may
-    /// answer) after a backoff. Reads only (a failing `eth_call` fails each time).
+    /// the block's state, or refuse a burst. Each retry comes from a new client (a new connection and
+    /// TLS session, which a balancer may pin to a backend) after a backoff. Reads only (a failing
+    /// `eth_call` fails each time).
     pub fn read(&self, method: &str, params: Value) -> Result<Value> {
-        let fresh = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .pool_max_idle_per_host(0)
-            .build()
-            .expect("http client");
         let mut last = None;
         for attempt in 0..8u32 {
-            match self.call_via(if attempt == 0 { &self.client } else { &fresh }, method, params.clone()) {
+            let r = if attempt == 0 {
+                self.call(method, params.clone())
+            } else {
+                let fresh = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .pool_max_idle_per_host(0)
+                    .build()
+                    .expect("http client");
+                self.call_via(&fresh, method, params.clone())
+            };
+            match r {
                 Ok(v) => return Ok(v),
                 Err(e) => last = Some(e),
             }
