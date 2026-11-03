@@ -1178,9 +1178,14 @@ pub fn run(a: DemoArgs) -> Result<Value> {
              judged["programs"][0]["pauses"], judged["programs"][0]["releases"]);
     ok &= judge_ok;
     results["judge"] = judged;
-    // A versioned deployment record, as `antibody admin record-deployment` writes it.
-    let record = antibody_cli::judge::deployment_record(&judge, None)?;
-    ok &= record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
+    // A versioned deployment record, as `antibody admin record-deployment` writes it from the served
+    // deployments file (which names the practice vending contract too).
+    let served_ctx = Ctx { near: near.clone(), dep: served.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges") };
+    let record = antibody_cli::judge::deployment_record(&served_ctx, None)?;
+    let record_ok = record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
+    println!("deployment record: {} contracts, verifier {}; ok: {record_ok}", record["contracts"].as_array().map(|c| c.len()).unwrap_or(0),
+             record["verifier"]["wasm_hash"].as_str().unwrap_or("-"));
+    ok &= record_ok;
     results["deployment_record"] = record;
 
     step("API: the indexer, running since the start, has every block's events; each endpoint answers once (docs/openapi.yaml's examples)");
