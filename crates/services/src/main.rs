@@ -164,8 +164,9 @@ enum Cmd {
     },
     /// The story on NEAR testnet with Sepolia and Base Sepolia: our own deployment
     /// (deployments/near-testnet.json) and fixtures, every transaction on a testnet. Keys from
-    /// `.secrets/`, RPCs from `.env` (SEPOLIA_RPC, comma-separated, and BASE_SEPOLIA_RPC). Resumable:
-    /// `<work dir>/live.json` records each stage
+    /// `.secrets/`, RPCs from `.env` (SEPOLIA_RPC: endpoints that prove recent state, comma-separated;
+    /// SEPOLIA_TX_RPC, optional: transactions and current state; BASE_SEPOLIA_RPC). Resumable: `<work
+    /// dir>/live.json` records each stage
     Live {
         #[arg(long)]
         work_dir: Option<PathBuf>,
@@ -289,6 +290,7 @@ fn main() -> Result<()> {
                 antibody_bin: root.join(format!("target/release/antibody{exe}")),
                 keys: root.join(".secrets/near"),
                 evm_key: root.join(".secrets/sepolia_deployer.json"),
+                sepolia_tx_rpc: var("SEPOLIA_TX_RPC").or_else(|_| var("SEPOLIA_RPC").map(|v| v.split(',').next().unwrap_or_default().to_string()))?,
                 sepolia_rpc: var("SEPOLIA_RPC")?,
                 base_rpc: var("BASE_SEPOLIA_RPC")?,
                 until: until.clone(),

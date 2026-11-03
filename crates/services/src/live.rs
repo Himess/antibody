@@ -79,8 +79,12 @@ pub struct LiveArgs {
     pub keys: PathBuf,
     /// The EVM deployer's key file (`{"address", "private_key"}`): it deploys the fixtures and relays the permits.
     pub evm_key: PathBuf,
-    /// Sepolia RPC URLs, comma-separated: the witness builder asks each, the first sends transactions.
+    /// Sepolia RPC URLs that prove recent state (`eth_getProof`), comma-separated: the witness builder asks
+    /// each, and the first answers every other read at the anchor.
     pub sepolia_rpc: String,
+    /// The Sepolia RPC for transactions and current state (forge, the permit relayer, checks): public
+    /// proof endpoints limit bursts like a forge simulation's.
+    pub sepolia_tx_rpc: String,
     pub base_rpc: String,
     pub until: Option<String>,
 }
@@ -276,6 +280,11 @@ impl Live {
     }
 
     fn sepolia(&self) -> String {
+        self.a.sepolia_tx_rpc.clone()
+    }
+
+    /// The first proof endpoint: reads at the anchor (code hashes, the fixes' code).
+    fn proofs(&self) -> String {
         self.a.sepolia_rpc.split(',').next().unwrap_or_default().to_string()
     }
 
@@ -421,7 +430,7 @@ impl Live {
         let t = Instant::now();
         let n = self.s["anchor"]["block"].as_u64().ok_or_else(|| eyre!("no anchor"))?;
         let h: B256 = self.s["anchor"]["hash"].as_str().unwrap_or_default().parse()?;
-        let evm = Evm::new(&self.sepolia());
+        let evm = Evm::new(&self.proofs());
         let head = hex_u64(&evm.call("eth_blockNumber", json!([]))?)?;
         if head > n + 90 {
             return Err(eyre!("the anchor {n} is {} blocks old, and public RPCs prove about 128 back: rerun for a new anchor", head - n));
