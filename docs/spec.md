@@ -469,7 +469,8 @@ A funded holder is paid by crediting its beneficiary's internal balance (§13: a
 - the protocol fee, `protocol_fee_bps` of the amount, is taken from the escrow after the hunter, never
   from a top-up, and only if the escrow covers it;
 - the hunter's bond was already refunded at allocation;
-- the payment issues a `release_wrap` request (§11.4).
+- after payment, the project (or anyone) may request its `release_wrap` run (§11.4); `antibody program read`
+  does it.
 
 **Credit, then withdraw:** `withdraw` is the only outbound transfer, and a failed transfer is credited
 back.
@@ -641,41 +642,41 @@ rule exists that anyone could change. The guest never sees the key. It asks the 
 ### 11.2 Per-program keys (domain-separated)
 
 ```
-seal_sk(p)      = mac("antibody/v2/seal" ‖ program_key)            X25519 secret, clamped
-tag(p, s, g)    = mac("antibody/v2/tag" ‖ program_key ‖ u8(s) ‖ g)
-disclose(p, t)  = mac("antibody/v2/disclose" ‖ program_key ‖ t)     one key per tag
-wrap_eph(p, c)  = mac("antibody/v2/wrap-eph" ‖ program_key ‖ u64_be(commit_id))
+label(l, rest)  = l ‖ 0x00 ‖ u32_be(len(program_key)) ‖ program_key ‖ rest
+seal_sk(p)      = mac(label("antibody/v2/seal", ""))                X25519 secret, clamped
+tag(p, s, g)    = mac(label("antibody/v2/tag", u8(s) ‖ g))
+disclose(p, t)  = mac(label("antibody/v2/disclose", t))             one key per tag
 ```
 
 The `activate` run outputs `seal_pk(p) = X25519(seal_sk(p), 9)` and `key_epoch = SHA-256(seal_pk)[0..8]`.
 The contract accepts them only from a T1-confirmed activation (§3.1). A rotated key changes the epoch, and
 a submission sealed to another epoch is `InfraError`, never `InvalidPoC`.
 
-### 11.3 Sealed blob `ABSEAL2`
+### 11.3 Sealed blob
 
 ```
-eph = X25519 ephemeral (hunter);  k_wrap = HKDF(X25519(eph, seal_pk), "antibody/v2/wrap" ‖ program_key ‖ hunter)
-κ = random content key;  wrap_v = AEAD(k_wrap, κ, ad = program_key ‖ hunter)
-ct = AEAD(κ, bundle ‖ extra_witness, ad = program_key ‖ hunter ‖ u32_be(round))
-blob = "ABSEAL2" ‖ eph_pk ‖ wrap_v ‖ ct
+κ = random content key;  wrap_v = κ wrapped to seal_pk (X25519 ephemeral + HKDF + AEAD, bound to program_key)
+blob = "ABSEAL1 " ‖ wrap_v ‖ nonce ‖ AEAD(κ, program_key ‖ hunter ‖ witness ‖ report, ad = program_key)
 ```
 
-The hunter and the program are bound inside the AEAD, so a blob replayed under another account fails to
-open (`InvalidPoC` for the replayer).
+The program and the hunter are inside the AEAD, so a blob replayed under another account is
+`InvalidPoC` for the replayer; the commitment binds the round (§4.1). The exact construction is in
+docs/crypto-spec.md §4.
 
 ### 11.4 `release_wrap`
 
 The verify run emits **no wrap**. Facts are public in OutLayer's resolve transaction, so a wrap there
 would let a project read a duplicate's PoC for free. After payment, a `release_wrap` run wraps κ to the
 project's X25519 key, for paid first findings and promoted duplicates only. Its ephemeral key is
-`wrap_eph(p, c)`, so the output is deterministic. The project therefore sees exactly what it paid for.
+derived from κ and the project's key, so the output is deterministic. The project therefore sees exactly
+what it paid for: `antibody program read` requests the wrap, opens the proof and re-runs it locally.
 
 ### 11.5 Project key
 
 The project's X25519 key is derived from a NEP-413 signature of a fixed message
-(`antibody keygen --nep413`, exportable). The message names the program, and the docs warn never to sign
-it on a site other than Antibody's CLI. Low-order points are refused at creation; the verifier never
-panics on one. `rotate_project_key` changes the key for future wraps.
+(`antibody keygen x25519 --nep413`; the key file is its export). The message names near-antibody and the
+project, and says never to sign it anywhere but Antibody's CLI. Low-order points are refused at creation;
+the verifier never panics on one. `rotate_project_key` changes the key for future wraps.
 
 ### 11.6 Disclosure
 
@@ -686,7 +687,7 @@ A tag's PoCs become public when either:
 
 After `exit`, every claimed tag qualifies. **No live bug goes public before the project has seen it.**
 
-**Paged disclosure (shipped).** `disclose(program_id, tags[])` is permissionless and anyone may fund it.
+**Paged disclosure (shipped).** `request_disclosure(program_id, tags[])` is permissionless and anyone may fund it.
 A `disclose` run outputs `disclose(p, t)` for each qualifying tag. Every fact of that tag carries
 `wrap_d = AEAD(disclose(p, t), κ)`, so one key per tag opens all of the tag's PoCs, duplicates included.
 The condition is monotone and depends on nobody's consent, so disclosure cannot be blocked once it holds.

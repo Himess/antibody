@@ -1,218 +1,243 @@
-# Antibody cryptography specification (v1)
+# Antibody cryptography specification
 
-This document specifies every cryptographic object in Antibody: keys, sealed submissions,
-commitments, fingerprint tags, project wraps, disclosure and receipts. The verifier
-(`crates/verifier`), the CLI and the NEAR contract (`contracts/near-antibody`) implement exactly
-this. "‖" is byte concatenation. Strings are UTF-8 and are hashed without a terminator.
+Every cryptographic object of a v2 program: keys, sealed submissions, commitments, tags, the project
+wrap, disclosure, and the hashes that bind a run. The verifier (`crates/verifier`: `keys.rs`,
+`sealed.rs`, `tee.rs`), the CLI and near-antibody implement exactly this; the golden vectors
+(`golden/vectors.json`) pin the commitments and derived addresses on both sides. "‖" is byte
+concatenation; strings are UTF-8, hashed without a terminator; integers are big-endian.
 
 ## 1. Goals
 
 | # | Property | Mechanism |
 |---|---|---|
-| G1 | A PoC stays confidential until the program's disclosure time, except to the TEE and, for valid findings, to the project | Sealed submission (§4), project wrap (§7) |
-| G2 | Priority is decided by commit order and cannot be stolen or front-run | Commit-reveal binding the hunter account (§5); hunter and program inside the AEAD payload (§4.2) |
-| G3 | "Same rule, same function" is provable before disclosure without revealing the function | Fingerprint tags (§6) |
-| G4 | After disclosure, anyone can recompute every receipt and tag, duplicates included | Disclosure of content keys and `k_program` (§8); deterministic receipts (§9) |
-| G5 | The verdict reaching NEAR comes from the pinned verifier build | OutLayer `WasmUrl` hash pin, a `PROTECTED_` secret bound to that build and to the calling contract, and attestation tiers (§10) |
+| G1 | A proof stays confidential until disclosure, except to the TEE and, once paid, to the project | Sealed blob (§4), release wrap (§6) |
+| G2 | Priority is the commit's order and cannot be stolen or front-run | A commitment binding program, round and hunter (§5); program and hunter inside the AEAD (§4.2) |
+| G3 | "Same rule, same root cause" is decidable before disclosure without revealing the function | Tags under the program's key (§7.1) |
+| G4 | After disclosure, anyone can recompute every verdict and tag, duplicates included | Per-tag disclosure keys (§7.2); deterministic receipts (§8) |
+| G5 | The facts reaching NEAR come from the pinned verifier build | OutLayer's build- and caller-bound key (§3.1), the request hash in the facts, and T1 (§9) |
 
 ## 2. Primitives
 
 | Primitive | Instance | Notes |
 |---|---|---|
-| Hash | SHA-256 | Every hash in this document, unless it says keccak-256 |
+| Hash | SHA-256 | Every hash here, unless it says keccak-256 |
 | MAC / PRF | HMAC-SHA256 (RFC 2104) | |
 | KDF | HKDF-SHA256 (RFC 5869) | |
-| Key agreement | X25519 (RFC 7748) | |
+| Key agreement | X25519 (RFC 7748) | Non-contributory shared secrets are refused |
 | AEAD | ChaCha20-Poly1305 (RFC 8439) | 96-bit nonce, 128-bit tag |
-| EVM hashes | keccak-256 | Only where Ethereum defines them: header hash, code hash, selectors |
-
-These are the same primitives OutLayer's keystore uses for its secrets (X25519 + HKDF-SHA256 + ChaCha20-Poly1305).
+| EVM hashes | keccak-256 | Only where Ethereum defines them, and for EVM addresses (§8) |
 
 ## 3. Keys
 
-### 3.1 Verifier seed S
+### 3.1 The root key
 
-`S` is 32 bytes held in OutLayer's keystore as the secret `PROTECTED_ANTIBODY_SEED`.
+The verifier wasm declares one OutLayer encryption key in its `outlayer.manifest` section:
+`{"path": "antibody", "bind": "wasm", "caller": "predecessor"}`. OutLayer's keystore derives it inside
+its TEE from the build's SHA-256 and the account that called OutLayer, so only this exact build, called
+by near-antibody, ever holds it. There is no secret row, owner or access rule to change. The guest
+never sees the key: it asks the host for `mac(data)`, HMAC-SHA256 under a key derived for MACs alone.
 
-- **Generation:** the keystore generates it inside its TEE (`PROTECTED_` prefix). Nobody, including the deployer, ever sees its value.
-- **Access condition:** `And[WasmHash{h}, Predecessor{Whitelist[near-antibody]}]`. Only the pinned verifier build `h` can read it, and only when that build is invoked through the near-antibody contract.
-- **Read path:** the guest reads `S` from its environment. It never prints `S` or any key derived from it, except the public key (§3.2) and, at disclosure, `k_program` and the content keys (§8). The reproducible build lets anyone check this.
-- **Fallback (labelled "weaker" in the trust table):** a manually stored secret, whose value the developer knows.
+The verifier also refuses, before deriving anything, a request whose `program_key` does not start with
+`<caller>/`: a build called by another account derives other keys and would not serve this program.
 
-### 3.2 Derived keys
+Natively and in the local wasm runner, a TEST root key stands in for the host
+(`mac = HMAC(SHA-256("antibody/TEST-ONLY-root/never-use-in-production"), data)`), so local outputs are
+reproducible and are never mistaken for TEE outputs.
+
+### 3.2 Per-program keys
+
+`program_key = "<near-antibody account>/<program id>"`. Every derivation is domain-separated:
 
 ```
-sk_v      = HKDF(ikm = S, salt = "antibody/v1", info = "antibody/verifier-x25519/v1", L = 32)   (X25519-clamped)
-pk_v      = X25519(sk_v, 9)
-k_program = HMAC(S, "antibody/k_program/v1" ‖ program_key)                                       (32 bytes)
+label(l, rest) = l ‖ 0x00 ‖ u32(len(program_key)) ‖ program_key ‖ rest
+
+seal_sk     = mac(label("antibody/v2/seal", ""))                    X25519 secret (clamped)
+seal_pk     = X25519(seal_sk, 9)
+key_epoch   = hex(SHA-256(seal_pk)[0..8])
+tag(s, g)   = mac(label("antibody/v2/tag", u8(s) ‖ g))               §7.1
+disclose(t) = mac(label("antibody/v2/disclose", t))                  §7.2
 ```
 
-- `program_key` is the globally unique program identifier `"<near-antibody account>/<program id>"`.
-- `pk_v` is published by a `pubkey` run of the verifier (`{"mode":"pubkey"}`). The contract stores it, and every program pins it at creation. Programs are therefore bound to one verifier build.
+- **Activation.** The `activate` run outputs `seal_pk`; near-antibody records it, and the program's
+  `key_epoch`, only from a T1-confirmed activation. Hunters seal to `seal_pk`.
+- **Epochs.** Every later request carries the program's `key_epoch`. A run whose build derives another
+  epoch stops with `InfraError` (never `InvalidPoC`), so a key change can never forfeit a bond.
 
 ### 3.3 Project key
 
-- The project generates an X25519 key pair locally (`antibody keygen`).
-- `pk_p` (32 bytes, hex) is committed in `create_program`.
-- `sk_p` never leaves the project.
+The project commits an X25519 public key at creation; near-antibody and the verifier refuse low-order
+points. `antibody keygen x25519 --nep413` derives it from the project account's NEAR key (NEP-413):
+
+```
+message   = "Antibody project key v2. Contract: <near-antibody>. Project: <project>. Sign this only in
+             the antibody CLI: the signature decrypts every finding paid to you."
+nonce     = SHA-256("antibody/v2/project-key-nonce|" ‖ message)
+signature = ed25519(SHA-256(u32_le(2^31 + 413) ‖ borsh(message, nonce, recipient = <near-antibody>, callback = None)))
+sk_p      = HKDF(ikm = signature, salt = "antibody/v2/project-key", info = message, L = 32)   (X25519-clamped)
+```
+
+ed25519 signatures are deterministic, so the same NEAR key re-derives the same project key, and a
+wallet's NEP-413 `signMessage` over the same three fields gives the same signature. The key file is the
+export. Whoever holds the signature can read every finding paid to the project, hence the message's
+warning: sign it nowhere else. `antibody keygen x25519` without `--nep413` draws a random key instead.
+`rotate_project_key` changes the key for later wraps.
 
 ### 3.4 Per-submission secrets
 
-- **Content key `K`:** 32 bytes from the hunter's CSPRNG.
-- **Sender salt:** 32 bytes inside the bundle (`sender_salt`). It derives the fresh sender addresses `keccak256("antibody/sender/v1" ‖ salt ‖ i)[12..]`.
+- **Content key κ:** 32 bytes from the hunter's CSPRNG.
+- **Sender salt:** 32 bytes, chosen by the hunter and kept secret until disclosure. It derives the
+  proof's fresh senders (§8).
 
-## 4. Sealed submission (`ABSEAL1`)
+## 4. Sealed blob (`ABSEAL1`)
 
 ### 4.1 Wire format
 
 ```
-blob    = "ABSEAL1\0"            (8 bytes, magic + version)
-        ‖ wrap_v                 (92 bytes, §4.3)
-        ‖ nonce_b                (12 bytes, random)
-        ‖ AEAD_K(nonce_b, P, ad_b)
-ad_b    = "antibody/sealed/v1" ‖ program_key
+blob   = "ABSEAL1\0"              (8 bytes)
+       ‖ wrap_v                   (92 bytes, §4.3)
+       ‖ nonce_b                  (12 bytes, random)
+       ‖ AEAD_κ(nonce_b, P, ad = "antibody/sealed/v1" ‖ program_key)
 ```
 
-`ciphertext_sha256 = SHA-256(blob)`. The blob may be published anywhere: FastFS, a GitHub raw URL, a NEAR transaction. It is fetched by URL and accepted only if its hash matches.
+A blob is revealed inline (at most 15 KB) or by location: a FastFS upload, a NEAR transaction named
+`near-tx:<hash>`, with the blob's SHA-256. The TEE fetches a location from at least two RPCs and accepts
+only bytes matching the committed hash; an unavailable or mismatched blob is the RPC's fault
+(`InfraError`).
 
 ### 4.2 Payload `P`
 
 ```
-P = "ABPOC1"                     (6 bytes)
-  ‖ u16be(len(program_key)) ‖ program_key
-  ‖ u16be(len(hunter))      ‖ hunter        (NEAR account id of the committing account)
-  ‖ u32be(len(envelope))    ‖ envelope      (verifier witness envelope, bincode; contains the bundle,
-                                             the manifest JSON and the invariants code)
-  ‖ u32be(len(report))      ‖ report        (optional free text; never parsed or used by the verifier)
+P = "ABPOC1"                                      (6 bytes)
+  ‖ u16(len(program_key)) ‖ program_key
+  ‖ u16(len(hunter))      ‖ hunter                (the committing NEAR account)
+  ‖ u32(len(envelope))    ‖ envelope              (the witness envelope, bincode)
+  ‖ u32(len(report))      ‖ report                (free text, never parsed)
 ```
 
-- **Why the hunter and program are inside the AEAD.** A ciphertext is public once uploaded. Without this binding, a copycat could commit to someone else's ciphertext under their own account. The TEE rejects any payload whose `program_key` or `hunter` differs from the request with `InvalidPoC`. A copycat cannot re-encrypt without `K`.
+The TEE refuses a payload whose `program_key` or `hunter` differs from the request with `InvalidPoC`.
+A ciphertext is public once revealed; without this binding a copycat could commit someone else's blob
+under its own account, and without κ it cannot re-encrypt one. Trailing bytes are refused.
 
-### 4.3 Key wrap to the verifier (`wrap_v`)
-
-```
-e        = 32 random bytes;  epk = X25519(e, 9)
-shared   = X25519(e, pk_v)
-kek      = HKDF(ikm = shared, salt = epk ‖ pk_v, info = "antibody/wrap-v/v1" ‖ program_key, L = 32)
-nonce_w  = 12 random bytes
-wrap_v   = epk (32) ‖ nonce_w (12) ‖ AEAD_kek(nonce_w, K, ad = "antibody/wrap-v/v1") (48)    = 92 bytes
-```
-
-- The contract stores `wrap_v`, the first 92 bytes after the magic, with the commit. A disclosure run then needs no ciphertext downloads.
-- The TEE checks that the `wrap_v` given in the request equals the one inside the fetched blob.
-
-## 5. Commitment (priority)
+### 4.3 Key wrap to the program (`wrap_v`)
 
 ```
-commit_hash = SHA-256("antibody/commit/v1|" ‖ program_key ‖ "|" ‖ hunter ‖ "|" ‖ hex(ciphertext_sha256))
+e       = 32 random bytes;   epk = X25519(e, 9);   shared = X25519(e, seal_pk)
+kek     = HKDF(ikm = shared, salt = epk ‖ seal_pk, info = "antibody/wrap-v/v1" ‖ program_key, L = 32)
+nonce_w = 12 random bytes
+wrap_v  = epk (32) ‖ nonce_w (12) ‖ AEAD_kek(nonce_w, κ, ad = "antibody/wrap-v/v1") (48)      = 92 bytes
 ```
 
-1. **Commit.** `commit(program, commit_hash)` locks the bond and records the NEAR block height and timestamp.
-2. **Reveal.** Within `reveal_window_blocks`, the hunter calls `submit(commit, {url, sha256, wrap_v})`. The contract recomputes `commit_hash` from the predecessor account and `sha256`.
-3. **Order.** Priority is the commit's position in the contract's commit sequence. That is the NEAR execution order, so block height first, then receipt order within a block.
+The TEE unwraps κ with `seal_sk`, then opens the body. A blob sealed to another program's key, or to
+another epoch's, does not open.
 
-Properties:
-- **Hiding.** `commit_hash` reveals nothing about the PoC, because `K` and the nonces are random.
-- **Binding.** The commit fixes the ciphertext, and therefore its content, and the account.
-- **Front-running.** Copying someone else's ciphertext does not help (§4.2). Seeing a commit reveals nothing.
-
-Recommended order of operations: commit, then upload, then submit. The ciphertext is never public before its commit exists.
-
-## 6. Fingerprint tags
-
-For each broken invariant `i`, the verifier records the protocol-entry call `(target, selector)` at whose end invariant `i` last flipped from holding to broken.
+## 5. Commitment
 
 ```
-fp_tag(i) = HMAC(k_program, "antibody/fp/v1" ‖ u8(i) ‖ target (20 bytes) ‖ selector (4 bytes))
+commitment = SHA-256("antibody/commit/v2"
+                     ‖ u32(len(program_key)) ‖ program_key
+                     ‖ u32(round)
+                     ‖ u32(len(hunter)) ‖ hunter
+                     ‖ SHA-256(blob))
 ```
 
-- **Key.** A finding's key is `(i, fp_tag(i))`.
-- **Equality.** Equal keys mean the same invariant broke at the end of a call to the same function of the same contract.
-- **Before disclosure.** HMAC is a PRF under the secret `k_program`, so tags reveal only equality. The slot `i` is public, because it determines severity.
-- **After disclosure.** `k_program` is published, and anyone can recompute every tag from its receipt.
-- **Unattributed flips.** A flip outside any protocol-entry call uses `target = 0x00…00` and `selector = 0x00000000`.
+1. **Commit.** `commit(program_id, round, commitment, terms_sha256)` locks the bond. Priority is the
+   commit's position in near-antibody's sequence: NEAR's execution order.
+2. **Reveal.** `reveal(commit_id, blob)` recomputes the commitment from the commit's program, round and
+   hunter and the blob's hash (inline bytes are hashed on chain; a location carries its hash), and
+   refuses any mismatch. Anyone may reveal: only the committed blob matches, and only the hunter could
+   have sealed it for that hunter (§4.2).
 
-## 7. Project wrap
+- **Hiding.** κ, `e` and the nonces are random, so a commitment reveals nothing about the proof.
+- **Binding.** It fixes the blob, so the content, and the account and round.
+- **Front-running.** Copying a revealed blob does not help (§4.2), and a commitment shows nothing to copy.
 
-For a `Violation`, the TEE re-encrypts `K` to the project so that a paying project can always read the report it pays for:
+## 6. Release wrap (the project reads what it paid for)
 
-```
-e_p      = HKDF(ikm = K, salt = pk_p, info = "antibody/wrap-p-eph/v1", L = 32)   (X25519-clamped; deterministic)
-epk_p    = X25519(e_p, 9);  shared = X25519(e_p, pk_p)
-kek_p    = HKDF(ikm = shared, salt = epk_p ‖ pk_p, info = "antibody/wrap-p/v1" ‖ program_key, L = 44)
-           -> key = kek_p[0..32], nonce = kek_p[32..44]
-project_wrap = epk_p (32) ‖ AEAD_key(nonce, K, ad = "antibody/wrap-p/v1") (48)          = 80 bytes
-```
-
-- **Deterministic ephemeral key.** `e_p` comes from `K`, which is secret and unique per submission. The TEE output is therefore a pure function of its inputs, so native and TEE outputs can be compared byte for byte.
-- **No nonce reuse.** Each `(e_p, pk_p)` key encrypts exactly one message.
-- **Who gets it.** Facts carry `project_wrap` (hex) only for `Violation`. NoViolation and InvalidPoC submissions are never disclosed to the project before disclosure time.
-
-## 8. Disclosure
-
-After `deadline + disclosure_after`, anyone may call `disclose(program)`. The contract runs the verifier with:
+The verify run emits no wrap: its facts are public in OutLayer's resolve transaction, and a wrap there
+would let a project read a duplicate's proof for free. After payment, a `release_wrap` run, for paid
+first findings and promoted duplicates only, re-encrypts κ to the project's key:
 
 ```
-{"mode":"disclose","program_id":program_key,"entries":[{"commit_id":n,"wrap_v":hex}, …]}
+e_p   = HKDF(ikm = κ, salt = pk_p, info = "antibody/wrap-p-eph/v1", L = 32)      X25519 secret (clamped)
+epk_p = X25519(e_p, 9);   shared = X25519(e_p, pk_p)
+kn    = HKDF(ikm = shared, salt = epk_p ‖ pk_p, info = "antibody/wrap-p/v1" ‖ program_key, L = 44)
+wrap  = epk_p (32) ‖ AEAD_{kn[0..32]}(kn[32..44], κ, ad = "antibody/wrap-p/v1") (48)          = 80 bytes
 ```
 
-The TEE unwraps each `wrap_v` with `sk_v` and returns:
+- **Deterministic.** `e_p` comes from κ, secret and unique per submission, so the run's output is a pure
+  function of its inputs and each `(e_p, pk_p)` pair encrypts one message.
+- **Reading it.** `antibody program read --commit N --project-key <file>` requests the wrap the first time,
+  unwraps κ, opens the blob (from its reveal transaction, a file or an Antibody API, checked against the
+  committed hash) and re-runs the proof locally: its receipt hash equals the one the TEE committed to.
+
+## 7. Tags and disclosure
+
+### 7.1 Tags
+
+For each broken slot `s`, the verifier records the protocol-entry call `(target, selector)` at whose end
+the slot last flipped from holding to broken. Its group bytes are the committed group, if the manifest
+assigns that entry point to one, else the entry point itself:
 
 ```
-{"program":program_key,"k_program":hex,"keys":[{"commit_id":n,"content_key":hex}, …]}
+g = "g" ‖ u16(group id)              (a committed group)
+g = "f" ‖ target (20) ‖ selector (4) (otherwise; an unattributed flip uses zero bytes)
+key = (s, tag(s, g))
 ```
 
-The contract stores the result. Anyone can then:
-1. fetch each blob;
-2. decrypt it with its `K`;
-3. re-run `antibody verify` locally;
-4. recompute the receipt hash, the fp_tags (with `k_program`) and the priority order.
+- **Before disclosure.** `tag` is a PRF under a key nobody holds, so tags reveal only equality. The slot
+  is public: it sets the severity.
+- **Equality.** Equal keys mean the same slot broke at the same root cause, so the later commit is a
+  duplicate.
+- **Primary tag.** The tag of the highest-severity broken slot (a verdict carries at most four keys).
 
-Duplicates become fully checkable: "same rule, same function, committed earlier".
+### 7.2 Disclosure keys
 
-Entries for re-run blobs (§8.1) carry their round: `{"commit_id":n,"round":r,"wrap_v":hex}` in, and
-`{"commit_id":n,"round":r,"content_key":hex}` out.
-
-### 8.1 Re-runs (rounds, docs/rounds.md)
-
-When a project proposes round `r` (a fix as code overrides), a claimed finding can be re-run against it:
+A verify or second run of a commit whose verdict has a primary tag `t` also wraps κ under that tag's
+disclosure key:
 
 ```
-{"mode":"rerun","program_id":program_key,"commit_id":n,"round":r,"hunter":account,
- "manifest_hash":hex(sha256(round-r manifest)),"poc_hash":hex(original verdict's poc_hash),
- "sealed":{"url":…,"sha256":hex,"wrap_v":hex}}
+nonce_d = SHA-256("antibody/v2/wrap-d" ‖ u64(commit_id) ‖ t)[0..12]
+wrap_d  = nonce_d ‖ AEAD_{disclose(t)}(nonce_d, κ, ad = program_key)
 ```
 
-- **The blob.** It is a fresh `ABSEAL1` blob whose payload is bound to the original `program_key` and
-  `hunter`. Its witness is built at the round-`r` manifest from the same bundle.
-- **Who builds it.** The project, from its key wrap, or the finder.
-- **TEE checks.** The same blob checks as `verify`. In addition:
-  - `poc_hash(bundle)` must equal the request's `poc_hash`, otherwise `InvalidPoC`;
-  - the witness's manifest must hash to `manifest_hash`;
-  - `round` must be > 0, otherwise the request fails.
-- **Output.** Facts as in §9, with no `project_wrap`. near-antibody checks the program, the commit, the
-  round's manifest hash and the `poc_hash`, then records which keys the PoC still breaks.
+`wrap_d` is public in the facts, and useless until `disclose(t)` is. A `disclose` run, which near-antibody
+requests (`request_disclosure(program_id, tags)`, at most eight tags) only once each tag's condition holds
+(spec §11.6), outputs `disclose(t)` for each tag. One key then opens every proof whose primary tag is
+`t`, duplicates included. Anyone can then:
+1. fetch each blob and open it with κ;
+2. re-run the verifier locally on the envelope;
+3. recompute the receipt, its hash and every tag's root cause, and the priority order.
 
-## 9. Receipts and facts
+## 8. Hashes and addresses that bind a run
 
-- **Receipt v2.** The full deterministic output: anchor, checks, calls, broken invariants with plaintext fingerprints, and impact. It is encoded as compact JSON in struct order. `receipt_hash = SHA-256(receipt bytes)`. The receipt stays sealed with the PoC until disclosure, and anyone can recompute it after.
-- **Facts.** The only TEE output that becomes public, at most 1 KB:
-  `{v, program, commit_id, poc_hash, kind, broken_mask, fp_tags, impact_usd_micro, project_wrap, receipt_hash, manifest_hash, wasm_hash}`.
-- **`poc_hash`.** `SHA-256("antibody/poc/v1" ‖ bincode(bundle))`. It binds the transactions and the sender salt.
-- **`manifest_hash`.** SHA-256 of the canonical manifest JSON. The contract checks it against the program.
+| Object | Definition |
+|---|---|
+| Request hash | `SHA-256(request bytes)`: near-antibody keeps it with the run; the facts repeat it, and a T1 quote binds it (§9) |
+| Manifest hash | SHA-256 of the canonical manifest JSON; the TEE judges under the manifest whose bytes hash to the request's, never a witness's copy |
+| Witness hash | SHA-256 of the sealed envelope bytes, in the receipt |
+| `poc_hash` | `SHA-256("antibody/poc/v1" ‖ bincode(bundle))`: binds the calls and the sender salt; a re-run must carry the original's |
+| Receipt hash | SHA-256 of the receipt's canonical bytes (compact JSON in struct order); the receipt itself stays sealed until disclosure |
+| Senders | `keccak256("antibody/sender/v1" ‖ salt ‖ u8(i))[12..]`: fresh by construction, never read from the anchor |
+| Reserved rules address | `keccak256("antibody/invariants/v2" ‖ program_key ‖ anchor hash)[12..]`: the rules run there; nobody holds its key and no CREATE reaches it |
+| Fork-mode deployer | `keccak256("antibody/deployer/v1")[12..]`: the sender of a manifest's deployment transactions |
+| Activation receipt | `SHA-256("antibody/v2/activation" ‖ program_key ‖ manifest hash ‖ seal_pk)` |
+| Round-check receipt | `SHA-256("antibody/v2/round-check" ‖ SHA-256(round manifest) ‖ u8(ok) ‖ u8(canaries_ok))` |
+| Distinctness receipt | `SHA-256("antibody/v2/distinct" ‖ SHA-256(patch) ‖ u64(commit) ‖ u64(earlier commit) ‖ u8(distinct))` |
+| Disclosure receipt | `SHA-256("antibody/v2/disclose" ‖ hex tags)` |
 
-## 10. Trust tiers (who vouches for the facts)
+## 9. Tiers (who vouches for the facts)
 
 | Tier | Mechanism | What a relying party trusts |
 |---|---|---|
-| T0 (testnet default) | OutLayer worker output, delivered on-chain by the operator account; wasm pinned by `WasmUrl` hash | The OutLayer operator's attested workers |
-| T1 | The run's TDX quote, verified on NEAR by `tee-verifier-*.verify_quote` through `confirm_tee`. `report_data` binds the wasm hash, the input and output hashes, the caller and the secrets (docs/trust.md) | Intel TDX, the DCAP collateral and the pinned worker measurements |
-| T2 (roadmap) | A zk proof of the same verifier execution | Mathematics only |
+| T0 | OutLayer's worker output, delivered on chain by its operator; the wasm pinned by hash | OutLayer's operator, until T1 or the challenge window |
+| T1 | The run's TDX quote verified on NEAR through `confirm_tee`: its `report_data` binds the wasm hash, the input and output hashes, the caller and the secrets, and near-antibody recomputes it from the run it requested (docs/trust.md) | Intel TDX, its collateral and the pinned worker images |
+| T2 (roadmap) | A proof of the same verifier execution checked on NEAR | Not built |
 
-All tiers rely on the same determinism: anyone can always re-run the verifier natively from the disclosed inputs. A wrong T0 verdict is detectable after the fact. Before payout, T0 adds an optimistic delay with `challenge()` above a payout cap.
+Every tier relies on the same determinism: after disclosure anyone can re-run the verifier natively on
+the disclosed inputs and compare.
 
-## 11. Encodings
+## 10. Encodings
 
-- Hashes and keys: lowercase hex without `0x` in facts and contract arguments. EVM values use `0x` hex.
-- `program_key`: `"<near-antibody account id>/<decimal program id>"`.
-- Every length prefix is big-endian.
+- Hashes and keys are lowercase hex without `0x` in facts and contract arguments; EVM values use `0x`.
+- Length prefixes and integers are big-endian.
+- Facts are compact JSON, at most 1 KB.
