@@ -56,7 +56,10 @@ how a property could be violated and no attack code. Doubtful properties come ba
 2. Put the runtime code, its keccak256 and the slots into `antibody.toml`, then run `antibody manifest`.
 3. Run `antibody check --manifest manifest.json --bundle noop.bundle.json`. It must report
    `NoViolation`; the verifier reports `ProgramMisconfigured` if `check(snapshot()) != 0` at the anchor.
-4. Run your known-issue PoCs and declare them at t0.
+4. Run `antibody invariants validate --manifest manifest.json`: the checks creation and activation
+   apply. `antibody invariants strength` shows which labeled mutants of your code the rules catch
+   (docs/rule-strength.md).
+5. Run your known-issue PoCs and declare them before opening (`antibody program known`).
 
 ## Evidence
 
