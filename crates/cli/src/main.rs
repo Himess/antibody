@@ -312,12 +312,36 @@ enum Cmd {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
-    /// Write a hunting workspace (manifest, invariants, anvil fork command, bundle template)
+    /// Write a workspace for a program (manifest, invariants, anvil fork command, bundle template)
     Pull {
         #[arg(long)]
         program: u32,
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// Translate a forge-test PoC into a bundle: its calls as pranked senders, with a restricted
+    /// cheatcode set (pranks as its own senders, deals to them, helpers that change no state)
+    FromForge {
+        /// The Foundry project
+        #[arg(long)]
+        project: PathBuf,
+        /// The test contract and function
+        #[arg(long)]
+        contract: String,
+        #[arg(long)]
+        test: String,
+        /// Fork at the program's anchor: an RPC and its block (or run the test on a local copy)
+        #[arg(long)]
+        fork_url: Option<String>,
+        #[arg(long)]
+        fork_block: Option<u64>,
+        /// The senders' ether when the test deals them none (wei; gas is paid from it)
+        #[arg(long, default_value = "10000000000000000")]
+        endowment_floor: String,
+        #[arg(long, default_value = "forge")]
+        forge: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Run the verifier locally on a bundle against the proven anchor state
     Check {
@@ -615,6 +639,17 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Programs { from, limit } => cmd::programs(&mk()?, from, limit),
         Cmd::Pull { program, ref out } => cmd::pull(&mk()?, program, &out.clone().unwrap_or_else(|| PathBuf::from(format!("antibody-program-{program}")))),
         Cmd::Check { program, ref manifest, ref bundle, salt } => cmd::check(&mk()?, program, manifest.as_deref(), bundle, salt),
+        Cmd::FromForge { ref project, ref contract, ref test, ref fork_url, fork_block, ref endowment_floor, ref forge, ref out } => {
+            let fork = match (fork_url, fork_block) {
+                (Some(u), Some(b)) => Some((u.as_str(), b)),
+                (None, None) => None,
+                _ => return Err(eyre::eyre!("--fork-url and --fork-block go together")),
+            };
+            let floor: u128 = endowment_floor.parse().map_err(|e| eyre::eyre!("--endowment-floor: {e}"))?;
+            let r = antibody_cli::compat::from_forge(project, contract, test, fork, forge, floor)?;
+            std::fs::write(out, serde_json::to_vec_pretty(&r["bundle"])?)?;
+            Ok(json!({"bundle_file": out, "translation": r}))
+        }
         Cmd::StorageDeposit { ref near } => cmd::storage_deposit(&mk()?, near),
         Cmd::Deposit { ref amount } => cmd::deposit(&mk()?, amount),
         Cmd::Faucet => cmd::faucet(&mk()?),

@@ -3,6 +3,7 @@
 
 pub mod blob;
 pub mod cmd;
+pub mod compat;
 pub mod ctx;
 pub mod draft;
 pub mod judge;
