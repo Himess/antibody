@@ -1111,6 +1111,49 @@ pub fn run(a: DemoArgs) -> Result<Value> {
              judged["programs"][0]["pauses"], judged["programs"][0]["releases"]);
     ok &= judge_ok;
     results["judge"] = judged;
+
+    step("API: the indexer reads every block's events, then each endpoint answers once (docs/openapi.yaml's examples)");
+    let services_dir = a.work.join("services/api");
+    let ix = crate::indexer::Indexer {
+        near: near.clone(),
+        contracts: vec![acct("bounty"), acct("tusd"), acct("guardian")],
+        antibody: acct("bounty"),
+        guardian: Some(acct("guardian")),
+        source: crate::indexer::Source::Blocks { from: 0 },
+        state_dir: services_dir.clone(),
+    };
+    let head = near.call("block", json!({"finality": "final"}))?["header"]["height"].as_u64().unwrap_or(0);
+    let mut indexed = 0usize;
+    for _ in 0..64 {
+        indexed += ix.tick()?.len();
+        let at = serde_json::from_str::<Value>(&std::fs::read_to_string(services_dir.join("cursor.json")).unwrap_or_default()).unwrap_or(Value::Null)["last_block"].as_u64().unwrap_or(0);
+        if at >= head {
+            break;
+        }
+    }
+    let api = crate::api::Api { near: near.clone(), dep: served.clone(), state_dir: services_dir.clone(), mock_dir: a.root.join("fixtures/mock-mainnet") };
+    let rt = tokio::runtime::Runtime::new()?;
+    let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
+    let addr = listener.local_addr()?;
+    rt.spawn(async move { axum::serve(listener, crate::api::router(api)).await });
+    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(120)).build()?;
+    let mut examples = serde_json::Map::new();
+    let paths = vec![
+        "/health".to_string(), "/v1/status".into(), "/v1/stats".into(), "/v1/programs".into(), format!("/v1/programs/{pid}"),
+        format!("/v1/programs/{ppid}/feed"), format!("/v1/commits/{a_commit}"), "/v1/runs/0".into(), format!("/v1/accounts/{}", acct("agent-a")),
+        "/v1/leaderboard".into(), "/v1/events?limit=5".into(), "/v1/guardian".into(), "/v1/judge".into(),
+    ];
+    for path in &paths {
+        let r = client.get(format!("http://{addr}{path}")).send()?;
+        let code = r.status().as_u16();
+        examples.insert(path.clone(), json!({"status": code, "body": r.json::<Value>().unwrap_or(Value::Null)}));
+    }
+    let api_ok = examples.values().all(|e| e["status"] == json!(200)) && indexed > 0;
+    println!("API: {} events indexed; {} endpoints, all 200: {api_ok}", indexed, examples.len());
+    std::fs::write(a.work.join("api-examples.json"), serde_json::to_vec_pretty(&examples)?)?;
+    results["api"] = json!({"events_indexed": indexed, "endpoints": paths, "ok": api_ok, "examples": a.work.join("api-examples.json"),
+                            "failures": examples.iter().filter(|(_, e)| e["status"] != json!(200)).map(|(k, e)| json!({"path": k, "status": e["status"], "body": e["body"]})).collect::<Vec<_>>()});
+    ok &= api_ok;
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();
     std::fs::write(a.work.join("results.json"), serde_json::to_vec_pretty(&results)?)?;
