@@ -219,6 +219,16 @@ fn chains(args: &[String]) -> Result<BTreeMap<u64, (String, String)>> {
     Ok(m)
 }
 
+/// A run's work directory, absolute: forge runs in contracts/evm and may write only under target/demo and
+/// target/live (contracts/evm/foundry.toml), so a relative path would point elsewhere.
+fn work_dir_or(given: &Option<PathBuf>, default: PathBuf) -> Result<PathBuf> {
+    Ok(match given {
+        Some(w) if w.is_relative() => std::env::current_dir()?.join(w),
+        Some(w) => w.clone(),
+        None => default,
+    })
+}
+
 /// The relayer's EVM key, from $RELAYER_EVM_KEY or the repository's .env (never printed). Without it
 /// the relayer only watches.
 fn relayer_signer() -> Result<Option<evm::EvmSigner>> {
@@ -267,7 +277,7 @@ fn main() -> Result<()> {
                 .or_else(|| std::env::var_os("NEAR_SANDBOX_BIN").map(PathBuf::from))
                 .unwrap_or_else(|| root.join(".tools/near-sandbox"));
             demo::run(demo::DemoArgs {
-                work: work_dir.clone().unwrap_or_else(|| root.join("target/demo")),
+                work: work_dir_or(work_dir, root.join("target/demo"))?,
                 sandbox_bin: sandbox,
                 anvil_bin: tool("anvil"),
                 forge_bin: tool("forge"),
@@ -292,7 +302,7 @@ fn main() -> Result<()> {
             let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
             let forge = home.join(".foundry/bin").join(format!("forge{exe}"));
             live::run(live::LiveArgs {
-                work: work_dir.clone().unwrap_or_else(|| root.join("target/live")),
+                work: work_dir_or(work_dir, root.join("target/live"))?,
                 forge_bin: if forge.exists() { forge } else { PathBuf::from(format!("forge{exe}")) },
                 antibody_bin: root.join(format!("target/release/antibody{exe}")),
                 keys: root.join(".secrets/near"),
