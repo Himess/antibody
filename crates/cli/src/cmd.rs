@@ -82,7 +82,10 @@ fn tx_summary(ctx: &Ctx, out: &Value) -> Value {
 
 pub fn ensure_ok(ctx: &Ctx, out: &Value, what: &str) -> Result<Value> {
     let s = tx_summary(ctx, out);
-    let f = near::failures(out);
+    let mut f = near::failures(out);
+    // A receipt's failure also fails its transaction: say it once.
+    let mut seen = std::collections::HashSet::new();
+    f.retain(|x| seen.insert(x.clone()));
     if !f.is_empty() {
         return Err(eyre!("{what} failed: {} ({})", f.join("; "), s["explorer"].as_str().unwrap_or_default()));
     }
@@ -926,6 +929,75 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
     Ok(out)
 }
 
+/// A token amount for people: whole units with thousands separators, no trailing zeros.
+pub fn human_tokens(raw: u128, decimals: u32) -> String {
+    let s = fmt_tokens(raw, decimals);
+    let (int, frac) = s.split_once('.').unwrap_or((s.as_str(), ""));
+    let mut grouped = String::new();
+    for (i, ch) in int.chars().enumerate() {
+        if i > 0 && (int.len() - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() { grouped } else { format!("{grouped}.{frac}") }
+}
+
+/// `status`'s summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
+pub fn status_summary(ctx: &Ctx, s: &Value) -> String {
+    let (d, sym) = (ctx.dep.decimals(), ctx.dep.symbol());
+    let txt = |v: &Value| v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
+    let mut out = vec![];
+    if let Some(c) = s.get("commit") {
+        let (raw, v) = (&c["raw"], &s["verdict"]);
+        let paid = paid_of(raw);
+        let mut line = format!("commit {}: {}, tier {}, {}", raw["id"], v["kind"].as_str().unwrap_or("no verdict yet"), v["tier"].as_str().unwrap_or("-"), txt(&c["state"]));
+        if paid > 0 {
+            line += &format!(", paid {} {sym} to {}", human_tokens(paid, d), txt(&raw["beneficiary"]));
+        }
+        out.push(line);
+        out.push(format!("  program {}, round {}, hunter {}, run {}", raw["program"], raw["round"], txt(&raw["hunter"]), raw["run"]));
+        let keys: Vec<String> =
+            v["keys"].as_array().into_iter().flatten().map(|k| format!("slot {} (tag {})", k["slot"], txt(&k["tag"]).chars().take(10).collect::<String>())).collect();
+        if !keys.is_empty() {
+            out.push(format!("  keys: {}", keys.join(", ")));
+        }
+        if let Some(i) = raw["state"]["Done"]["Paid"]["instant"].as_bool() {
+            out.push(format!("  paid instantly under the cap: {i}"));
+        }
+        if v["protected_harm_usd_micro"].as_str().is_some_and(|h| h != "0") {
+            out.push(format!("  harm to protected accounts: {} micro-USD", txt(&v["protected_harm_usd_micro"])));
+        }
+    }
+    if let Some(r) = s.get("run") {
+        out.push(format!("run {}: {} {}, tier {}, receipt {}", r["run_id"], txt(&r["mode"]), r["kind"].as_str().unwrap_or("pending"),
+                         r["tier"].as_str().unwrap_or("-"), r["receipt_sha256"].as_str().unwrap_or("-")));
+    }
+    if let Some(p) = s.get("program") {
+        let (pr, meta) = (&p["program"], &p["meta"]);
+        out.push(format!("program {} ({}): phase {}, round {}, anchor {}, {} commits, audit ok: {}", pr["id"], txt(&meta["name"]), txt(&pr["phase"]),
+                         pr["round"], txt(&p["record"]["anchor"]), pr["commits"], p["audit"]["ok"]));
+        out.push(format!("  targets: {}; rounds released: {} (near-guardian signs a permit per proxy and chain: `judge`)",
+                         meta["targets"].as_array().map(|t| t.len()).unwrap_or(0), pr["release_permits"]));
+        for r in pr["rounds"].as_array().into_iter().flatten() {
+            let n = |k: &str| r[k].as_array().map(|x| x.len()).unwrap_or(0);
+            let gate = r["release_gate"] == json!(true);
+            out.push(format!("  round {}: release gate {gate} ({}); keys released {}, carried {}", r["round"],
+                             if gate { "release permits signed" } else { "no release permit" }, n("released"), n("carried")));
+        }
+        for c in p["commits"].as_array().into_iter().flatten() {
+            out.push(format!("  commit {}: round {}, {} {}, {}", c["id"], c["round"], c["verdict"]["kind"].as_str().unwrap_or("-"),
+                             c["verdict"]["tier"].as_str().unwrap_or("-"), txt(&c["state"])));
+        }
+    }
+    if let Some(a) = s.get("account") {
+        out.push(format!("account {}: credit {} {sym}, NEAR credit {} yocto, wallet {} {sym}", txt(&a["id"]), txt(&a["credit"]), txt(&a["near_credit"]), txt(&a["wallet"])));
+    }
+    out.push("The full record: add --json".into());
+    out.join("\n")
+}
+
 // ---------------------------------------------------------------------- keeper
 
 /// The permissionless steps that move money once verdicts are final (docs/spec.md §7): allocate in
@@ -1671,6 +1743,8 @@ pub fn admin_send_near(ctx: &Ctx, to: &str, amount_near: &str) -> Result<Value> 
 }
 
 pub fn tx(ctx: &Ctx, hash: &str, signer: &str) -> Result<Value> {
+    // An explorer reference (`sandbox:<hash>`, a URL) works too: the hash is its last part.
+    let hash = hash.rsplit(['/', ':']).next().unwrap_or(hash);
     let out = ctx.near.tx_status(hash, signer)?;
     Ok(json!({"explorer": ctx.near.explorer_tx(hash), "failures": near::failures(&out), "events": near::events(&out),
               "status": out["status"]}))

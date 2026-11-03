@@ -473,14 +473,21 @@ enum Cmd {
         no_wait: bool,
     },
     Status {
+        /// A commit: its verdict, tier, state and payout
         #[arg(long)]
         commit: Option<u64>,
+        /// A verification run
         #[arg(long)]
         run: Option<u64>,
+        /// A program: its rounds (release gate, keys released and carried) and every commit
         #[arg(long)]
         program: Option<u32>,
+        /// An account's credit and agent statement
         #[arg(long)]
         of: Option<String>,
+        /// The full record as JSON (default: a summary)
+        #[arg(long)]
+        json: bool,
     },
     /// View calls only (no account, no key): each contract's code hash and whether it is locked, the
     /// pins, and per program its anchor, T1 confirmations, payouts, pauses and permits, with links
@@ -773,10 +780,15 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Submit { program, ref bundle, salt, ref report, no_wait } => cmd::submit(&mk()?, program, bundle, salt, report.as_deref(), !no_wait),
         Cmd::Retry { program, commit, no_wait } => cmd::retry(&mk()?, program, commit, !no_wait),
         Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
-        Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
+        Cmd::Status { commit, run, program, ref of, json } => {
+            let c = mk()?;
+            let s = cmd::status(&c, commit, run, program, of.clone())?;
+            Ok(if json { s } else { Value::String(cmd::status_summary(&c, &s)) })
+        }
         Cmd::Judge { program, json } => {
-            let j = antibody_cli::judge::judge(&mk()?, program)?;
-            Ok(if json { j } else { Value::String(antibody_cli::judge::summary(&j)) })
+            let c = mk()?;
+            let j = antibody_cli::judge::judge(&c, program)?;
+            Ok(if json { j } else { Value::String(antibody_cli::judge::summary(&j, c.dep.decimals(), c.dep.symbol())) })
         }
         Cmd::View { ref contract, ref method, ref args } => {
             let c = mk()?;

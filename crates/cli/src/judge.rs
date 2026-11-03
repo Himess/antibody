@@ -128,7 +128,7 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
 }
 
 /// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
-pub fn summary(j: &Value) -> String {
+pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
     let mut out = vec![format!("Antibody on {} (view calls only: no account, no key)", j["network"].as_str().unwrap_or("?"))];
     for c in j["contracts"].as_array().into_iter().flatten() {
         out.push(format!("  {:<17} {:<32} locked: {}", c["role"].as_str().unwrap_or(""), c["account"].as_str().unwrap_or(""), c["locked"]));
@@ -147,7 +147,8 @@ pub fn summary(j: &Value) -> String {
             out.push(format!("    rule strength: {s} (it measures the rules, not the code's security)"));
         }
         for x in p["payouts"].as_array().into_iter().flatten() {
-            out.push(format!("    paid: commit {} to {}, {} (raw units)", x["commit"], x["paid_to"].as_str().unwrap_or(""), x["amount_raw"].as_str().unwrap_or("")));
+            let raw = x["amount_raw"].as_str().and_then(|a| a.parse::<u128>().ok()).unwrap_or(0);
+            out.push(format!("    paid: commit {} to {}, {} {symbol}", x["commit"], x["paid_to"].as_str().unwrap_or(""), cmd::human_tokens(raw, decimals)));
         }
         for x in p["permits"].as_array().into_iter().flatten() {
             let kind = if x["body"].get("Pause").is_some() { "pause" } else { "release" };

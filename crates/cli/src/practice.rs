@@ -107,6 +107,9 @@ pub fn check_name(name: &str) -> Result<()> {
 pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Value> {
     check_name(name)?;
     let account = format!("{name}.{vending}");
+    if ctx.near.account(&account)?.is_some() {
+        return Err(eyre!("{account} is taken: pick another --name (a new one, lowercase)"));
+    }
     let key = Signer::generate(Some(account.clone()))?;
     let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: 100 * TGAS, deposit: 0 }];
     let public = public_vend_signer(vending);
@@ -240,7 +243,10 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
     ];
     for l in r["links"].as_array().into_iter().flatten() {
         for (k, v) in l.as_object().into_iter().flatten() {
-            out.push(format!("    {k:<9} {}", v.as_str().unwrap_or("")));
+            // The vend is signed by whoever called it; the rest by the practice account.
+            let signer = if k == "vend" { r["vended_by"].as_str() } else { r["account"].as_str() }.unwrap_or("?");
+            let hash = v.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("");
+            out.push(format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"));
         }
     }
     out.push("The full record: add --json".into());
