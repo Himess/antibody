@@ -59,3 +59,4 @@ wit-bindgen = "0.36"
 x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
 # The settlement rules' facts parser: the verifier's output must be what the contract accepts.
 antibody-rules = { path = "../rules" }
+proptest = "1"

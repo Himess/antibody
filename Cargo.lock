@@ -726,6 +726,7 @@ dependencies = [
  "hex",
  "hkdf",
  "itertools 0.13.0",
+ "proptest",
  "reth-chainspec",
  "reth-errors",
  "reth-ethereum-primitives",
