@@ -22,12 +22,11 @@ practice program, with the tutorial proof (a public, textbook bug: docs/practice
 
 ## Results
 
-| Where | Runs | Report |
-|---|---|---|
-| Sandbox (`antibody-services demo --serve`: near-sandbox and anvil, MOCK OutLayer and MOCK DCAP, the real verifier) | see the report | [`agent-runs/sandbox-2026-11-03/REPORT.md`](agent-runs/sandbox-2026-11-03/REPORT.md) |
-
-Each report links the transcripts (`logs/run-NN.jsonl`). In the sandbox the TEE quote is a MOCK
-(the T1 checks on it are the real code); a testnet run uses OutLayer's real TEE workers.
+**Not run yet.** The runs need a logged-in Claude Code, and the session in this environment had expired
+when they were due. The script and the method above are ready; each run writes `REPORT.md` and its
+transcripts (`logs/run-NN.jsonl`) under `docs/agent-runs/<network>-<date>/`, which this section will
+link. In the sandbox the TEE quote is a MOCK (the T1 checks on it are the real code); a testnet run uses
+OutLayer's real TEE workers.
 
 ## Reproduce
 

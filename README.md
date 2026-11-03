@@ -159,8 +159,9 @@ four permits did not fit one call; the gap lane's model allowed a re-run after e
 `antibody mcp` serves 8 tools over stdio. Every result is marked untrusted data; file access is confined
 to a workspace and key files are refused. An agent account is a sub-account whose bonds come from its
 owner's credit within a cap, whose payouts go to the owner, and whose key cannot withdraw. See
-[AGENTS.md](AGENTS.md) and [docs/agent-runs.md](docs/agent-runs.md) for measured runs of an off-the-shelf
-agent completing the loop on the practice program (measuring the loop, not bug finding).
+[AGENTS.md](AGENTS.md), and [docs/agent-runs.md](docs/agent-runs.md) for how runs of an off-the-shelf
+agent completing the loop on the practice program are measured (the loop, not bug finding); those runs
+are not done yet.
 
 ## For projects
 
