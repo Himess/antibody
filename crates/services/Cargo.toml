@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 antibody-cli = { path = "../cli" }
 antibody-verifier = { path = "../verifier" }
+antibody-witness = { path = "../witness" }
 antibody-rules = { path = "../rules" }
 alloy-primitives.workspace = true
 alloy-consensus = { workspace = true, features = ["k256"] }

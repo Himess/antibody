@@ -696,6 +696,7 @@ dependencies = [
  "antibody-cli",
  "antibody-rules",
  "antibody-verifier",
+ "antibody-witness",
  "axum",
  "base64 0.22.1",
  "bs58",

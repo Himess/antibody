@@ -61,12 +61,17 @@ const ESCROW: &str = "0.4";
 const PRACTICE_ESCROW: &str = "0.03";
 /// A real OutLayer run and its T1 relay (DCAP on NEAR) take longer than the sandbox's MOCK.
 const T1_WAIT: Duration = Duration::from_secs(900);
-/// NEAR free of storage stake an account needs to send a 300 Tgas call (0.301 NEAR set aside up front,
-/// most of it refunded), with a margin for the calls before it (a sealed blob's upload burns ~0.035).
-const FREE_FOR_RUNS: u128 = 400 * MILLI;
-/// What each vended practice account gets for its gas: its commit's and its reveal's set-aside gas
-/// (0.031 and 0.301 NEAR); it burns about a tenth of it, and keeps the rest.
-const PRACTICE_GAS_FUNDS: u128 = 340 * MILLI;
+/// NEAR free of storage stake an account needs to send a call that starts a run (`cmd::RUN_TGAS`, set
+/// aside up front at ten times the gas price: 0.2 NEAR, most of it refunded), with a margin for the
+/// calls before it (a sealed blob's upload burns about 0.035).
+const FREE_FOR_RUNS: u128 = 300 * MILLI;
+/// What each vended practice account gets: its contract's storage and its largest call's set-aside gas
+/// (the reveal, 0.2 NEAR); closing the account after its try returns what is left to the vending contract.
+const PRACTICE_GAS_FUNDS: u128 = 250 * MILLI;
+/// A vended practice account's key allowance: every call's set-aside gas counts against it (about 0.31).
+const PRACTICE_ALLOWANCE: u128 = 400 * MILLI;
+/// The practice tries' names (with the program's id, each names a new practice account).
+const TRIERS: [&str; 2] = ["judge-1", "judge-2"];
 /// The NEAR credit the CLI keeps at near-antibody for each account: one run (0.02 deposit, 0.01 storage
 /// allowance) and a commit's storage, within the story accounts' lean funding (scripts/deploy/testnet.sh).
 const MIN_NEAR_CREDIT: &str = "0.045";
@@ -93,6 +98,22 @@ pub struct LiveArgs {
     pub sepolia_tx_rpc: String,
     pub base_rpc: String,
     pub until: Option<String>,
+    /// Run the practice and fork-mode stages again, on new programs at a new anchor (their bases rebuilt
+    /// from the RPC): the rest of the story stays as it ran.
+    pub redo_practice: bool,
+}
+
+/// A contract's wasm to deploy: the size-optimized copy in target/deploy (scripts/deploy/testnet.sh makes
+/// it) when it is at least as new as cargo's output, else cargo's output.
+fn deployable(root: &Path, name: &str, cargo_out: &str) -> Result<PathBuf> {
+    let (opt, built) = (root.join(format!("target/deploy/{name}.wasm")), root.join(cargo_out));
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match (modified(&opt), modified(&built)) {
+        (Some(o), Some(b)) if o >= b => Ok(opt),
+        (Some(_), None) => Ok(opt),
+        (_, Some(_)) => Ok(built),
+        (None, None) => Err(eyre!("no {name}.wasm: run make contracts")),
+    }
 }
 
 /// Acme's terms on testnet: the sandbox's payouts, escrow and instant budget in wNEAR (a hundred-thousandth
@@ -269,7 +290,7 @@ impl Live {
 
     /// A judge: no account, no key and no Ethereum RPC.
     fn judge_ctx(&self, dep: &Deployments) -> Ctx {
-        Ctx { near: self.near.clone(), dep: dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: self.a.work.join("state/judges") }
+        Ctx { near: self.near.clone(), dep: dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: self.a.work.join("state/judges"), via: None }
     }
 
     /// Agent A's MCP workspace; the server keeps its state (and A's prebuilt witness) in its `.antibody`.
@@ -386,6 +407,9 @@ impl Live {
         if free >= min {
             return Ok(0);
         }
+        if account == HQ {
+            return Err(eyre!("{HQ} has {} NEAR free and this step needs {}: {} NEAR short", cmd::fmt_tokens(free, 24), cmd::fmt_tokens(min, 24), cmd::fmt_tokens(min - free, 24)));
+        }
         let root = self.root_ctx();
         let out = root.near.send(&root.signer()?, account, vec![Action::Transfer(min - free)], "EXECUTED_OPTIMISTIC")?;
         cmd::ensure_ok(&root, &out, "transfer")?;
@@ -487,6 +511,75 @@ impl Live {
     /// Every witness the story builds from the RPC, while the anchor is recent: the three programs' base
     /// witnesses (Acme, practice, practice in fork mode), the known issue and A–G, and both rounds' bases. The
     /// programs' ids (and so their keys) are the contract's next three.
+    /// The practice program and its fork-mode twin (created by the root account) at anchor `n`: their
+    /// manifests and base witnesses. Their bases also cover the tutorial proof, so a try seals against the
+    /// pinned base alone: no Ethereum RPC for whoever tries it. The vaults differ only in their address:
+    /// each one is checked.
+    fn prebuild_practice(&mut self, evm: &Evm, n: u64, h: B256, deadline: u64, built: &mut serde_json::Map<String, Value>) -> Result<()> {
+        let w = self.a.work.clone();
+        let root_ctx = self.root_ctx();
+        let pm = demo::practice_manifest(&self.s["evm"]["practice"], evm, n, h, HQ, &TESTNET, practice_settlement(deadline))?;
+        std::fs::write(w.join("practice-manifest.json"), pm.canonical())?;
+        std::fs::write(w.join("practice-terms.txt"), PRACTICE_TERMS)?;
+        let pcover = demo::tutorial_cover(&w, "practice", &pm)?;
+        let tb = Instant::now();
+        let (pb, _) = cmd::build_base_covering(&root_ctx, &pm.canonical(), &self.key("practice"), &[pcover])?;
+        built.insert("practice_base".into(), json!({"bytes": pb.len(), "seconds": tb.elapsed().as_secs_f64(), "covers": "the tutorial proof, every vault"}));
+        let fm = demo::fork_practice_manifest(&self.a.root, &root_ctx, n, h, HQ, &TESTNET, practice_settlement(deadline))?;
+        std::fs::write(w.join("practice-fork-manifest.json"), fm.canonical())?;
+        let fcover = demo::tutorial_cover(&w, "practice-fork", &fm)?;
+        let tb = Instant::now();
+        let (fb, _) = cmd::build_base_covering(&root_ctx, &fm.canonical(), &self.key("fork"), &[fcover])?;
+        built.insert("fork_base".into(), json!({"bytes": fb.len(), "seconds": tb.elapsed().as_secs_f64(), "covers": "the tutorial proof, every vault"}));
+        for (name, m, base, key) in [("practice", &pm, &pb, self.key("practice")), ("fork mode", &fm, &fb, self.key("fork"))] {
+            for t in m.targets.iter().filter(|t| t.name.starts_with("vault-")) {
+                let bf: antibody_witness::build::BundleFile = serde_json::from_value(practice::tutorial_bundle(&format!("{:#x}", t.address)))?;
+                let bundle = antibody_witness::build::parse_bundle(&bf, B256::ZERO)?;
+                antibody_witness::program::build_submission_from_base(base, &m.canonical(), bundle, &key)
+                    .map_err(|e| eyre!("{name}: the tutorial proof against {} does not seal against the base alone: {e}", t.name))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `--redo-practice`: new practice and fork-mode programs (the contract's next two ids) at a new
+    /// anchor, their bases rebuilt; the practice, fork and results stages run again.
+    fn redo_practice(&mut self) -> Result<()> {
+        step("live: practice again, at a new anchor");
+        let t = Instant::now();
+        let evm = Evm::new(&self.sepolia());
+        let last = self.s["evm"]["practice"]["vaults"].as_array().and_then(|v| v.last().cloned()).ok_or_else(|| eyre!("no practice vaults: run the evm stage"))?;
+        let head = hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
+        // As the anchor stage chooses: eight blocks back, with the vaults' code there.
+        let n = head - 8;
+        if evm.read("eth_getCode", json!([last, format!("{n:#x}")]))?.as_str().is_none_or(|c| c.len() <= 2) {
+            return Err(eyre!("the practice vaults have no code at block {n}"));
+        }
+        let b = evm.read("eth_getBlockByNumber", json!([format!("{n:#x}"), false]))?;
+        let h: B256 = b["hash"].as_str().unwrap_or_default().parse()?;
+        let next = self.near.view(&self.dep.antibody, "get_stats", json!({}))?["next_program"].as_u64().ok_or_else(|| eyre!("get_stats: no next_program"))? as u32;
+        let earlier = json!({"practice": self.s["practice"].clone(), "fork_mode": self.s["fork_mode"].clone(), "anchor": self.s["practice_anchor"].clone(),
+                             "programs": {"practice": self.pid("practice"), "fork": self.pid("fork")}});
+        self.s["prebuild"]["programs"]["practice"] = json!(next);
+        self.s["prebuild"]["programs"]["fork"] = json!(next + 1);
+        let mut built = serde_json::Map::new();
+        self.prebuild_practice(&evm, n, h, unix() + 30 * 86_400, &mut built)?;
+        println!("practice and fork-mode programs {next} and {} at Sepolia block {n}: bases built in {:.0} s", next + 1, t.elapsed().as_secs_f64());
+        let mut redone = self.s["practice_redone"].as_array().cloned().unwrap_or_default();
+        redone.push(earlier);
+        self.s["practice_redone"] = Value::Array(redone);
+        self.s["practice_anchor"] = json!({"block": n, "hash": h, "timestamp": hex_u64(&b["timestamp"])?, "chosen_unix": unix(), "witnesses": built});
+        self.save()?;
+        // The programs' anchor checks ask the light client, which runs some 80 blocks behind.
+        self.s["practice_anchor"]["light_client"] = self.wait_light_client(n, h)?;
+        self.s["practice"] = Value::Null;
+        self.s["fork_mode"] = Value::Null;
+        for stage in ["practice", "fork", "results"] {
+            self.set_done(stage, false);
+        }
+        self.save()
+    }
+
     fn prebuild(&mut self) -> Result<()> {
         let t = Instant::now();
         let n = self.s["anchor"]["block"].as_u64().ok_or_else(|| eyre!("no anchor"))?;
@@ -503,7 +596,6 @@ impl Live {
         let deadline = unix() + 30 * 86_400;
         let w = self.a.work.clone();
         let dep_a = self.s["evm"]["acme"].clone();
-        let dep_p = self.s["evm"]["practice"].clone();
         let mut built = serde_json::Map::new();
 
         let m = demo::acme_manifest(&dep_a, &evm, n, h, &Self::acct("acme"), &TESTNET, acme_settlement(deadline))?;
@@ -559,17 +651,7 @@ impl Live {
             built.insert(format!("round{round}_base"), json!({"bytes": rb.len(), "seconds": tb.elapsed().as_secs_f64()}));
         }
 
-        // The practice program and its fork-mode twin (created by the root account).
-        let root_ctx = self.root_ctx();
-        let pm = demo::practice_manifest(&dep_p, &evm, n, h, HQ, &TESTNET, practice_settlement(deadline))?;
-        std::fs::write(w.join("practice-manifest.json"), pm.canonical())?;
-        std::fs::write(w.join("practice-terms.txt"), PRACTICE_TERMS)?;
-        let (pb, _) = cmd::build_base(&root_ctx, &pm.canonical(), &self.key("practice"))?;
-        let fm = demo::fork_practice_manifest(&self.a.root, &root_ctx, n, h, HQ, &TESTNET, practice_settlement(deadline))?;
-        std::fs::write(w.join("practice-fork-manifest.json"), fm.canonical())?;
-        let (fb, _) = cmd::build_base(&root_ctx, &fm.canonical(), &self.key("fork"))?;
-        built.insert("practice_base".into(), json!({"bytes": pb.len()}));
-        built.insert("fork_base".into(), json!({"bytes": fb.len()}));
+        self.prebuild_practice(&evm, n, h, deadline, &mut built)?;
 
         let head_after = hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
         println!("prebuilt {} witnesses in {:.0} s; the anchor is now {} blocks back", built.len(), t.elapsed().as_secs_f64(), head_after - n);
@@ -582,9 +664,15 @@ impl Live {
 
     /// Waits until the light client holds the anchor, and checks the hash it holds.
     fn light_client(&mut self) -> Result<()> {
-        let t = Instant::now();
         let n = self.s["anchor"]["block"].as_u64().unwrap_or(0);
         let want: B256 = self.s["anchor"]["hash"].as_str().unwrap_or_default().parse()?;
+        self.s["light_client"] = self.wait_light_client(n, want)?;
+        Ok(())
+    }
+
+    /// Waits until the light client holds block `n`, and checks it holds the anchor's hash there.
+    fn wait_light_client(&self, n: u64, want: B256) -> Result<Value> {
+        let t = Instant::now();
         let lc = self.dep.light_client.clone().ok_or_else(|| eyre!("no light client in the deployments"))?;
         poll(&format!("{lc} to reach block {n}"), Duration::from_secs(5_400), Duration::from_secs(30), || {
             lc_last_block(&self.near, &lc).ok().filter(|b| *b >= n)
@@ -594,8 +682,7 @@ impl Live {
             return Err(eyre!("{lc} holds {got:?} for block {n}, not the anchor's {want:#x}"));
         }
         println!("{lc} holds the anchor (block {n}) after {:.0} s", t.elapsed().as_secs_f64());
-        self.s["light_client"] = json!({"contract": lc, "anchor_confirmed_unix": unix(), "waited_seconds": t.elapsed().as_secs_f64()});
-        Ok(())
+        Ok(json!({"contract": lc, "anchor_confirmed_unix": unix(), "waited_seconds": t.elapsed().as_secs_f64()}))
     }
 
     /// Acme's program: the escrow wrapped, the NEP-413 project key, the manifest committed.
@@ -667,7 +754,7 @@ impl Live {
         let pid = self.pid("acme");
         let t = Instant::now();
         self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
-        let act = cmd::program_activate(&acme, pid, true)?;
+        let act = cmd::program_activate(&acme, pid, &[], true)?;
         let act_run = act["run_id"].as_u64().unwrap_or_default();
         demo::wait_t1_for(&acme, act_run, T1_WAIT)?;
         let p = acme.program(pid)?;
@@ -842,10 +929,18 @@ impl Live {
             Ok((c["storage_usage"].as_u64().unwrap_or(0), cmd::u128_of(&cmd::account(&root_ctx, &Self::acct(who))?["near"]), cmd::u128_of(&w["amount"])))
         };
         let mut rows = self.s["rows"].as_array().cloned().unwrap_or_default();
+        let mut prev: Option<&str> = None;
         for x in ["b", "c", "d", "e", "f", "g"] {
             // Each agent submits once: a stage stopped part-way goes on from the next.
             if rows.iter().any(|r| r["agent"] == x.to_uppercase()) {
                 continue;
+            }
+            // The previous agent's float back, now that its reveal's unused gas has had a submission's
+            // time to come back: two floats out at most, not six.
+            if let Some(p) = prev.replace(x) {
+                if let Err(e) = self.sweep(&format!("agent-{p}"), 60 * MILLI) {
+                    println!("  agent-{p}: float not returned yet ({e})");
+                }
             }
             let t = Instant::now();
             let report = (x == "c").then(|| fx.join("C.report.md"));
@@ -869,7 +964,7 @@ impl Live {
                 demo::wait_t1_for(&root_ctx, r, T1_WAIT)?;
             }
         }
-        // The floats back, once every reveal's unused gas has come back to its agent.
+        // The floats still out back, once every reveal's unused gas has come back to its agent.
         for x in ["b", "c", "d", "e", "f", "g"] {
             if let Err(e) = self.sweep(&format!("agent-{x}"), 60 * MILLI) {
                 println!("  agent-{x}: float not returned ({e})");
@@ -1045,52 +1140,109 @@ impl Live {
         let t = Instant::now();
         let root_ctx = self.root_ctx();
         let want = self.pid("practice");
-        // Two escrows (practice, fork mode) and the vending contract's bond budget.
-        if wnear_of(&root_ctx, HQ)? < 70 * MILLI {
-            wrap(&root_ctx, 70 * MILLI)?;
-        }
         let pm_path = self.a.work.join("practice-manifest.json");
-        let practice_key = self.a.work.join("keys/practice.x25519.json");
-        cmd::keygen_x25519(&practice_key)?;
-        let pc = cmd::program_create(&root_ctx, &pm_path, PRACTICE_ESCROW, &practice_key, None)?;
-        let ppid = pc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no practice program id: {pc}"))? as u32;
-        if ppid != want {
-            return Err(eyre!("practice program {ppid} was created, but its base witness was built for {want}"));
+        let pm = antibody_verifier::manifest::Manifest::parse(&std::fs::read(&pm_path)?).map_err(|e| eyre!(e))?;
+        // Each step once: a stage stopped part-way goes on from where it stopped.
+        let ppid = match self.s["practice"]["program_id"].as_u64() {
+            Some(p) => p as u32,
+            None => {
+                // Two escrows (practice, fork mode) and the vending contract's bond budget.
+                if wnear_of(&root_ctx, HQ)? < 70 * MILLI {
+                    wrap(&root_ctx, 70 * MILLI)?;
+                }
+                let practice_key = self.a.work.join("keys/practice.x25519.json");
+                cmd::keygen_x25519(&practice_key)?;
+                self.ensure_liquid(HQ, FREE_FOR_RUNS)?;
+                let pc = cmd::program_create(&root_ctx, &pm_path, PRACTICE_ESCROW, &practice_key, None)?;
+                let ppid = pc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no practice program id: {pc}"))? as u32;
+                if ppid != want {
+                    return Err(eyre!("practice program {ppid} was created, but its base witness was built for {want}"));
+                }
+                self.s["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&pm.canonical()))});
+                self.save()?;
+                ppid
+            }
+        };
+        if root_ctx.program(ppid)?["sealing_pk"].is_null() {
+            self.ensure_liquid(HQ, FREE_FOR_RUNS)?;
+            let pact = cmd::program_activate(&root_ctx, ppid, &[demo::tutorial_cover(&self.a.work, "practice", &pm)?], true)?;
+            demo::wait_t1_for(&root_ctx, pact["run_id"].as_u64().unwrap_or_default(), T1_WAIT)?;
         }
-        let pact = cmd::program_activate(&root_ctx, ppid, true)?;
-        demo::wait_t1_for(&root_ctx, pact["run_id"].as_u64().unwrap_or_default(), T1_WAIT)?;
-        cmd::program_open(&root_ctx, ppid)?;
+        if root_ctx.program(ppid)?["phase"] != json!("Open") {
+            cmd::program_open(&root_ctx, ppid)?;
+        }
         let vending = Self::acct("practice");
-        let wasm = [self.a.root.join("target/deploy/antibody_practice_vending.wasm"),
-                    self.a.root.join("contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm")]
-            .into_iter()
-            .find(|p| p.exists())
-            .ok_or_else(|| eyre!("no practice-vending wasm: run make contracts"))?;
-        if self.near.account(&vending)?.is_none() {
-            // Its code and state, two vends' gas funds and a margin for the deploy.
-            let amount = (std::fs::metadata(&wasm)?.len() as u128 + 8_000) * 10u128.pow(19) + 2 * PRACTICE_GAS_FUNDS + 150 * MILLI;
-            cmd::admin_create_account(&root_ctx, &vending, &cmd::fmt_tokens(amount, 24), None, Some(&self.a.keys.join(format!("{vending}.json"))))?;
+        let wasm = deployable(&self.a.root, "antibody_practice_vending", "contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm")?;
+        let account_wasm = self.a.root.join("contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm");
+        let code_bytes = std::fs::metadata(&wasm)?.len() as u128 + std::fs::metadata(&account_wasm)?.len() as u128;
+        match self.near.account(&vending)? {
+            None => {
+                // Its code (and the practice-account code it keeps), its state, two tries' gas funds at once
+                // (each comes back when its try closes the account), and a margin for the deploy.
+                let amount = (code_bytes + 8_000) * 10u128.pow(19) + 2 * PRACTICE_GAS_FUNDS + 150 * MILLI;
+                cmd::admin_create_account(&root_ctx, &vending, &cmd::fmt_tokens(amount, 24), None, Some(&self.a.keys.join(format!("{vending}.json"))))?;
+            }
+            Some(a) if a["code_hash"] != json!("11111111111111111111111111111111") && self.s["practice"]["vending"].is_null() => {
+                // An earlier run's vending contract (locked, at launch): this build's code, pointed at the
+                // new program by its owner.
+                let built = bs58::encode(sha256(&std::fs::read(&wasm)?)).into_string();
+                if a["code_hash"] != json!(built) {
+                    return Err(eyre!("{vending} runs code {} and this build's vending contract is {built}: delete the account (its NEAR back to {HQ}) or deploy this build's code", a["code_hash"]));
+                }
+                let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
+                self.s["practice"]["vending"] = practice::retarget(&root_ctx, &vending, &account_wasm, ppid, 24, &terms)?;
+                // Two tries' gas funds at once, and the margin a vend needs.
+                let free = cmd::u128_of(&a["amount"]).saturating_sub(cmd::u128_of(&a["storage_usage"]) * 10u128.pow(19));
+                let want = 2 * PRACTICE_GAS_FUNDS + 150 * MILLI;
+                if free < want {
+                    cmd::admin_send_near(&root_ctx, &vending, &cmd::fmt_tokens(want - free, 24))?;
+                }
+                self.save()?;
+            }
+            Some(_) => {}
         }
-        let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_GAS_FUNDS, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
-        let deployed = practice::deploy(&self.ctx_of("practice"), &wasm, HQ, ppid, 24, &terms, ONE_NEAR / 5)?;
-        let funded = practice::fund(&root_ctx, &vending, ONE_NEAR * 15 / 100, 10 * MILLI)?;
-        println!("practice program {ppid} open; vending {vending} with the public vend key {}", deployed["public_vend_key"]);
+        if self.s["practice"]["vending"].is_null() {
+            let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
+            // The public vend key's allowance is a ceiling (each vend counts its 60 Tgas set aside): a locked
+            // vending contract's key cannot be given more.
+            self.s["practice"]["vending"] = practice::deploy(&self.ctx_of("practice"), &wasm, &account_wasm, HQ, ppid, 24, &terms, 10 * ONE_NEAR)?;
+            self.save()?;
+        }
+        if self.s["practice"]["fund"].is_null() {
+            self.ensure_liquid(HQ, FREE_FOR_RUNS)?;
+            self.s["practice"]["fund"] = practice::fund(&root_ctx, &vending, ONE_NEAR * 15 / 100, 10 * MILLI)?;
+            self.save()?;
+        }
+        println!("practice program {ppid} open; vending {vending} with the public vend key {}", self.s["practice"]["vending"]["public_vend_key"]);
         let mut served = self.dep.clone();
         served.practice = Some(PracticeDeployment { vending: vending.clone(), program: ppid });
         let judge = self.judge_ctx(&served);
-        let mut tries = Vec::new();
-        for name in ["ann", "bob"] {
-            let r = practice::try_it(&judge, &vending, ppid, name)?;
-            println!("{}: vault {} ({}), witness from the {} ({} bytes), {} {}, {} in {:.1} s", r["account"], r["vault_index"], r["vault"],
-                     r["witness_source"].as_str().unwrap_or("-"), r["witness_bytes"], r["verdict"]["kind"].as_str().unwrap_or("-"),
-                     r["t1"]["tier"].as_str().unwrap_or("-"), r["state"].as_str().unwrap_or("-"), r["seconds"].as_f64().unwrap_or_default());
+        let mut tries = self.s["practice"]["tries"].as_array().cloned().unwrap_or_default();
+        for t in TRIERS {
+            // A vending contract keeps the names it vended: each program's tries have their own.
+            let name = format!("{t}-p{ppid}");
+            if tries.iter().any(|r| r["account"] == json!(format!("{name}.{vending}"))) {
+                continue;
+            }
+            let before = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
+            let mut r = practice::try_it(&judge, &vending, ppid, &name)?;
+            // What the try cost the vending contract, once its account closed (its NEAR came back).
+            let after = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
+            r["vending_spent_yocto"] = json!(before.saturating_sub(after).to_string());
+            println!("{}: vault {} ({}), witness from the {} ({} bytes), {} {}, {} in {:.1} s; closed: {}, cost the vending {} NEAR",
+                     r["account"], r["vault_index"], r["vault"], r["witness_source"].as_str().unwrap_or("-"), r["witness_bytes"],
+                     r["verdict"]["kind"].as_str().unwrap_or("-"), r["t1"]["tier"].as_str().unwrap_or("-"), r["state"].as_str().unwrap_or("-"),
+                     r["seconds"].as_f64().unwrap_or_default(), r["closed"], cmd::fmt_tokens(before.saturating_sub(after), 24));
             tries.push(r);
+            self.s["practice"]["tries"] = Value::Array(tries.clone());
+            self.save()?;
         }
-        let ok = tries.iter().all(|r| r["state"] == json!("Done:Paid") && r["paid_raw"] == json!(MILLI.to_string()))
+        let ok = tries.iter().all(|r| r["state"] == json!("Done:Paid") && r["paid_raw"] == json!(MILLI.to_string()) && r["closed"] == json!(true))
             && tries[0]["vault"] != tries[1]["vault"]
             && tries.iter().all(|r| r["vended_by"] == json!(vending) && r["witness_source"] == json!("base"));
-        self.s["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&std::fs::read(&pm_path)?)),
-                                    "vending": deployed, "fund": funded, "tries": tries, "ok": ok, "terms": PRACTICE_TERMS, "seconds": t.elapsed().as_secs_f64()});
+        self.s["practice"]["ok"] = json!(ok);
+        self.s["practice"]["terms"] = json!(PRACTICE_TERMS);
+        self.s["practice"]["seconds"] = json!(t.elapsed().as_secs_f64());
         std::fs::write(self.a.work.join("deployments.json"), serde_json::to_vec_pretty(&served)?)?;
         Ok(())
     }
@@ -1102,16 +1254,31 @@ impl Live {
         let want = self.pid("fork");
         let fm_path = self.a.work.join("practice-fork-manifest.json");
         let fm = antibody_verifier::manifest::Manifest::parse(&std::fs::read(&fm_path)?).map_err(|e| eyre!(e))?;
-        let fork_key = self.a.work.join("keys/practice-fork.x25519.json");
-        cmd::keygen_x25519(&fork_key)?;
-        let fc = cmd::program_create(&root_ctx, &fm_path, PRACTICE_ESCROW, &fork_key, None)?;
-        let fpid = fc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no fork-mode program id: {fc}"))? as u32;
-        if fpid != want {
-            return Err(eyre!("fork-mode program {fpid} was created, but its base witness was built for {want}"));
+        // Each step once: a stage stopped part-way goes on from where it stopped.
+        let (fpid, create_tx) = match self.s["fork_mode"]["program_id"].as_u64() {
+            Some(p) => (p as u32, self.s["fork_mode"]["create_tx"].clone()),
+            None => {
+                let fork_key = self.a.work.join("keys/practice-fork.x25519.json");
+                cmd::keygen_x25519(&fork_key)?;
+                self.ensure_liquid(HQ, FREE_FOR_RUNS)?;
+                let fc = cmd::program_create(&root_ctx, &fm_path, PRACTICE_ESCROW, &fork_key, None)?;
+                let fpid = fc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no fork-mode program id: {fc}"))? as u32;
+                if fpid != want {
+                    return Err(eyre!("fork-mode program {fpid} was created, but its base witness was built for {want}"));
+                }
+                self.s["fork_mode"] = json!({"program_id": fpid, "create_tx": fc["tx"]["tx"]});
+                self.save()?;
+                (fpid, fc["tx"]["tx"].clone())
+            }
+        };
+        if root_ctx.program(fpid)?["sealing_pk"].is_null() {
+            self.ensure_liquid(HQ, FREE_FOR_RUNS)?;
+            let fact = cmd::program_activate(&root_ctx, fpid, &[demo::tutorial_cover(&self.a.work, "practice-fork", &fm)?], true)?;
+            demo::wait_t1_for(&root_ctx, fact["run_id"].as_u64().unwrap_or_default(), T1_WAIT)?;
         }
-        let fact = cmd::program_activate(&root_ctx, fpid, true)?;
-        demo::wait_t1_for(&root_ctx, fact["run_id"].as_u64().unwrap_or_default(), T1_WAIT)?;
-        cmd::program_open(&root_ctx, fpid)?;
+        if root_ctx.program(fpid)?["phase"] != json!("Open") {
+            cmd::program_open(&root_ctx, fpid)?;
+        }
         let vault3 = fm.targets.iter().find(|x| x.name == "vault-3").map(|x| format!("{:#x}", x.address)).ok_or_else(|| eyre!("no vault-3"))?;
         let on_chain = Evm::new(&self.sepolia()).read("eth_getCode", json!([vault3, "latest"]))?;
         let bundle = self.a.work.join("fork-tutorial.bundle.json");
@@ -1133,7 +1300,7 @@ impl Live {
         println!("fork-mode program {fpid}: {} deploy transactions, {} targets, vault-3 on chain: {on_chain}; the tutorial proof: {} {} ({} witness), {} in {:.1} s",
                  fm.deploy.as_ref().map(|d| d.txs.len()).unwrap_or(0), fm.targets.len(), frun["kind"].as_str().unwrap_or("-"), frun["tier"].as_str().unwrap_or("-"),
                  fr["commit"]["witness_source"].as_str().unwrap_or("-"), cmd::state_label(&fcommit["state"]), t.elapsed().as_secs_f64());
-        self.s["fork_mode"] = json!({"program_id": fpid, "manifest_sha256": hex::encode(sha256(&fm.canonical())), "create_tx": fc["tx"]["tx"],
+        self.s["fork_mode"] = json!({"program_id": fpid, "manifest_sha256": hex::encode(sha256(&fm.canonical())), "create_tx": create_tx,
                                      "deploy_txs": fm.deploy.as_ref().map(|d| d.txs.len()), "targets": fm.targets.len(), "vault_3": vault3,
                                      "vault_3_code_on_chain": on_chain, "commit": fcid, "hunter": Self::acct("agent-c"), "verdict": fr["reveal"]["result"], "tier": frun["tier"],
                                      "witness_source": fr["commit"]["witness_source"], "state": cmd::state_label(&fcommit["state"]), "paid_raw": cmd::paid_of(&fcommit).to_string(),
@@ -1198,12 +1365,14 @@ impl Live {
         served.practice = Some(PracticeDeployment { vending: Self::acct("practice"), program: ppid });
         let judge_ctx = self.judge_ctx(&served);
         let judged = antibody_cli::judge::judge(&judge_ctx, None)?;
-        let judge_ok = judged["programs"].as_array().map(|p| p.len()) == Some(3)
-            && judged["programs"][0]["verdicts"]["t1_confirmed"].as_u64() >= Some(7)
-            && judged["programs"][0]["pauses"].as_u64() == Some(2)
-            && judged["programs"][0]["rule_strength"]["statement"].is_string()
-            && judged["programs"][1]["payouts"].as_array().map(|p| p.len()) == Some(2)
-            && judged["programs"][2]["payouts"].as_array().map(|p| p.len()) == Some(1);
+        // By id: a practice stage run again (`--redo-practice`) leaves the earlier programs listed.
+        let program = |id: u32| judged["programs"].as_array().and_then(|ps| ps.iter().find(|p| p["program_id"] == json!(id))).cloned().unwrap_or(Value::Null);
+        let (acme, practice, fork) = (program(pid), program(ppid), program(fpid));
+        let judge_ok = acme["verdicts"]["t1_confirmed"].as_u64() >= Some(7)
+            && acme["pauses"].as_u64() == Some(2)
+            && acme["rule_strength"]["statement"].is_string()
+            && practice["payouts"].as_array().map(|p| p.len()) == Some(2)
+            && fork["payouts"].as_array().map(|p| p.len()) == Some(1);
         ok &= judge_ok;
         let record = antibody_cli::judge::deployment_record(&judge_ctx, None)?;
         let record_ok = record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
@@ -1269,6 +1438,12 @@ pub fn run(a: LiveArgs) -> Result<Value> {
     std::fs::create_dir_all(a.work.join("keys"))?;
     let s: Value = std::fs::read(a.work.join("live.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_else(|| json!({"done": [], "started_unix": unix()}));
     let mut l = Live { a, near, dep, s, stop: Arc::new(AtomicBool::new(false)), threads: Vec::new() };
+    if l.a.redo_practice {
+        if !l.done("release") {
+            return Err(eyre!("--redo-practice runs once the story has run up to the practice stage"));
+        }
+        l.redo_practice()?;
+    }
     let services_from = STAGES.iter().position(|s| *s == "program").unwrap_or(0);
     for (i, stage) in STAGES.iter().enumerate() {
         if l.done(stage) {

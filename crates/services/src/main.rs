@@ -173,6 +173,13 @@ enum Cmd {
         /// Stop after this stage
         #[arg(long)]
         until: Option<String>,
+        /// Run the practice and fork-mode stages again, on new programs at a new anchor
+        #[arg(long)]
+        redo_practice: bool,
+        /// The EVM deployer's key file (default .secrets/sepolia_deployer.json): a new deployer deploys
+        /// the fixtures at new addresses
+        #[arg(long)]
+        evm_key: Option<PathBuf>,
     },
 }
 
@@ -271,7 +278,7 @@ fn main() -> Result<()> {
             })?;
             Ok(())
         }
-        Cmd::Live { work_dir, until } => {
+        Cmd::Live { work_dir, until, redo_practice, evm_key } => {
             let root = repo_root().ok_or_else(|| eyre!("run it from inside the repository"))?;
             let dotenv = antibody_cli::ctx::load_dotenv(&root.join(".env"));
             let var = |k: &str| -> Result<String> {
@@ -289,11 +296,12 @@ fn main() -> Result<()> {
                 forge_bin: if forge.exists() { forge } else { PathBuf::from(format!("forge{exe}")) },
                 antibody_bin: root.join(format!("target/release/antibody{exe}")),
                 keys: root.join(".secrets/near"),
-                evm_key: root.join(".secrets/sepolia_deployer.json"),
+                evm_key: evm_key.clone().unwrap_or_else(|| root.join(".secrets/sepolia_deployer.json")),
                 sepolia_tx_rpc: var("SEPOLIA_TX_RPC").or_else(|_| var("SEPOLIA_RPC").map(|v| v.split(',').next().unwrap_or_default().to_string()))?,
                 sepolia_rpc: var("SEPOLIA_RPC")?,
                 base_rpc: var("BASE_SEPOLIA_RPC")?,
                 until: until.clone(),
+                redo_practice: *redo_practice,
                 root,
             })?;
             Ok(())
