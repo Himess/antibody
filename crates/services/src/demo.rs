@@ -865,6 +865,22 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                                    "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                    "paused_both": paused_both, "keeper": keeper_a, "permits": relayed});
 
+    step("A NEAR app consuming the verdict: a DAO treasury freezes on A's T1-confirmed Critical (anyone reports it)");
+    cmd::admin_create_account(&root_ctx, &acct("dao-treasury"), "10", None, Some(&keys.join(format!("{}.json", acct("dao-treasury")))))?;
+    let guard_wasm = a.root.join("contracts/verdict-guard/target/wasm32-unknown-unknown/release/antibody_verdict_guard.wasm");
+    cmd::admin_deploy(&ctx_of("dao-treasury"), &guard_wasm, Some("new".into()),
+        Some(json!({"owner": acct("acme"), "antibody": acct("bounty"), "program_id": pid}).to_string()))?;
+    let pay_out = |ctx: &Ctx| cmd::admin_call(ctx, &acct("dao-treasury"), "transfer", &json!({"to": "test.near", "amount": "1000000000000000000000000"}).to_string(), 1, 30);
+    let before_freeze = pay_out(&acme).is_ok();
+    let reported = cmd::admin_call(&ctx_of("keeper"), &acct("dao-treasury"), "report", &json!({"commit_id": a_commit}).to_string(), 0, 150)?;
+    let state = near.view(&acct("dao-treasury"), "get_state", json!({}))?;
+    let refused = pay_out(&acme).err().map(|e| e.to_string()).unwrap_or_default();
+    let guard_ok = before_freeze && state["frozen"]["commit_id"] == json!(a_commit) && refused.contains("frozen");
+    println!("DAO treasury: transfer before {}, frozen by commit {} (slot {}), transfer after: {}", if before_freeze { "ok" } else { "FAILED" },
+             state["frozen"]["commit_id"], state["frozen"]["slot"], if refused.contains("frozen") { "refused" } else { "NOT refused" });
+    results["verdict_consumer"] = json!({"contract": acct("dao-treasury"), "watched_program": pid, "report_tx": reported["tx"]["tx"], "reported_by": acct("keeper"),
+                                         "frozen": state["frozen"], "transfer_before": before_freeze, "transfer_after_refused": refused.contains("frozen"), "ok": guard_ok});
+
     step("Agents B–G (library/CLI path); D commits after A; G harms the protected saver and breaks no invariant (the gap lane)");
     let g_bundle = gap_bundle(&a, &dep_a)?;
     for x in ["b", "c", "d", "e", "f", "g"] {
@@ -1052,6 +1068,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= results["release"]["ok"] == json!(true);
     ok &= results["practice"]["ok"] == json!(true);
     ok &= results["fork_mode"]["ok"] == json!(true);
+    ok &= results["verdict_consumer"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     let mut pays = BTreeMap::new();
     pay_txs(&results, &mut pays);
