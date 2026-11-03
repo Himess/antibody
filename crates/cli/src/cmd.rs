@@ -905,6 +905,32 @@ pub fn status(ctx: &Ctx, commit: Option<u64>, run_id: Option<u64>, program: Opti
 /// the debt queue.
 pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
     let mut steps = Vec::new();
+    // Close what can no longer move, so allocation, and the exit, never wait on inaction: unrevealed
+    // commits past their reveal window expire; runs past their timeout or grace time out.
+    let windows = ctx.program(program)?["params"]["windows"].clone();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = |v: &Value| v.as_u64().unwrap_or(u64::MAX);
+    for c in list_commits(ctx, program)? {
+        let due = match state_label(&c["state"]).as_str() {
+            "Committed" if now > secs(&c["committed_at"]).saturating_add(secs(&windows["reveal"])) => Some("expire"),
+            "Verifying" => {
+                let r = c["run"].as_u64().and_then(|r| run(ctx, r).ok()).unwrap_or(Value::Null);
+                let stuck = match &r["outcome"] {
+                    Value::String(s) if s == "Pending" => now > secs(&r["started_at"]).saturating_add(secs(&windows["run_timeout"])),
+                    o if o.get("Failed").is_some() => now > secs(&c["retry_until"]),
+                    o => o["Answered"]["facts"]["kind"] == "InfraError" && now > secs(&c["retry_until"]),
+                };
+                stuck.then_some("time_out")
+            }
+            _ => None,
+        };
+        if let Some(method) = due {
+            match call(ctx, method, json!({"commit_id": c["id"]}), 60) {
+                Ok(s) => steps.push(json!({method: c["id"], "tx": s["tx"]})),
+                Err(e) => steps.push(json!({"not_closed": c["id"], "why": e.to_string()})),
+            }
+        }
+    }
     loop {
         match call(ctx, "allocate", json!({"program_id": program, "max": 20}), 150) {
             Ok(s) => steps.push(json!({"allocate": s["tx"], "events": s["events"].as_array().map(|e| e.len())})),

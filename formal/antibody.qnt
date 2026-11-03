@@ -157,6 +157,8 @@ module antibody {
   }
 
   def exitEnabled: bool = s.phase != "closed" and (s.now >= DEADLINE + EXIT_GRACE or s.misconfigured)
+  // The exit waits until every commit is allocated or closed, so it voids nothing that could be paid.
+  def canExit: bool = exitEnabled and (s.misconfigured or s.cursor >= s.n)
 
   // What a re-run at the proposed fix shows (a quote is verified, so it is the truth).
   def afterFix(x: Commit): str =
@@ -692,7 +694,7 @@ module antibody {
     val openChal = CIDS.filter(d => cs1.get(d).st == "verdict" and cs1.get(d).chal == "open").size()
     val ret = avail1 + released + expired * BOND
     all {
-      exitEnabled,
+      canExit,
       s' = ghost({ ...s, phase: "closed", pinsAtOpen: if (s.phase == "setup") s.pins else s.pinsAtOpen, cursor: s.n,
         cs: CIDS.mapBy(d => fin(d)),
         reserved: 0, available: 0,
@@ -1018,9 +1020,12 @@ module antibody {
 
   run exitSettlesEverythingTest =
     init.then(Open).then(MakeCommit("h1")).then(MakeCommit("h2")).then(MakeCommit("h1"))
-      .then(Reveal(1, "NoV")).then(Reveal(2, "VB1")).then(FactsT1(2))
-      .then(12.reps(_ => Tick)).then(Exit)
-      .expect(and { s.phase == "closed", s.bondLocked == 0, s.reserved == 0, all_properties })
+      .then(Reveal(1, "NoV")).then(Reveal(2, "VA1")).then(FactsT1(1)).then(FactsT1(2))
+      .then(12.reps(_ => Tick))
+      .expect(and { exitEnabled, not(canExit) })      // commit 0 was never revealed: it expires first
+      .then(Expire(0)).then(Allocate).then(Allocate).then(Allocate).then(Exit)
+      .expect(and { s.phase == "closed", s.bondLocked == 0, s.reserved == 0, s.cs.get(2).end == "paid",
+                    s.cs.get(1).end == "forfeit", s.cs.get(0).end == "expired", all_properties })
 
   run misconfiguredProgramClosesTest =
     init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "Mis")).then(FactsT1(0)).then(Allocate)

@@ -1978,6 +1978,12 @@ impl<S: Store> Engine<S> {
         if !(due || early) || matches!(p.phase, Phase::Exited | Phase::Rejected | Phase::Pending) {
             return Err(Error::State("exit opens after the deadline and its grace"));
         }
+        // Every commit is first final and allocated, or closed (expired, timed out): the exit voids
+        // nothing that could still be paid, so a commit held in flight cannot cancel later findings.
+        // The permissionless allocate, expire and time_out get there; the keeper bot calls them.
+        if !early && p.cursor < p.commits {
+            return Err(Error::State("exit waits until every commit is allocated or closed (allocate, expire, time_out)"));
+        }
         let mut fx = vec![];
         // Duplicates and gap claims can no longer be promoted: their reservations go back first, so they
         // fund the owed claims' debts before anything returns to the project.
