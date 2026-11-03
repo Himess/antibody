@@ -295,9 +295,15 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
             "  verdict: {}, first answered at T0 (OutLayer's result), then T1 (its TDX quote verified on NEAR)",
             r["t1"]["kind"].as_str().or(r["verdict"]["kind"].as_str()).unwrap_or("?")
         ),
-        format!("  state: {}, {amount} {symbol} paid to {to}: the vending contract paid your bond and your run, so the payout returns to it",
-                r["state"].as_str().unwrap_or("?")),
-        format!("  {:.1} s from vend to payout; transactions:", r["seconds"].as_f64().unwrap_or(0.0)),
+        if r["state"] == json!("Verifying") {
+            // Verified and T1, but claims are allocated in commit order: an earlier commit not yet final holds it.
+            format!("  state: Verifying: verified, and its payout ({symbol} to {to}) follows once the program's earlier commits are settled \
+                     (claims go in commit order; the keeper runs allocate and pay)")
+        } else {
+            format!("  state: {}, {amount} {symbol} paid to {to}: the vending contract paid your bond and your run, so the payout returns to it",
+                    r["state"].as_str().unwrap_or("?"))
+        },
+        format!("  {:.1} s from vend to {}; transactions:", r["seconds"].as_f64().unwrap_or(0.0), if r["state"] == json!("Done:Paid") { "payout" } else { "the end of the try" }),
     ];
     for l in r["links"].as_array().into_iter().flatten() {
         for (k, v) in l.as_object().into_iter().flatten() {

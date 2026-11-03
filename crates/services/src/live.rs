@@ -1227,6 +1227,11 @@ impl Live {
         let mut served = self.dep.clone();
         served.practice = Some(PracticeDeployment { vending: vending.clone(), program: ppid });
         let judge = self.judge_ctx(&served);
+        // What the vending contract holds: its NEAR, and its NEAR credit at near-antibody, which pays a try's
+        // run and commit storage (OutLayer refunds a run's unused deposit to the vending contract's NEAR).
+        let holds = |who: &str| -> Result<u128> {
+            Ok(self.near.account(who)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0) + cmd::u128_of(&cmd::account(&root_ctx, who)?["near"]))
+        };
         let mut tries = self.s["practice"]["tries"].as_array().cloned().unwrap_or_default();
         for t in TRIERS {
             if tries.iter().any(|r| r["trier"] == json!(t)) {
@@ -1242,7 +1247,7 @@ impl Live {
                 }
                 name = format!("{base}-{k}");
             }
-            let before = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
+            let before = holds(&vending)?;
             let mut r = match practice::try_it(&judge, &vending, ppid, &name) {
                 Ok(r) => r,
                 Err(e) => {
@@ -1254,8 +1259,10 @@ impl Live {
                 }
             };
             r["trier"] = json!(t);
-            // What the try cost the vending contract, once its account closed (its NEAR came back).
-            let after = self.near.account(&vending)?.map(|a| cmd::u128_of(&a["amount"])).unwrap_or(0);
+            // What the try cost the vending contract, once its account closed (its NEAR came back): gas, the
+            // run's charge and the commit's storage. Our relayer's T1 relay is not in it.
+            std::thread::sleep(Duration::from_secs(5));
+            let after = holds(&vending)?;
             r["vending_spent_yocto"] = json!(before.saturating_sub(after).to_string());
             println!("{}: vault {} ({}), witness from the {} ({} bytes), {} {}, {} in {:.1} s; closed: {}, cost the vending {} NEAR",
                      r["account"], r["vault_index"], r["vault"], r["witness_source"].as_str().unwrap_or("-"), r["witness_bytes"],
@@ -1265,7 +1272,39 @@ impl Live {
             self.s["practice"]["tries"] = Value::Array(tries.clone());
             self.save()?;
         }
-        let ok = tries.iter().all(|r| r["state"] == json!("Done:Paid") && r["paid_raw"] == json!(MILLI.to_string()) && r["closed"] == json!(true))
+        // A try pays its own commit when the queue lets it. An earlier commit still waiting holds the queue
+        // in commit order (one never revealed waits out its reveal window), and the keeper moves it on:
+        // each try's final state, once the keeper has run on the program.
+        if tries.iter().any(|r| r["final_state"].as_str().is_none_or(|f| !f.starts_with("Done:"))) {
+            // expire, allocate and pay: 30, 40 and 30 Tgas set aside, one after another.
+            self.ensure_liquid(&Self::acct("keeper"), 100 * MILLI)?;
+            let keeper = self.ctx_of("keeper");
+            let window = |k: &str| pm.settlement.as_ref().and_then(|s| s["windows"][k].as_u64()).unwrap_or(600);
+            let until = Instant::now() + Duration::from_secs(window("reveal") + window("challenge") + 600);
+            loop {
+                let mut done = true;
+                for r in tries.iter_mut() {
+                    let c = root_ctx.commit(r["commit_id"].as_u64().unwrap_or_default())?;
+                    let state = cmd::state_label(&c["state"]);
+                    done &= state.starts_with("Done:");
+                    if r["state"] != json!(state) {
+                        r["settled_by"] = json!("keeper");
+                    }
+                    r["final_state"] = json!(state);
+                    r["final_paid_raw"] = json!(cmd::paid_of(&c).to_string());
+                }
+                if done || Instant::now() > until {
+                    break;
+                }
+                if let Err(e) = cmd::keeper(&keeper, ppid) {
+                    println!("  keeper on program {ppid}: {e}");
+                }
+                std::thread::sleep(Duration::from_secs(30));
+            }
+            self.s["practice"]["tries"] = Value::Array(tries.clone());
+            self.save()?;
+        }
+        let ok = tries.iter().all(|r| r["final_state"] == json!("Done:Paid") && r["final_paid_raw"] == json!(MILLI.to_string()) && r["closed"] == json!(true))
             && tries[0]["vault"] != tries[1]["vault"]
             && tries.iter().all(|r| r["vended_by"] == json!(vending) && r["witness_source"] == json!("base"));
         self.s["practice"]["ok"] = json!(ok);
