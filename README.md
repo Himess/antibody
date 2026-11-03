@@ -183,14 +183,15 @@ four permits did not fit one call; the gap lane's model allowed a re-run after e
 | Challenging honest payouts to delay them | A challenge bond, lost when T1 upholds the payout | A delay up to the resolve window | Threat P12 |
 | A project closing its program to escape payouts | Needs a T1 `ProgramMisconfigured` or the window; the escrow stays until exit | — | Property 6 |
 | A compromised owner | Can change the defaults of new programs only | — | Property 12 |
-| A hijacked agent | Bonds within its budget and per-commit cap; its key cannot withdraw | Its owner's capped credit | Containment tests |
+| A hijacked agent | Bonds within its per-commit cap and a budget that counts losses, on its own programs only; its key cannot withdraw | Its owner's capped credit | Containment tests, SA-13 |
 | Draining the practice faucet | Rate-limited per hour; the public vend key's allowance caps the gas | A small, refilled float | `/v1/status` alerts |
 
 ## Agents
 
 `antibody mcp` serves 8 tools over stdio. Every result is marked untrusted data; file access is confined
 to a workspace and key files are refused. An agent account is a sub-account whose bonds come from its
-owner's credit within a cap, whose payouts go to the owner, and whose key cannot withdraw. See
+owner's credit within a per-commit cap and a budget that counts bonds lost as well as locked, which may be
+bound to a list of programs, whose payouts go to the owner, and whose key cannot withdraw. See
 [AGENTS.md](AGENTS.md), and [docs/agent-runs.md](docs/agent-runs.md) for how runs of an off-the-shelf
 agent completing the loop on the practice program are measured (the loop, not bug finding); those runs
 are not done yet.
