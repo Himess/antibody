@@ -823,7 +823,9 @@ impl Live {
                                       "verdict_from": verdict_from,
                                       "pay_tx": pay_tx, "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                       "paused_both": paused_both, "keeper": keeper_a, "permits": permits(&relayer_file)});
-        self.sweep("agent-a", 60 * MILLI)?;
+        if let Err(e) = self.sweep("agent-a", 60 * MILLI) {
+            println!("  agent-a: float not returned ({e})");
+        }
         Ok(())
     }
 
@@ -841,6 +843,10 @@ impl Live {
         };
         let mut rows = self.s["rows"].as_array().cloned().unwrap_or_default();
         for x in ["b", "c", "d", "e", "f", "g"] {
+            // Each agent submits once: a stage stopped part-way goes on from the next.
+            if rows.iter().any(|r| r["agent"] == x.to_uppercase()) {
+                continue;
+            }
             let t = Instant::now();
             let report = (x == "c").then(|| fx.join("C.report.md"));
             self.ensure_liquid(&Self::acct(&format!("agent-{x}")), FREE_FOR_RUNS)?;
@@ -857,11 +863,16 @@ impl Live {
                              "txs": {"commit": r["commit"]["tx"]["tx"], "reveal": r["reveal"]["tx"]["tx"]}}));
             self.s["rows"] = Value::Array(rows.clone());
             self.save()?;
-            self.sweep(&format!("agent-{x}"), 60 * MILLI)?;
         }
         for row in &rows {
             if let Some(r) = root_ctx.commit(row["commit"].as_u64().unwrap_or_default())?["run"].as_u64() {
                 demo::wait_t1_for(&root_ctx, r, T1_WAIT)?;
+            }
+        }
+        // The floats back, once every reveal's unused gas has come back to its agent.
+        for x in ["b", "c", "d", "e", "f", "g"] {
+            if let Err(e) = self.sweep(&format!("agent-{x}"), 60 * MILLI) {
+                println!("  agent-{x}: float not returned ({e})");
             }
         }
         Ok(())
