@@ -62,6 +62,8 @@ near-antibody's events (standard `antibody`): `program_created`, `program_escrow
 `round_rejected`, `rerun_requested`, `round_opened`, `disclosed`, `run_failed`, `retry_available`,
 `withdraw`, `top_up`, `debt_funded`, `program_exited`, `program_closed`, `containment`, and the
 deployment's own (`images_synced`, `tee_confirm_requested`, `tee_rejected`, `defaults_changed`).
-near-guardian's (standard `antibody-guardian`): `permit_requested`, `permit_signed` and their failures.
+near-antibody also emits `permit_requested` when it asks near-guardian to sign. near-guardian's (standard
+`antibody-guardian`): `program_registered`, `chains_set`, `permit_queued`, `permit_signed`, `permit_skipped`,
+`permit_failed`.
 The practice vending contract (`antibody-practice`): `vended`. The verdict guard
 (`antibody-verdict-guard`): `frozen`.
