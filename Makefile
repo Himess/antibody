@@ -7,7 +7,7 @@
 SHELL := /bin/bash
 NEAR_TOOLCHAIN := 1.85.0
 
-.PHONY: demo build contracts verifier fixtures contract-tests sandbox e2e clean
+.PHONY: demo build contracts verifier verifier-wasm fixtures contract-tests sandbox e2e clean
 
 demo: build fixtures contract-tests e2e
 
@@ -25,6 +25,10 @@ contracts:
 verifier:
 	cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner -p antibody-cli -p antibody-services
 	cargo build --release --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
+
+# The verifier wasm as programs pin it (path-remapped, locked; prints its sha256).
+verifier-wasm:
+	bash scripts/build/verifier-wasm.sh
 
 fixtures:
 	python3 scripts/demo/check_fixtures.py fixtures/acme-local

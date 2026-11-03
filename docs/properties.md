@@ -103,9 +103,10 @@ the verifier answering whatever it is given. Every one runs in CI (`.github/work
 | **Formats two components share do not drift**: the commitment a reveal matches, fresh sender, reserved and fork-mode deployer addresses, the public vend key, `vend`'s Borsh arguments | `golden/vectors.json`, written by `crates/cli/tests/golden.rs` and checked again by near-antibody (`golden_commitments_match_the_cli`) and the vending contract (`golden_vend_args_match_the_cli`) | verifier, NEAR contracts |
 | **near-guardian signs exactly what AntibodyAdapter verifies**: the EIP-712 pause and release digests | `golden/permits.json`, written by near-guardian's tests and recomputed in Solidity by `GoldenPermits.t.sol` | NEAR contracts, fixture contracts |
 | **The native and wasm verifiers agree** byte for byte on every recorded fixture | `scripts/demo/native_vs_wasm.py` (facts and full output) | verifier |
+| **The verifier wasm builds reproducibly**: the same source gives the same `wasm_hash` in any directory and on any machine with the pinned toolchain | `scripts/build/verifier-wasm.sh` (Rust 1.99.1 from `rust-toolchain.toml`, `--locked`, build paths remapped) prints the hash; `Dockerfile.verifier` pins the rest; the release attaches the wasm with its hash and a provenance attestation | verifier, release |
 | **Recorded verdicts hold**: every fixture submission (rounds 0 to 2) and the self-attack regressions | `scripts/demo/check_fixtures.py`, `scripts/demo/check_regressions.py` | verifier |
 | **A round only changes target code and adds slots** (its rule strength aside), and a fork-mode deployment stays the program's | `round_rules` unit tests and `tee_fixture.rs` | verifier |
-| **The whole flow**: every expected outcome of the sandbox story (verdicts, T1, payouts, pauses, rounds, releases, the practice program, fork mode, the verdict guard, audits) | `antibody-services demo` | sandbox end-to-end |
+| **The whole flow**: every expected outcome of the sandbox story (verdicts, T1, payouts, pauses, the project's read of a paid proof, rounds, releases, the practice program, fork mode, the verdict guard, audits) | `antibody-services demo` | sandbox end-to-end |
 
 ## Limits
 

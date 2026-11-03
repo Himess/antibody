@@ -1,0 +1,10 @@
+# The verifier wasm in a fixed container: the same image, the same paths, the same bytes.
+#   docker build -f Dockerfile.verifier -t antibody-verifier-build .
+#   docker run --rm antibody-verifier-build        # prints the sha256 a program pins as wasm_hash
+FROM rust:1.99.1-slim-bookworm
+RUN rustup target add wasm32-wasip2
+WORKDIR /antibody
+COPY . .
+ENV CARGO_TARGET_DIR=/antibody/target/reproducible
+RUN bash scripts/build/verifier-wasm.sh
+CMD ["bash", "-c", "sha256sum /antibody/target/reproducible/wasm32-wasip2/release/antibody-verify.wasm"]

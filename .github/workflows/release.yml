@@ -74,9 +74,9 @@ jobs:
         run: |
           set -euo pipefail
           rustc --version
-          cargo build --release --locked --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
+          bash scripts/build/verifier-wasm.sh
           mkdir dist
-          cp target/wasm32-wasip2/release/antibody-verify.wasm dist/
+          cp target/reproducible/wasm32-wasip2/release/antibody-verify.wasm dist/
           (cd dist && sha256sum antibody-verify.wasm | tee antibody-verify.wasm.sha256)
       - uses: actions/attest-build-provenance@v1
         with:

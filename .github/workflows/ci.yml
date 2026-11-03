@@ -95,7 +95,7 @@ jobs:
       - name: free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - name: toolchain from rust-toolchain.toml
-        run: rustup show
+        run: rustup toolchain install && rustup show
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -105,6 +105,8 @@ jobs:
         run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
       - name: build (wasm32-wasip2)
         run: cargo build --release --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
+      - name: the verifier wasm as programs pin it (reproducible build; compare its sha256 across machines)
+        run: bash scripts/build/verifier-wasm.sh
       - name: recorded fixtures — expected verdicts and keys, native == wasm
         run: |
           python3 scripts/demo/check_fixtures.py fixtures/acme-local
@@ -160,7 +162,7 @@ jobs:
           version: v1.8.5
       - name: toolchains
         run: |
-          rustup show
+          rustup toolchain install && rustup show
           rustup toolchain install 1.85.0 --profile minimal --target wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
