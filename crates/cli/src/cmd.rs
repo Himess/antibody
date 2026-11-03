@@ -27,6 +27,13 @@ pub const MAX_INLINE_BLOB: usize = 15 * 1024;
 /// NEAR credit kept for storage and verification runs (NEP-145 style; unused credit is withdrawable).
 pub const MIN_NEAR_CREDIT: u128 = ONE_NEAR / 4;
 
+/// The NEAR credit the CLI tops up to before a call that adds storage or requests a run:
+/// `$ANTIBODY_MIN_NEAR_CREDIT` (in NEAR, e.g. `0.06` for one run at a time on a lean account), else
+/// [`MIN_NEAR_CREDIT`].
+pub fn min_near_credit() -> u128 {
+    std::env::var("ANTIBODY_MIN_NEAR_CREDIT").ok().and_then(|v| parse_near(&v).ok()).unwrap_or(MIN_NEAR_CREDIT)
+}
+
 /// A token amount in whole units (`"12.5"`) as raw units at `decimals`.
 pub fn parse_tokens(s: &str, decimals: u32) -> Result<u128> {
     let (i, f) = s.split_once('.').unwrap_or((s, ""));
@@ -296,7 +303,7 @@ pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Pa
         Some(u) => json!({"location": u}),
         None => blob::upload(ctx, &signer, &format!("antibody/manifests/{}.json", hex::encode(sha256(&bytes))), &bytes)?,
     };
-    let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let credit = ensure_near_credit(ctx, &signer, min_near_credit())?;
     let msg = json!({"create_program": {"manifest": String::from_utf8(bytes.clone())?, "manifest_url": upload["location"],
                      "project_pk": project_public(project_key)?}});
     let out = ft_transfer_call(ctx, &signer, parse_tokens(escrow, ctx.dep.decimals())?, msg)?;
@@ -331,7 +338,7 @@ pub fn program_activate(ctx: &Ctx, program: u32, wait: bool) -> Result<Value> {
     let (base, built) = build_base(ctx, &manifest_json, &key)?;
     let sha = hex::encode(sha256(&base));
     let up = blob::upload(ctx, &signer, &format!("antibody/base/{sha}.bin"), &base)?;
-    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &signer, min_near_credit())?;
     let loc = json!({"location": up["near_tx"], "sha256": sha});
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "activate", json!({"program_id": program, "base": loc}), RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "activate")?;
@@ -497,7 +504,7 @@ pub fn program_read(ctx: &Ctx, commit_id: u64, project_key: &Path, out: &Path, f
                 return Err(eyre!("commit {commit_id} is {state}: only a paid finding is released to the project"));
             }
             let signer = ctx.signer()?;
-            ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+            ensure_near_credit(ctx, &signer, min_near_credit())?;
             let blob_arg = if arg.get("inline").is_some() { arg.clone() } else { Value::Null };
             let s = call(ctx, "release_wrap", json!({"commit_id": commit_id, "blob": blob_arg}), RUN_TGAS)?;
             let run_id = run_of(&s)?;
@@ -666,7 +673,7 @@ pub fn check(ctx: &Ctx, program: Option<u32>, manifest: Option<&Path>, bundle: &
 /// Tokens into your credit at near-antibody (bonds, and an agent's bonds, are taken from it).
 pub fn deposit(ctx: &Ctx, amount: &str) -> Result<Value> {
     let signer = ctx.signer()?;
-    let credit = ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    let credit = ensure_near_credit(ctx, &signer, min_near_credit())?;
     let out = ft_transfer_call(ctx, &signer, parse_tokens(amount, ctx.dep.decimals())?, json!("deposit"))?;
     let mut s = ensure_ok(ctx, &out, "deposit")?;
     s["storage_deposit"] = credit.unwrap_or(Value::Null);
@@ -759,7 +766,7 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
         })?;
         (id, summary)
     } else {
-        ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+        ensure_near_credit(ctx, &signer, min_near_credit())?;
         let msg = json!({"commit": {"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}});
         let out = ft_transfer_call(ctx, &signer, bond, msg)?;
         let summary = ensure_ok(ctx, &out, "commit")?;
@@ -786,7 +793,7 @@ pub fn reveal(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Val
     let blob_bytes = std::fs::read(rec["blob"].as_str().unwrap_or_default())?;
     let (arg, up) = blob_arg(ctx, &signer, &blob_bytes, "sealed")?;
     if account(ctx, &signer.account_id)?["agent"].is_null() {
-        ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+        ensure_near_credit(ctx, &signer, min_near_credit())?;
     }
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "reveal", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "reveal")?;
@@ -833,7 +840,7 @@ pub fn second(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Val
         .filter(|a| a.get("inline").is_some())
         .unwrap_or(Value::Null);
     let signer = ctx.signer()?;
-    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &signer, min_near_credit())?;
     let s = call(ctx, "request_second", json!({"commit_id": commit_id, "blob": blob}), RUN_TGAS)?;
     let run_id = run_of(&s)?;
     let mut res = json!({"commit_id": commit_id, "run_id": run_id, "tx": s});
@@ -858,7 +865,7 @@ pub fn submit_known(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, 
     };
     let s = blob::seal(&pk, &key, &signer.account_id, envelope, report)?;
     let (arg, up) = blob_arg(ctx, &signer, &s.blob, "known")?;
-    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &signer, min_near_credit())?;
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "submit_known", json!({"program_id": program, "blob": arg}), RUN_TGAS, 0)?;
     let summary = ensure_ok(ctx, &out, "submit_known")?;
     let run_id = run_of(&summary)?;
@@ -1057,7 +1064,7 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     };
     let rsha = hex::encode(sha256(&rbase));
     let rup = blob::upload(ctx, &signer, &format!("antibody/base/{rsha}.bin"), &rbase)?;
-    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &signer, min_near_credit())?;
     // The slots the round adds, at their manifest severities; each new slot's budget is the escrow's
     // deposits, as for a slot the program created without one.
     let p = ctx.program(program)?;
@@ -1085,7 +1092,7 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
 
 /// Re-runs a commit at the proposed fix (immune memory, spec §8.2). Anyone may ask; the requester pays.
 pub fn round_rerun(ctx: &Ctx, commit_id: u64) -> Result<Value> {
-    ensure_near_credit(ctx, &ctx.signer()?, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &ctx.signer()?, min_near_credit())?;
     let s = call(ctx, "request_rerun", json!({"commit_id": commit_id, "blob": null}), RUN_TGAS)?;
     Ok(json!({"commit_id": commit_id, "run_id": run_of(&s)?, "tx": s}))
 }
@@ -1467,7 +1474,7 @@ pub const AGENT_METHODS: &[&str] = &["commit", "reveal", "retry", "__fastdata_fa
 /// budget and the per-commit cap; payouts go to the owner (docs/spec.md §13).
 pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str, programs: &[u32]) -> Result<Value> {
     let signer = ctx.signer()?;
-    ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
+    ensure_near_credit(ctx, &signer, min_near_credit())?;
     let out = ctx.near.function_call(
         &signer,
         &ctx.dep.antibody,
