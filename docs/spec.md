@@ -656,7 +656,7 @@ a submission sealed to another epoch is `InfraError`, never `InvalidPoC`.
 
 ```
 κ = random content key;  wrap_v = κ wrapped to seal_pk (X25519 ephemeral + HKDF + AEAD, bound to program_key)
-blob = "ABSEAL1 " ‖ wrap_v ‖ nonce ‖ AEAD(κ, program_key ‖ hunter ‖ witness ‖ report, ad = program_key)
+blob = "ABSEAL1\0" ‖ wrap_v ‖ nonce ‖ AEAD(κ, program_key ‖ hunter ‖ witness ‖ report, ad = program_key)
 ```
 
 The program and the hunter are inside the AEAD, so a blob replayed under another account is
