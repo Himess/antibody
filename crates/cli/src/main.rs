@@ -37,10 +37,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum KeygenKind {
-    /// X25519 key for a project (findings are re-encrypted to it)
+    /// X25519 key for a project (findings paid to it are wrapped to it): random, or with --nep413
+    /// derived from the --account key's NEP-413 signature, so the same NEAR key re-derives it
     X25519 {
         #[arg(long)]
         out: PathBuf,
+        #[arg(long)]
+        nep413: bool,
     },
     /// ed25519 key for a NEAR account (an implicit account id unless --account-id is given)
     Near {
@@ -131,7 +134,28 @@ enum ProgramCmd {
         program: u32,
     },
     Show {
+        #[arg(long)]
         program: u32,
+    },
+    /// Read a paid finding: request its release wrap (the first time; the requester pays), unwrap the
+    /// content key with the project key, open the sealed proof and re-run it locally. The blob comes
+    /// from --blob, a transaction that passed it (--reveal-tx), or an Antibody API (--api)
+    Read {
+        #[arg(long)]
+        commit: u64,
+        #[arg(long)]
+        project_key: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        blob: Option<PathBuf>,
+        #[arg(long)]
+        reveal_tx: Option<String>,
+        /// The reveal transaction's signer (default: the commit's hunter)
+        #[arg(long)]
+        reveal_signer: Option<String>,
+        #[arg(long)]
+        api: Option<String>,
     },
     /// Add escrow
     TopUp {
@@ -658,7 +682,8 @@ enum TeeCmd {
 fn run(cli: Cli) -> Result<Value> {
     let mk = || ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), cli.account.clone(), cli.key_file.clone(), cli.eth_rpc.clone());
     match cli.cmd {
-        Cmd::Keygen { kind: KeygenKind::X25519 { ref out } } => cmd::keygen_x25519(out),
+        Cmd::Keygen { kind: KeygenKind::X25519 { ref out, nep413: false } } => cmd::keygen_x25519(out),
+        Cmd::Keygen { kind: KeygenKind::X25519 { ref out, nep413: true } } => cmd::keygen_x25519_nep413(&mk()?, out),
         Cmd::Keygen { kind: KeygenKind::Near { ref account_id, ref out } } => cmd::keygen_near(account_id.clone(), out),
         Cmd::Manifest { ref toml, ref out } => cmd::manifest_compile(toml, out),
         Cmd::ManifestRound { ref base, round, ref overrides, ref invariants_code, ref add_slots, ref rule_strength, ref out } => {
@@ -674,6 +699,15 @@ fn run(cli: Cli) -> Result<Value> {
                 ProgramCmd::Known { program, bundle, salt, report, no_wait } => cmd::submit_known(&c, *program, bundle, *salt, report.as_deref(), !no_wait),
                 ProgramCmd::Open { program } => cmd::program_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
+                ProgramCmd::Read { commit, project_key, out, blob, reveal_tx, reveal_signer, api } => {
+                    let from = match (blob, reveal_tx, api) {
+                        (Some(b), None, None) => cmd::BlobFrom::File(b.clone()),
+                        (None, Some(h), None) => cmd::BlobFrom::Tx { hash: h.clone(), signer: reveal_signer.clone() },
+                        (None, None, Some(a)) => cmd::BlobFrom::Api(a.clone()),
+                        _ => return Err(eyre::eyre!("pass one of --blob, --reveal-tx or --api")),
+                    };
+                    cmd::program_read(&c, *commit, project_key, out, &from)
+                }
                 ProgramCmd::TopUp { program, amount } => cmd::top_up(&c, *program, amount),
                 ProgramCmd::Exit { program } => cmd::call(&c, "exit", json!({"program_id": program}), 100),
             }
