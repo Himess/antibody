@@ -423,11 +423,11 @@ enum Cmd {
     /// the public tutorial proof, and settle. Needs no account: without --account the public vend key
     /// calls `vend`
     Try {
-        /// The vending contract (e.g. practice.antibody.testnet)
+        /// The vending contract (default: the deployment's practice program)
         #[arg(long)]
-        vending: String,
+        vending: Option<String>,
         #[arg(long)]
-        program: u32,
+        program: Option<u32>,
         /// Your practice account's name: <name>.<vending>
         #[arg(long)]
         name: String,
@@ -607,7 +607,11 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
-        Cmd::Try { ref vending, program, ref name } => antibody_cli::practice::try_it(&mk()?, vending, program, name),
+        Cmd::Try { ref vending, program, ref name } => {
+            let ctx = mk()?;
+            let (vending, program) = antibody_cli::practice::target(&ctx, vending.clone(), program)?;
+            antibody_cli::practice::try_it(&ctx, &vending, program, name)
+        }
         Cmd::Practice {
             cmd: PracticeCmd::Deploy { ref wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance },
         } => {

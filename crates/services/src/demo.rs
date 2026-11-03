@@ -590,6 +590,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         outlayer: Some(acct("outlayer")),
         light_client: Some(acct("lc")),
         rpc: Some("http://127.0.0.1:3030".into()),
+        eth_rpc: None,
+        practice: None,
     };
     let dep_file = a.work.join("deployments.json");
     std::fs::write(&dep_file, serde_json::to_vec_pretty(&dep)?)?;

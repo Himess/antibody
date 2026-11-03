@@ -162,6 +162,14 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
     Ok(Value::Array(steps))
 }
 
+/// The vending contract and practice program to try: as given, else the deployment's.
+pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Result<(String, u32)> {
+    let dep = ctx.dep.practice.as_ref();
+    let vending = vending.or_else(|| dep.map(|p| p.vending.clone())).ok_or_else(|| eyre!("no practice program in the deployment: pass --vending"))?;
+    let program = program.or_else(|| dep.map(|p| p.program)).ok_or_else(|| eyre!("no practice program in the deployment: pass --program"))?;
+    Ok((vending, program))
+}
+
 /// The whole try-it: vend a practice account, prove its vault with the tutorial proof (commit, sealed
 /// reveal, verdict, T1), and settle as the practice account. With no `--account`, the public vend key
 /// calls `vend`, so nothing but this command is needed.

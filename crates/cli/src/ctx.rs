@@ -21,7 +21,23 @@ pub struct Deployments {
     pub light_client: Option<String>,
     #[serde(default)]
     pub rpc: Option<String>,
+    /// A public Ethereum RPC for the anchors' chain, used when none is given (no key needed). Public
+    /// nodes keep recent state only: proofs that read beyond the pinned base need it near the anchor.
+    #[serde(default)]
+    pub eth_rpc: Option<String>,
+    /// The practice program (docs/practice.md): `antibody try` needs only a name.
+    #[serde(default)]
+    pub practice: Option<PracticeDeployment>,
 }
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct PracticeDeployment {
+    pub vending: String,
+    pub program: u32,
+}
+
+/// The testnet deployment, built in: a downloaded binary needs no repository.
+pub const TESTNET_DEPLOYMENTS: &str = include_str!("../../../deployments/near-testnet.json");
 
 pub struct Ctx {
     pub near: Near,
@@ -85,14 +101,16 @@ impl Ctx {
     ) -> Result<Self> {
         let path = deployments
             .or_else(|| std::env::var("ANTIBODY_DEPLOYMENTS").ok().map(PathBuf::from))
-            .or_else(|| repo_root().map(|r| r.join(format!("deployments/near-{network}.json"))))
-            .ok_or_else(|| eyre!("no deployments file: pass --deployments or set ANTIBODY_DEPLOYMENTS"))?;
-        let dep: Deployments = serde_json::from_str(
-            &std::fs::read_to_string(&path).map_err(|e| eyre!("deployments {}: {e}", path.display()))?,
-        )?;
+            .or_else(|| repo_root().map(|r| r.join(format!("deployments/near-{network}.json"))));
+        let text = match path {
+            Some(p) => std::fs::read_to_string(&p).map_err(|e| eyre!("deployments {}: {e}", p.display()))?,
+            None if network == "testnet" => TESTNET_DEPLOYMENTS.to_string(),
+            None => return Err(eyre!("no deployments file: pass --deployments or set ANTIBODY_DEPLOYMENTS")),
+        };
+        let dep: Deployments = serde_json::from_str(&text)?;
         let rpc = rpc.or_else(|| env_or_dotenv("NEAR_RPC")).or_else(|| dep.rpc.clone());
         let near = Near::new(network, rpc);
-        let eth_rpc = eth_rpc.or_else(|| env_or_dotenv("SEPOLIA_RPC"));
+        let eth_rpc = eth_rpc.or_else(|| env_or_dotenv("SEPOLIA_RPC")).or_else(|| dep.eth_rpc.clone());
         let state_dir = PathBuf::from(".antibody");
         Ok(Self { near, dep, account: account.or_else(|| std::env::var("ANTIBODY_ACCOUNT").ok()), key_file, eth_rpc, state_dir })
     }
