@@ -1128,7 +1128,11 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
             }
         }
     }
-    loop {
+    // Every commit allocated already: no transaction (a keeper that runs for days asks only when there is
+    // something to allocate; a refused call still burns its gas).
+    let p = ctx.program(program)?;
+    let pending = p["cursor"].as_u64().unwrap_or(0) < p["commits"].as_u64().unwrap_or(0);
+    while pending {
         match call(ctx, "allocate", json!({"program_id": program, "max": 20}), 150) {
             Ok(s) => steps.push(json!({"allocate": s["tx"], "events": s["events"].as_array().map(|e| e.len())})),
             Err(e) => {
