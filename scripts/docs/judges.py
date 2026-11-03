@@ -178,6 +178,24 @@ def judges(d):
                 f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `eth_getCode {fm.get('vault_3')}` at the anchor chain | "
                 f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('deploy_txs')} deploy transactions, {fm.get('targets')} targets; the vault's code on chain: `{fm.get('vault_3_code_on_chain')}` | "
                 f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))} |"]
+    vc = r.get("verdict_consumer", {})
+    if vc:
+        n += 1
+        fr = vc.get("frozen") or {}
+        out += [f"| {n} | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | "
+                f"`near view {vc.get('contract')} get_state` | frozen by commit {fr.get('commit_id')} (slot {fr.get('slot')}); the next transfer refused: "
+                f"`{str(vc.get('transfer_after_refused')).lower()}` | report {d.tx(vc.get('report_tx'))} |"]
+    pr = r.get("project_read", {})
+    if pr:
+        n += 1
+        rd = pr.get("read", {})
+        req = rd.get("requested") or {}
+        refused = "only a paid finding" in (pr.get("duplicate_refused") or "")
+        out += [f"| {n} | The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped | "
+                f"`{d.cli('--account <project> program read --commit ' + str(pr.get('commit')) + ' --project-key <key file> --out <dir> --reveal-tx <tx>')}` "
+                f"(the first read sends a transaction) | local verdict `{rd.get('local_verdict', {}).get('kind')}`, its receipt equals the TEE's: "
+                f"`{str(rd.get('receipt_matches_the_tee')).lower()}`; commit {pr.get('duplicate')}'s wrap refused: `{str(refused).lower()}` | "
+                f"release wrap {d.tx((req.get('tx') or {}).get('tx'))} |"]
     au = r.get("audit", {})
     if au:
         n += 1

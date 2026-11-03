@@ -770,14 +770,16 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let manifest = demo_manifest(&dep_a, &evm_a, anchor_n, anchor_h, &acct("acme"), now + 3_600)?;
     let manifest_path = a.work.join("manifest.json");
     std::fs::write(&manifest_path, manifest.canonical())?;
+    // The project key comes from acme's NEP-413 signature: the same NEAR key re-derives it.
     let project_key = a.work.join("keys/acme.x25519.json");
-    cmd::keygen_x25519(&project_key)?;
     let acme = ctx_of("acme");
+    let derived = cmd::keygen_x25519_nep413(&acme, &project_key)?;
     let created = cmd::program_create(&acme, &manifest_path, ESCROW_TUSD, &project_key, None)?;
     let pid = created["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no program id: {created}"))? as u32;
     println!("program {pid} created: {} (anchor {})", created["tx"]["tx"], created["anchor"]["anchor"]);
     results["program"] = json!({"program_id": pid, "manifest_sha256": hex::encode(sha256(&manifest.canonical())), "anchor_block": anchor_n,
-                                "anchor_hash": format!("{anchor_h:#x}"), "create_tx": created["tx"]["tx"], "anchor": created["anchor"]});
+                                "anchor_hash": format!("{anchor_h:#x}"), "create_tx": created["tx"]["tx"], "anchor": created["anchor"],
+                                "project_key": {"public_key": derived["public_key"], "nep413": derived["nep413"]}});
     let program_key = acme.program(pid)?["key"].as_str().unwrap_or_default().to_string();
 
     step("Guardian: the program's adapter on both chains (CREATE2), registered with near-guardian");
@@ -884,11 +886,25 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step("Agents B–G (library/CLI path); D commits after A; G harms the protected saver and breaks no invariant (the gap lane)");
     let g_bundle = gap_bundle(&a, &dep_a)?;
+    // What one submission costs its hunter (B): near-antibody's storage, B's NEAR credit and wallet,
+    // from before the commit to the verdict.
+    let costs_of = |who: &str| -> Result<(u64, u128, u128)> {
+        let c = near.account(&acct("bounty"))?.ok_or_else(|| eyre!("no contract account"))?;
+        let w = near.account(&acct(who))?.ok_or_else(|| eyre!("no account {who}"))?;
+        Ok((c["storage_usage"].as_u64().unwrap_or(0), cmd::u128_of(&cmd::account(&root_ctx, &acct(who))?["near"]), cmd::u128_of(&w["amount"])))
+    };
     for x in ["b", "c", "d", "e", "f", "g"] {
         let t = Instant::now();
         let report = if x == "c" { Some(fx.join("C.report.md")) } else { None };
         let bundle = if x == "g" { g_bundle.clone() } else { fx.join(format!("{}.bundle.json", x.to_uppercase())) };
+        let costs_before = if x == "b" { Some(costs_of("agent-b")?) } else { None };
         let r = cmd::submit(&ctx_of(&format!("agent-{x}")), pid, &bundle, None, report.as_deref(), true)?;
+        if let Some((s0, c0, w0)) = costs_before {
+            let (s1, c1, w1) = costs_of("agent-b")?;
+            results["costs"] = json!({"submission": "B", "contract_storage_bytes": s1.saturating_sub(s0), "near_credit_spent_yocto": c0.saturating_sub(c1).to_string(),
+                                      "wallet_delta_yocto": (w1 as i128 - w0 as i128).to_string(), "inline_blob_bytes": r["reveal"]["upload"]["inline_bytes"],
+                                      "note": "sandbox: the MOCK OutLayer refunds the run deposit to the wallet, and gas costs ten times testnet's"});
+        }
         rows.push((x.to_uppercase(), r["commit"]["commit_id"].as_u64().unwrap_or(0), t.elapsed().as_secs_f64(),
                    json!({"commit": r["commit"]["tx"]["tx"], "reveal": r["reveal"]["tx"]["tx"]})));
     }
@@ -926,6 +942,25 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     results["keeper"] = keeper_runs.last().cloned().unwrap_or(Value::Null);
     results["keeper_runs"] = Value::Array(keeper_runs);
     results["withdrawal"] = json!({"account": acct("agent-b"), "wallet_before": cmd::fmt_tusd(before), "wallet_after": cmd::fmt_tusd(after)});
+
+    step("The project reads what it paid for: A's proof, wrapped to its NEP-413 key after payment; D's duplicate is never wrapped");
+    let t = Instant::now();
+    let reveal_of = |name: &str| rows.iter().find(|r| r.0 == name).map(|r| (r.1, r.3["reveal"].as_str().unwrap_or_default().to_string()));
+    let (a_id, a_reveal) = reveal_of("A (MCP)").ok_or_else(|| eyre!("no row for A"))?;
+    let read = cmd::program_read(&acme, a_id, &project_key, &a.work.join("read/A"), &cmd::BlobFrom::Tx { hash: a_reveal, signer: None })?;
+    let again = a.work.join("keys/acme.x25519.again.json");
+    let rederived = cmd::keygen_x25519_nep413(&acme, &again)?["public_key"] == derived["public_key"];
+    // near-antibody itself refuses to wrap a duplicate, even with its blob.
+    let (d_id, d_reveal) = reveal_of("D").ok_or_else(|| eyre!("no row for D"))?;
+    let d_blob = cmd::blob_arg_in_tx(&acme, &d_reveal, &acct("agent-d"), d_id)?;
+    let d_refused = cmd::call(&acme, "release_wrap", json!({"commit_id": d_id, "blob": d_blob}), cmd::RUN_TGAS).err().map(|e| e.to_string()).unwrap_or_default();
+    let read_ok = read["local_verdict"]["kind"] == json!("Violation") && read["receipt_matches_the_tee"] == json!(true) && rederived
+        && d_refused.contains("only a paid finding");
+    println!("project read A's proof (commit {a_id}): {} calls, local verdict {}, receipt {} the TEE's; key re-derived: {rederived}; D's release wrap: {}",
+             read["calls"], read["local_verdict"]["kind"], if read["receipt_matches_the_tee"] == json!(true) { "equals" } else { "DIFFERS FROM" },
+             if d_refused.contains("only a paid finding") { "refused" } else { "NOT refused" });
+    results["project_read"] = json!({"commit": a_id, "read": read, "key_rederived": rederived, "duplicate": d_id, "duplicate_refused": d_refused,
+                                     "ok": read_ok, "seconds": t.elapsed().as_secs_f64()});
 
     step("Round 1, a partial fix (AcmeLendFixed, bug #1) and a new invariant (protected_balances): the keeper re-runs every paid PoC; B and F still break, G's claim is promoted");
     let keeper = ctx_of("keeper");
@@ -1021,20 +1056,23 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     std::fs::write(&fork_bundle, serde_json::to_vec_pretty(&practice::tutorial_bundle(&vault3))?)?;
     let fr = cmd::submit(&ctx_of("agent-a"), fpid, &fork_bundle, None, None, true)?;
     let fcid = fr["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no fork-mode commit id: {fr}"))?;
-    wait_t1(&root_ctx, root_ctx.commit(fcid)?["run"].as_u64().unwrap_or_default())?;
+    // The reveal returns the run at T0; the T1 relayer confirms it after.
+    let frun = wait_t1(&root_ctx, root_ctx.commit(fcid)?["run"].as_u64().unwrap_or_default())?;
     let fkeeper = cmd::keeper(&ctx_of("keeper"), fpid)?;
     let fcommit = root_ctx.commit(fcid)?;
     let fork_ok = cmd::state_label(&fcommit["state"]) == "Done:Paid"
         && cmd::paid_of(&fcommit) == ONE_TUSD
+        && frun["kind"] == json!("Violation")
+        && frun["tier"] == json!("T1")
         && on_chain == json!("0x")
         && fr["commit"]["witness_source"] == json!("base");
     println!("fork-mode program {fpid}: {} deploy transactions, {} targets, vault-3 on chain: {on_chain}; the tutorial proof: {} {} ({} witness), {} in {:.1}s",
-             fm.deploy.as_ref().map(|d| d.txs.len()).unwrap_or(0), fm.targets.len(), fr["reveal"]["result"]["kind"].as_str().unwrap_or("-"),
-             fr["reveal"]["result"]["tier"].as_str().unwrap_or("-"), fr["commit"]["witness_source"].as_str().unwrap_or("-"),
+             fm.deploy.as_ref().map(|d| d.txs.len()).unwrap_or(0), fm.targets.len(), frun["kind"].as_str().unwrap_or("-"),
+             frun["tier"].as_str().unwrap_or("-"), fr["commit"]["witness_source"].as_str().unwrap_or("-"),
              cmd::state_label(&fcommit["state"]), t.elapsed().as_secs_f64());
     results["fork_mode"] = json!({"program_id": fpid, "manifest_sha256": hex::encode(sha256(&fm.canonical())), "create_tx": fc["tx"]["tx"],
                                   "deploy_txs": fm.deploy.as_ref().map(|d| d.txs.len()), "targets": fm.targets.len(), "vault_3": vault3,
-                                  "vault_3_code_on_chain": on_chain, "commit": fcid, "verdict": fr["reveal"]["result"], "witness_source": fr["commit"]["witness_source"],
+                                  "vault_3_code_on_chain": on_chain, "commit": fcid, "verdict": fr["reveal"]["result"], "tier": frun["tier"], "witness_source": fr["commit"]["witness_source"],
                                   "state": cmd::state_label(&fcommit["state"]), "paid_raw": cmd::paid_of(&fcommit).to_string(), "keeper": fkeeper,
                                   "txs": {"commit": fr["commit"]["tx"]["tx"], "reveal": fr["reveal"]["tx"]["tx"]}, "ok": fork_ok, "seconds": t.elapsed().as_secs_f64()});
 
@@ -1070,6 +1108,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= results["practice"]["ok"] == json!(true);
     ok &= results["fork_mode"]["ok"] == json!(true);
     ok &= results["verdict_consumer"]["ok"] == json!(true);
+    ok &= results["project_read"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     let mut pays = BTreeMap::new();
     pay_txs(&results, &mut pays);
@@ -1096,7 +1135,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let practice_audit = root_ctx.view("audit", json!({"program_id": results["practice"]["program_id"]}))?;
     let fork_audit = root_ctx.view("audit", json!({"program_id": results["fork_mode"]["program_id"]}))?;
     ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true) && practice_audit["ok"] == json!(true) && fork_audit["ok"] == json!(true);
-    println!("known issues: {known_n}; audit(program): {}; audit(practice): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid instantly: {}; paused on both chains: {}; practice: {}",
+    println!("known issues: {known_n}; audit(program): {}; audit(practice): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid in seconds (T1, under the cap): {}; paused on both chains: {}; practice: {}",
              audit["ok"], practice_audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD, one["instant"], one["paused_both"], results["practice"]["ok"]);
     results["submissions"] = Value::Array(table);
     results["audit"] = json!({"program": audit, "practice": practice_audit, "fork_mode": fork_audit, "contract": contract_audit});
@@ -1154,17 +1193,21 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         let code = r.status().as_u16();
         examples.insert(path.clone(), json!({"status": code, "body": r.json::<Value>().unwrap_or(Value::Null)}));
     }
-    let api_ok = examples.values().all(|e| e["status"] == json!(200)) && indexed > 0;
-    println!("API: {} events indexed; {} endpoints, all 200: {api_ok}", indexed, examples.len());
+    // A project finds a commit's blob through the API alone (the wrap exists: no new run).
+    let via_api = cmd::program_read(&acme, a_commit, &project_key, &a.work.join("read/A-via-api"), &cmd::BlobFrom::Api(format!("http://{addr}")))?;
+    let api_ok = examples.values().all(|e| e["status"] == json!(200)) && indexed > 0 && via_api["receipt_matches_the_tee"] == json!(true);
+    println!("API: {} events indexed; {} endpoints, all 200; the project's read through the API: {}; ok: {api_ok}", indexed, examples.len(),
+             via_api["local_verdict"]["kind"]);
     std::fs::write(a.work.join("api-examples.json"), serde_json::to_vec_pretty(&examples)?)?;
-    results["api"] = json!({"events_indexed": indexed, "endpoints": paths, "ok": api_ok, "examples": a.work.join("api-examples.json"),
+    results["api"] = json!({"events_indexed": indexed, "endpoints": paths, "ok": api_ok, "examples": a.work.join("api-examples.json"), "url": format!("http://{addr}"),
+                            "project_read": {"receipt_matches_the_tee": via_api["receipt_matches_the_tee"], "requested": via_api["requested"]},
                             "failures": examples.iter().filter(|(_, e)| e["status"] != json!(200)).map(|(k, e)| json!({"path": k, "status": e["status"], "body": e["body"]})).collect::<Vec<_>>()});
     ok &= api_ok;
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();
     std::fs::write(a.work.join("results.json"), serde_json::to_vec_pretty(&results)?)?;
     if a.serve {
-        println!("--serve: near-sandbox http://127.0.0.1:3030, anvil :8545 and :8546, the MOCK services and relayers stay up;");
+        println!("--serve: near-sandbox http://127.0.0.1:3030, anvil :8545 and :8546, the API http://{addr}, the MOCK services and relayers stay up;");
         println!("  deployments {} (practice program {ppid}, vending {}); Ctrl-C stops", dep_file.display(), acct("practice"));
         std::thread::park();
     } else if a.keep {
