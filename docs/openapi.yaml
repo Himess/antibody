@@ -1,0 +1,260 @@
+openapi: 3.1.0
+info:
+  title: Antibody API
+  version: "2.0.0"
+  description: |
+    Read-only JSON for UIs, agents and judges (`antibody-services api`, or `all`). Every value comes from
+    near-antibody's own views or from the indexer's event log; nothing here is trusted by the contracts.
+    Amounts are decimal strings in raw token units. CORS is open for GET. The example payloads are the
+    sandbox demo's, recorded by `antibody-services demo` (`target/demo/api-examples.json`; a copy in
+    `docs/results/api-examples.json`).
+  license:
+    name: MIT
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /health:
+    get:
+      summary: The network, the contracts and the endpoints
+      responses:
+        "200":
+          description: Always ok while the server runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  network: {type: string}
+                  version: {type: string}
+                  contracts: {$ref: "#/components/schemas/Deployments"}
+                  endpoints: {type: array, items: {type: string}}
+  /v1/status:
+    get:
+      summary: The services' health and the monitoring alerts
+      description: |
+        Each service's last progress (from its state file), permits not yet confirmed on their chain, each
+        program's escrow against its largest payout, and the practice faucet: the vending contract's
+        balance, the public vend key's remaining allowance and its credit at near-antibody. `ok` is false
+        while a critical alert stands.
+      responses:
+        "200":
+          description: Status and alerts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  at: {type: integer, description: unix seconds}
+                  ok: {type: boolean}
+                  network: {type: string}
+                  components: {type: object}
+                  alerts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        level: {type: string, enum: [warn, critical]}
+                        component: {type: string}
+                        key: {type: string, description: stable per alert, for deduplication}
+                        message: {type: string}
+  /v1/stats:
+    get:
+      summary: Contract totals and latencies from the event log
+      responses:
+        "200":
+          description: "`get_stats` and commit-to-verdict, commit-to-payout latencies (p50, p95)"
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/programs:
+    get:
+      summary: Every program, with its phase, round, anchor and ledger
+      responses:
+        "200":
+          description: Programs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  programs: {type: array, items: {$ref: "#/components/schemas/ProgramSummary"}}
+  /v1/programs/{id}:
+    get:
+      summary: One program in full
+      parameters: [{$ref: "#/components/parameters/ProgramId"}]
+      responses:
+        "200":
+          description: The program, its meta (manifest location, anchor, targets, slots, base witness), its record, its audit (both sides of every conservation equation), its commits and its events
+          content:
+            application/json:
+              schema: {type: object}
+        "502": {$ref: "#/components/responses/Upstream"}
+  /v1/programs/{id}/feed:
+    get:
+      summary: The sealed submissions feed
+      description: Who committed when, and how each commit settled. Never the PoC.
+      parameters: [{$ref: "#/components/parameters/ProgramId"}]
+      responses:
+        "200":
+          description: Feed rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  program_id: {type: integer}
+                  submissions: {type: array, items: {$ref: "#/components/schemas/CommitRow"}}
+  /v1/commits/{id}:
+    get:
+      summary: One commit, its verdict and its events
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200":
+          description: The commit as near-antibody stores it, its feed row, its events with transaction links, and the CLI command that shows it
+          content:
+            application/json:
+              schema: {type: object}
+        "502": {$ref: "#/components/responses/Upstream"}
+  /v1/runs/{id}:
+    get:
+      summary: One verification run
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        "200":
+          description: The run's verdict (kind, keys, impact, tier T0 or T1) and the stored run
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/accounts/{id}:
+    get:
+      summary: An account's credit, its agent statement and its token balance
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Credit at near-antibody (NEAR and tokens), the agent statement (bonds, verification spend, payouts, containment events), the payout token balance
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/leaderboard:
+    get:
+      summary: Paid findings and payouts by beneficiary, across programs
+      responses:
+        "200":
+          description: Rows by payouts, with duplicates and forfeited commits beside them
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/events:
+    get:
+      summary: NEP-297 events in order, each with its transaction
+      parameters:
+        - {name: after, in: query, schema: {type: integer}, description: first `seq`}
+        - {name: limit, in: query, schema: {type: integer, maximum: 1000}}
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: {type: array, items: {$ref: "#/components/schemas/Event"}}
+  /v1/guardian:
+    get:
+      summary: near-guardian's configuration, its signed permits, pending permits and the relayer's state
+      responses:
+        "200":
+          description: Guardian state
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/judge:
+    get:
+      summary: "`antibody judge`: view calls only"
+      description: Each contract's code hash and whether it is locked; the pins; per program its anchor, T1 confirmations, payouts, pause and release permits and rule strength.
+      responses:
+        "200":
+          description: The judge view
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/mock/mainnet:
+    get:
+      summary: Recorded MOCK data, flagged as such
+      responses:
+        "200":
+          description: '`{"mock": true, ...}`'
+          content:
+            application/json:
+              schema: {type: object}
+components:
+  parameters:
+    ProgramId: {name: id, in: path, required: true, schema: {type: integer}}
+  responses:
+    Upstream:
+      description: The NEAR RPC failed or the item does not exist
+      content:
+        application/json:
+          schema: {type: object, properties: {error: {type: string}}}
+  schemas:
+    Deployments:
+      type: object
+      properties:
+        network: {type: string}
+        antibody: {type: string}
+        tusd: {type: string, description: the payout token}
+        guardian: {type: [string, "null"]}
+        outlayer: {type: [string, "null"]}
+        light_client: {type: [string, "null"]}
+        rpc: {type: [string, "null"]}
+        eth_rpc: {type: [string, "null"]}
+        practice:
+          type: [object, "null"]
+          properties: {vending: {type: string}, program: {type: integer}}
+    ProgramSummary:
+      type: object
+      properties:
+        program_id: {type: integer}
+        name: {type: string}
+        project: {type: string}
+        phase: {type: string, enum: [Pending, Setup, Open, Closed, Exited, Refunded]}
+        round: {type: integer}
+        anchor: {type: object, properties: {chain_id: {type: integer}, block: {type: integer}}}
+        commits: {type: integer}
+        ledger: {type: object, description: "funded = available + reserved + paid + fees + returned"}
+    CommitRow:
+      type: object
+      properties:
+        commit_id: {type: integer}
+        program_id: {type: integer}
+        index: {type: integer}
+        round: {type: integer}
+        hunter: {type: string}
+        beneficiary: {type: string, description: the hunter, or an agent's owner}
+        committed_at: {type: integer}
+        state: {type: string, description: "Committed, Verifying, Holder, Duplicate, Done:Paid, Done:Forfeited, Done:DuplicateConfirmed, Done:Known, ..."}
+        run_id: {type: [integer, "null"]}
+        verdict:
+          type: object
+          properties:
+            kind: {type: [string, "null"], enum: [Violation, NoViolation, InvalidPoC, Unevaluable, ProgramMisconfigured, InfraError, null]}
+            tier: {type: [string, "null"], enum: [T0, T1, null]}
+            keys: {type: [array, "null"], items: {type: object, properties: {slot: {type: integer}, tag: {type: string}}}}
+        paid_raw: {type: string}
+        sealed: {type: boolean, const: true}
+    Event:
+      type: object
+      properties:
+        seq: {type: integer}
+        network: {type: string}
+        standard: {type: string}
+        event: {type: string}
+        data: {type: object}
+        tx: {type: string}
+        block_height: {type: integer}
+        block_ts_ns: {type: integer}
+        explorer: {type: string}

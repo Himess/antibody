@@ -1,36 +1,67 @@
-# API (`antibody-services api`)
+# API and services (`antibody-services`)
 
-The API is read-only JSON over HTTP, with CORS open for GET. It serves:
-
-- live views of the near-antibody contract;
-- the indexer's event history, where every event carries its NEAR transaction hash and explorer link;
-- the relayer's pause status;
-- MOCK mainnet data.
+The backend around the contracts. Nothing it does is trusted by them: the API serves near-antibody's
+own views and the indexer's event log, and the bots only make permissionless calls.
 
 ```bash
-antibody-services --network testnet all --listen 127.0.0.1:8787     # indexer + relayer + notifier + api
-antibody-services --network testnet api                              # api only (reads the indexer's state dir)
+# indexer + relayer + notifier + API, and the keeper bot and T1 relayer with their own accounts
+antibody-services --network testnet all --listen 127.0.0.1:8787 \
+  --keeper-account keeper.antibody.testnet --t1-account relayer.antibody.testnet
+antibody-services --network testnet api                     # the API alone (reads the indexer's state dir)
+antibody-services --network testnet keeper --account keeper.antibody.testnet --once
 ```
+
+| Service | What it does |
+|---|---|
+| `indexer` | Every NEP-297 event of near-antibody, the token and near-guardian, with its transaction, height and time, in `events.jsonl` (append-only, `seq` ordered). A cursor makes it resume without losing or repeating events; `--from-block` backfills. |
+| `keeper` | On every open program, every 30 s: allocate in commit order, pay funded claims, the round's pause ticket, debts, re-runs at a proposed fix, pending permits (`keeper.json` records each pass). |
+| `t1` | Relays each answered run's TDX quote to near-antibody, which verifies it on chain (the run becomes T1). |
+| `relayer` | Submits near-guardian's signed pause and release permits to each chain's adapter. |
+| `notifier` | Posts new events, and each new monitoring alert once, to the webhooks in `$ANTIBODY_WEBHOOKS` (never printed). |
+| `api` | The endpoints below. |
+
+## Endpoints
+
+The machine-readable form is [`openapi.yaml`](openapi.yaml); its examples are the sandbox demo's
+payloads ([`results/api-examples.json`](results/api-examples.json)).
 
 | Endpoint | Returns |
 |---|---|
-| `GET /health` | Network and contract ids |
-| `GET /v1/stats` | Contract stats (programs, escrow, findings, paid, duplicates, slop) and latencies from the event log: submit→verdict and submit→payout (p50/p95) |
-| `GET /v1/programs` | All programs |
-| `GET /v1/programs/{id}` | Program rules and anchor trust, claimed keys, commits, and the program's events with tx links |
-| `GET /v1/programs/{id}/feed` | Sealed submissions feed: commit hash, hunter, height, status, verdict kind, keys, outcome, receipt hash. Never PoC content |
-| `GET /v1/commits/{id}` | One commit, its duplicate/known proof (earlier claim, equal keys, both receipt hashes, tier, sealed-until; content keys after disclosure), its events, and the local verify command |
-| `GET /v1/leaderboard` | Hunters by earnings, then valid findings; shows valid-but-late (duplicates) and slop counts |
-| `GET /v1/accounts/{id}` | Internal balance, reputation, tUSD balance |
-| `GET /v1/events?after=&limit=` | NEP-297 events in order (`seq`), each with `tx`, `block_height`, `block_ts_ns`, `explorer` |
-| `GET /v1/guardian` | Registered chains, the latest signed pause per chain, and the relayer state (EVM tx hash, receipt, `paused()`) |
-| `GET /v1/mock/mainnet` | `{"mock": true, …}` recorded data: v0.3 evidence (replays, full-block validation, light-client anchoring, forged header) and a mock live program |
+| `GET /health` | The network, the contract ids, the version and the endpoints |
+| `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), and the alerts |
+| `GET /v1/stats` | Contract totals, and commit-to-verdict and commit-to-payout latencies (p50, p95) from the event log |
+| `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
+| `GET /v1/programs/{id}` | The program, its meta (manifest, anchor, targets, slots, base witness), its record, its audit, its commits and its events |
+| `GET /v1/programs/{id}/feed` | The sealed feed: who committed when, the state, the verdict (kind, tier, keys) and the payout. Never the PoC |
+| `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links |
+| `GET /v1/runs/{id}` | One verification run: kind, keys, impact, tier |
+| `GET /v1/accounts/{id}` | Credit at near-antibody, the agent statement (bonds, verification spend, payouts, containment events), the token balance |
+| `GET /v1/leaderboard` | Paid findings and payouts by beneficiary, with duplicates and forfeited commits |
+| `GET /v1/events?after=&limit=` | Events in `seq` order, each with `tx`, `block_height`, `block_ts_ns`, `explorer` |
+| `GET /v1/guardian` | near-guardian's configuration, its signed permits, pending permits, the relayer's state |
+| `GET /v1/judge` | `antibody judge`: code hashes, locked status, pins, T1 confirmations, payouts, permits, rule strength |
+| `GET /v1/mock/mainnet` | `{"mock": true, …}`: recorded data, never live |
 
-Event names (standard `antibody`): `program_created`, `anchor_checked`, `program_rejected`, `program_funded`,
-`known_issue_submitted`, `known_issue_claimed`, `program_opened`, `deposit`, `committed`, `submitted`,
-`verify_failed`, `verdict`, `verdict_error`, `pause_requested`, `duplicate`, `known`, `payout_delayed`, `paid`,
-`payout_failed`, `challenged`, `challenge_resolved`, `expired`, `top_up`, `withdraw`, `escrow_withdrawn`,
-`disclosed`, `disclosure_failed`, `program_misconfigured`, `verifier_set`, `verifier_pubkey`, and for rounds
-`round_proposed`, `rerun_requested`, `rerun_result`, `rerun_failed`, `round_opened`, and for T1
-`tee_config_set`, `tee_confirm_requested`, `tee_confirmed`, `tee_rejected`. The guardian
-emits `pause_signed` (standard `antibody-guardian`).
+## Monitoring
+
+`/v1/status` raises an alert when:
+- a service's state has not advanced for 5 minutes (indexer, keeper, notifier), or a keeper pass failed;
+- a permit is not yet confirmed on its chain;
+- an open program's available escrow is below its largest payout;
+- **the practice faucet** runs low (faucet-drain protection): the vending contract below 0.5 NEAR
+  (critical), the public vend key gone (critical) or below 0.05 NEAR of allowance, or the vending
+  contract's NEAR credit at near-antibody below 0.1 NEAR. Vending is also rate-limited per hour by the
+  contract itself, and the key's allowance caps what calls to `vend` can burn.
+
+## Events
+
+near-antibody's events (standard `antibody`): `program_created`, `program_escrowed`, `anchor_checked`,
+`program_activated`, `program_opened`, `program_rejected`, `commit`, `reveal`, `holder`, `paid`,
+`duplicate`, `duplicate_confirmed`, `known_match`, `forfeited`, `gap_claim`, `gap_promoted`, `promoted`,
+`challenge`, `challenge_upheld`, `challenge_overturned`, `pause_ticket`, `round_proposed`,
+`round_rejected`, `rerun_requested`, `round_opened`, `disclosed`, `run_failed`, `retry_available`,
+`withdraw`, `top_up`, `debt_funded`, `program_exited`, `program_closed`, `containment`, and the
+deployment's own (`images_synced`, `tee_confirm_requested`, `tee_rejected`, `defaults_changed`).
+near-guardian's (standard `antibody-guardian`): `permit_requested`, `permit_signed` and their failures.
+The practice vending contract (`antibody-practice`): `vended`. The verdict guard
+(`antibody-verdict-guard`): `frozen`.
