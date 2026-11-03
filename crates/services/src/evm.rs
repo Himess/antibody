@@ -26,8 +26,11 @@ impl Evm {
     }
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
-        let v: Value = self
-            .client
+        self.call_via(&self.client, method, params)
+    }
+
+    fn call_via(&self, client: &reqwest::blocking::Client, method: &str, params: Value) -> Result<Value> {
+        let v: Value = client
             .post(&self.url)
             .json(&json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
             .send()
@@ -40,16 +43,22 @@ impl Evm {
         Ok(v["result"].clone())
     }
 
-    /// A read, tried up to five times with backoff: a public RPC's load balancer sometimes answers from
-    /// a backend that is behind, or refuses a burst. Reads only (a failing `eth_call` fails five times).
+    /// A read, tried up to eight times: a public RPC's load balancer may answer from a backend without
+    /// the block's state, or refuse a burst. Each retry opens a new connection (another backend may
+    /// answer) after a backoff. Reads only (a failing `eth_call` fails each time).
     pub fn read(&self, method: &str, params: Value) -> Result<Value> {
+        let fresh = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .pool_max_idle_per_host(0)
+            .build()
+            .expect("http client");
         let mut last = None;
-        for attempt in 0..5u32 {
-            match self.call(method, params.clone()) {
+        for attempt in 0..8u32 {
+            match self.call_via(if attempt == 0 { &self.client } else { &fresh }, method, params.clone()) {
                 Ok(v) => return Ok(v),
                 Err(e) => last = Some(e),
             }
-            std::thread::sleep(std::time::Duration::from_millis(500 << attempt));
+            std::thread::sleep(std::time::Duration::from_millis(250 << attempt.min(4)));
         }
         Err(last.unwrap_or_else(|| eyre!("{method}: no attempt")))
     }

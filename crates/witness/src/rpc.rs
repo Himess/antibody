@@ -45,10 +45,24 @@ impl Provider {
     }
 
     fn post(&self, body: &Value) -> Result<Value> {
+        self.post_via(&self.client, body)
+    }
+
+    /// A client that opens a new connection per request: a load balancer then picks a backend afresh.
+    fn unpooled() -> reqwest::blocking::Client {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .user_agent("antibody-witness/0.1")
+            .pool_max_idle_per_host(0)
+            .build()
+            .expect("http client")
+    }
+
+    fn post_via(&self, client: &reqwest::blocking::Client, body: &Value) -> Result<Value> {
         let mut last = eyre!("no attempt");
         for attempt in 0..5 {
             let t0 = Instant::now();
-            let res = self.client.post(&self.url).json(body).send();
+            let res = client.post(&self.url).json(body).send();
             let mut st = self.stats.lock().unwrap();
             st.http_requests += 1;
             match res {
@@ -84,22 +98,36 @@ impl Provider {
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
-        for attempt in 0..4u32 {
+        let (mut limited, mut elsewhere) = (0u32, 0u32);
+        let mut fresh = None;
+        loop {
             self.stats.lock().unwrap().rpc_calls += 1;
-            let v = self.post(&body)?;
+            let v = match &fresh {
+                Some(c) => self.post_via(c, &body)?,
+                None => self.post(&body)?,
+            };
             if let Some(e) = v.get("error") {
-                // JSON-level rate limiting (HTTP 200): back off and retry.
                 let msg = e.to_string().to_lowercase();
-                if attempt < 3 && (msg.contains("too fast") || msg.contains("rate") || msg.contains("cu limit") || msg.contains("too many")) {
+                // JSON-level rate limiting (HTTP 200): back off and retry.
+                if limited < 3 && (msg.contains("too fast") || msg.contains("rate") || msg.contains("cu limit") || msg.contains("too many")) {
                     self.stats.lock().unwrap().retries += 1;
-                    std::thread::sleep(Duration::from_millis(700 * (1 << attempt)));
+                    std::thread::sleep(Duration::from_millis(700 * (1 << limited)));
+                    limited += 1;
+                    continue;
+                }
+                // A load-balanced endpoint whose backends differ (some keep no recent state for proofs):
+                // ask again on a new connection, which may reach another backend.
+                if elsewhere < 10 && msg.contains("proof window") {
+                    self.stats.lock().unwrap().retries += 1;
+                    fresh.get_or_insert_with(Self::unpooled);
+                    std::thread::sleep(Duration::from_millis(150));
+                    elsewhere += 1;
                     continue;
                 }
                 return Err(eyre!("{} {method}: {e}", self.label));
             }
             return v.get("result").cloned().ok_or_else(|| eyre!("{} {method}: no result", self.label));
         }
-        Err(eyre!("{} {method}: retries exhausted", self.label))
     }
 
     /// Batch call; falls back to sequential calls if the provider rejects batches.
@@ -132,6 +160,8 @@ impl Provider {
                     }
                     for (k, it) in by_id.into_iter().enumerate() {
                         out.push(match it {
+                            // A backend without the block's state: this one again, alone (`call` retries it).
+                            Some(v) if v["error"].to_string().to_lowercase().contains("proof window") => self.call(&chunk[k].0, chunk[k].1.clone()),
                             Some(v) if v.get("error").is_some() => {
                                 Err(eyre!("{} {}: {}", self.label, chunk[k].0, v["error"]))
                             }
