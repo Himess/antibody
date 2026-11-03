@@ -269,6 +269,12 @@ fn now() -> u64 {
     env::block_timestamp() / 1_000_000_000
 }
 
+/// Where a program's image snapshot digest is stored: outside the Borsh records, which it leaves as they
+/// were (prefix `I`, unused by the collections).
+fn image_snapshot_key(program_id: u32) -> Vec<u8> {
+    [b"I".as_slice(), &program_id.to_le_bytes()].concat()
+}
+
 fn valid_loc(l: &Loc) {
     require!(l.location.starts_with("near-tx:") && l.location.len() <= 256, "a location is near-tx:<hash>:<signer>");
     require!(hex32(&l.sha256).is_some(), "sha256: 32 bytes of hex");
@@ -514,8 +520,16 @@ impl Contract {
         let (id, fx) = self.engine().create_program(ctx, np).unwrap_or_else(|e| fail(e));
         self.pins.insert(id, pins);
         self.meta.insert(id, meta);
+        // The snapshot's digest, so anyone can check later that these are still its images.
+        env::storage_write(&image_snapshot_key(id), &self.images_digest(images_known));
         self.apply(fx);
         id
+    }
+
+    /// The sha256 of the first `n` known images' measurements, Borsh-encoded in order.
+    fn images_digest(&self, n: u32) -> [u8; 32] {
+        let ms: Vec<&Measurements> = self.images.iter().take(n as usize).map(|k| &k.m).collect();
+        env::sha256_array(&near_sdk::borsh::to_vec(&ms).unwrap_or_default())
     }
 
     #[private]
@@ -1184,6 +1198,16 @@ impl Contract {
 
     pub fn get_images(&self) -> (Vec<KnownImage>, Vec<Measurements>) {
         (self.images.clone(), self.vetoed.clone())
+    }
+
+    /// A program's image snapshot (spec §15): how many of the deployment's known images it took at
+    /// creation, the digest of their measurements stored then, and the digest of the same entries now.
+    /// They match while the list keeps them (it only grows); programs older than the digest have none.
+    pub fn get_image_snapshot(&self, program_id: u32) -> Option<Value> {
+        let pins = self.pins.get(&program_id)?;
+        let stored = env::storage_read(&image_snapshot_key(program_id)).map(hex::encode);
+        let now = hex::encode(self.images_digest(pins.images_known));
+        Some(json!({"images_known": pins.images_known, "sha256": stored, "recomputed": now, "matches": stored.as_deref() == Some(now.as_str())}))
     }
 
     pub fn get_program(&self, program_id: u32) -> Option<Program> {

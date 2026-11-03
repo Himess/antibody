@@ -347,6 +347,22 @@ fn a_programs_storage_does_not_grow_with_the_known_images() {
 }
 
 #[test]
+fn a_program_pins_the_digest_of_its_image_snapshot() {
+    // Its snapshot is the first `images_known` measurements: their digest, stored at creation, is what
+    // anyone recomputes from the list later, however many images are added after it.
+    let mut w = W::new();
+    let id = w.create();
+    let want = hex::encode(env::sha256_array(&near_sdk::borsh::to_vec(&vec![&image(1)]).unwrap()));
+    let s = w.c.get_image_snapshot(id).unwrap();
+    assert_eq!((s["images_known"].clone(), s["sha256"].clone(), s["matches"].clone()), (json!(1), json!(want), json!(true)));
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), acc("owner.testnet"), Ok(vec![image(2), image(3)])), 2);
+    let s = w.c.get_image_snapshot(id).unwrap();
+    assert_eq!((s["sha256"].clone(), s["matches"].clone()), (json!(want), json!(true)));
+    assert!(w.c.get_image_snapshot(id + 1).is_none());
+}
+
+#[test]
 #[should_panic(expected = "not enough NEAR credit for storage")]
 fn create_needs_a_storage_deposit() {
     let mut w = W::new();
