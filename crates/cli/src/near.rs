@@ -268,14 +268,23 @@ impl Near {
     pub fn send(&self, signer: &Signer, receiver: &str, actions: Vec<Action>, wait_until: &str) -> Result<Value> {
         let pk = signer.public_key();
         let key = format!("{}:{}", signer.account_id, signer.public_key_str());
-        let ak = self.call(
-            "query",
-            json!({"request_type": "view_access_key", "finality": "optimistic", "account_id": signer.account_id,
-                   "public_key": signer.public_key_str()}),
-        )?;
-        let block_hash: [u8; 32] = bs58::decode(ak["block_hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))?;
+        // A final block's hash: every node of a load-balanced RPC knows it (an optimistic one may reach a
+        // node that has not seen it, which refuses the transaction as expired). The nonce cache and the
+        // InvalidNonce retry cover a nonce the final state has not caught up with.
+        let access_key = || {
+            self.call(
+                "query",
+                json!({"request_type": "view_access_key", "finality": "final", "account_id": signer.account_id,
+                       "public_key": signer.public_key_str()}),
+            )
+        };
+        let ak = access_key()?;
+        let hash_of = |ak: &Value| -> Result<[u8; 32]> {
+            bs58::decode(ak["block_hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))
+        };
+        let mut block_hash = hash_of(&ak)?;
         let mut nonce = ak["nonce"].as_u64().ok_or_else(|| eyre!("access key not found for {}", signer.account_id))? + 1;
-        for attempt in 0..3 {
+        for attempt in 0..4 {
             {
                 let mut m = self.nonces.lock().expect("nonce cache");
                 if let Some(&last) = m.get(&key) {
@@ -289,7 +298,7 @@ impl Near {
                 "send_tx",
                 json!({"signed_tx_base64": base64::engine::general_purpose::STANDARD.encode(&signed), "wait_until": wait_until}),
             ) {
-                Err(e) if attempt < 2 && e.to_string().contains("InvalidNonce") => {
+                Err(e) if attempt < 3 && e.to_string().contains("InvalidNonce") => {
                     // The node tells us the key's current nonce: continue from there.
                     let s = e.to_string();
                     if let Some(n) = s.split("\"ak_nonce\":").nth(1).and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|d| d.parse::<u64>().ok()) {
@@ -297,6 +306,10 @@ impl Near {
                     } else {
                         nonce += 1;
                     }
+                }
+                // Refused before it ran: again with a fresh block hash.
+                Err(e) if attempt < 3 && e.to_string().contains("\"Expired\"") => {
+                    block_hash = hash_of(&access_key()?)?;
                 }
                 other => return other,
             }
