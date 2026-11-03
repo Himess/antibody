@@ -690,8 +690,12 @@ impl Live {
     fn program(&mut self) -> Result<()> {
         let acme = self.ctx_of("acme");
         let want = self.pid("acme");
-        if wnear_of(&acme, &Self::acct("acme"))? < cmd::parse_tokens(ESCROW, 24)? {
-            wrap(&acme, cmd::parse_tokens(ESCROW, 24)?)?;
+        let escrow = cmd::parse_tokens(ESCROW, 24)?;
+        if wnear_of(&acme, &Self::acct("acme"))? < escrow {
+            // The escrow is acme's NEAR, wrapped: topped up from the root first (an earlier run's sweep may
+            // have left acme with its storage alone).
+            self.ensure_liquid(&Self::acct("acme"), escrow + FREE_FOR_RUNS)?;
+            wrap(&acme, escrow)?;
         }
         let project_key = self.a.work.join("keys/acme.x25519.json");
         let derived = cmd::keygen_x25519_nep413(&acme, &project_key)?;
@@ -734,6 +738,8 @@ impl Live {
         let proxies: Vec<String> = ["AcmeLend", "AcmeVault"].iter().map(|k| dep[*k].as_str().unwrap_or_default().to_lowercase()).collect();
         let chains = json!([{"chain_id": SEPOLIA, "adapter": adapter, "proxies": proxies}, {"chain_id": BASE_SEPOLIA, "adapter": adapter, "proxies": proxies}]);
         let acme = self.ctx_of("acme");
+        // The MPC credit (0.1) and the call's 100 Tgas set aside.
+        self.ensure_liquid(&Self::acct("acme"), 210 * MILLI)?;
         let reg = acme.near.function_call(&acme.signer()?, &guardian, "register", json!({"program_key": key, "chains": chains}), 100, ONE_NEAR / 10)?;
         cmd::ensure_ok(&acme, &reg, "register")?;
         let pinned = poll("near-guardian to pin the MPC key", Duration::from_secs(180), Duration::from_secs(5), || {
