@@ -85,6 +85,21 @@ contract AcmeHandler {
         d.lend.borrow((limit - debt) * _bound(pct, 50, 101) / 100);
     }
 
+    /// Repays part of the actor's debt; on odd `pct`, after the actor has sent its acUSD away, so the
+    /// repayment's transfer fails (the protocol must not count a repayment that never arrived).
+    function repayDebt(uint256 s, uint256 pct) external {
+        address a = _actor(s);
+        uint256 amount = d.lend.debtOf(a) * _bound(pct, 1, 100) / 100;
+        if (amount == 0) return;
+        if (pct % 2 == 1) {
+            uint256 all = d.usd.balanceOf(a);
+            VM.prank(a);
+            d.usd.transfer(address(0xdead), all);
+        }
+        VM.prank(a);
+        d.lend.repay(amount);
+    }
+
     function withdrawCollateralShare(uint256 s, uint256 pct) external {
         address a = _actor(s);
         uint256 amount = d.lend.collateralOf(a) * _bound(pct, 1, 100) / 100;
