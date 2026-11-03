@@ -55,7 +55,7 @@ is how anyone can verify it.
 | P10 | A fake fix that releases keys | Keys are released only by a final re-run showing the PoC fixed, or by nobody re-running; promotions pay distinct bugs; the release gate needs every Critical or High PoC fixed | A project that never re-runs releases keys by default, which can only add payments |
 | P11 | Shipping no fix round to deny duplicates | Without a fix, duplicates are judged by keys alone; their proof opens at disclosure | A project that ships no round pays no duplicates |
 | P12 | Challenging every T0 payout to delay it | Each challenge costs a bond, lost to the hunter when T1 upholds the payout | Delay up to `resolve` per challenge when no quote can be had |
-| P13 | Losing or leaking its X25519 key | `rotate_project_key` (future wraps); NEP-413 derivation lets it be re-derived | A leaked key exposes past paid findings |
+| P13 | Losing or leaking its X25519 key | `rotate_project_key` (future wraps); NEP-413 derivation lets it be re-derived; the message names near-antibody and the project and says to sign it nowhere but the CLI | A leaked key exposes past paid findings. With `--nep413`, a page that gets the project's wallet to sign that fixed message derives the key and reads every paid finding; a random key file (`keygen x25519` alone) has no such message |
 | P14 | A "fix" that bricks the targets | Canaries must keep succeeding | Canaries cover what the project lists |
 
 ### Hunters and agents
@@ -87,13 +87,14 @@ is how anyone can verify it.
 | I2 | Forged T1 (physical access) | Instant budget per window; above the cap, window plus an agreeing second run | `instant_budget` per window |
 | I3 | Reading PoCs through the keys | Keys exist only for runs of the pinned build called by near-antibody, whose accounts are locked | The keystore TEE and its governance |
 | I4 | Replaying facts | Facts bind the request hash, program, round, commit and run id | None |
+| I4b | A quote bound to another run | T1 checks the quote's task fields that name this run: the request hash, the output hash, the pinned wasm hash and build target, the caller, no secrets, a `WasmUrl` source | OutLayer's task hash concatenates its fields without length prefixes, and its metadata (task id, block height, timestamp, attached USD) is not checked: a collision would need the TEE to attest a run whose metadata embeds this run's hashes |
 | I5 | Runs that never answer | `time_out`, void, retry with priority, then refund | Liveness depends on OutLayer |
 | I6 | Blob or witness unavailability | Inline blobs; the guest tries each archival RPC until one serves bytes matching the hash; unavailability is `InfraError`, except a hunter's own location still unreadable after the grace, which forfeits | All the guest's RPCs down for a whole grace |
 | I7 | Nobody relays a permit | Antibody's relayer by default; relaying is permissionless | A permit needs a funded sender per chain |
 | I8 | A pause without cause | Tickets: T1, policy slots, minimum impact, one per round; the adapter only calls `pause()` on targets fixed at its deployment; no unpause power | MPC threshold |
 | I9 | A stale or censored light client | BLS-verified updates; `recheck_anchor`; unconfirmed anchors labelled | Liveness |
 | I10 | EVM rule drift (Sepolia's Glamsterdam) | Rules pinned per program; every receipt carries its label | PoCs depending on newer rules are judged under the pinned ones |
-| I11 | Storage spam | Requester-paid storage | — |
+| I11 | Storage spam | Requester-paid storage: every call that adds storage charges its caller or its run's payer; each commit prepays its settlement's bytes; image syncs come only from named registries, paid by their caller | — |
 | I12 | Locked contracts with a bug | Exit after deadline plus grace; new versions serve new programs | A program's own run can still be wrong until its exit |
 | I13 | Secrets in the repository | gitleaks hook and CI; never-public path checks | — |
 

@@ -100,9 +100,9 @@ blob   = "ABSEAL1\0"              (8 bytes)
 ```
 
 A blob is revealed inline (at most 15 KB) or by location: a FastFS upload, a NEAR transaction named
-`near-tx:<hash>`, with the blob's SHA-256. The TEE tries each of its archival RPCs until one serves bytes matching the hash, and accepts
-only bytes matching the committed hash; an unavailable or mismatched blob is the RPC's fault
-(`InfraError`).
+`near-tx:<hash>`, with the blob's SHA-256. The TEE tries each of its archival RPCs until one serves
+bytes matching the committed hash. A blob none serves is an `InfraError` and is retried; if none serves
+it for the whole `infra_grace`, the hunter, who named the location, forfeits the bond (spec §5.3).
 
 ### 4.2 Payload `P`
 
