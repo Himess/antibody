@@ -14,7 +14,7 @@ use antibody_verifier::{
     execute_program_witness,
     facts::ProgramReceipt,
     manifest::Manifest,
-    program::{anchor_checks, canaries_pass, classify, execute_program, ProgramError},
+    program::{anchor_checks, canaries_pass, classify, deployed, execute_program, ProgramError},
     run::{anchor_checks_on_witness, program_chain_spec, reserved_address},
     run_program, BaseWitness, Envelope, Payload, ProgramContext, ProgramWitness, QuorumVote, SubmissionWitness, VerifyError, WITNESS_VERSION,
 };
@@ -288,7 +288,9 @@ fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, 
     // Trace: the verifier's activation checks on a fetching DB record the exact access set.
     let t_trace = Instant::now();
     let fdb = FetchingDb::new(pool.clone(), m, Seed::default());
-    match anchor_checks(&header, &manifest, &inv, spec.clone(), &fdb, reserved).and_then(|a| canaries_pass(&manifest, &a, &fdb)) {
+    // A fork-mode program's deployment runs first, on the same fetching DB: the base proves what it reads.
+    let ddb = deployed(&header, &manifest, spec.clone(), &fdb).map_err(|e| eyre!("the deployment fails at the anchor: {:?}", classify(&e)))?;
+    match anchor_checks(&header, &manifest, &inv, spec.clone(), &ddb, reserved).and_then(|a| canaries_pass(&manifest, &a, &ddb)) {
         Ok(true) => {}
         Ok(false) => return Err(eyre!("a canary fails at the anchor")),
         Err(e) => {
@@ -298,7 +300,8 @@ fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, 
     }
     // The round's checks, with its overrides and invariants, on the same fetching DB.
     if let Some(rm) = &round {
-        let odb = OverrideDb::new(&fdb, rm.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+        let rdb = deployed(&header, rm, spec.clone(), &fdb).map_err(|e| eyre!("the deployment fails at the anchor: {:?}", classify(&e)))?;
+        let odb = OverrideDb::new(&rdb, rm.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
         let rinv = Bytecode::new_raw(rm.invariants.runtime_code.clone());
         match anchor_checks(&header, rm, &rinv, spec.clone(), &odb, reserved).and_then(|a| canaries_pass(rm, &a, &odb)) {
             Ok(true) => {}

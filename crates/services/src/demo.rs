@@ -301,6 +301,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
             Canary { to: a("AcmeVault")?, data: keccak256(b"totalAssets()")[..4].to_vec().into() },
         ],
         settlement: Some(serde_json::to_value(demo_settlement(deadline))?),
+        deploy: None,
     })
 }
 
@@ -383,6 +384,7 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
         protected_accounts: vec![],
         canaries: vec![],
         settlement: Some(serde_json::to_value(practice_settlement(deadline))?),
+        deploy: None,
     })
 }
 
