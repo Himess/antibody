@@ -807,3 +807,47 @@ fn an_unevaluable_violation_is_paid_once_per_round_and_waits_above_the_cap() {
     w.pay(c0).unwrap();
     w.audit_ok(&[p]);
 }
+
+#[test]
+fn a_round_check_without_a_quote_can_be_replaced() {
+    // The round check answers at T0 and its quote never comes: after the run timeout the project may
+    // propose again, so a missing quote cannot block the program's rounds for good.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let ctx = w.ctx(PROJECT);
+    let spec = w.spec();
+    let r = w.e.propose_round(&ctx, p, H32([8; 32]), H32([6; 32]), vec![], spec);
+    let run = last_run(&w.ok(r));
+    w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"round_check": {"ok": true, "canaries_ok": true}}));
+    let spec = w.spec();
+    assert!(w.e.propose_round(&ctx, p, H32([9; 32]), H32([6; 32]), vec![], spec).is_err(), "it may still be confirmed");
+    w.tick(61);
+    w.propose(p, vec![], true);
+    assert_eq!(w.program(p).proposal.as_ref().map(|x| x.manifest_sha256), Some(H32([8; 32])));
+    assert!(w.program(p).proposal.as_ref().map(|x| x.check_run != run).unwrap_or(false), "the stale check was replaced");
+}
+
+#[test]
+fn a_rerun_without_a_quote_can_be_requested_again() {
+    // A re-run window longer than a run's timeout leaves room to ask again when a quote never comes.
+    let mut w = W::new();
+    let mut prm = params();
+    prm.windows.rerun_window = 200;
+    let p = w.program_open(1_000, prm);
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    let kctx = w.ctx("keeper.testnet");
+    let spec = w.spec();
+    let r = w.e.request_rerun(&kctx, c0, spec);
+    let run = last_run(&w.ok(r));
+    w.answer(run, Kind::NoViolation, &[]); // T0 only: its quote never comes
+    let spec = w.spec();
+    assert!(w.e.request_rerun(&kctx, c0, spec).is_err(), "it may still be confirmed");
+    w.tick(61);
+    w.rerun(c0, Kind::NoViolation, &[]);
+    w.tick(200);
+    let fx = w.open_round(p).unwrap();
+    assert!(fx.contains(&Effect::ReleasePermit { program: p, round: 1 }), "the T1 re-run is the evidence");
+}

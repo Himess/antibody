@@ -1524,7 +1524,7 @@ impl<S: Store> Engine<S> {
         if ctx.caller != p.project {
             return Err(Error::Forbidden("only the project proposes a round"));
         }
-        if p.phase != Phase::Open || p.proposal.is_some() {
+        if p.phase != Phase::Open || (p.proposal.is_some() && !self.proposal_stale(&p, ctx.now)) {
             return Err(Error::State("one proposal at a time, in an open program"));
         }
         if ctx.now >= p.params.windows.deadline {
@@ -1572,6 +1572,24 @@ impl<S: Store> Engine<S> {
 
     /// When the proposal's round check was answered, if it is T1-confirmed and valid. Structural facts
     /// need T1 (spec §6.2).
+    /// A proposal that can no longer be accepted: its round check never got a T1 quote within its
+    /// timeout, or never answered. The project may replace it (a missing quote must not block the
+    /// program's rounds for good).
+    fn proposal_stale(&self, p: &Program, now: Time) -> bool {
+        let Some(pr) = p.proposal.as_ref() else { return false };
+        if self.proposal_accepted_at(p).is_some() {
+            return false;
+        }
+        let Ok(r) = self.get_run(pr.check_run) else { return true };
+        let timeout = p.params.windows.run_timeout;
+        match &r.outcome {
+            RunOutcome::Pending => now >= r.started_at + timeout,
+            RunOutcome::Failed { .. } => true,
+            RunOutcome::Answered { at, tier: Tier::T0, .. } => now > at + timeout,
+            RunOutcome::Answered { .. } => true,
+        }
+    }
+
     fn proposal_accepted_at(&self, p: &Program) -> Option<Time> {
         let pr = p.proposal.as_ref()?;
         let r = self.get_run(pr.check_run).ok()?;
@@ -1611,9 +1629,13 @@ impl<S: Store> Engine<S> {
         }
         let pr = p.proposal.clone().unwrap();
         if let Some(r) = self.rerun_at(&c, pr.round) {
+            // Stuck: failed, unjudged, never answered, or answered at T0 with no quote past its timeout
+            // (only a T1 re-run is evidence, so a missing quote must not leave the key without one).
+            let timeout = p.params.windows.run_timeout;
             let stuck = matches!(r.outcome, RunOutcome::Failed { .. })
                 || matches!(&r.outcome, RunOutcome::Answered { facts, .. } if !Self::judged(facts))
-                || (r.outcome == RunOutcome::Pending && ctx.now >= r.started_at + p.params.windows.run_timeout);
+                || matches!(&r.outcome, RunOutcome::Answered { at, tier: Tier::T0, .. } if ctx.now > at + timeout)
+                || (r.outcome == RunOutcome::Pending && ctx.now >= r.started_at + timeout);
             if !stuck {
                 return Err(Error::State("already re-run at this fix"));
             }

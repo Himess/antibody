@@ -357,7 +357,9 @@ Otherwise it is paid when its window has passed. "Paid in seconds under the cap;
 window."
 
 Missing quote (about 10% of runs today). A submission's verdict falls back to its T0 window. A
-structural run (activation, a known issue) is simply requested again.
+structural run (activation, a known issue) is simply requested again; a round check without a quote
+past `run_timeout` lets the project propose again (§8.1), and a re-run without one may be requested
+again within the re-run window (§8.2).
 
 ### 6.4 Challenges: settled by re-execution
 
@@ -526,9 +528,11 @@ While a round is proposed, and within `rerun_window` of its T1-confirmed round c
 - every duplicate of the round (its appeal);
 - every gap claim of the round.
 
-Each runs at the new code and invariants, and counts only when T1-confirmed. A re-run counts for its own
-proposal only: the next proposal re-runs everything again, so a fix that brings an old bug back is
-caught. The keeper requests every paid PoC's re-run.
+Each runs at the new code and invariants, and counts only when T1-confirmed. A re-run that failed, did
+not judge, or answered at T0 with no quote past `run_timeout` may be requested again, so
+`rerun_window` should exceed `run_timeout`. A re-run counts for its own proposal only: the next proposal
+re-runs everything again, so a fix that brings an old bug back is caught. The keeper requests every paid
+PoC's re-run.
 
 ### 8.3 Opening the round
 
