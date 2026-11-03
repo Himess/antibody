@@ -438,6 +438,8 @@ pub struct Agent {
     pub verification_spent: Amount,
     pub commits: u32,
     pub containment_events: u32,
+    /// The programs it may commit to (`None`: any). A practice account's is the practice program.
+    pub programs: Option<Vec<ProgramId>>,
 }
 
 /// Balances held for an account (spec §7.9, §12.1).

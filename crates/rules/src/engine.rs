@@ -295,14 +295,18 @@ impl<S: Store> Engine<S> {
         Ok(vec![ev("withdraw_refunded", serde_json::json!({"account": account, "amount": amount.to_string()}))])
     }
 
-    /// An owner registers one of its sub-accounts as an agent (spec §13).
-    pub fn register_agent(&mut self, ctx: &Ctx, agent: &str, bond_budget: Amount, per_commit_cap: Amount) -> R<Vec<Effect>> {
+    /// An owner registers one of its sub-accounts as an agent (spec §13). The bond budget bounds what the
+    /// owner can lose through it: bonds locked now plus bonds it lost.
+    pub fn register_agent(&mut self, ctx: &Ctx, agent: &str, bond_budget: Amount, per_commit_cap: Amount, programs: Option<Vec<ProgramId>>) -> R<Vec<Effect>> {
         let suffix = format!(".{}", ctx.caller);
         if !agent.ends_with(&suffix) || agent.len() <= suffix.len() || agent[..agent.len() - suffix.len()].contains('.') {
             return Err(Error::Forbidden("an agent must be a direct sub-account of its owner"));
         }
         if per_commit_cap > bond_budget || bond_budget > bounds::MAX_AMOUNT {
             return Err(Error::Invalid("per_commit_cap must not exceed bond_budget".into()));
+        }
+        if programs.as_ref().is_some_and(|v| v.is_empty() || v.len() > 16) {
+            return Err(Error::Invalid("an agent's program list holds 1 to 16 programs".into()));
         }
         let mut a = self.store.account(agent);
         let prev = a.agent.take();
@@ -322,14 +326,17 @@ impl<S: Store> Engine<S> {
             verification_spent: 0,
             commits: 0,
             containment_events: 0,
+            programs: None,
         });
         ag.bond_budget = bond_budget;
         ag.per_commit_cap = per_commit_cap;
+        ag.programs = programs.clone();
         a.agent = Some(ag);
         self.store.put_account(agent, &a);
         Ok(vec![ev(
             "agent_registered",
-            serde_json::json!({"agent": agent, "owner": ctx.caller, "bond_budget": bond_budget.to_string(), "per_commit_cap": per_commit_cap.to_string()}),
+            serde_json::json!({"agent": agent, "owner": ctx.caller, "bond_budget": bond_budget.to_string(), "per_commit_cap": per_commit_cap.to_string(),
+                               "programs": programs}),
         )])
     }
 
@@ -555,7 +562,11 @@ impl<S: Store> Engine<S> {
             if !bond_from_credit {
                 return Err(Error::Forbidden("an agent's bond comes from its owner's credit"));
             }
-            if bond > ag.per_commit_cap || ag.bonds_locked + bond > ag.bond_budget {
+            if ag.programs.as_ref().is_some_and(|ps| !ps.contains(&program)) {
+                return Err(Error::Forbidden("containment: the agent may not commit to this program"));
+            }
+            // Losses count against the budget too, so a program built to forfeit bonds cannot drain the owner.
+            if bond > ag.per_commit_cap || ag.bonds_locked + ag.bonds_lost + bond > ag.bond_budget {
                 return Err(Error::Forbidden("containment: the bond exceeds the agent's cap or budget"));
             }
         }

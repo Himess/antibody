@@ -1393,14 +1393,15 @@ pub const AGENT_METHODS: &[&str] = &["commit", "reveal", "retry", "__fastdata_fa
 
 /// The owner registers its sub-account as an agent: bonds come from the owner's credit, within the
 /// budget and the per-commit cap; payouts go to the owner (docs/spec.md §13).
-pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str) -> Result<Value> {
+pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str, programs: &[u32]) -> Result<Value> {
     let signer = ctx.signer()?;
     ensure_near_credit(ctx, &signer, MIN_NEAR_CREDIT)?;
     let out = ctx.near.function_call(
         &signer,
         &ctx.dep.antibody,
         "register_agent",
-        json!({"agent": agent, "bond_budget": parse_tokens(budget, ctx.dep.decimals())?.to_string(), "per_commit_cap": parse_tokens(per_commit_cap, ctx.dep.decimals())?.to_string()}),
+        json!({"agent": agent, "bond_budget": parse_tokens(budget, ctx.dep.decimals())?.to_string(), "per_commit_cap": parse_tokens(per_commit_cap, ctx.dep.decimals())?.to_string(),
+               "programs": if programs.is_empty() { Value::Null } else { json!(programs) }}),
         30,
         ONE_YOCTO,
     )?;

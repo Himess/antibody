@@ -693,7 +693,7 @@ fn an_agent_over_its_cap_is_contained() {
     let _ = w.c.ft_on_transfer(alice(), U128(100 * ONE), json!("deposit").to_string());
     let bot = acc("bot.alice.testnet");
     w.call_with(&alice(), 1);
-    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND / 2));
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND / 2), None);
     let cm = w.commitment(id, &bot, b"agent blob");
     w.call(&bot);
     assert_eq!(w.c.commit(id, 0, cm.clone(), terms()), None);
@@ -703,7 +703,7 @@ fn an_agent_over_its_cap_is_contained() {
     assert_eq!(w.c.get_account(alice()).tokens, 100 * ONE, "nothing was bonded");
     // Within its cap, the bond comes from Alice's credit and payouts go to her.
     w.call_with(&alice(), 1);
-    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND));
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND), None);
     w.call(&bot);
     let cid = w.c.commit(id, 0, cm, terms()).unwrap();
     let c = w.c.get_commit(cid).unwrap();
@@ -718,7 +718,7 @@ fn an_agent_cannot_withdraw() {
     w.register(&alice());
     let bot = acc("bot.alice.testnet");
     w.call_with(&alice(), 1);
-    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND));
+    w.c.register_agent(bot.clone(), U128(100 * ONE), U128(BOND), None);
     w.call_with(&bot, 1);
     w.c.withdraw(U128(1));
 }

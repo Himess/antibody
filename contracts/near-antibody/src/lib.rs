@@ -982,11 +982,11 @@ impl Contract {
 
     /// One yoctoNEAR attached: an owner's full-access key grants an agent its budget.
     #[payable]
-    pub fn register_agent(&mut self, agent: AccountId, bond_budget: U128, per_commit_cap: U128) {
+    pub fn register_agent(&mut self, agent: AccountId, bond_budget: U128, per_commit_cap: U128, programs: Option<Vec<u32>>) {
         assert_one_yocto();
         let ctx = self.ctx();
         let before = env::storage_usage();
-        let fx = self.engine().register_agent(&ctx, agent.as_str(), bond_budget.0, per_commit_cap.0).unwrap_or_else(|e| fail(e));
+        let fx = self.engine().register_agent(&ctx, agent.as_str(), bond_budget.0, per_commit_cap.0, programs).unwrap_or_else(|e| fail(e));
         self.apply(fx);
         self.charge_storage(before, &ctx.caller);
     }

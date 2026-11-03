@@ -218,11 +218,14 @@ enum AgentCmd {
     Register {
         #[arg(long)]
         agent: String,
-        /// Total bonds the agent may have locked at once (payout-token units)
+        /// What the agent may cost you in bonds: those locked now plus those it lost (payout-token units)
         #[arg(long)]
         budget: String,
         #[arg(long)]
         per_commit_cap: String,
+        /// The only programs it may commit to (repeat; default: any)
+        #[arg(long = "program")]
+        programs: Vec<u32>,
     },
     /// Add a function-call key to the agent's account, limited to commit/reveal/retry on near-antibody
     Key {
@@ -786,7 +789,9 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
         Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
         Cmd::TimeOut { commit } => cmd::call(&mk()?, "time_out", json!({"commit_id": commit}), 30),
-        Cmd::Agent { cmd: AgentCmd::Register { ref agent, ref budget, ref per_commit_cap } } => cmd::agent_register(&mk()?, agent, budget, per_commit_cap),
+        Cmd::Agent { cmd: AgentCmd::Register { ref agent, ref budget, ref per_commit_cap, ref programs } } => {
+            cmd::agent_register(&mk()?, agent, budget, per_commit_cap, programs)
+        }
         Cmd::Agent { cmd: AgentCmd::Key { cmd: AgentKeyCmd::Add { allowance_near, ref out } } } => cmd::agent_key_add(&mk()?, allowance_near, out),
         Cmd::Admin { ref cmd } => {
             let c = mk()?;

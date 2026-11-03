@@ -532,8 +532,8 @@ fn agent_containment() {
     w.e.token_deposit(owner, 100).unwrap();
     w.e.near_deposit(owner, 1_000).unwrap();
     let octx = w.ctx(owner);
-    assert!(w.e.register_agent(&octx, "scout.other.testnet", 20, 10).is_err(), "only a direct sub-account");
-    let r = w.e.register_agent(&octx, agent, 20, 10);
+    assert!(w.e.register_agent(&octx, "scout.other.testnet", 20, 10, None).is_err(), "only a direct sub-account");
+    let r = w.e.register_agent(&octx, agent, 20, 10, None);
     w.ok(r);
     let p = w.program_open(1_000, params());
     let actx = w.ctx(agent);
@@ -562,7 +562,32 @@ fn agent_containment() {
     let ag = w.e.store.account(agent).agent.unwrap();
     assert_eq!(ag.paid, 200);
     assert_eq!(ag.bonds_lost, 10, "the expired commit's bond");
+    // Losses count against the budget: one more bond fits (10 lost + 10 locked = 20), the next does not,
+    // so a program built to forfeit bonds cannot drain the owner past the budget.
+    let (c3, fx) = w.e.commit(&actx, p, 0, H32([8; 32]), true, 0, true).unwrap();
+    w.log(&fx);
+    let _ = c3;
+    assert!(matches!(w.e.commit(&actx, p, 0, H32([9; 32]), true, 0, true), Err(Error::Forbidden(_))));
     w.audit_ok(&[p]);
+}
+
+#[test]
+fn an_agent_commits_only_to_its_programs() {
+    let mut w = W::new();
+    let owner = "ops.testnet";
+    let agent = "scout.ops.testnet";
+    w.e.token_deposit(owner, 100).unwrap();
+    w.e.near_deposit(owner, 1_000).unwrap();
+    let p = w.program_open(1_000, params());
+    let q = w.program_open(1_000, params());
+    let octx = w.ctx(owner);
+    assert!(w.e.register_agent(&octx, agent, 50, 10, Some(vec![])).is_err(), "an empty list is no list");
+    let r = w.e.register_agent(&octx, agent, 50, 10, Some(vec![p]));
+    w.ok(r);
+    let actx = w.ctx(agent);
+    let (_, fx) = w.e.commit(&actx, p, 0, H32([5; 32]), true, 0, true).unwrap();
+    w.log(&fx);
+    assert!(matches!(w.e.commit(&actx, q, 0, H32([6; 32]), true, 0, true), Err(Error::Forbidden(_))), "not one of its programs");
 }
 
 #[test]

@@ -101,7 +101,12 @@ impl Vending {
             .add_access_key_allowance(public_key, allowance, self.antibody.clone(), PRACTICE_METHODS.into());
         let agent = Promise::new(self.antibody.clone()).function_call(
             "register_agent".into(),
-            format!("{{\"agent\":\"{account}\",\"bond_budget\":\"{}\",\"per_commit_cap\":\"{}\"}}", t.bond_budget.0, t.per_commit_cap.0).into_bytes(),
+            // The practice account may commit to the practice program only.
+            format!(
+                "{{\"agent\":\"{account}\",\"bond_budget\":\"{}\",\"per_commit_cap\":\"{}\",\"programs\":[{}]}}",
+                t.bond_budget.0, t.per_commit_cap.0, self.program_id
+            )
+            .into_bytes(),
             NearToken::from_yoctonear(1),
             CALL_GAS,
         );
