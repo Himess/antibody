@@ -141,7 +141,7 @@ def judges(d):
         ev = ", ".join(f"{p.get('chain_id')}: {d.evm_tx(p.get('explorer'))}" for p in permits.values() if p.get("kind") == "pause") or "—"
         out += [f"| {n} | The one moment: A's verdict pauses the fixture on both chains | `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` | "
                 f"verdict {secs.get('verdict', 0):.1f} s, T1 {secs.get('t1', 0):.1f} s, paid {secs.get('paid', 0):.1f} s, paused on 31337 at "
-                f"{secs.get('paused_31337') or 0:.1f} s and 31338 at {secs.get('paused_31338') or 0:.1f} s after the commit; `pauses: {main.get('pauses')}` | {ev} |"]
+                f"{secs.get('paused_31337') or 0:.1f} s and 31338 at {secs.get('paused_31338') or 0:.1f} s after A started its submission (wall clock); `pauses: {main.get('pauses')}` | {ev} |"]
     for rd in r.get("rounds", []):
         n += 1
         o = rd.get("opened", {})
@@ -204,7 +204,7 @@ def judges(d):
     out += ["", "## Timings", ""]
     out += [f"- Whole run: {r.get('seconds', 0):.0f} s. Activation: {r.get('activation', {}).get('seconds', 0):.1f} s."]
     for s in subs:
-        out += [f"- {s.get('agent')}: commit to verdict {s.get('seconds', 0):.1f} s."]
+        out += [f"- {s.get('agent')}: submission (witness, seal, commit, reveal) to verdict {s.get('seconds', 0):.1f} s."]
     if tries:
         out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to payout." for t in tries]
     out += ["", "## What this does not show", "",
@@ -242,7 +242,7 @@ def agents(d):
             "- An agent's bonds come from its owner's credit within a budget and a per-commit cap; a commit over the cap is refused and counted as a containment event.", ""]
     if one:
         out += ["## Measured in the recorded run", "",
-                f"Agent A submitted over MCP: verdict {one.get('verdict', 0):.1f} s after the commit, T1 at {one.get('t1', 0):.1f} s, paid at {one.get('paid', 0):.1f} s.", ""]
+                f"Agent A submitted over MCP: verdict {one.get('verdict', 0):.1f} s after it started (witness, seal, commit, reveal), T1 at {one.get('t1', 0):.1f} s, paid at {one.get('paid', 0):.1f} s (sandbox wall clock).", ""]
     return "\n".join(out)
 
 
