@@ -207,10 +207,15 @@ def judges(d):
         hashes = [(k, v.rsplit('/', 1)[-1].split(':')[-1]) for l in t.get("links", []) for k, v in l.items() if isinstance(v, str)]
         hashes += [(k, v) for st in t.get("settle", []) for k, v in st.items() if k in ("allocate", "pay") and isinstance(v, str) and (k, v) not in hashes]
         links = ", ".join(f"{k} {d.tx(h)}" for k, h in hashes)
+        # A recorded try whose payout waited for the queue ends `Verifying`; the keeper paid it later.
+        end = (f"`{t.get('state')}` with a T1 `Violation` in about {t.get('seconds', 0):.0f} s, then `{t.get('final_state')}`, "
+               f"{d.tokens(t.get('final_paid_raw'))} to the vending contract once the keeper settled the queue (claims go in commit order)"
+               if t.get("settled_by") == "keeper" else
+               f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, about {t.get('seconds', 0):.0f} s")
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
                 f"`{d.cli('try --name <you>')}` (sends {d.net} transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
-                f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract (it paid the bond and the run), a vault of its own "
-                f"(each `try` gets the next free one), about {t.get('seconds', 0):.0f} s; `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken) | {links} |"]
+                f"{end} (it paid the bond and the run), a vault of its own "
+                f"(each `try` gets the next free one); `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken) | {links} |"]
     rs = main.get("rule_strength") or {}
     if rs.get("statement"):
         n += 1
@@ -278,14 +283,21 @@ def judges(d):
         out += ["", "### Transactions", "", "Each transaction behind the table, with the command that shows its status, events and failures:", ""]
         out += [f"- {what}: `{d.cli('admin tx ' + h + ' --signer ' + who)}`" for what, h, who in txs]
     out += ["", "## Timings", ""]
-    out += [f"- Whole run: {r.get('seconds', 0):.0f} s. Activation: {r.get('activation', {}).get('seconds', 0):.1f} s."]
+    # The sandbox records the whole run; a testnet run each stage (waits for the light client included).
+    total = r.get("seconds", 0)
+    whole = f"{total:.0f} s" if not isinstance(total, dict) else f"{sum(v for v in total.values() if isinstance(v, (int, float))):.0f} s over its stages"
+    out += [f"- Whole run: {whole}. Activation: {r.get('activation', {}).get('seconds', 0):.1f} s."]
     for s in subs:
         if s.get("agent", "").startswith("A"):
             out += [f"- {s.get('agent')}: from its commit's block to the verdict {s.get('seconds', 0):.1f} s."]
         else:
             out += [f"- {s.get('agent')}: submission (witness, seal, commit, reveal) to verdict {s.get('seconds', 0):.1f} s."]
-    if tries:
-        out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to payout." for t in tries]
+    for t in tries:
+        if t.get("settled_by") == "keeper":
+            out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to its T1 verdict; the keeper paid it later "
+                    "(claims go in commit order, and an earlier commit, never revealed, waited out its reveal window)."]
+        else:
+            out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to payout."]
     out += ["", "## What this does not show", ""]
     if d.net == "sandbox":
         out += ["- The quotes in the sandbox are MOCK DCAP quotes; the T1 checks on them are the real code. The testnet run uses real OutLayer TEE workers."]
@@ -313,8 +325,14 @@ def agents(d):
             "Over MCP, the `practice_try` tool does the same in one call, with no account configured.", ""]
     if practice.get("tries"):
         t = practice["tries"][0]
-        out += [f"Expected (from the recorded run): `{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, vault {t.get('vault_index')}, "
-                f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
+        if t.get("settled_by") == "keeper":
+            # The recorded try's payout waited for the queue: what it showed, then what the keeper settled.
+            out += [f"Expected (from the recorded run): `{t.get('state')}` with a T1 `Violation` after about {t.get('seconds', 0):.0f} s, then "
+                    f"`{t.get('final_state')}`, {d.tokens(t.get('final_paid_raw'))} to the vending contract, once the keeper settled the queue "
+                    f"(claims go in commit order); vault {t.get('vault_index')}, with a link for each transaction.", ""]
+        else:
+            out += [f"Expected (from the recorded run): `{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, vault {t.get('vault_index')}, "
+                    f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
     out += ["## Connect over MCP", "", "One config. Give the agent a function-call key (`antibody agent key add`): it may commit, reveal and retry, and it cannot withdraw or transfer.", "",
             "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", d.account("<agent>.<you>"), "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
     names = mcp.get("tool_names") or []
