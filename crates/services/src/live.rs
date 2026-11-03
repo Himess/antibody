@@ -352,7 +352,8 @@ impl Live {
                 if let Err(e) = ix.tick() {
                     eprintln!("indexer: {e:#}");
                 }
-                std::thread::sleep(Duration::from_secs(3));
+                // The services share one public NEAR RPC's rate limit.
+                std::thread::sleep(Duration::from_secs(5));
             }
         }));
         let stop = self.stop.clone();
@@ -361,7 +362,7 @@ impl Live {
                 if let Err(e) = t1.tick() {
                     eprintln!("t1 relayer: {e:#}");
                 }
-                std::thread::sleep(Duration::from_secs(5));
+                std::thread::sleep(Duration::from_secs(8));
             }
         }));
         let stop = self.stop.clone();
@@ -370,7 +371,7 @@ impl Live {
                 if let Err(e) = relayer.tick() {
                     eprintln!("permit relayer: {e:#}");
                 }
-                std::thread::sleep(Duration::from_secs(2));
+                std::thread::sleep(Duration::from_secs(3));
             }
         }));
         Ok(())

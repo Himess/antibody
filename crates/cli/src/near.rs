@@ -204,16 +204,18 @@ impl Near {
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
         let mut last = eyre!("no attempt");
-        for attempt in 0..4 {
+        for attempt in 0..7 {
             let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
             match self.client.post(&self.rpc).json(&body).send().and_then(|r| r.json::<Value>()) {
                 Ok(v) => {
                     if let Some(e) = v.get("error") {
                         let s = e.to_string();
-                        // Transient conditions worth a retry.
-                        if s.contains("TIMEOUT_ERROR") || s.contains("Too Many Requests") || s.contains("UNKNOWN_BLOCK") {
+                        // Transient conditions worth a retry: a rate limit (FastNEAR answers -429, a request
+                        // it refused, so a transaction was not sent) backs off longer.
+                        let limited = s.contains("Too Many Requests") || s.contains("-429") || s.contains("Rate limit");
+                        if s.contains("TIMEOUT_ERROR") || limited || s.contains("UNKNOWN_BLOCK") {
                             last = eyre!("{method}: {s}");
-                            std::thread::sleep(std::time::Duration::from_millis(800 * (attempt + 1)));
+                            std::thread::sleep(std::time::Duration::from_millis(if limited { 2_000 } else { 800 } * (attempt + 1)));
                             continue;
                         }
                         return Err(eyre!("{method}: {}", s));
