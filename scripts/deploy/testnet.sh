@@ -92,7 +92,11 @@ declare -A AMOUNT=(
   [relayer]=700000000000000000000000                  # T1 relays (verify_quote ~0.0176 each, ~30 runs)
 )
 ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f agent-g keeper relayer)
-PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.57)"  # code, state, and ten vends' gas funds (0.04 each)
+# NEAR sets aside a call's prepaid gas at ten times the gas price before running it: a 300 Tgas call (a
+# reveal, an activation, a T1 relay) needs 0.301 NEAR free, and burns about a tenth of it. The live run
+# (`antibody-services live`) tops each account up to 0.36 NEAR free from the root before such calls and
+# returns the agents' floats after their proofs; a vended practice account gets 0.34 (its commit and reveal).
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.83)"  # code, state, two vends' gas funds (0.34 each), deploy margin
 
 plan() {
   local total=0 a

@@ -26,7 +26,7 @@ use alloy_primitives::{keccak256, B256};
 use antibody_cli::{
     cmd,
     ctx::{Ctx, Deployments, PracticeDeployment},
-    near::{Near, ONE_NEAR},
+    near::{Action, Near, ONE_NEAR},
     practice,
 };
 use antibody_rules::settlement::{Fees, Gap, Instant as InstantRule, Known, Pause, Payouts, SWindows, Settlement};
@@ -61,6 +61,12 @@ const ESCROW: &str = "0.4";
 const PRACTICE_ESCROW: &str = "0.03";
 /// A real OutLayer run and its T1 relay (DCAP on NEAR) take longer than the sandbox's MOCK.
 const T1_WAIT: Duration = Duration::from_secs(900);
+/// NEAR free of storage stake an account needs to send a 300 Tgas call (0.301 NEAR set aside up front,
+/// most of it refunded), with a margin for the calls before it.
+const FREE_FOR_RUNS: u128 = 360 * MILLI;
+/// What each vended practice account gets for its gas: its commit's and its reveal's set-aside gas
+/// (0.031 and 0.301 NEAR); it burns about a tenth of it, and keeps the rest.
+const PRACTICE_GAS_FUNDS: u128 = 340 * MILLI;
 /// The NEAR credit the CLI keeps at near-antibody for each account: one run (0.02 deposit, 0.01 storage
 /// allowance) and a commit's storage, within the story accounts' lean funding (scripts/deploy/testnet.sh).
 const MIN_NEAR_CREDIT: &str = "0.045";
@@ -370,6 +376,37 @@ impl Live {
         Ok(())
     }
 
+    /// Tops `account` up from the root account to `min` yoctoNEAR free of its storage stake. NEAR sets
+    /// aside a call's whole prepaid gas at ten times the gas price before running it (a 300 Tgas call
+    /// needs 0.301 NEAR free and burns a tenth of that), so a lean account cannot send one without this.
+    fn ensure_liquid(&self, account: &str, min: u128) -> Result<u128> {
+        let a = self.near.account(account)?.ok_or_else(|| eyre!("no account {account}"))?;
+        let free = cmd::u128_of(&a["amount"]).saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
+        if free >= min {
+            return Ok(0);
+        }
+        let root = self.root_ctx();
+        let out = root.near.send(&root.signer()?, account, vec![Action::Transfer(min - free)], "EXECUTED_OPTIMISTIC")?;
+        cmd::ensure_ok(&root, &out, "transfer")?;
+        println!("  {account}: +{} NEAR from {HQ} (to {} free)", cmd::fmt_tokens(min - free, 24), cmd::fmt_tokens(min, 24));
+        Ok(min - free)
+    }
+
+    /// Returns what story account `n` holds beyond `keep` (free of its storage stake) to the root account.
+    fn sweep(&self, n: &str, keep: u128) -> Result<u128> {
+        let me = Self::acct(n);
+        let a = self.near.account(&me)?.ok_or_else(|| eyre!("no account {me}"))?;
+        let free = cmd::u128_of(&a["amount"]).saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
+        // Not worth a transaction below a hundredth of a NEAR.
+        if free <= keep + 10 * MILLI {
+            return Ok(0);
+        }
+        let ctx = self.ctx_of(n);
+        let out = ctx.near.send(&ctx.signer()?, HQ, vec![Action::Transfer(free - keep)], "EXECUTED_OPTIMISTIC")?;
+        cmd::ensure_ok(&ctx, &out, "transfer")?;
+        Ok(free - keep)
+    }
+
     fn stop_services(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         for h in std::mem::take(&mut self.threads) {
@@ -628,6 +665,7 @@ impl Live {
         let acme = self.ctx_of("acme");
         let pid = self.pid("acme");
         let t = Instant::now();
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
         let act = cmd::program_activate(&acme, pid, true)?;
         let act_run = act["run_id"].as_u64().unwrap_or_default();
         demo::wait_t1_for(&acme, act_run, T1_WAIT)?;
@@ -639,6 +677,7 @@ impl Live {
         self.s["activation"] = json!({"run_id": act_run, "sealing_pk": p["sealing_pk"], "key_epoch": p["key_epoch"], "base": act["base"], "seconds": t.elapsed().as_secs_f64(),
                                       "tx": act["tx"]["tx"]});
         let fx = self.a.work.join("submissions");
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
         let known = cmd::submit_known(&acme, pid, &fx.join("KNOWN.bundle.json"), None, None, true)?;
         let known_run = known["run_id"].as_u64().unwrap_or_default();
         demo::wait_t1_for(&acme, known_run, T1_WAIT)?;
@@ -655,6 +694,7 @@ impl Live {
         for x in ["a", "b", "c", "d", "e", "f", "g"] {
             let c = self.ctx_of(&format!("agent-{x}"));
             let me = Self::acct(&format!("agent-{x}"));
+            self.ensure_liquid(&me, FREE_FOR_RUNS)?;
             if wnear_of(&c, &me)? < 2 * MILLI {
                 wrap(&c, 3 * MILLI)?;
             }
@@ -667,7 +707,8 @@ impl Live {
         }
         let agent_key = self.a.work.join("keys/agent-a.fc-key.json");
         if !agent_key.exists() {
-            cmd::agent_key_add(&self.ctx_of("agent-a"), 0.25, &agent_key)?;
+            // An allowance pays each call's set-aside gas (a 300 Tgas reveal: 0.301 NEAR), not its burn.
+            cmd::agent_key_add(&self.ctx_of("agent-a"), 1.0, &agent_key)?;
         }
         self.s["agents"] = Value::Object(out);
         Ok(())
@@ -683,6 +724,7 @@ impl Live {
         let rpc = self.dep.rpc.clone().unwrap_or_default();
         let net = ["--network", "testnet", "--rpc", rpc.as_str()];
         let dep_file = self.a.root.join("deployments/near-testnet.json");
+        self.ensure_liquid(&Self::acct("agent-a"), FREE_FOR_RUNS)?;
         let mcp = demo::mcp_submit(&self.a.antibody_bin, &net, &dep_file, &Self::acct("agent-a"), &self.a.work.join("keys/agent-a.fc-key.json"),
                                    Some(self.a.sepolia_rpc.as_str()), &state_a, pid, &fx.join("A.bundle.json"))?;
         let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
@@ -740,6 +782,7 @@ impl Live {
                                       "clock": "from the commit's NEAR block: the verdict, T1 and the payment at their NEAR blocks (the indexer's events), each permit when near-guardian signed it, each pause when its chain's receipt came back",
                                       "pay_tx": pay_tx, "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                       "paused_both": paused_both, "keeper": keeper_a, "permits": permits(&relayer_file)});
+        self.sweep("agent-a", 60 * MILLI)?;
         Ok(())
     }
 
@@ -759,6 +802,7 @@ impl Live {
         for x in ["b", "c", "d", "e", "f", "g"] {
             let t = Instant::now();
             let report = (x == "c").then(|| fx.join("C.report.md"));
+            self.ensure_liquid(&Self::acct(&format!("agent-{x}")), FREE_FOR_RUNS)?;
             let costs_before = if x == "b" { Some(costs_of("agent-b")?) } else { None };
             let r = cmd::submit(&self.ctx_of(&format!("agent-{x}")), pid, &fx.join(format!("{}.bundle.json", x.to_uppercase())), None, report.as_deref(), true)?;
             if let Some((s0, c0, w0)) = costs_before {
@@ -772,6 +816,7 @@ impl Live {
                              "txs": {"commit": r["commit"]["tx"]["tx"], "reveal": r["reveal"]["tx"]["tx"]}}));
             self.s["rows"] = Value::Array(rows.clone());
             self.save()?;
+            self.sweep(&format!("agent-{x}"), 60 * MILLI)?;
         }
         for row in &rows {
             if let Some(r) = root_ctx.commit(row["commit"].as_u64().unwrap_or_default())?["run"].as_u64() {
@@ -787,6 +832,7 @@ impl Live {
         let pid = self.pid("acme");
         let root_ctx = self.root_ctx();
         let keeper = self.ctx_of("keeper");
+        self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
         let rows = self.s["rows"].as_array().cloned().unwrap_or_default();
         let program = root_ctx.program(pid)?;
         let mut seconds = Vec::new();
@@ -811,6 +857,7 @@ impl Live {
                 .then_some(())
         })?;
         let b = self.ctx_of("agent-b");
+        self.ensure_liquid(&Self::acct("agent-b"), 200 * MILLI)?;
         let before = wnear_of(&b, &Self::acct("agent-b"))?;
         cmd::withdraw(&b, "0.03")?;
         let after = wnear_of(&b, &Self::acct("agent-b"))?;
@@ -826,6 +873,7 @@ impl Live {
     fn project_read(&mut self) -> Result<()> {
         let t = Instant::now();
         let acme = self.ctx_of("acme");
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
         let rows = self.s["rows"].as_array().cloned().unwrap_or_default();
         let reveal_of = |name: &str| rows.iter().find(|r| r["agent"] == name).map(|r| (r["commit"].as_u64().unwrap_or_default(), r["txs"]["reveal"].as_str().unwrap_or_default().to_string()));
         let project_key = self.a.work.join("keys/acme.x25519.json");
@@ -851,6 +899,8 @@ impl Live {
     fn round(&mut self, round: u32) -> Result<()> {
         let t = Instant::now();
         let (acme, keeper, pid) = (self.ctx_of("acme"), self.ctx_of("keeper"), self.pid("acme"));
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS)?;
+        self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
         let dep = self.s["evm"]["acme"].clone();
         let manifest = self.a.work.join(format!("round{round}/manifest.json"));
         let rel: Vec<Value> =
@@ -873,6 +923,7 @@ impl Live {
             let v = cmd::run_view(&cmd::run(&acme, *r)?);
             reruns.push(json!({"commit": v["commit_id"], "run": r, "kind": v["kind"], "tier": v["tier"]}));
         }
+        self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
         // The re-run window runs from the proposal's T1; the round opens after it.
         let window = Duration::from_secs(600 + 20);
         if let Some(left) = window.checked_sub(accepted.elapsed()) {
@@ -962,11 +1013,11 @@ impl Live {
             .find(|p| p.exists())
             .ok_or_else(|| eyre!("no practice-vending wasm: run make contracts"))?;
         if self.near.account(&vending)?.is_none() {
-            // Its code, its state, and ten vends' gas funds (scripts/deploy/testnet.sh's PRACTICE_AMOUNT).
-            let amount = (std::fs::metadata(&wasm)?.len() as u128 + 8_000) * 10u128.pow(19) + 570 * MILLI;
+            // Its code and state, two vends' gas funds and a margin for the deploy.
+            let amount = (std::fs::metadata(&wasm)?.len() as u128 + 8_000) * 10u128.pow(19) + 2 * PRACTICE_GAS_FUNDS + 150 * MILLI;
             cmd::admin_create_account(&root_ctx, &vending, &cmd::fmt_tokens(amount, 24), None, Some(&self.a.keys.join(format!("{vending}.json"))))?;
         }
-        let terms = practice::Terms { gas_funds: ONE_NEAR / 20, allowance: ONE_NEAR / 20, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
+        let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_GAS_FUNDS, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
         let deployed = practice::deploy(&self.ctx_of("practice"), &wasm, HQ, ppid, 24, &terms, ONE_NEAR / 5)?;
         let funded = practice::fund(&root_ctx, &vending, ONE_NEAR * 15 / 100, 10 * MILLI)?;
         println!("practice program {ppid} open; vending {vending} with the public vend key {}", deployed["public_vend_key"]);
@@ -1013,6 +1064,7 @@ impl Live {
         std::fs::write(&bundle, serde_json::to_vec_pretty(&practice::tutorial_bundle(&vault3))?)?;
         // Agent C (its own proof forfeited its bond, not its NEAR) submits the tutorial proof.
         let c = self.ctx_of("agent-c");
+        self.ensure_liquid(&Self::acct("agent-c"), FREE_FOR_RUNS)?;
         let fr = cmd::submit(&c, fpid, &bundle, None, None, true)?;
         let fcid = fr["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no fork-mode commit id: {fr}"))?;
         let frun = demo::wait_t1_for(&root_ctx, root_ctx.commit(fcid)?["run"].as_u64().unwrap_or_default(), T1_WAIT)?;
@@ -1170,6 +1222,7 @@ pub fn run(a: LiveArgs) -> Result<Value> {
         }
         if i >= services_from {
             l.start_services()?;
+            l.ensure_liquid(&Live::acct("relayer"), 600 * MILLI)?;
         }
         step(&format!("live: {stage}"));
         let t = Instant::now();

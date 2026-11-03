@@ -187,10 +187,12 @@ enum PracticeCmd {
         program: u32,
         #[arg(long, default_value_t = 24)]
         vaults: u32,
-        /// NEAR each practice account gets for its gas, and its key's allowance
-        #[arg(long, default_value = "0.05")]
+        /// NEAR each practice account gets for its gas, and its key's allowance. NEAR sets aside a call's
+        /// prepaid gas at ten times the gas price before running it: the 300 Tgas reveal needs 0.301
+        /// NEAR free, its commit 0.031 (about a tenth of that is burnt)
+        #[arg(long, default_value = "0.34")]
         gas_funds: String,
-        #[arg(long, default_value = "0.05")]
+        #[arg(long, default_value = "0.34")]
         allowance: String,
         /// Bonds a practice account may have locked, and per commit (tokens)
         #[arg(long)]

@@ -1100,9 +1100,9 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     wait_t1(&root_ctx, pact["run_id"].as_u64().unwrap_or_default())?;
     cmd::program_open(&root_ctx, ppid)?;
     cmd::admin_create_account(&root_ctx, &acct("practice"), "40", None, Some(&keys.join(format!("{}.json", acct("practice")))))?;
-    // The sandbox's gas price is ten times testnet's (1e9 yoctoNEAR per gas): a practice account needs
-    // 0.5 NEAR to prepay its 300 Tgas reveal here, where 0.05 does on testnet. Enough vends for the
-    // measured agent runs (`--serve`).
+    // A practice account's 300 Tgas reveal needs its prepaid gas set aside up front (0.301 NEAR on
+    // testnet, at ten times the gas price): 0.5 covers it here. Enough vends for the measured agent runs
+    // (`--serve`).
     let terms = practice::Terms { gas_funds: ONE_NEAR / 2, allowance: ONE_NEAR / 2, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 30 };
     let vending_wasm = a.root.join("contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm");
     let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, "test.near", ppid, 24, &terms, 5 * ONE_NEAR)?;
