@@ -2,12 +2,13 @@
 #   make demo   build everything, verify the recorded fixtures natively and in wasm, run the contract
 #               tests, then run the full flow on near-sandbox and anvil with MOCK OutLayer and MOCK
 #               DCAP (the real T1 checks on MOCK quotes), and print the results table.
+#   make serve  the same story, then the sandbox stays up for JUDGES.md's commands (Ctrl-C stops it).
 # Linux x86_64 or macOS arm64 with Rust (rustup), Foundry and Python 3. Elsewhere: see Dockerfile.
 
 SHELL := /bin/bash
 NEAR_TOOLCHAIN := 1.85.0
 
-.PHONY: demo build contracts verifier verifier-wasm fixtures contract-tests sandbox e2e clean
+.PHONY: demo serve build contracts verifier verifier-wasm fixtures contract-tests sandbox e2e clean
 
 demo: build fixtures contract-tests e2e
 
@@ -47,6 +48,10 @@ sandbox:
 
 e2e: sandbox
 	./target/release/antibody-services demo --sandbox-bin .tools/near-sandbox
+
+# The same story, then the chains, the MOCK services and the API stay up for JUDGES.md's commands.
+serve: build sandbox
+	./target/release/antibody-services demo --sandbox-bin .tools/near-sandbox --serve
 
 clean:
 	rm -rf target/demo

@@ -69,9 +69,9 @@ class Doc:
 
     def cli(self, args):
         """A command as a reader types it. On testnet the binary has the deployment built in; in the
-        sandbox `…` stands for the flags given once at the top."""
+        sandbox `$A` is the binary with the sandbox's flags, set once at the top."""
         if self.net == "sandbox":
-            return f"antibody … {args}"
+            return f"$A {args}"
         if self.net == "testnet":
             return f"antibody {args}"
         return f"antibody --network {self.net} {args}"
@@ -86,8 +86,16 @@ class Doc:
 
     def flags_note(self):
         if self.net == "sandbox":
-            return ["In the commands below, `…` stands for `--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json`.", ""]
+            api = self.r.get("api", {}).get("url")
+            return ["Set this once, in the repository, with the sandbox running (`make serve`: it builds everything, runs the story and keeps the chains up):", "",
+                    "```bash", 'A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"', "```", "",
+                    "The sandbox also runs chain 31337 at `http://127.0.0.1:8545` and chain 31338 at `http://127.0.0.1:8546` (anvil)"
+                    + (f", and the API at `{api}` (its port changes per run)" if api else "") + ". The checks that read the EVM chains use `curl` only.", ""]
         return []
+
+    def curl(self, rpc, method, params):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, separators=(",", ":"))
+        return f"curl -s {rpc} -H 'content-type: application/json' -d '{body}'"
 
     def header(self, title):
         started = self.r.get("started_unix")
@@ -98,8 +106,8 @@ class Doc:
                  "Do not edit by hand: rerun the script on a new results file.", ""]
         if self.net == "sandbox":
             lines += ["These are the results of the offline sandbox run (`make demo`: near-sandbox and anvil, MOCK OutLayer and MOCK DCAP "
-                      "quotes checked by the real T1 code). To query that state yourself, run it with `--keep`. The testnet run's "
-                      "results replace this file when it is live.", ""]
+                      "quotes checked by the real T1 code, MOCK MPC). To query that state yourself, keep it running: "
+                      "`make serve`. The testnet run's results replace this file when it is live.", ""]
         return lines
 
 
@@ -118,7 +126,8 @@ def judges(d):
     out += ["```", d.cli("judge"), "```", ""]
     if j:
         locked = ", ".join(f"{c['role']} `{c['account']}` locked: {str(c.get('locked')).lower()}" for c in j.get("contracts", []))
-        out += [f"Expected: {locked}; {len(progs)} programs."]
+        audit_c = (r.get("audit", {}).get("contract") or {}).get("ok")
+        out += [f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; {len(progs)} programs."]
         for p in progs:
             v = p.get("verdicts", {})
             out += [f"- program {p.get('program_id')} ({p.get('name', '')}): phase `{p.get('phase')}`, anchor `{p.get('anchor', {}).get('status')}`, "
@@ -139,21 +148,23 @@ def judges(d):
         n += 1
         permits = one.get("permits", {})
         ev = ", ".join(f"{p.get('chain_id')}: {d.evm_tx(p.get('explorer'))}" for p in permits.values() if p.get("kind") == "pause") or "—"
-        out += [f"| {n} | The one moment: A's verdict pauses the fixture on both chains | `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` | "
-                f"verdict {secs.get('verdict', 0):.1f} s, T1 {secs.get('t1', 0):.1f} s, paid {secs.get('paid', 0):.1f} s, paused on 31337 at "
-                f"{secs.get('paused_31337') or 0:.1f} s and 31338 at {secs.get('paused_31338') or 0:.1f} s after A started its submission (wall clock); `pauses: {main.get('pauses')}` | {ev} |"]
+        out += [f"| {n} | The one moment: A's verdict pays A and pauses the fixture on both chains | `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` "
+                f"(the permits); the times are the run's (`one_moment` in the results file) | {main.get('pauses')} pause permits; from A's commit block: "
+                f"verdict {secs.get('verdict', 0):.1f} s, T1 {secs.get('t1', 0):.1f} s, paid {secs.get('paid', 0):.1f} s (its block), pause permits signed at "
+                f"{secs.get('permit_signed_31337') or 0:.1f} s and {secs.get('permit_signed_31338') or 0:.1f} s, paused on 31337 at "
+                f"{secs.get('paused_31337') or 0:.1f} s and on 31338 at {secs.get('paused_31338') or 0:.1f} s (sandbox clock; MOCK MPC) | {ev} |"]
     for rd in r.get("rounds", []):
         n += 1
         o = rd.get("opened", {})
-        out += [f"| {n} | Round {rd.get('round')}: the TEE checks the fix, the keeper re-runs every paid proof at it, releases wait for the gate | "
-                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` | {rd.get('summary')} | "
-                f"check run {rd.get('check_round_run')} |"]
+        out += [f"| {n} | Round {rd.get('round')}: the TEE checks the fix, the keeper re-runs every paid proof at it, the code is released only if the gate holds | "
+                f"`{d.cli('status --program ' + str(main.get('program_id', 0)))}` (the round's gate and keys); the re-run count is the run's (`rounds` in the results file) | "
+                f"{rd.get('summary')} | check run {rd.get('check_round_run')} |"]
     rel = r.get("release", {})
     if rel:
         n += 1
         chains = sorted({c.get("chain_id") for c in rel.get("checks", []) if c.get("chain_id")})
-        out += [f"| {n} | The released code is the final fix on every chain, and B's exploit now reverts | `cast implementation <proxy>` on each chain | "
-                f"ok: `{str(rel.get('ok')).lower()}` on chains {', '.join(map(str, chains))} | release permits in `judge` |"]
+        out += [f"| {n} | The released code is the final fix on every chain, and B's exploit now reverts | each proxy's EIP-1967 slot with `curl` (commands below the table) | "
+                f"each proxy's implementation is its final fix on chains {', '.join(map(str, chains))}: `{str(rel.get('ok')).lower()}` | release permits in `{d.cli('judge --program ' + str(main.get('program_id', 0)))}` |"]
     tries = practice.get("tries", [])
     if tries:
         n += 1
@@ -162,8 +173,9 @@ def judges(d):
         hashes += [(k, v) for st in t.get("settle", []) for k, v in st.items() if k in ("allocate", "pay") and isinstance(v, str) and (k, v) not in hashes]
         links = ", ".join(f"{k} {d.tx(h)}" for k, h in hashes)
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
-                f"`{d.cli('try --name <you>')}` (sends transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
-                f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD, vault {t.get('vault_index')}, {t.get('seconds', 0):.0f} s | {links} |"]
+                f"`{d.cli('try --name <you>')}` (sends sandbox transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
+                f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD to the vending contract (it paid the bond and the run), a vault of its own "
+                f"(the run's first judge got vault {t.get('vault_index')}), about {t.get('seconds', 0):.0f} s | {links} |"]
     rs = main.get("rule_strength") or {}
     if rs.get("statement"):
         n += 1
@@ -175,36 +187,67 @@ def judges(d):
         n += 1
         txs = fm.get("txs", {})
         out += [f"| {n} | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | "
-                f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `eth_getCode {fm.get('vault_3')}` at the anchor chain | "
-                f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('deploy_txs')} deploy transactions, {fm.get('targets')} targets; the vault's code on chain: `{fm.get('vault_3_code_on_chain')}` | "
+                f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `{d.cli('status --program ' + str(fm.get('program_id')))}`; the vault's code with `curl` (below the table) | "
+                f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('targets')} targets; the vault's code on chain 31337: `{fm.get('vault_3_code_on_chain')}` | "
                 f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))} |"]
     vc = r.get("verdict_consumer", {})
     if vc:
         n += 1
         fr = vc.get("frozen") or {}
         out += [f"| {n} | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | "
-                f"`near view {vc.get('contract')} get_state` | frozen by commit {fr.get('commit_id')} (slot {fr.get('slot')}); the next transfer refused: "
-                f"`{str(vc.get('transfer_after_refused')).lower()}` | report {d.tx(vc.get('report_tx'))} |"]
+                f"`{d.cli('view --contract ' + str(vc.get('contract')) + ' --method get_state')}` | `frozen`: commit {fr.get('commit_id')}, slot {fr.get('slot')}; "
+                f"the run's next transfer was refused: `{str(vc.get('transfer_after_refused')).lower()}` | report {d.tx(vc.get('report_tx'))} |"]
     pr = r.get("project_read", {})
     if pr:
         n += 1
         rd = pr.get("read", {})
         req = rd.get("requested") or {}
         refused = "only a paid finding" in (pr.get("duplicate_refused") or "")
+        reveal = next((s.get("txs", {}).get("reveal") for s in subs if s.get("commit") == pr.get("commit")), "<the commit's reveal transaction>")
+        if d.net == "sandbox":
+            cmdline = d.cli(f"--account acme.test.near --key-file target/demo/keys/acme.test.near.json program read --commit {pr.get('commit')} "
+                            f"--project-key target/demo/keys/acme.x25519.json --out target/demo/read/you --reveal-tx {reveal}")
+        else:
+            cmdline = d.cli(f"--account <project> program read --commit {pr.get('commit')} --project-key <key file> --out <dir> --reveal-tx {reveal}")
         out += [f"| {n} | The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped | "
-                f"`{d.cli('--account <project> program read --commit ' + str(pr.get('commit')) + ' --project-key <key file> --out <dir> --reveal-tx <tx>')}` "
-                f"(the first read sends a transaction) | local verdict `{rd.get('local_verdict', {}).get('kind')}`, its receipt equals the TEE's: "
-                f"`{str(rd.get('receipt_matches_the_tee')).lower()}`; commit {pr.get('duplicate')}'s wrap refused: `{str(refused).lower()}` | "
+                f"`{cmdline}` (the wrap exists: no transaction) | local verdict `{rd.get('local_verdict', {}).get('kind')}`, its receipt equals the TEE's: "
+                f"`{str(rd.get('receipt_matches_the_tee')).lower()}`; the run's request to wrap commit {pr.get('duplicate')} was refused: `{str(refused).lower()}` | "
                 f"release wrap {d.tx((req.get('tx') or {}).get('tx'))} |"]
     au = r.get("audit", {})
     if au:
         n += 1
         oks = ", ".join(f"{k}: `{str(v.get('ok')).lower()}`" for k, v in au.items() if isinstance(v, dict))
-        out += [f"| {n} | Every conservation equation balances (the ledger's both sides) | `{d.cli('judge')}` (`audit_ok`) | {oks} | view calls |"]
+        out += [f"| {n} | Every conservation equation balances (the ledger's both sides) | `{d.cli('judge')}` (each program's `audit ok`, and the contract's) | {oks} | view calls |"]
+    # The EVM checks, spelled out.
+    evm = []
+    for c in rel.get("checks", []):
+        if c.get("address") and c.get("rpc"):
+            evm += [f"- Chain {c['chain_id']}, {c['proxy']}: the result ends in `{str(c.get('expected', '')).lower()[2:]}`", "",
+                    "  ```bash", "  " + d.curl(c["rpc"], "eth_getStorageAt", [c["address"], "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", "latest"]), "  ```"]
+    if fm.get("vault_3"):
+        evm += [f"- Fork mode: the practice vault `{fm['vault_3']}` has no code on chain 31337 (`\"result\":\"0x\"`)", "",
+                "  ```bash", "  " + d.curl("http://127.0.0.1:8545", "eth_getCode", [fm["vault_3"], "latest"]), "  ```"]
+    if evm and d.net == "sandbox":
+        out += ["", "### The EVM checks", ""] + evm
+    # Every transaction behind a claim, in full, and how to look one up.
+    txs = []
+    for s in subs:
+        letter = (s.get("agent") or "?")[0].lower()
+        for k, h in sorted((s.get("txs") or {}).items(), key=lambda kv: ["commit", "reveal", "pay"].index(kv[0]) if kv[0] in ("commit", "reveal", "pay") else 9):
+            if isinstance(h, str):
+                # The keeper pays; the agent commits and reveals.
+                who = ("keeper" if k == "pay" else f"agent-{letter}") + ".test.near" if d.net == "sandbox" else "<its signer>"
+                txs.append((f"{s.get('agent')} {k}", h, who))
+    if txs:
+        out += ["", "### Transactions", "", "Each transaction behind the table, with the command that shows its status, events and failures:", ""]
+        out += [f"- {what}: `{d.cli('admin tx ' + h + ' --signer ' + who)}`" for what, h, who in txs]
     out += ["", "## Timings", ""]
     out += [f"- Whole run: {r.get('seconds', 0):.0f} s. Activation: {r.get('activation', {}).get('seconds', 0):.1f} s."]
     for s in subs:
-        out += [f"- {s.get('agent')}: submission (witness, seal, commit, reveal) to verdict {s.get('seconds', 0):.1f} s."]
+        if s.get("agent", "").startswith("A"):
+            out += [f"- {s.get('agent')}: from its commit's block to the verdict {s.get('seconds', 0):.1f} s."]
+        else:
+            out += [f"- {s.get('agent')}: submission (witness, seal, commit, reveal) to verdict {s.get('seconds', 0):.1f} s."]
     if tries:
         out += [f"- Practice try ({t.get('account')}): {t.get('seconds', 0):.1f} s from vend to payout." for t in tries]
     out += ["", "## What this does not show", "",
@@ -242,7 +285,7 @@ def agents(d):
             "- An agent's bonds come from its owner's credit within a per-commit cap and a budget that counts bonds lost as well as locked, on the programs its owner listed; a commit outside them is refused and counted as a containment event.", ""]
     if one:
         out += ["## Measured in the recorded run", "",
-                f"Agent A submitted over MCP: verdict {one.get('verdict', 0):.1f} s after it started (witness, seal, commit, reveal), T1 at {one.get('t1', 0):.1f} s, paid at {one.get('paid', 0):.1f} s (sandbox wall clock).", ""]
+                f"Agent A submitted over MCP. From its commit's block: verdict {one.get('verdict', 0):.1f} s, T1 {one.get('t1', 0):.1f} s, paid {one.get('paid', 0):.1f} s (the payment's block; sandbox clock).", ""]
     return "\n".join(out)
 
 

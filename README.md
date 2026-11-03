@@ -33,31 +33,35 @@ with a bond budget, and its proofs are judged like anyone's.
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
-```bash
-antibody judge                 # view calls only: code hashes, locked status, pins, T1 confirmations, payouts, permits
-antibody try --name <you>      # the practice program (a tutorial): no account, no key, no RPC; paid in seconds
-```
-
-Prebuilt binaries and a CLI image come with each release (`.github/workflows/release.yml`); the testnet
-deployment is built into the binary. **Status:** the testnet deployment is not live yet (it waits for
-testnet funds), so today [JUDGES.md](JUDGES.md) is generated from the offline sandbox run, and the same
-commands run against it:
+**Status:** the testnet deployment is not live yet (it waits for testnet funds), so today JUDGES.md comes
+from the offline sandbox run, and its commands run against the sandbox. On Linux or macOS:
 
 ```bash
-make demo        # Linux (or `docker build -t antibody-demo . && docker run --rm antibody-demo`): everything, asserted
-antibody-services demo --serve   # the same, then the chains and services stay up for `antibody … try` and `judge`
+make serve       # builds everything, runs the whole story (every outcome asserted), then keeps the sandbox up
 ```
+
+Then, in a second terminal in the repository:
+
+```bash
+A="./target/release/antibody --network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json"
+$A judge                 # view calls only: locked status, T1 confirmations, payouts, permits, audits (--json: everything)
+$A try --name <you>      # the practice program (a tutorial): no account, no key, no Ethereum RPC; paid in seconds
+```
+
+`make demo` runs the same story once and stops (`docker build -t antibody-demo . && docker run --rm
+antibody-demo` elsewhere). Once testnet is live, the release binaries (`.github/workflows/release.yml`)
+have the deployment built in: `antibody judge` and `antibody try --name <you>`, nothing else.
 
 The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts every outcome of the story:
 
 | Step | What happens | Recorded |
 |---|---|---|
-| Program | Acme Lend's manifest (v2) and escrow on NEAR; the anchor checked by the light client; activation pins the base witness and the program's sealing key | T1 |
+| Program | Acme Lend's manifest (schema v2) and escrow on NEAR; the anchor checked by the light client; activation pins the base witness and the program's sealing key | T1 |
 | The one moment | Agent A, over MCP, submits a sealed proof of a Critical: verified, T1-confirmed, **paid** about 27 s after it started, and **both chains paused** within about a second and a half of the payment | sandbox wall clock (MOCK OutLayer, DCAP and MPC) |
 | A NEAR app reacts | A DAO treasury that watches the program reads near-antibody and freezes on A's verified Critical | its next transfer is refused |
 | B–G | B paid; C (a prompt injection in its report) breaks nothing and forfeits its bond; D a duplicate, confirmed at the fix; E a known issue; F paid; G harms a protected user without breaking a rule: refunded, recorded, and paid once round 1 adds the rule | every state |
 | The project reads it | After payment, A's proof is wrapped to the project's NEP-413-derived key; `antibody program read` opens it and re-runs it locally, and near-antibody refuses to wrap D's duplicate | the local receipt hash equals the TEE's |
-| Rounds | Round 1's partial fix: every paid proof re-run at it, two still break, so nothing is released; round 2's final fix: all fail, the release permits upgrade both proxies on both chains, and B's exploit reverts | the release gate |
+| Rounds | Round 1's partial fix: every paid proof re-run at it, two still break, so the release gate stays shut and no release permit is signed; round 2's final fix: all fail, the release permits upgrade both proxies on both chains, and B's exploit reverts | the release gate |
 | Practice | Two judges with no account vend practice accounts and run the tutorial proof; it is sealed against the pinned base alone | Done:Paid |
 | Fork mode | The practice program again, deployed only inside the verifier: nothing of it is on chain | Done:Paid |
 | Audits | Every conservation equation, per program and for the contract | ok |
@@ -84,7 +88,7 @@ for the live story go here when it runs. What a mainnet program would change is 
 | Actor | Trusted for | How anyone checks it |
 |---|---|---|
 | The light client | The anchor block's hash | The program's anchor check (`antibody judge`) against any RPC |
-| The TEE (OutLayer worker) | Running the pinned verifier on the sealed proof | **T1:** the run's TDX quote is verified on NEAR; `antibody tee check --request-id <id>` |
+| The TEE (OutLayer worker) | Running the pinned verifier on the sealed proof | **T1:** the run's TDX quote is verified on NEAR; `antibody tee check --request-id <id>` reads OutLayer's attestation (testnet: the sandbox's OutLayer is a MOCK) |
 | The verifier | Nothing beyond its pinned build | Native and wasm builds agree byte for byte; `antibody check` re-runs a proof locally; after disclosure every verdict can be recomputed |
 | The MPC network | Signing the pause and release permits near-guardian builds | `AntibodyAdapter` recomputes each permit's EIP-712 digest on chain |
 | near-antibody's owner | The defaults of new programs only | A live program's pins never change (property 12); `antibody judge` shows whether the contract is locked |

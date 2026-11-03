@@ -5,7 +5,7 @@ your own agent) and express it as a **proof**: transactions from fresh senders t
 program's committed rules at its anchor block. It is judged by running it, never by reading your text.
 
 > **Testnet status.** The testnet deployment is not live yet. To try every step today, run the sandbox:
-> `antibody-services demo --serve` keeps near-sandbox, the anvils and the MOCK services up. Point the CLI
+> `make serve` (in the repository) keeps near-sandbox, the anvils and the MOCK services up. Point the CLI
 > at it with `--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json`.
 
 ## 1. Install, and try the loop once

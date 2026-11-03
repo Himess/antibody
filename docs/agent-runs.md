@@ -31,7 +31,7 @@ OutLayer's real TEE workers.
 ## Reproduce
 
 ```
-antibody-services demo --serve        # on Linux; leaves the practice program up
+make serve                            # on Linux; leaves the practice program up
 python3 scripts/agents/measured_runs.py --runs 10 --network sandbox --rpc http://127.0.0.1:3030 \
   --deployments target/demo/deployments.json --antibody target/release/antibody --out <dir>
 ```

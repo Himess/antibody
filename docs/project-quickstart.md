@@ -1,7 +1,7 @@
 # Project quickstart
 
 > **Testnet status.** The testnet deployment is not live yet. The whole flow can be rehearsed on the
-> local sandbox (`antibody-services demo --serve`); `antibody init --out my-program --project <you>.testnet`
+> local sandbox (`make serve`); `antibody init --out my-program --project <you>.testnet`
 > scaffolds a workspace.
 
 Open a program before a launch or an upgrade, next to your existing bounty. Your rules are your terms: a
