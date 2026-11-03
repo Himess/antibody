@@ -35,6 +35,7 @@ pub enum Action {
     FunctionCall { method: String, args: Vec<u8>, gas: u64, deposit: u128 },
     Transfer(u128),
     AddKey { public_key: [u8; 32], permission: Permission },
+    DeleteKey { public_key: [u8; 32] },
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +100,10 @@ impl Action {
                     }
                     Permission::FullAccess => o.push(1),
                 }
+            }
+            Action::DeleteKey { public_key } => {
+                o.push(6);
+                b_pk(o, public_key);
             }
         }
     }
@@ -401,5 +406,15 @@ mod tests {
         let (signed, hash) = sign_tx(&tx, &key);
         assert_eq!(hex::encode(hash), include_str!("../tests/near_tx_vector.hash").trim());
         assert_eq!(hex::encode(&signed), include_str!("../tests/near_tx_vector.signed").trim());
+    }
+
+    /// nearcore's `Action::DeleteKey` is variant 6, then the key (curve byte 0 for ED25519, 32 bytes).
+    #[test]
+    fn delete_key_encoding() {
+        let mut o = vec![];
+        Action::DeleteKey { public_key: [7u8; 32] }.borsh(&mut o);
+        assert_eq!(o.len(), 34);
+        assert_eq!(&o[..2], &[6, 0]);
+        assert!(o[2..].iter().all(|b| *b == 7));
     }
 }

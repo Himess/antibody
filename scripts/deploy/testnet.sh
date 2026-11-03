@@ -1,130 +1,198 @@
 #!/usr/bin/env bash
-# Antibody testnet deployment runbook (NEAR testnet + Ethereum Sepolia + Base Sepolia).
+# Antibody on NEAR testnet: one deployment under antibody.testnet, deployed and tested unlocked, then
+# locked as the launch by a separate, irreversible step.
 #
-# Needs funded TESTNET keys in the git-ignored .secrets/ directory (never printed):
-#   .secrets/near_guardian.json      NEAR implicit account (near-cli key format), >= 60 NEAR
-#   .secrets/sepolia_deployer.json   EVM deployer, Sepolia + Base Sepolia ETH
-# and archive RPCs with eth_getProof in .env: SEPOLIA_RPC, BASE_SEPOLIA_RPC.
-# Every step checks whether it already ran, so the script can be re-run after a failure.
+#   scripts/deploy/testnet.sh plan       per-account amounts from the built wasm sizes, and the root's
+#                                        balance (sends nothing)
+#   scripts/deploy/testnet.sh deploy     accounts, contracts, wNEAR registrations, worker images, and the
+#                                        deployments file
+#   scripts/deploy/testnet.sh practice   the practice program's vending contract (after its program exists)
+#   scripts/deploy/testnet.sh lock       deletes the full-access keys of near-antibody, near-guardian and the
+#                                        vending contract (irreversible: LOCK=I-UNDERSTAND)
+#
+# Needs: the root account's full-access key at .secrets/near/antibody.testnet.json (git-ignored, never
+# printed); `make contracts verifier-wasm`; wasm-opt (binaryen) for the smaller code stake; and the
+# verifier wasm published where OutLayer fetches it: VERIFIER_URL, or PUBLISH_VERIFIER=1 to create the
+# GitHub release `verifier-<hash>` with gh (a public release). Every step checks whether it already ran,
+# so the script can be re-run after a failure. Transactions are testnet only; the payout token is wNEAR.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 set -a; [ -f .env ] && source .env; set +a
-: "${SEPOLIA_RPC:?set SEPOLIA_RPC in .env}"
-: "${BASE_SEPOLIA_RPC:?set BASE_SEPOLIA_RPC in .env}"
 
-HQ="${HQ:-antibody-hq.testnet}"
+NET=testnet
+RPC="${NEAR_RPC:-https://rpc.testnet.fastnear.com}"
+HQ="${HQ:-antibody.testnet}"
 KEYS="$ROOT/.secrets/near"
 AB="$ROOT/target/release/antibody"
 DEP="$ROOT/deployments/near-testnet.json"
-WASM_DIR="$ROOT/contracts/near-antibody/target/wasm32-unknown-unknown/release"
-GUARDIAN_WASM="$ROOT/contracts/near-guardian/target/wasm32-unknown-unknown/release/antibody_guardian.wasm"
-VERIFIER_WASM="$ROOT/target/wasm32-wasip2/release/antibody-verify.wasm"
-mkdir -p "$KEYS"
-ab() { "$AB" --network testnet --deployments "$DEP" "$@"; }
-exists() { curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$1\"}}" \
-    | grep -q '"amount"'; }
-# near_view <contract> <method> <json args>: prints the JSON result of a view call. Fails (and, under
-# `set -e`, stops the runbook) when the call fails, so an RPC error is never read as "not set yet".
-near_view() { curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$1\",\"method_name\":\"$2\",\"args_base64\":\"$(printf '%s' "$3" | base64 -w0)\"}}" \
+OUT="$ROOT/target/deploy"
+REL=contracts/near-antibody/target/wasm32-unknown-unknown/release
+TOKEN=wrap.testnet
+OUTLAYER=outlayer.testnet
+REGISTRY=worker.outlayer.testnet
+DCAP=tee-verifier-2026-07-22.testnet
+LIGHT_CLIENT=client-eth2.sepolia.testnet
+MPC=v1.signer-prod.testnet
+# The verifier's resource limits and OutLayer deposit per run (0.02 NEAR attached; OutLayer refunds what
+# a run does not use: ~0.007 at the 60 s limit, docs/measurements.md).
+RUN_DEPOSIT=20000000000000000000000
+# Images OutLayer approves after a program's creation count for it after this delay (spec §15); longer
+# than any program's challenge window.
+IMAGE_DELAY_SECS="${IMAGE_DELAY_SECS:-172800}"
+
+ab() { "$AB" --network "$NET" --deployments "$DEP" "$@"; }
+rpc() { curl -s "$RPC" -H 'content-type: application/json' -d "$1"; }
+balance_of() { # yoctoNEAR, or empty when the account does not exist
+  rpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$1\"}}" \
+    | python3 -c 'import sys,json; r=json.load(sys.stdin).get("result"); print(r["amount"] if r else "")'; }
+code_of() {
+  rpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$1\"}}" \
+    | python3 -c 'import sys,json; r=json.load(sys.stdin).get("result"); print(r["code_hash"] if r else "")'; }
+# near_view <contract> <method> <json args>: the JSON result of a view call; stops the runbook if the call
+# fails, so an RPC error is never read as "not set yet".
+near_view() {
+  rpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$1\",\"method_name\":\"$2\",\"args_base64\":\"$(printf '%s' "$3" | base64 -w0)\"}}" \
     | python3 -c 'import sys,json; r=json.load(sys.stdin); res=(r.get("result") or {}).get("result")
 if res is None: sys.exit("view failed: " + json.dumps(r.get("error") or (r.get("result") or {}).get("error"))[:300])
 print(bytes(res).decode())'; }
+near() { python3 -c "import sys; print(f'{int(sys.argv[1]) / 1e24:.4f}')" "$1"; }
 
-echo "== 1. NEAR accounts under $HQ"
-if ! exists "$HQ"; then
-  ab --key-file .secrets/near_guardian.json admin create-account --new-account-id "$HQ" --amount-near 45 --key-out "$KEYS/$HQ.json"
-fi
-for n in bounty tusd guardian acme agent-a agent-b agent-c agent-d agent-e agent-f; do
-  a="$n.$HQ"
-  amount=2
-  case "$n" in bounty) amount=15 ;; guardian|tusd) amount=6 ;; acme) amount=3 ;; esac
-  exists "$a" || ab --key-file "$KEYS/$HQ.json" admin create-account --new-account-id "$a" --amount-near "$amount" --key-out "$KEYS/$a.json"
-done
-
-echo "== 2. Guardian EVM address (Chain Signatures derivation for guardian.$HQ, path guardian/acme)"
-GUARDIAN_EVM="$(cd scripts/guardian && node derive.mjs "guardian.$HQ" guardian/acme testnet \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["match"], "local and on-chain derivation differ"; print(d["address_onchain"])')"
-echo "guardian EVM address: $GUARDIAN_EVM"
-
-echo "== 3. Acme Lend on Sepolia (seeded) and Base Sepolia (pause-only copy), same CREATE2 addresses"
-export DEPLOYER_KEY="$(python3 -c 'import json; print(json.load(open(".secrets/sepolia_deployer.json"))["private_key"])')"
-(cd contracts/evm
-  [ -f deployments/11155111.json ] || GUARDIAN_ADDRESS="$GUARDIAN_EVM" SEED=true GUARDIAN_FUND_WEI=20000000000000000 \
-    forge script script/DeployAcme.s.sol --rpc-url "$SEPOLIA_RPC" --broadcast --slow
-  [ -f deployments/84532.json ] || GUARDIAN_ADDRESS="$GUARDIAN_EVM" SEED=false GUARDIAN_FUND_WEI=5000000000000000 \
-    forge script script/DeployAcme.s.sol --rpc-url "$BASE_SEPOLIA_RPC" --broadcast --slow)
-unset DEPLOYER_KEY
-ACME_GUARD="$(python3 -c 'import json; print(json.load(open("contracts/evm/deployments/11155111.json"))["AcmeGuard"])')"
-
-echo "== 4. Verifier wasm on a GitHub release (OutLayer WasmUrl)"
-WASM_HASH="$(sha256sum "$VERIFIER_WASM" | cut -d' ' -f1)"
-TAG="verifier-${WASM_HASH:0:12}"
-gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" "$VERIFIER_WASM" --title "verifier $WASM_HASH" \
-  --notes "antibody-verify.wasm (wasm32-wasip2), sha256 $WASM_HASH. Pinned by near-antibody programs."
-WASM_URL="https://github.com/Himess/antibody/releases/download/$TAG/antibody-verify.wasm"
-
-echo "== 5. Contracts on NEAR testnet"
-deploy() { # account wasm init-args
-  local code; code="$(curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"view_account\",\"finality\":\"final\",\"account_id\":\"$1\"}}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["code_hash"])')"
-  if [ "$code" = "11111111111111111111111111111111" ]; then
-    ab --key-file "$KEYS/$1.json" admin deploy --wasm "$2" --init-method new --init-args "$3"
+# The deployable contracts, optimized for size when wasm-opt is installed (the code stake is 1 NEAR per
+# 100 kB, and a locked contract's stake never comes back).
+wasm_for() { # <name> <cargo output>
+  mkdir -p "$OUT"
+  local src="$2" dst="$OUT/$1.wasm"
+  [ -f "$src" ] || { echo "missing $src: run make contracts" >&2; exit 1; }
+  if [ ! -f "$dst" ] || [ "$src" -nt "$dst" ]; then
+    if command -v wasm-opt >/dev/null; then wasm-opt -Oz "$src" -o "$dst"; else cp "$src" "$dst"; fi
   fi
+  echo "$dst"
 }
-deploy "tusd.$HQ" "$WASM_DIR/antibody_tusd.wasm" "{\"owner\":\"$HQ\"}"
-VERIFIER_CFG="{\"wasm_url\":\"$WASM_URL\",\"wasm_hash\":\"$WASM_HASH\",\"pubkey\":null,\"secrets_owner\":\"$HQ\",\"secrets_profile\":\"antibody-v1\",\"max_instructions\":5000000000,\"max_memory_mb\":512,\"max_execution_seconds\":60,\"deposit\":\"20000000000000000000000\",\"tier\":\"T0 (OutLayer operator-attested)\"}"
-deploy "bounty.$HQ" "$WASM_DIR/near_antibody.wasm" "{\"owner\":\"$HQ\",\"token\":\"tusd.$HQ\",\"outlayer\":\"outlayer.testnet\",\"light_client\":\"client-eth2.sepolia.testnet\",\"verifier\":$VERIFIER_CFG}"
-deploy "guardian.$HQ" "$GUARDIAN_WASM" "{\"owner\":\"$HQ\",\"mpc\":\"v1.signer-prod.testnet\",\"path\":\"guardian/acme\",\"guardian_address\":\"$GUARDIAN_EVM\"}"
+ANTIBODY_WASM="$(wasm_for near_antibody "$REL/near_antibody.wasm")"
+GUARDIAN_WASM="$(wasm_for antibody_guardian contracts/near-guardian/target/wasm32-unknown-unknown/release/antibody_guardian.wasm)"
+VENDING_WASM="$(wasm_for antibody_practice_vending contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm)"
+VERIFIER_WASM="$ROOT/target/reproducible/wasm32-wasip2/release/antibody-verify.wasm"
 
-echo "== 6. Verifier key: PROTECTED_ secret in OutLayer's keystore, then the pubkey run"
-# Only once: a new seed would make every blob sealed to the old public key unreadable (InvalidPoC).
-# ROTATE_SEED=1 replaces it deliberately, before any program exists.
-PUBKEY_SET="$(near_view "bounty.$HQ" get_config '{}' | python3 -c 'import sys,json; print("yes" if json.load(sys.stdin)["verifier"]["pubkey"] else "no")')"
-if [ "$PUBKEY_SET" = "no" ] || [ "${ROTATE_SEED:-0}" = "1" ]; then
-  ab --key-file "$KEYS/$HQ.json" admin outlayer-secret --wasm-hash "$WASM_HASH" --contract "bounty.$HQ"
-  ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method refresh_verifier_pubkey --gas-tgas 150
-else
-  echo "verifier pubkey already set: keeping the seed"
-fi
+# Per account: the code stake (its wasm's bytes), the state it will hold, and its gas and run deposits.
+stake() { python3 -c "import os,sys; print(int((os.path.getsize(sys.argv[1]) + int(sys.argv[2])) * 10**19 + float(sys.argv[3]) * 10**24))" "$@"; }
+declare -A AMOUNT=(
+  [bounty]="$(stake "$ANTIBODY_WASM" 30000 0.02)"    # state: programs, commits, runs, images (~30 kB)
+  [guardian]="$(stake "$GUARDIAN_WASM" 8000 0.02)"   # state: chains, permits
+  [acme]=300000000000000000000000                     # gas; NEAR credit for program storage, activation, rounds
+  [agent-a]=100000000000000000000000                  # gas; one run deposit at a time (0.02) and storage
+  [agent-b]=100000000000000000000000
+  [agent-c]=100000000000000000000000
+  [agent-d]=100000000000000000000000
+  [agent-e]=100000000000000000000000
+  [agent-f]=100000000000000000000000
+)
+ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f)
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.02)"
 
-echo "== 7. Guardian targets and authorization"
-# Registered once: registering again would reset next_nonce and jam the chain's pause transactions.
-# 250,000 gas: since Glamsterdam, Sepolia charges far more for a new storage slot than Osaka does.
-CHAINS="$(near_view "guardian.$HQ" get_chains '{}')"
-for c in "11155111 sepolia https://sepolia.etherscan.io/tx/ 20000000000 1500000000" "84532 base-sepolia https://sepolia.basescan.org/tx/ 1000000000 100000000"; do
-  set -- $c
-  if printf '%s' "$CHAINS" | python3 -c "import sys,json; sys.exit(0 if any(t['chain_id'] == $1 for t in (json.load(sys.stdin) or [])) else 1)"; then
-    echo "chain $1 already registered: keeping its nonce"; continue
-  fi
-  ab --key-file "$KEYS/$HQ.json" admin call --contract "guardian.$HQ" --method set_chain --args \
-    "{\"target\":{\"chain_id\":$1,\"name\":\"$2\",\"to\":\"$ACME_GUARD\",\"calldata\":\"0x8456cb59\",\"gas_limit\":250000,\"max_fee_per_gas\":\"$4\",\"max_priority_fee_per_gas\":\"$5\",\"next_nonce\":0,\"explorer\":\"$3\"}}"
-done
-ab --key-file "$KEYS/$HQ.json" admin call --contract "guardian.$HQ" --method set_authorized --args "{\"account_id\":\"bounty.$HQ\",\"enabled\":true}"
-
-echo "== 7b. T1: NEAR's DCAP verifier and OutLayer's three newest approved worker images"
-MEAS="$(curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"worker.outlayer.testnet","method_name":"get_approved_measurements","args_base64":"e30="}}'   | python3 -c 'import sys,json; r=json.load(sys.stdin); print(json.dumps(json.loads(bytes(r["result"]["result"]))[-3:]))')"
-ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method set_tee_config   --args "{\"config\":{\"verifier\":\"tee-verifier-2026-07-22.testnet\",\"measurements\":$MEAS,\"accepted_tcb\":[\"UpToDate\"]}}"
-
-echo "== 8. tUSD for the project and the scripted agents (testnet token, no value)"
-mint_to() { # <account> <target raw amount>: mints only the shortfall, so re-runs mint nothing
-  local have; have="$(near_view "tusd.$HQ" ft_balance_of "{\"account_id\":\"$1\"}" | tr -d '"')"
-  if [ "$have" -lt "$2" ]; then
-    ab --key-file "$KEYS/$HQ.json" admin call --contract "tusd.$HQ" --method mint --args "{\"account_id\":\"$1\",\"amount\":\"$(( $2 - have ))\"}"
-  fi
+plan() {
+  local total=0 a
+  printf '%-34s %12s  %s\n' account NEAR exists
+  for n in "${ORDER[@]}"; do
+    a="$n.$HQ"
+    printf '%-34s %12s  %s\n' "$a" "$(near "${AMOUNT[$n]}")" "$([ -n "$(balance_of "$a")" ] && echo yes || echo no)"
+    total=$(python3 -c "print($total + ${AMOUNT[$n]})")
+  done
+  printf '%-34s %12s  %s\n' "practice.$HQ (optional)" "$(near "$PRACTICE_AMOUNT")" "$([ -n "$(balance_of "practice.$HQ")" ] && echo yes || echo no)"
+  echo "wasm: near-antibody $(stat -c %s "$ANTIBODY_WASM") B, guardian $(stat -c %s "$GUARDIAN_WASM") B, vending $(stat -c %s "$VENDING_WASM") B$(command -v wasm-opt >/dev/null || echo ' (no wasm-opt: unoptimized)')"
+  echo "sub-accounts: $(near "$total") NEAR (+ $(near "$PRACTICE_AMOUNT") for the practice program)"
+  local have; have="$(balance_of "$HQ")"
+  echo "$HQ holds: $( [ -n "$have" ] && near "$have" || echo 'no account') NEAR; it keeps ~0.35 for T1 relays, registrations and gas"
 }
-mint_to "acme.$HQ" 30000000000
-for x in a b c d e f; do mint_to "agent-$x.$HQ" 200000000; done
 
-python3 - "$HQ" > "$DEP" <<'EOF'
+deploy() {
+  [ -f "$KEYS/$HQ.json" ] || { echo "no root key at $KEYS/$HQ.json" >&2; exit 1; }
+  [ -f "$VERIFIER_WASM" ] || { echo "missing $VERIFIER_WASM: run make verifier-wasm" >&2; exit 1; }
+  local hash url
+  hash="$(sha256sum "$VERIFIER_WASM" | cut -d' ' -f1)"
+
+  echo "== 1. Sub-accounts of $HQ (only its key can create them)"
+  for n in "${ORDER[@]}"; do
+    a="$n.$HQ"
+    [ -n "$(balance_of "$a")" ] && { echo "$a exists"; continue; }
+    ab --key-file "$KEYS/$HQ.json" admin create-account --new-account-id "$a" --amount-near "$(near "${AMOUNT[$n]}")" --key-out "$KEYS/$a.json"
+  done
+
+  echo "== 2. The verifier wasm where OutLayer fetches it (sha256 $hash)"
+  url="${VERIFIER_URL:-https://github.com/Himess/antibody/releases/download/verifier-${hash:0:12}/antibody-verify.wasm}"
+  if ! curl -sfIL "$url" >/dev/null; then
+    [ "${PUBLISH_VERIFIER:-0}" = 1 ] || { echo "$url is not published: set VERIFIER_URL, or PUBLISH_VERIFIER=1 for a public GitHub release" >&2; exit 1; }
+    gh release create "verifier-${hash:0:12}" "$VERIFIER_WASM" --title "verifier ${hash:0:12}" \
+      --notes "antibody-verify.wasm (wasm32-wasip2), sha256 $hash. Rebuild: make verifier-wasm. Pinned by near-antibody programs."
+  fi
+  curl -sL "$url" | sha256sum | grep -q "^$hash " || { echo "$url does not serve the built wasm" >&2; exit 1; }
+
+  echo "== 3. near-antibody and near-guardian"
+  local defaults
+  defaults="{\"verifier\":{\"wasm_url\":\"$url\",\"wasm_hash\":\"$hash\",\"max_instructions\":5000000000,\"max_memory_mb\":512,\"max_execution_seconds\":60,\"deposit\":\"$RUN_DEPOSIT\"},\
+\"outlayer\":\"$OUTLAYER\",\"dcap_verifier\":\"$DCAP\",\"accepted_tcb\":[\"UpToDate\"],\"image_delay_secs\":$IMAGE_DELAY_SECS,\
+\"light_client\":\"$LIGHT_CLIENT\",\"light_client_chain_id\":11155111,\"guardian\":\"guardian.$HQ\",\"treasury\":\"$HQ\",\"image_registry\":\"$REGISTRY\"}"
+  [ "$(code_of "bounty.$HQ")" = 11111111111111111111111111111111 ] && ab --key-file "$KEYS/bounty.$HQ.json" admin deploy --wasm "$ANTIBODY_WASM" \
+    --init-method new --init-args "{\"owner\":\"$HQ\",\"token\":\"$TOKEN\",\"defaults\":$defaults}"
+  [ "$(code_of "guardian.$HQ")" = 11111111111111111111111111111111 ] && ab --key-file "$KEYS/guardian.$HQ.json" admin deploy --wasm "$GUARDIAN_WASM" \
+    --init-method new --init-args "{\"owner\":\"$HQ\",\"mpc\":\"$MPC\",\"antibody\":\"bounty.$HQ\"}"
+
+  echo "== 4. wNEAR storage for near-antibody (it receives escrows and bonds) and the treasury (fees)"
+  for a in "bounty.$HQ" "$HQ"; do
+    if [ "$(near_view "$TOKEN" storage_balance_of "{\"account_id\":\"$a\"}")" = null ]; then
+      ab --key-file "$KEYS/$HQ.json" admin call --contract "$TOKEN" --method storage_deposit \
+        --args "{\"account_id\":\"$a\",\"registration_only\":true}" --deposit-yocto 1250000000000000000000 --gas-tgas 30
+    fi
+  done
+
+  echo "== 5. OutLayer's approved worker images (the owner's sync is paid from near-antibody's balance)"
+  if [ "$(near_view "bounty.$HQ" get_images '{}' | python3 -c 'import sys,json; print(len(json.load(sys.stdin)[0]))')" = 0 ]; then
+    ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method sync_images --args '{}' --gas-tgas 60
+  fi
+
+  echo "== 6. The deployments file"
+  python3 - "$HQ" "$DEP" <<'EOF'
 import json, sys
-hq = sys.argv[1]
-print(json.dumps({"network": "testnet", "antibody": f"bounty.{hq}", "tusd": f"tusd.{hq}", "guardian": f"guardian.{hq}",
-                  "outlayer": "outlayer.testnet", "light_client": "client-eth2.sepolia.testnet",
-                  "rpc": "https://rpc.testnet.fastnear.com"}, indent=2))
+hq, path = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(path))
+except FileNotFoundError:
+    d = {}
+d.update({"network": "testnet", "antibody": f"bounty.{hq}", "token": "wrap.testnet", "token_decimals": 24,
+          "token_symbol": "wNEAR", "guardian": f"guardian.{hq}", "outlayer": "outlayer.testnet",
+          "light_client": "client-eth2.sepolia.testnet", "rpc": "https://rpc.testnet.fastnear.com"})
+json.dump(d, open(path, "w"), indent=2)
+open(path, "a").write("\n")
 EOF
-echo "deployed: $DEP"
-ab admin call --help >/dev/null
-"$AB" --network testnet --deployments "$DEP" programs | head -20
+  ab --key-file "$KEYS/$HQ.json" admin record-deployment --git-commit "$(git rev-parse HEAD)"
+  ab judge | head -40
+}
+
+practice() {
+  : "${PRACTICE_PROGRAM:?set PRACTICE_PROGRAM to the practice program id (docs/practice.md)}"
+  local a="practice.$HQ"
+  [ -n "$(balance_of "$a")" ] || ab --key-file "$KEYS/$HQ.json" admin create-account --new-account-id "$a" \
+    --amount-near "$(near "$PRACTICE_AMOUNT")" --key-out "$KEYS/$a.json"
+  # Practice bonds and payouts are tiny amounts of wNEAR; the owner funds near-antibody credit for runs.
+  [ "$(code_of "$a")" = 11111111111111111111111111111111 ] && ab --key-file "$KEYS/$a.json" practice deploy \
+    --wasm "$VENDING_WASM" --owner "$HQ" --program "$PRACTICE_PROGRAM" --vaults 24 --bond-budget "${PRACTICE_BOND_BUDGET:-0.01}" --per-commit-cap "${PRACTICE_BOND:-0.001}"
+  ab --key-file "$KEYS/$HQ.json" practice fund --vending "$a" --near "${PRACTICE_NEAR:-0.15}" --tokens "${PRACTICE_TOKENS:-0.01}"
+}
+
+lock() {
+  [ "${LOCK:-}" = I-UNDERSTAND ] || { echo "locking is irreversible: run with LOCK=I-UNDERSTAND once the live story has run" >&2; exit 1; }
+  for a in "bounty.$HQ" "guardian.$HQ" "practice.$HQ"; do
+    [ -n "$(balance_of "$a")" ] || continue
+    ab --key-file "$KEYS/$a.json" admin lock --confirm-irreversible "$a"
+  done
+  ab admin record-deployment --git-commit "$(git rev-parse HEAD)"
+  ab judge | head -40
+}
+
+case "${1:-plan}" in
+  plan) plan ;;
+  deploy) deploy ;;
+  practice) practice ;;
+  lock) lock ;;
+  *) echo "usage: $0 plan|deploy|practice|lock" >&2; exit 2 ;;
+esac

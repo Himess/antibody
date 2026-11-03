@@ -1492,6 +1492,42 @@ pub fn agent_register(ctx: &Ctx, agent: &str, budget: &str, per_commit_cap: &str
     ensure_ok(ctx, &out, "register_agent")
 }
 
+/// Locks the signer's contract account: deletes its full-access keys in one transaction, once it holds
+/// code. Irreversible: nobody can deploy to the account or sign for it with full access again (its
+/// function-call keys stay). `confirm` must name the account.
+pub fn admin_lock(ctx: &Ctx, confirm: &str) -> Result<Value> {
+    let signer = ctx.signer()?;
+    if confirm != signer.account_id {
+        return Err(eyre!("--confirm-irreversible must name the account being locked ({})", signer.account_id));
+    }
+    let a = ctx.near.account(&signer.account_id)?.ok_or_else(|| eyre!("no account {}", signer.account_id))?;
+    if a["code_hash"] == json!("11111111111111111111111111111111") {
+        return Err(eyre!("{} holds no contract: locking it would strand its balance", signer.account_id));
+    }
+    let keys: Vec<[u8; 32]> = ctx
+        .near
+        .access_keys(&signer.account_id)?
+        .iter()
+        .filter(|k| k["access_key"]["permission"] == json!("FullAccess"))
+        .filter_map(|k| k["public_key"].as_str()?.strip_prefix("ed25519:").and_then(|b| bs58::decode(b).into_vec().ok()))
+        .filter_map(|v| v.try_into().ok())
+        .collect();
+    if keys.is_empty() {
+        return Ok(json!({"account": signer.account_id, "locked": true, "deleted_keys": 0}));
+    }
+    // The signing key is deleted by the transaction it signs; the others first.
+    let mine = signer.public_key();
+    let mut actions: Vec<Action> = keys.iter().filter(|k| **k != mine).map(|k| Action::DeleteKey { public_key: *k }).collect();
+    if keys.contains(&mine) {
+        actions.push(Action::DeleteKey { public_key: mine });
+    }
+    let n = actions.len();
+    let res = ctx.near.send(&signer, &signer.account_id, actions, "EXECUTED_OPTIMISTIC")?;
+    let s = ensure_ok(ctx, &res, "delete_key")?;
+    let left = ctx.near.access_keys(&signer.account_id)?.iter().filter(|k| k["access_key"]["permission"] == json!("FullAccess")).count();
+    Ok(json!({"account": signer.account_id, "locked": left == 0, "deleted_keys": n, "code_hash": a["code_hash"], "tx": s}))
+}
+
 /// Adds a function-call access key limited to [`AGENT_METHODS`] on near-antibody, with a NEAR gas
 /// allowance, to the signer's account (the agent's own sub-account).
 pub fn agent_key_add(ctx: &Ctx, allowance_near: f64, out: &Path) -> Result<Value> {

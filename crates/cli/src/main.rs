@@ -297,6 +297,13 @@ enum AdminCmd {
     },
     /// A versioned deployment record: each contract's code hash and locked status, the pinned verifier
     /// and the source commit, written to the deployments file (`release`) and to deployments/history/
+    /// Lock the signer's contract account: delete its full-access keys (irreversible; its function-call
+    /// keys stay)
+    Lock {
+        /// The signer's own account id, typed again
+        #[arg(long)]
+        confirm_irreversible: String,
+    },
     RecordDeployment {
         /// The source commit the deployment was built from
         #[arg(long)]
@@ -806,6 +813,7 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Call { contract, method, args, deposit_yocto, gas_tgas } => cmd::admin_call(&c, contract, method, args, *deposit_yocto, *gas_tgas),
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
+                AdminCmd::Lock { confirm_irreversible } => cmd::admin_lock(&c, confirm_irreversible),
                 AdminCmd::RecordDeployment { git_commit, out } => {
                     let record = antibody_cli::judge::deployment_record(&c, git_commit.as_deref())?;
                     let root = ctx::repo_root().unwrap_or_default();
