@@ -14,7 +14,7 @@
       {
         "account": "bounty.antibody.testnet",
         "code_hash": "C9LGvUpq9P5j5zB8RyZdRaXHWf3tF4wRtb1PjBYKysaY",
-        "locked": false,
+        "locked": true,
         "role": "near-antibody"
       },
       {
@@ -26,21 +26,21 @@
       {
         "account": "guardian.antibody.testnet",
         "code_hash": "4SdG5PK9odaohbgqFrF1HYjQTUydbqug4GMCXhqHtCCj",
-        "locked": false,
+        "locked": true,
         "role": "near-guardian"
       },
       {
         "account": "practice.antibody.testnet",
         "code_hash": "AdXwpxi5ZawLz6QLJmVbcrsJRckpqu2F75KQ5Er22ju5",
-        "locked": false,
+        "locked": true,
         "role": "practice vending"
       }
     ],
-    "git_commit": "4478f7e9b920a05a37557375557de2396ae97b3d",
+    "git_commit": "2777a3eb0afc5765ca91246e85dcfdbee551261b",
     "light_client": "client-eth2.sepolia.testnet",
     "network": "testnet",
     "outlayer": "outlayer.testnet",
-    "recorded_at": 1793715925,
+    "recorded_at": 1793719461,
     "verifier": {
       "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
       "wasm_url": "https://github.com/Himess/antibody/releases/download/verifier-ccc27f0ca60c/antibody-verify.wasm"
