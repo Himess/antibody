@@ -345,6 +345,8 @@ fn a_rerun_judges_the_same_poc_at_the_fix() {
                                "manifest_sha256": hex::encode(sha256(&round_bytes)), "round_manifest": w.upload(&round_bytes)}),
         );
         let out = w.run(&req, CONTRACT).0;
+        // The project's fix code runs against a sealed proof: only which keys break is published.
+        assert!(out.facts.impact_usd_micro.is_empty() && out.facts.protected_harm_usd_micro.is_empty(), "no numbers from a re-run");
         (out.facts.kind, serde_json::to_value(&out.facts.keys).unwrap())
     };
     assert_eq!(rerun("A", 1).0, Kind::NoViolation, "A is fixed in round 1");

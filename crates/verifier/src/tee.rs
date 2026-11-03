@@ -513,6 +513,13 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
                 }
             }
             facts.receipt_sha256 = hex::encode(v.receipt.hash());
+            if req.mode == Mode::Rerun {
+                // A re-run runs the project's fix code against a sealed proof the project may not have
+                // paid for: its public facts say only which keys still break, never the impact or harm
+                // numbers that code could shape into the proof's contents.
+                facts.impact_usd_micro.clear();
+                facts.protected_harm_usd_micro.clear();
+            }
             if req.mode != Mode::Rerun && req.commit_id.is_some() {
                 if let Some(t) = v.primary {
                     facts.wrap_d = Some(wrap_d(&keys, &req.program_key, commit_id, req.round, &t, &k)?);

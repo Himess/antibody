@@ -46,7 +46,7 @@ is how anyone can verify it.
 | P1 | Changing the rules after seeing findings | Manifest hash, payouts, windows and pins fixed at creation; rounds may only add fixes and invariants | None |
 | P2 | Escaping payment | Escrow locked until exit; valid claims queue as debt in commit order, never cut; an unpaid debt at exit is recorded as defaulted | A project can underfund; its program shows the coverage and any default |
 | P3 | Declaring a found bug "known" | Known issues: only before open, verified, sealed, capped by count and share of escrow | None |
-| P4 | Reading PoCs without paying | `verify` emits no wrap; `release_wrap` serves paid first findings and promoted duplicates only | None |
+| P4 | Reading PoCs without paying | `verify` emits no wrap; `release_wrap` serves paid first findings and promoted duplicates only; a re-run at the project's fix code publishes only which keys still break, never impact or harm numbers | A fix written to probe a sealed PoC learns at most which of the program's keys break, a few bits per re-run |
 | P5 | A puppet hunter committing first | The puppet must hold the PoC at commit; it is paid from the project's own escrow; every commit is public at disclosure | A project that knew a bug can race with a puppet instead of declaring it |
 | P6 | Rules that never break | `check()` must hold at the anchor; the invariants are public; rule strength is published | A market problem |
 | P7 | Rules that revert to block payment | `Unevaluable` under a committed policy; the lint and the evaluation whitelist | With policy `refund`, a revert after the PoC pays nothing (stated in the manifest) |
