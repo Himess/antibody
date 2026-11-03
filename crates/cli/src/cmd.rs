@@ -320,9 +320,20 @@ pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Pa
 /// account and slot the activation checks read at the anchor, proven against its state root. The
 /// verifier's own activation check passes on it.
 pub fn build_base(ctx: &Ctx, manifest_json: &[u8], program_key: &str) -> Result<(Vec<u8>, Value)> {
-    cached_base(ctx, &[program_key.as_bytes(), manifest_json], || {
+    build_base_covering(ctx, manifest_json, program_key, &[])
+}
+
+/// A base witness that also proves what the `cover` bundles' proofs read, so each seals against the
+/// pinned base alone and needs no Ethereum RPC (a practice program's tutorial proof).
+pub fn build_base_covering(ctx: &Ctx, manifest_json: &[u8], program_key: &str, cover: &[std::path::PathBuf]) -> Result<(Vec<u8>, Value)> {
+    let files: Vec<Vec<u8>> = cover.iter().map(std::fs::read).collect::<std::io::Result<_>>()?;
+    let mut parts: Vec<&[u8]> = vec![program_key.as_bytes(), manifest_json];
+    parts.extend(files.iter().map(|f| f.as_slice()));
+    cached_base(ctx, &parts, || {
         let pool = ctx.eth_pool()?;
-        let (bytes, meta) = antibody_witness::program::build_base(&pool, manifest_json, 1, program_key)?;
+        // A proof's senders are never read: any salt traces what it reads.
+        let bundles = files.iter().map(|f| parse_bundle(&serde_json::from_slice::<BundleFile>(f)?, B256::ZERO)).collect::<Result<Vec<_>>>()?;
+        let (bytes, meta) = antibody_witness::program::build_base_covering(&pool, manifest_json, &bundles, 1, program_key)?;
         Ok((bytes, serde_json::to_value(&meta)?))
     })
 }
@@ -380,12 +391,12 @@ fn cached_witness(path: &Path, program_key: &str) -> Result<Option<(Vec<u8>, Val
 }
 
 /// Pins the base witness and asks the verifier for the program's sealing key (T1 makes it count).
-pub fn program_activate(ctx: &Ctx, program: u32, wait: bool) -> Result<Value> {
+pub fn program_activate(ctx: &Ctx, program: u32, cover: &[std::path::PathBuf], wait: bool) -> Result<Value> {
     let signer = ctx.signer()?;
     let p = ctx.program(program)?;
     let key = p["key"].as_str().unwrap_or_default().to_string();
     let manifest_json = program_manifest_at(ctx, program, 0)?;
-    let (base, built) = build_base(ctx, &manifest_json, &key)?;
+    let (base, built) = build_base_covering(ctx, &manifest_json, &key, cover)?;
     let sha = hex::encode(sha256(&base));
     let up = blob::upload(ctx, &signer, &format!("antibody/base/{sha}.bin"), &base)?;
     ensure_near_credit(ctx, &signer, min_near_credit())?;

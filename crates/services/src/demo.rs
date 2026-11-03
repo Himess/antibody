@@ -419,6 +419,16 @@ fn practice_manifest_parts(anchor_n: u64, anchor_h: B256, project: &str, net: &N
     })
 }
 
+/// The tutorial proof against a practice manifest's first vault, written to `<work>/<name>.cover.json`:
+/// what the program's base witness covers, so every try (any vault: they differ only in address) seals
+/// against the pinned base with no Ethereum RPC.
+pub(crate) fn tutorial_cover(work: &Path, name: &str, m: &Manifest) -> Result<PathBuf> {
+    let vault = m.targets.iter().find(|t| t.name == "vault-0").map(|t| format!("{:#x}", t.address)).ok_or_else(|| eyre!("{name}: no vault-0"))?;
+    let path = work.join(format!("{name}.cover.json"));
+    std::fs::write(&path, serde_json::to_vec_pretty(&practice::tutorial_bundle(&vault))?)?;
+    Ok(path)
+}
+
 /// A contract's creation code from the forge build (contracts/evm/out).
 fn creation_code(root: &Path, file: &str, contract: &str) -> Result<alloy_primitives::Bytes> {
     let art: Value = serde_json::from_str(&std::fs::read_to_string(root.join(format!("contracts/evm/out/{file}/{contract}.json")))?)?;
@@ -861,7 +871,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step("Activation: the base witness is pinned; the program's sealing key counts once T1-confirmed");
     let t = Instant::now();
-    let act = cmd::program_activate(&acme, pid, true)?;
+    let act = cmd::program_activate(&acme, pid, &[], true)?;
     let act_run = act["run_id"].as_u64().unwrap_or_default();
     wait_t1(&acme, act_run)?;
     let p = acme.program(pid)?;
@@ -1133,7 +1143,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::keygen_x25519(&fork_key)?;
     let fc = cmd::program_create(&root_ctx, &fm_path, PRACTICE_ESCROW_TUSD, &fork_key, None)?;
     let fpid = fc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no fork-mode program id: {fc}"))? as u32;
-    let fact = cmd::program_activate(&root_ctx, fpid, true)?;
+    let fact = cmd::program_activate(&root_ctx, fpid, &[tutorial_cover(&a.work, "practice-fork", &fm)?], true)?;
     wait_t1(&root_ctx, fact["run_id"].as_u64().unwrap_or_default())?;
     cmd::program_open(&root_ctx, fpid)?;
     let vault3 = fm.targets.iter().find(|x| x.name == "vault-3").map(|x| format!("{:#x}", x.address)).ok_or_else(|| eyre!("no vault-3"))?;

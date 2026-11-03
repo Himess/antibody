@@ -271,7 +271,14 @@ pub struct BaseBuildMeta {
 /// reserved address, the targets' code hashes, `snapshot()`, `check(snapshot())`, the canaries),
 /// proven against the anchor's state root. The verifier's own activation check passes on it.
 pub fn build_base(pool: &Pool, manifest_json: &[u8], min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
-    build_base_for(pool, manifest_json, None, min_agree, program_key)
+    build_base_for(pool, manifest_json, None, &[], min_agree, program_key)
+}
+
+/// A base witness that also proves what the `cover` proofs read at the anchor, so each seals against
+/// the base alone (`build_submission_from_base`) with no RPC: a practice program's tutorial proof. A
+/// proof's senders are never read, so its salt does not matter.
+pub fn build_base_covering(pool: &Pool, manifest_json: &[u8], cover: &[Bundle], min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
+    build_base_for(pool, manifest_json, None, cover, min_agree, program_key)
 }
 
 /// A base witness for a round: what the round-0 checks read and what the round's own checks read (its
@@ -284,10 +291,17 @@ pub fn build_round_base(
     min_agree: usize,
     program_key: &str,
 ) -> Result<(Vec<u8>, BaseBuildMeta)> {
-    build_base_for(pool, manifest_json, Some(round_json), min_agree, program_key)
+    build_base_for(pool, manifest_json, Some(round_json), &[], min_agree, program_key)
 }
 
-fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, min_agree: usize, program_key: &str) -> Result<(Vec<u8>, BaseBuildMeta)> {
+fn build_base_for(
+    pool: &Pool,
+    manifest_json: &[u8],
+    round_json: Option<&[u8]>,
+    cover: &[Bundle],
+    min_agree: usize,
+    program_key: &str,
+) -> Result<(Vec<u8>, BaseBuildMeta)> {
     let t_all = Instant::now();
     let manifest = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
     if manifest.round != 0 {
@@ -338,6 +352,12 @@ fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, 
                 let (kind, reason) = classify(&e);
                 return Err(eyre!("the round fails its checks at the anchor: {kind:?}: {reason}"));
             }
+        }
+    }
+    // The proofs the base covers, on the same fetching DB: what they read is proven too.
+    for b in cover {
+        if let Err(ProgramError::Verify(e)) = execute_program(&header, &manifest, &inv, b, spec.clone(), &fdb, reserved) {
+            return Err(eyre!("a covered proof's trace failed: {e}"));
         }
     }
     let trace_ms = t_trace.elapsed().as_millis() as u64;
@@ -416,6 +436,21 @@ fn build_base_for(pool: &Pool, manifest_json: &[u8], round_json: Option<&[u8]>, 
             ),
             _ => Ok(ok),
         });
+        // Then each covered proof on the base alone, as `build_submission_from_base` seals it.
+        let checked = match checked {
+            Ok(true) => cover
+                .iter()
+                .try_for_each(|b| {
+                    let w = ProgramWitness { bundle: b.clone(), ..full.clone() };
+                    let env = Envelope { payload: Payload::Program(w.clone()), ..envelope.clone() };
+                    match execute_program_witness(&env, &w, None, reserved) {
+                        Ok(_) | Err(ProgramError::Verdict { .. }) => Ok(()),
+                        Err(e) => Err(e),
+                    }
+                })
+                .map(|()| true),
+            other => other,
+        };
         match checked {
             Ok(true) => {
                 let bytes = envelope.encode();

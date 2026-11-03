@@ -112,6 +112,10 @@ enum ProgramCmd {
     Activate {
         #[arg(long)]
         program: u32,
+        /// A proof (bundle file) the pinned base witness must also cover, so it seals with no Ethereum
+        /// RPC (a practice program's tutorial proof); repeatable
+        #[arg(long)]
+        cover: Vec<PathBuf>,
         #[arg(long)]
         no_wait: bool,
     },
@@ -751,7 +755,7 @@ fn run(cli: Cli) -> Result<Value> {
                 ProgramCmd::Create { manifest, escrow, project_key, manifest_url } => {
                     cmd::program_create(&c, manifest, escrow, project_key, manifest_url.clone())
                 }
-                ProgramCmd::Activate { program, no_wait } => cmd::program_activate(&c, *program, !no_wait),
+                ProgramCmd::Activate { program, cover, no_wait } => cmd::program_activate(&c, *program, cover, !no_wait),
                 ProgramCmd::Known { program, bundle, salt, report, no_wait } => cmd::submit_known(&c, *program, bundle, *salt, report.as_deref(), !no_wait),
                 ProgramCmd::Open { program } => cmd::program_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
