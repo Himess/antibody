@@ -8,10 +8,11 @@ program is counted apart from real programs.
 ## Try it
 
 ```
-antibody --network testnet try --vending practice.antibody.testnet --program <id> --name <you>
+antibody try --name <you>
 ```
 
-No NEAR account, no key, no API key and no Ethereum RPC are needed. The command:
+It tries the practice program `deployments/near-testnet.json` names (`--vending` and `--program` pick
+another). No NEAR account, no key, no API key and no Ethereum RPC are needed. The command:
 1. vends `<you>.practice.antibody.testnet` for a key it generates locally (`.antibody/practice/<you>/`);
 2. builds the tutorial proof against the vault assigned to you from the program's pinned base witness
    (it already covers the tutorial proof, for every vault), seals it to the program's key, commits, and

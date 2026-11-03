@@ -33,8 +33,15 @@ with a bond budget, and its proofs are judged like anyone's.
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
-**Status:** the testnet deployment is not live yet (it waits for testnet funds), so today JUDGES.md comes
-from the offline sandbox run, and its commands run against the sandbox. On Linux or macOS:
+**Status:** Antibody is deployed on NEAR testnet, **not locked yet**, and the whole story has run on that
+deployment as a staging run ([docs/results/testnet-staging-2026-11-03.json](docs/results/testnet-staging-2026-11-03.json)),
+with Acme Lend on Sepolia and Base Sepolia and the real services: OutLayer's TEE workers, their TDX quotes
+verified on NEAR (T1), the MPC network signing the permits, the Ethereum light client. From agent A's
+commit's block, its Critical was verified at 18.8 s, T1-confirmed at 26.3 s and paid 0.1 wNEAR at 42.0 s;
+both chains were paused by 48.1 s. JUDGES.md comes from that run, and its commands read testnet. Next, the
+contracts are locked and the story runs again on the locked deployment with the final code.
+
+The same story runs offline in a sandbox. On Linux or macOS:
 
 ```bash
 make serve       # builds everything, runs the whole story (every outcome asserted), then keeps the sandbox up
@@ -51,8 +58,9 @@ A try --name <you>       # a new lowercase name: the practice program (a tutoria
 ```
 
 `make demo` runs the same story once and stops (`docker build -t antibody-demo . && docker run --rm
-antibody-demo` elsewhere). Once testnet is live, the release binaries (`.github/workflows/release.yml`)
-have the deployment built in: `antibody judge` and `antibody try --name <you>`, nothing else.
+antibody-demo` elsewhere). On testnet, a build of the CLI from this repository has the deployment built in
+(`cargo build --release -p antibody-cli`): `./target/release/antibody judge`, and
+`./target/release/antibody try --name <you>` for the practice program, with no account and no key.
 
 The sandbox run (`target/demo/results.json`; the recorded one is in [docs/results/](docs/results/)) asserts
 every outcome of the story:
@@ -73,16 +81,17 @@ every outcome of the story:
 
 | | Account / contract | Status |
 |---|---|---|
-| near-antibody | `bounty.antibody.testnet` | planned, waiting for testnet funds |
-| near-guardian | `guardian.antibody.testnet` | planned |
-| Practice vending | `practice.antibody.testnet` | planned |
-| Payout token | `wrap.testnet` (wNEAR) | existing |
+| near-antibody | `bounty.antibody.testnet` | deployed, not locked (code `HMmyk9i7…`, [BJfekaoi…](https://testnet.nearblocks.io/txns/BJfekaoiovZHuR24NoyVMkfwQVYQdLyJGfd5HUwNGR1B)) |
+| near-guardian | `guardian.antibody.testnet` | deployed, not locked (code `4SdG5PK9…`) |
+| Practice vending | `practice.antibody.testnet` | deployed, not locked (code `AdXwpxi5…`); practice program 2, its fork-mode twin program 3 |
+| Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |
 | OutLayer, light client, MPC | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet` | existing |
-| Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | planned |
+| Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | deployed (staging run) |
 
 `antibody admin record-deployment` pins each contract's code hash, its locked status, the verifier build
-and the source commit into `deployments/near-testnet.json` and `deployments/history/`. Transaction links
-for the live story go here when it runs. What a mainnet program would change is in
+and the source commit into `deployments/near-testnet.json` and `deployments/history/`. Every transaction of
+the staging run is linked from [JUDGES.md](JUDGES.md). Payouts, escrows and bonds on testnet are in wNEAR,
+a hundred-thousandth of the sandbox's tUSD amounts. What a mainnet program would change is in
 [docs/mainnet.md](docs/mainnet.md), with a live read-only check of NEAR mainnet's Ethereum light client
 (`antibody mainnet-check`: view calls only).
 
@@ -223,13 +232,22 @@ are not done yet.
   the first is fixed (rounds).
 - **One block.** A proof runs in the anchor block's environment: no time travel, no multi-block attacks.
 - **Ethereum L1 for verification** (Sepolia). Other chains are pause and release targets.
+- **The EVM rules are the manifest's, not the chain's.** Sepolia runs the Glamsterdam upgrade (its headers
+  carry `blockAccessListHash` and `slotNumber`, and the anchor check hashes them). A proof runs under the
+  rules its manifest commits (`evm_spec: osaka`), so gas is counted by osaka's costs: state creation costs
+  five to seven times more on Sepolia itself.
+- **Public Sepolia RPCs prove about 128 blocks back**, so witnesses are built within minutes of an anchor,
+  and the light client runs about 80 blocks behind: a program is created some 15 minutes after its anchor.
+- **Claims are paid in commit order.** A commit that is never revealed holds the later ones until its
+  reveal window ends and the keeper expires it (on testnet, a practice try's payout waited ten minutes
+  this way).
 - **The testnet light client has one trusted relayer.** Anchors it cannot confirm are labelled
   project-attested.
 - **TEE trust is tiered, not removed.** T1 needs DCAP collateral; above the cap a second run and a
   window are required.
 - **Old anchors.** A proof that reads beyond the pinned base needs an RPC that keeps the anchor's state.
 - **Rule strength is the rules' measure,** and a survivor is not necessarily a bug.
-- **The testnet deployment is not live yet.**
+- **The testnet deployment is not locked yet**, and its payout token, wNEAR on testnet, has no value.
 
 ## Provenance
 
