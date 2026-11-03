@@ -415,6 +415,13 @@ impl Live {
         let out = root.near.send(&root.signer()?, account, vec![Action::Transfer(min - free)], "EXECUTED_OPTIMISTIC")?;
         cmd::ensure_ok(&root, &out, "transfer")?;
         println!("  {account}: +{} NEAR from {HQ} (to {} free)", cmd::fmt_tokens(min - free, 24), cmd::fmt_tokens(min, 24));
+        // The next transaction may be checked against a node a block or two behind, which still sees the old
+        // balance (NotEnoughBalance): the top-up is waited for in a final block.
+        poll(&format!("{account}'s top-up in a final block"), Duration::from_secs(60), Duration::from_secs(2), || {
+            let a = self.near.call("query", json!({"request_type": "view_account", "finality": "final", "account_id": account})).ok()?;
+            let seen = cmd::u128_of(&a["amount"]).saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
+            (seen >= min).then_some(())
+        })?;
         Ok(min - free)
     }
 
