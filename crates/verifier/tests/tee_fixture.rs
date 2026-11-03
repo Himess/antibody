@@ -81,8 +81,8 @@ impl World {
         }
     }
 
-    fn fetch(&self) -> impl Fn(&str) -> Result<Vec<u8>, String> + '_ {
-        move |loc: &str| {
+    fn fetch(&self) -> impl Fn(&str, &[u8; 32]) -> Result<Vec<u8>, String> + '_ {
+        move |loc: &str, _want: &[u8; 32]| {
             if loc == "near-tx:base:project.testnet" {
                 return Ok(self.base.clone());
             }

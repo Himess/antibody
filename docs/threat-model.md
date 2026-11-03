@@ -88,7 +88,7 @@ is how anyone can verify it.
 | I3 | Reading PoCs through the keys | Keys exist only for runs of the pinned build called by near-antibody, whose accounts are locked | The keystore TEE and its governance |
 | I4 | Replaying facts | Facts bind the request hash, program, round, commit and run id | None |
 | I5 | Runs that never answer | `time_out`, void, retry with priority, then refund | Liveness depends on OutLayer |
-| I6 | Blob or witness unavailability | Inline blobs; at least two RPCs in the guest; unavailability is `InfraError` | — |
+| I6 | Blob or witness unavailability | Inline blobs; the guest tries each archival RPC until one serves bytes matching the hash; unavailability is `InfraError`, except a hunter's own location still unreadable after the grace, which forfeits | All the guest's RPCs down for a whole grace |
 | I7 | Nobody relays a permit | Antibody's relayer by default; relaying is permissionless | A permit needs a funded sender per chain |
 | I8 | A pause without cause | Tickets: T1, policy slots, minimum impact, one per round; the adapter only calls `pause()` on targets fixed at its deployment; no unpause power | MPC threshold |
 | I9 | A stale or censored light client | BLS-verified updates; `recheck_anchor`; unconfirmed anchors labelled | Liveness |

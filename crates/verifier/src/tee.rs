@@ -181,8 +181,9 @@ pub struct FactsOut {
 /// What the TEE needs from its host: the key, the blob fetcher, and the caller.
 pub struct Env<'a> {
     pub mac: &'a dyn Mac,
-    /// Fetches a `near-tx:` location from at least two RPCs (main.rs). Errors are infrastructure errors.
-    pub fetch: &'a dyn Fn(&str) -> Result<Vec<u8>, String>,
+    /// Fetches a `near-tx:` location whose content must hash to the given SHA-256, trying each RPC until
+    /// one serves matching bytes (main.rs). Errors are infrastructure errors.
+    pub fetch: &'a dyn Fn(&str, &[u8; 32]) -> Result<Vec<u8>, String>,
     /// `NEAR_PREDECESSOR_ID`: the account that called OutLayer. It must be the program's contract.
     pub predecessor: Option<String>,
 }
@@ -232,7 +233,7 @@ fn read_blob(env: &Env, b: &BlobRef) -> Result<Vec<u8>, Stop> {
             let want = hex32(want).ok_or_else(|| infra("bad blob hash"))?;
             // "blob:" marks a location nobody could read: if it lasts the whole infrastructure grace,
             // near-antibody holds the hunter who named it responsible (spec §5.3).
-            let bytes = (env.fetch)(near_tx).map_err(|e| infra(format!("blob: unavailable ({})", short(&e))))?;
+            let bytes = (env.fetch)(near_tx, &want).map_err(|e| infra(format!("blob: unavailable ({})", short(&e))))?;
             if bytes.len() > MAX_BLOB_BYTES {
                 return Err(infra("blob: too large"));
             }

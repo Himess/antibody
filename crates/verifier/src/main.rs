@@ -181,9 +181,12 @@ fn program_output(env: &Envelope, w: &antibody_verifier::ProgramWitness, digest:
     }
 }
 
-/// Fetches a sealed blob. In the guest: wasi:http (https, or http for local testing). Natively:
-/// `file://` paths or `$ANTIBODY_BLOB_DIR/<last path segment>`; the CLI downloads blobs itself.
-fn fetch(url: &str) -> Result<Vec<u8>, String> {
+/// Fetches a sealed blob. In the guest: wasi:http (https, or http for local testing); a `near-tx:`
+/// location from each archival RPC in turn until one serves bytes matching `want`, so one wrong or
+/// lagging RPC is never the last word. Natively: `file://` paths or `$ANTIBODY_BLOB_DIR/<last path
+/// segment>`; the CLI downloads blobs itself.
+fn fetch(url: &str, want: &[u8; 32]) -> Result<Vec<u8>, String> {
+    let _ = want;
     if let Some(path) = url.strip_prefix("file://") {
         return std::fs::read(path).map_err(|e| e.to_string());
     }
@@ -211,7 +214,8 @@ fn fetch(url: &str) -> Result<Vec<u8>, String> {
                     fastfs::content_from_tx_response(&v)
                 })();
                 match attempt {
-                    Ok(b) => return Ok(b),
+                    Ok(b) if antibody_verifier::facts::sha256(&b) == *want => return Ok(b),
+                    Ok(_) => last = format!("{rpc}: the bytes do not match their hash"),
                     Err(e) => last = e,
                 }
             }

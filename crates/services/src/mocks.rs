@@ -98,7 +98,7 @@ impl MockWorker {
             }
             let input = p["input_data"].as_str().unwrap_or_default().as_bytes().to_vec();
             let rpc = self.near.rpc.clone();
-            let fetch = move |url: &str| fetch_with(&rpc, url);
+            let fetch = move |url: &str, _want: &[u8; 32]| fetch_with(&rpc, url);
             // MOCK OutLayer: the real verifier, with the TEST root key standing in for OutLayer's host key.
             let mac = antibody_verifier::keys::TestMac(self.seed);
             let env = tee::Env { mac: &mac, fetch: &fetch, predecessor: p["caller"].as_str().map(String::from) };
