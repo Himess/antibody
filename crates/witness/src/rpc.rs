@@ -109,9 +109,9 @@ impl Provider {
             if let Some(e) = v.get("error") {
                 let msg = e.to_string().to_lowercase();
                 // JSON-level rate limiting (HTTP 200): back off and retry.
-                if limited < 3 && (msg.contains("too fast") || msg.contains("rate") || msg.contains("cu limit") || msg.contains("too many")) {
+                if limited < 6 && rate_limited(&msg) {
                     self.stats.lock().unwrap().retries += 1;
-                    std::thread::sleep(Duration::from_millis(700 * (1 << limited)));
+                    std::thread::sleep(Duration::from_millis(700 * (1 << limited.min(3))));
                     limited += 1;
                     continue;
                 }
@@ -161,8 +161,15 @@ impl Provider {
                     }
                     for (k, it) in by_id.into_iter().enumerate() {
                         out.push(match it {
-                            // A backend without the block's state: this one again, alone (`call` retries it).
-                            Some(v) if v["error"].to_string().to_lowercase().contains("proof window") => self.call(&chunk[k].0, chunk[k].1.clone()),
+                            // A backend without the block's state, or a rate limit on part of the batch:
+                            // this one again, alone (`call` retries both).
+                            Some(v) if {
+                                let msg = v["error"].to_string().to_lowercase();
+                                msg.contains("proof window") || rate_limited(&msg)
+                            } =>
+                            {
+                                self.call(&chunk[k].0, chunk[k].1.clone())
+                            }
                             Some(v) if v.get("error").is_some() => {
                                 Err(eyre!("{} {}: {}", self.label, chunk[k].0, v["error"]))
                             }
@@ -173,9 +180,11 @@ impl Provider {
                     i += chunk.len();
                 }
                 _ => {
-                    // Shrink the batch and retry this chunk.
+                    // Shrink the batch and retry this chunk, after a pause (the refusal may be a rate limit).
                     let mut b = self.batch_size.lock().unwrap();
                     *b = if *b > 5 { 5 } else { 1 };
+                    drop(b);
+                    std::thread::sleep(Duration::from_millis(500));
                 }
             }
         }
@@ -185,6 +194,11 @@ impl Provider {
     pub fn stats(&self) -> Stats {
         self.stats.lock().unwrap().clone()
     }
+}
+
+/// A JSON-level rate limit (public endpoints answer some with HTTP 200).
+fn rate_limited(msg: &str) -> bool {
+    msg.contains("too fast") || msg.contains("rate") || msg.contains("cu limit") || msg.contains("too many")
 }
 
 pub type Pool = Vec<Arc<Provider>>;
