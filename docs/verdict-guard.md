@@ -9,17 +9,23 @@ Anyone calls `report(commit_id)`. The guard then reads near-antibody itself, by 
 calls, and trusts the reporter for nothing:
 
 1. `get_commit(commit_id)`: the commit must be to the watched program, with a verification run;
-2. `get_run(run)` and `get_program_meta(program)`: the run must be that commit's own, **T1-confirmed**
-   (its TDX quote verified on NEAR), and a **Violation** whose keys include a slot the program's
-   manifest declares **Critical**.
+2. `get_run(run)` and `get_program(program)`: the run must be that commit's own, **T1-confirmed** (its
+   TDX quote verified on NEAR), and a **Violation** whose keys include a slot the program prices
+   **Critical** now (a round may add slots). The program's anchor must be **confirmed by the light
+   client**: on a project-attested anchor a verdict is about state the project chose, and the guard
+   does not act on it;
+3. only the **first finding** of that key freezes. A held or paid commit is one. A commit not allocated
+   yet is one unless `get_holder(program, round, tag)` names another commit. A duplicate, or a match of
+   a known issue, never freezes again after the owner unfroze.
 
 If so, the guard freezes and emits `frozen` (the commit, the run, the slot, who reported it). While
 frozen, the owner's `transfer` is refused. Only the owner unfreezes: after the fix is released, or if a
 challenge overturns the verdict.
 
-The decision is one pure function, `critical_slot(program_id, commit, run, meta)`, unit-tested on its
-own: a High or Medium slot, a NoViolation, a T0 verdict, another program, or a run that is not the
-commit's own never freeze.
+The decision is one pure function, `critical_finding(program_id, commit, run, program)`, unit-tested
+on its own: a High or Medium slot, a NoViolation, a T0 verdict, an unconfirmed anchor, another program,
+a run that is not the commit's own, a duplicate or a known issue never freeze. Two commits that find
+the same key before either is allocated can each freeze once (the owner unfreezes the second).
 
 ## In the demo
 
