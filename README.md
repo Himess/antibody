@@ -53,7 +53,7 @@ The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts ev
 | Step | What happens | Recorded |
 |---|---|---|
 | Program | Acme Lend's manifest (v2) and escrow on NEAR; the anchor checked by the light client; activation pins the base witness and the program's sealing key | T1 |
-| The one moment | Agent A, over MCP, submits a sealed proof of a Critical: verified, T1-confirmed, **paid** about 27 s after it started, and **both chains paused** by 28 s | sandbox wall clock (MOCK OutLayer, DCAP and MPC) |
+| The one moment | Agent A, over MCP, submits a sealed proof of a Critical: verified, T1-confirmed, **paid** about 27 s after it started, and **both chains paused** within about a second and a half of the payment | sandbox wall clock (MOCK OutLayer, DCAP and MPC) |
 | A NEAR app reacts | A DAO treasury that watches the program reads near-antibody and freezes on A's verified Critical | its next transfer is refused |
 | B–G | B paid; C (a prompt injection in its report) breaks nothing and forfeits its bond; D a duplicate, confirmed at the fix; E a known issue; F paid; G harms a protected user without breaking a rule: refunded, recorded, and paid once round 1 adds the rule | every state |
 | The project reads it | After payment, A's proof is wrapped to the project's NEP-413-derived key; `antibody program read` opens it and re-runs it locally, and near-antibody refuses to wrap D's duplicate | the local receipt hash equals the TEE's |
