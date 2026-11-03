@@ -515,6 +515,38 @@ enum InvariantsCmd {
         #[arg(long, default_value_t = 16000)]
         max_tokens: u32,
     },
+    /// Rule strength: mutate the protocol's sources (labeled: missing access checks, flipped
+    /// comparisons, unchecked transfers) and count the mutants the program's rules catch under the
+    /// project's Foundry invariant test. Measures the rules, not the code's security
+    Strength {
+        /// The Foundry project
+        #[arg(long)]
+        project: PathBuf,
+        /// The invariant test contract asserting the program's rules (`--match-contract`)
+        #[arg(long)]
+        test: String,
+        /// Sources to mutate, relative to the project (repeatable)
+        #[arg(long = "mutate", required = true)]
+        files: Vec<String>,
+        #[arg(long, default_value_t = 256)]
+        runs: u32,
+        #[arg(long, default_value_t = 64)]
+        depth: u32,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long, default_value_t = 2)]
+        workers: usize,
+        /// Seconds per mutant
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+        #[arg(long, default_value = "forge")]
+        forge: PathBuf,
+        /// Scratch directory for the project copies
+        #[arg(long, default_value = "target/strength")]
+        work: PathBuf,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -646,6 +678,26 @@ fn run(cli: Cli) -> Result<Value> {
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
         Cmd::Init { ref out, ref project, chain_id, days } => cmd::init(out, project, chain_id, days),
+        Cmd::Invariants {
+            cmd: InvariantsCmd::Strength { ref project, ref test, ref files, runs, depth, seed, workers, timeout, ref forge, ref work, ref out },
+        } => {
+            let report = antibody_cli::strength::run(antibody_cli::strength::Opts {
+                project: project.clone(),
+                test: test.clone(),
+                files: files.clone(),
+                runs,
+                depth,
+                seed,
+                forge: forge.clone(),
+                timeout: std::time::Duration::from_secs(timeout),
+                workers,
+                work: work.clone(),
+            })?;
+            if let Some(o) = out {
+                std::fs::write(o, serde_json::to_vec_pretty(&report)?)?;
+            }
+            Ok(report)
+        }
         Cmd::Invariants { cmd: InvariantsCmd::Draft { ref sources, ref out, ai, ref model, ref effort, max_tokens } } => {
             antibody_cli::draft::run(sources, out, ai, model, effort, max_tokens)
         }

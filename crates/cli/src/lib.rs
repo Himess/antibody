@@ -9,4 +9,5 @@ pub mod judge;
 pub mod mcp;
 pub mod near;
 pub mod practice;
+pub mod strength;
 pub mod tee;
