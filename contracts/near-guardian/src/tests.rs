@@ -210,3 +210,29 @@ pub extern "C" fn promise_yield_create(_: u64, _: u64, _: u64, _: u64, _: u64, _
 pub extern "C" fn promise_yield_resume(_: u64, _: u64, _: u64, _: u64) -> u32 {
     unreachable!()
 }
+
+/// golden/permits.json: the digests near-guardian signs, which AntibodyAdapter recomputes on chain
+/// (contracts/evm/test/antibody/GoldenPermits.t.sol checks the same file). `GOLDEN_WRITE=1` rewrites it.
+#[test]
+fn golden_permit_digests() {
+    ctx("anyone.testnet", 0);
+    let adapter = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
+    let key = "bounty.antibody.testnet/0";
+    let code_hash = format!("0x{}", "22".repeat(32));
+    let proxy = "0x1111111111111111111111111111111111111111";
+    let pause = permit_digest(31337, adapter, key, 1, &PermitBody::Pause { ticket: 3 }, 1_800_000_000);
+    let release = permit_digest(11155111, adapter, key, 2, &PermitBody::Release { proxy: proxy.into(), code_hash: code_hash.clone() }, 1_800_000_000);
+    let now = near_sdk::serde_json::json!({
+        "_note": "Written by contracts/near-guardian/src/tests.rs (GOLDEN_WRITE=1); checked there and by contracts/evm/test/antibody/GoldenPermits.t.sol",
+        "adapter": adapter, "program_key": key,
+        "pause": {"chainId": 31337, "round": 1, "ticket": 3, "deadline": 1_800_000_000u64, "digest": format!("0x{}", hex::encode(pause))},
+        "release": {"chainId": 11155111, "round": 2, "proxy": proxy, "codeHash": code_hash, "deadline": 1_800_000_000u64, "digest": format!("0x{}", hex::encode(release))},
+    });
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../golden/permits.json");
+    if std::env::var("GOLDEN_WRITE").is_ok() {
+        std::fs::write(path, near_sdk::serde_json::to_string_pretty(&now).unwrap() + "\n").unwrap();
+        return;
+    }
+    let committed: near_sdk::serde_json::Value = near_sdk::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(now, committed, "a permit format changed: rewrite with GOLDEN_WRITE=1 and check AntibodyAdapter");
+}

@@ -1,0 +1,20 @@
+{
+  "_note": "Written by contracts/near-guardian/src/tests.rs (GOLDEN_WRITE=1); checked there and by contracts/evm/test/antibody/GoldenPermits.t.sol",
+  "adapter": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "pause": {
+    "chainId": 31337,
+    "deadline": 1800000000,
+    "digest": "0x5e7b43d39e01488c0cb4e488a0a822bb452a2ca87c9e42d09e2c5ffbfdeea238",
+    "round": 1,
+    "ticket": 3
+  },
+  "program_key": "bounty.antibody.testnet/0",
+  "release": {
+    "chainId": 11155111,
+    "codeHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "deadline": 1800000000,
+    "digest": "0x9b1f13327826e94a8ea8c5c9cd7024ca54020df6bbab469225a1c468b947523c",
+    "proxy": "0x1111111111111111111111111111111111111111",
+    "round": 2
+  }
+}
