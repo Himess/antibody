@@ -1,0 +1,146 @@
+name: release
+
+# Prebuilt binaries, the verifier build OutLayer runs, and a CLI image, so trying Antibody needs no
+# build (JUDGES.md). Runs on a version tag or by hand. The release it makes is a DRAFT: a maintainer
+# reviews and publishes it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "an existing tag to build and release"
+        required: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  cli:
+    name: antibody CLI (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, exe: "" }
+          - { os: macos-14, target: aarch64-apple-darwin, exe: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, exe: ".exe" }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build --release --locked -p antibody-cli --target ${{ matrix.target }}
+      - name: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir dist
+          cp "target/${{ matrix.target }}/release/antibody${{ matrix.exe }}" "dist/antibody-${{ matrix.target }}${{ matrix.exe }}"
+          cd dist
+          if command -v sha256sum >/dev/null; then sha256sum ./*; else shasum -a 256 ./*; fi | sed 's#\./##' > "antibody-${{ matrix.target }}.sha256"
+          cat ./*.sha256
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: dist/antibody-${{ matrix.target }}${{ matrix.exe }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: antibody-${{ matrix.target }}
+          path: dist/
+
+  verifier:
+    name: the verifier OutLayer runs (wasm32-wasip2)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo build --release --locked --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
+          mkdir dist
+          cp target/wasm32-wasip2/release/antibody-verify.wasm dist/
+          (cd dist && sha256sum antibody-verify.wasm | tee antibody-verify.wasm.sha256)
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: dist/antibody-verify.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: antibody-verify
+          path: dist/
+
+  image:
+    name: CLI image (ghcr.io)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cli
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.name.outputs.image }}:${{ env.TAG }}
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  draft:
+    name: draft release
+    needs: [cli, verifier, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist && cat dist/*.sha256
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          draft: true
+          files: dist/*
+          body: |
+            Prebuilt `antibody` CLI binaries (Linux x86_64, macOS arm64, Windows x86_64), the verifier build
+            OutLayer runs (`antibody-verify.wasm`; compare its sha256 with the pinned `wasm_hash` in
+            `antibody judge`), and the CLI image `ghcr.io/himess/antibody:${{ env.TAG }}`. Each file has a
+            sha256 and a build provenance attestation (`gh attestation verify <file> -R Himess/antibody`).
+
+            Try the practice program (a tutorial) with no account, no key and no build:
+            `antibody try --name <you>`. Check the deployment with view calls only: `antibody judge`.

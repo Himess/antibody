@@ -1,0 +1,22 @@
+# The antibody CLI alone, so trying Antibody needs no build and no toolchain (JUDGES.md):
+#
+#   docker run --rm -v "$PWD:/work" ghcr.io/himess/antibody try --name <you>
+#   docker run --rm ghcr.io/himess/antibody judge
+#
+# The testnet deployment is built into the binary. Built and pushed by .github/workflows/release.yml.
+FROM rust:trixie AS build
+WORKDIR /src
+COPY . .
+RUN cargo build --release --locked -p antibody-cli
+
+FROM debian:trixie-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/target/release/antibody /usr/local/bin/antibody
+LABEL org.opencontainers.image.source="https://github.com/Himess/antibody" \
+      org.opencontainers.image.description="Antibody CLI: try the practice program, check the deployment with view calls" \
+      org.opencontainers.image.licenses="MIT"
+WORKDIR /work
+ENTRYPOINT ["antibody"]
+CMD ["--help"]
