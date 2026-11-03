@@ -80,10 +80,10 @@ pub struct LiveArgs {
     /// The EVM deployer's key file (`{"address", "private_key"}`): it deploys the fixtures and relays the permits.
     pub evm_key: PathBuf,
     /// Sepolia RPC URLs that prove recent state (`eth_getProof`), comma-separated: the witness builder asks
-    /// each, and the first answers every other read at the anchor.
+    /// each.
     pub sepolia_rpc: String,
-    /// The Sepolia RPC for transactions and current state (forge, the permit relayer, checks): public
-    /// proof endpoints limit bursts like a forge simulation's.
+    /// The Sepolia RPC for transactions and every other read (forge, the permit relayer, code at the
+    /// anchor, checks): public proof endpoints limit bursts like a forge simulation's.
     pub sepolia_tx_rpc: String,
     pub base_rpc: String,
     pub until: Option<String>,
@@ -283,11 +283,6 @@ impl Live {
         self.a.sepolia_tx_rpc.clone()
     }
 
-    /// The first proof endpoint: reads at the anchor (code hashes, the fixes' code).
-    fn proofs(&self) -> String {
-        self.a.sepolia_rpc.split(',').next().unwrap_or_default().to_string()
-    }
-
     fn evm_key(&self) -> Result<String> {
         let v: Value = serde_json::from_slice(&std::fs::read(&self.a.evm_key)?)?;
         v["private_key"].as_str().map(String::from).ok_or_else(|| eyre!("{}: no private_key", self.a.evm_key.display()))
@@ -458,7 +453,9 @@ impl Live {
         let t = Instant::now();
         let n = self.s["anchor"]["block"].as_u64().ok_or_else(|| eyre!("no anchor"))?;
         let h: B256 = self.s["anchor"]["hash"].as_str().unwrap_or_default().parse()?;
-        let evm = Evm::new(&self.proofs());
+        // Code at the anchor (the manifests' code hashes, the fixes' code) from a node with state history;
+        // the witnesses' proofs from the proof endpoints.
+        let evm = Evm::new(&self.sepolia());
         let head = hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
         if head > n + 90 {
             return Err(eyre!("the anchor {n} is {} blocks old, and public RPCs prove about 128 back: rerun for a new anchor", head - n));

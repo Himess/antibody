@@ -222,9 +222,11 @@ pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path,
     }
 }
 
+/// A target's code hash at `block`: the keccak of its code there (an account without code hashes the
+/// empty string, as its proof's codeHash does). A historical code read needs no proof window.
 pub(crate) fn code_hash(evm: &Evm, addr: &str, block: u64) -> Result<B256> {
-    let p = evm.read("eth_getProof", json!([addr, [], format!("{block:#x}")]))?;
-    Ok(p["codeHash"].as_str().ok_or_else(|| eyre!("codeHash"))?.parse()?)
+    let code: alloy_primitives::Bytes = serde_json::from_value(evm.read("eth_getCode", json!([addr, format!("{block:#x}")]))?)?;
+    Ok(keccak256(&code))
 }
 
 /// The demo's settlement terms: the Acme payouts, short windows so the flow fits in minutes.
