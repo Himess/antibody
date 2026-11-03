@@ -735,11 +735,29 @@ impl Live {
         let rpc = self.dep.rpc.clone().unwrap_or_default();
         let net = ["--network", "testnet", "--rpc", rpc.as_str()];
         let dep_file = self.a.root.join("deployments/near-testnet.json");
-        self.ensure_liquid(&Self::acct("agent-a"), FREE_FOR_RUNS)?;
-        let mcp = demo::mcp_submit(&self.a.antibody_bin, &net, &dep_file, &Self::acct("agent-a"), &self.a.work.join("keys/agent-a.fc-key.json"),
-                                   Some(self.a.sepolia_rpc.as_str()), &state_a, pid, &fx.join("A.bundle.json"))?;
-        let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
-        self.s["mcp"] = json!({"tools": mcp["mcp_tools"], "tool_names": mcp["tool_names"], "commit_id": a_commit, "witness_source": mcp["result"]["commit"]["witness_source"]});
+        let events_file = self.services_dir().join("events.jsonl");
+        // A event's transaction, as the indexer recorded it.
+        let tx_of = |event: &str, commit: u64| {
+            crate::indexer::read_events(&events_file, 0, usize::MAX)
+                .into_iter()
+                .find(|e| e["event"] == event && e["data"]["commit_id"] == json!(commit))
+                .and_then(|e| e["tx"].as_str().map(String::from))
+                .unwrap_or_default()
+        };
+        // A submits once: a stage stopped after A's commit goes on from it.
+        let a_commit = match self.s["mcp"]["commit_id"].as_u64() {
+            Some(c) => c,
+            None => {
+                self.ensure_liquid(&Self::acct("agent-a"), FREE_FOR_RUNS)?;
+                let mcp = demo::mcp_submit(&self.a.antibody_bin, &net, &dep_file, &Self::acct("agent-a"), &self.a.work.join("keys/agent-a.fc-key.json"),
+                                           Some(self.a.sepolia_rpc.as_str()), &state_a, pid, &fx.join("A.bundle.json"))?;
+                let c = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
+                self.s["mcp"] = json!({"tools": mcp["mcp_tools"], "tool_names": mcp["tool_names"], "commit_id": c, "witness_source": mcp["result"]["commit"]["witness_source"],
+                                       "commit_tx": mcp["result"]["commit"]["tx"]["tx"], "reveal_tx": mcp["result"]["reveal"]["tx"]["tx"]});
+                self.save()?;
+                c
+            }
+        };
         let a_run = root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default();
         demo::wait_t1_for(&root_ctx, a_run, T1_WAIT)?;
         let keeper_a = cmd::keeper(&self.ctx_of("keeper"), pid)?;
@@ -757,24 +775,35 @@ impl Live {
         // Each moment on its own chain's clock: on NEAR, the block of the receipt that emitted its event
         // (the commit, the verdict, T1, the payment, as the indexer recorded them); each permit when
         // near-guardian signed it; each pause when its chain's receipt came back.
-        let commit_tx = mcp["result"]["commit"]["tx"]["tx"].as_str().unwrap_or_default().to_string();
-        let pay_tx = keeper_a["steps"].as_array().into_iter().flatten().find(|s| s["paid"] == json!(a_commit)).and_then(|s| s["tx"].as_str()).unwrap_or_default().to_string();
-        let events_file = self.services_dir().join("events.jsonl");
+        let commit_tx = self.s["mcp"]["commit_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("commit", a_commit));
+        let reveal_tx = self.s["mcp"]["reveal_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("reveal", a_commit));
+        let pay_tx = keeper_a["steps"].as_array().into_iter().flatten().find(|s| s["paid"] == json!(a_commit)).and_then(|s| s["tx"].as_str()).map(String::from)
+            .unwrap_or_else(|| tx_of("paid", a_commit));
+        // OutLayer resumes the reveal's receipt to answer, after the indexer has read the reveal: the answer's
+        // time is near-antibody's record of it (its receipt's block, to the second).
+        let answered_at = root_ctx.view("get_run", json!({"run_id": a_run}))?["outcome"]["Answered"]["at"].as_u64();
         let mut near_at: BTreeMap<&str, u128> = BTreeMap::new();
+        if let Some(at) = answered_at {
+            near_at.insert("verdict", at as u128 * 1_000_000_000);
+        }
         poll("the indexer to reach A's payment", Duration::from_secs(300), Duration::from_secs(3), || {
             for e in crate::indexer::read_events(&events_file, 0, usize::MAX) {
                 let (Some(ts), d) = (e["block_ts_ns"].as_u64(), &e["data"]) else { continue };
                 let k = match e["event"].as_str() {
                     Some("commit") if d["commit_id"] == json!(a_commit) => "commit",
-                    Some("run_answered") if d["run_id"] == json!(a_run) => "verdict",
+                    Some("run_answered") if d["run_id"] == json!(a_run) => "verdict_event",
                     Some("t1_confirmed") if d["run_id"] == json!(a_run) => "t1",
                     Some("paid") if d["commit_id"] == json!(a_commit) => "paid",
                     _ => continue,
                 };
                 near_at.entry(k).or_insert(ts as u128);
             }
-            (near_at.len() == 4).then_some(())
+            (["commit", "t1", "paid"].iter().all(|k| near_at.contains_key(k)) && (near_at.contains_key("verdict") || near_at.contains_key("verdict_event"))).then_some(())
         })?;
+        let verdict_from = if near_at.contains_key("verdict_event") { "its event's block" } else { "near-antibody's record of the answer, to the second" };
+        if let Some(e) = near_at.get("verdict_event").copied() {
+            near_at.insert("verdict", e);
+        }
         let committed_ns = near_at["commit"];
         let since = |ns: u128| ns.saturating_sub(committed_ns) as f64 / 1e9;
         let ms = |v: &Value, k: &str| v[k].as_u64().map(|m| since(m as u128 * 1_000_000));
@@ -786,11 +815,12 @@ impl Live {
         let paused_both = Evm::new(&self.sepolia()).paused(&guard)? && Evm::new(&self.a.base_rpc).paused(&guard)?;
         println!("A, from its commit's block: verdict {t_verdict:.1} s, T1 {t_t1:.1} s, paid {} wNEAR at {t_paid:.1} s (its block); pause permits signed at {:.1} s and {:.1} s; paused on {SEPOLIA} at {:.1} s and {BASE_SEPOLIA} at {:.1} s",
                  cmd::fmt_tokens(paid_a, 24), signed(&s).unwrap_or(-1.0), signed(&b).unwrap_or(-1.0), at(&s, "confirmed_ms").unwrap_or(-1.0), at(&b, "confirmed_ms").unwrap_or(-1.0));
-        self.s["rows"] = json!([{"agent": "A (MCP)", "commit": a_commit, "seconds": t_verdict, "txs": {"commit": commit_tx, "reveal": mcp["result"]["reveal"]["tx"]["tx"]}}]);
+        self.s["rows"] = json!([{"agent": "A (MCP)", "commit": a_commit, "seconds": t_verdict, "txs": {"commit": commit_tx, "reveal": reveal_tx}}]);
         self.s["one_moment"] = json!({"commit": a_commit, "seconds_from_commit": {"verdict": t_verdict, "t1": t_t1, "paid": t_paid,
                                       format!("permit_signed_{SEPOLIA}"): signed(&s), format!("permit_signed_{BASE_SEPOLIA}"): signed(&b),
                                       format!("paused_{SEPOLIA}"): at(&s, "confirmed_ms"), format!("paused_{BASE_SEPOLIA}"): at(&b, "confirmed_ms")},
-                                      "clock": "from the commit's NEAR block: the verdict, T1 and the payment at their NEAR blocks (the indexer's events), each permit when near-guardian signed it, each pause when its chain's receipt came back",
+                                      "clock": "from the commit's NEAR block: T1 and the payment at their NEAR blocks (the indexer's events), the verdict at its answer's block, each permit when near-guardian signed it, each pause when its chain's receipt came back",
+                                      "verdict_from": verdict_from,
                                       "pay_tx": pay_tx, "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                       "paused_both": paused_both, "keeper": keeper_a, "permits": permits(&relayer_file)});
         self.sweep("agent-a", 60 * MILLI)?;
