@@ -78,6 +78,44 @@ proptest! {
     }
 }
 
+/// The recorded witnesses decode as program witnesses (or the structure-aware test below is vacuous).
+#[test]
+fn the_seed_witnesses_are_program_witnesses() {
+    for agent in ["A", "B", "C", "D", "F"] {
+        let env = Envelope::decode(&fixture(&format!("fixtures/acme-local/submissions/{agent}.witness.bin"))).unwrap();
+        assert!(matches!(env.payload, Payload::Program(_)), "{agent}");
+    }
+}
+
+proptest! {
+    // Each case runs the whole program path (proofs, EVM, rules): fewer cases.
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    /// Decoded, then one part mutated (the header, the manifest, the rules' code, the proof's calldata, or
+    /// the bundle's endowment), the witness still gets a typed receipt from the whole verifier.
+    #[test]
+    fn the_verifier_answers_structurally_mutated_program_witnesses(part in 0u8..5, e in edits(), agent in prop::sample::select(vec!["A", "B", "F"])) {
+        let env = Envelope::decode(&fixture(&format!("fixtures/acme-local/submissions/{agent}.witness.bin"))).unwrap();
+        let Payload::Program(mut w) = env.payload.clone() else { unreachable!("checked above") };
+        match part {
+            0 => w.header_rlp = mutate(&w.header_rlp, &e).into(),
+            1 => w.manifest_json = mutate(&w.manifest_json, &e).into(),
+            2 => w.invariants_code = mutate(&w.invariants_code, &e).into(),
+            3 => {
+                if let Some(c) = w.bundle.calls.first_mut() {
+                    c.data = mutate(&c.data, &e).into();
+                }
+            }
+            _ => w.bundle.endowment_wei = w.bundle.endowment_wei.wrapping_mul(e.len() as u128 + 2),
+        }
+        let mut env2 = env.clone();
+        env2.payload = Payload::Program(w.clone());
+        let r = run_program(&env2, &w, [0u8; 32], &ProgramContext::default());
+        let kind = format!("{:?}", r.kind);
+        prop_assert!(!kind.is_empty());
+    }
+}
+
 proptest! {
     // Each case runs the whole program path (proofs, EVM, rules): fewer cases.
     #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
