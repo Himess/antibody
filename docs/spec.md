@@ -799,7 +799,8 @@ Callbacks parse raw bytes, and every decode failure is a typed error, never a pa
 The keeper is permissionless and advances everything:
 - relays quotes (§6.1);
 - requests the second run an above-cap verdict needs (§6.2);
-- allocates, pays and funds the shortfall queue;
+- allocates, asks for the round's pause ticket before it pays (the targets first), pays and funds the
+  shortfall queue;
 - requests immune-memory re-runs;
 - opens rounds;
 - discloses;

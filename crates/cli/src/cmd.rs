@@ -989,18 +989,8 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
             }
         }
     }
-    for c in list_commits(ctx, program)? {
-        let st = state_label(&c["state"]);
-        let claim = &c["state"][st.as_str()];
-        let funded = u128_of(&claim["debt"]) == 0 && u128_of(&claim["reserved"]) >= u128_of(&claim["amount"]);
-        if (st == "Holder" || st == "Promoted") && funded {
-            match call(ctx, "pay", json!({"commit_id": c["id"]}), 60) {
-                Ok(s) => steps.push(json!({"paid": c["id"], "event": event(&s, "paid"), "tx": s["tx"]})),
-                Err(e) => steps.push(json!({"not_paid": c["id"], "why": e.to_string()})),
-            }
-        }
-    }
-    // The round's first finding the pause policy covers gets its ticket (spec §10.1): one per round,
+    // The pause comes before the payment: protecting the targets first. The round's first finding the
+    // pause policy covers gets its ticket (spec §10.1): one per round,
     // T1-confirmed, a key in the pause slots. Ineligible commits are refused by near-antibody.
     let p = ctx.program(program)?;
     if !p["ticket_rounds"].as_array().is_some_and(|r| r.contains(&p["round"])) {
@@ -1011,6 +1001,17 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
                     steps.push(json!({"pause_ticket": c["id"], "tx": s["tx"], "permit_requested": event(&s, "permit_requested")}));
                     break;
                 }
+            }
+        }
+    }
+    for c in list_commits(ctx, program)? {
+        let st = state_label(&c["state"]);
+        let claim = &c["state"][st.as_str()];
+        let funded = u128_of(&claim["debt"]) == 0 && u128_of(&claim["reserved"]) >= u128_of(&claim["amount"]);
+        if (st == "Holder" || st == "Promoted") && funded {
+            match call(ctx, "pay", json!({"commit_id": c["id"]}), 60) {
+                Ok(s) => steps.push(json!({"paid": c["id"], "event": event(&s, "paid"), "tx": s["tx"]})),
+                Err(e) => steps.push(json!({"not_paid": c["id"], "why": e.to_string()})),
             }
         }
     }
