@@ -144,8 +144,8 @@ pub struct KnownIssue {
 pub struct Proposal {
     /// The round it would open.
     pub round: u32,
+    /// The round manifest: the fix as code overrides at the anchor, and the slots it adds.
     pub manifest_sha256: H32,
-    pub overrides_sha256: H32,
     pub new_slots: Vec<SlotRule>,
     pub check_run: RunId,
     /// The proposal counts once its `check_round` run is T1-confirmed and valid; re-runs may then start.

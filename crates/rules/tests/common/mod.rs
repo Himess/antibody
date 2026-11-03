@@ -254,7 +254,7 @@ impl W {
     pub fn propose(&mut self, program: ProgramId, new_slots: Vec<SlotRule>, canaries_ok: bool) -> RunId {
         let ctx = self.ctx(PROJECT);
         let spec = self.spec();
-        let r = self.e.propose_round(&ctx, program, H32([8; 32]), H32([6; 32]), new_slots, spec);
+        let r = self.e.propose_round(&ctx, program, H32([8; 32]), new_slots, spec);
         let fx = self.ok(r);
         let run = last_run(&fx);
         self.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"round_check": {"ok": true, "canaries_ok": canaries_ok}}));

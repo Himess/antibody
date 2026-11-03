@@ -1578,7 +1578,7 @@ impl<S: Store> Engine<S> {
 
     // ------------------------------------------------------------------ rounds (spec §8)
 
-    pub fn propose_round(&mut self, ctx: &Ctx, program: ProgramId, manifest_sha256: H32, overrides_sha256: H32, new_slots: Vec<SlotRule>, spec: RunSpec) -> R<Vec<Effect>> {
+    pub fn propose_round(&mut self, ctx: &Ctx, program: ProgramId, manifest_sha256: H32, new_slots: Vec<SlotRule>, spec: RunSpec) -> R<Vec<Effect>> {
         let mut p = self.get_program(program)?;
         if ctx.caller != p.project {
             return Err(Error::Forbidden("only the project proposes a round"));
@@ -1608,7 +1608,6 @@ impl<S: Store> Engine<S> {
         p.proposal = Some(Proposal {
             round,
             manifest_sha256,
-            overrides_sha256,
             new_slots,
             check_run: 0,
             proposed_at: ctx.now,

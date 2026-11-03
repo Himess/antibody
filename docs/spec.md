@@ -498,7 +498,8 @@ For the contract:
 
 ### 8.1 Proposing a fix
 
-`propose_round(program_id, overrides, new_slots, manifest)`. A round may:
+`propose_round(program_id, manifest, new_slots, releases, base)`: the round manifest carries the fix as
+code overrides, and its hash commits to them. A round may:
 - **replace target code** at the same anchor (code overrides);
 - **add invariants** (new slots).
 

@@ -592,7 +592,7 @@ impl Contract {
     }
 
     /// A fix as a round (spec §8.1). `releases` are the upgrades a passed release gate will permit.
-    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, overrides_sha256: String, new_slots: Vec<SlotIn>, releases: Vec<Release>, base: Option<Loc>) {
+    pub fn propose_round(&mut self, program_id: u32, manifest: Loc, new_slots: Vec<SlotIn>, releases: Vec<Release>, base: Option<Loc>) {
         valid_loc(&manifest);
         if let Some(b) = &base {
             valid_loc(b);
@@ -613,14 +613,13 @@ impl Contract {
         meta.proposal_base = base;
         self.meta.insert(program_id, meta);
         let manifest_sha = hex32(&manifest.sha256).unwrap();
-        let overrides = hex32(&overrides_sha256).unwrap_or_else(|| env::panic_str("overrides_sha256: 32 bytes of hex"));
         let slots: Vec<SlotRule> = new_slots.iter().map(|s| SlotRule { slot: s.slot, severity: s.severity, budget: s.budget.0 }).collect();
         let run_id = self.store.peek_id(IdKind::Run);
         let round = p.round + 1;
         let req = self.request_raw(Mode::CheckRound, &p, None, run_id, round, manifest_sha, Some(&manifest), json!({"releases": checked, "new_slots": named, "prev_round_manifest": prev}));
         let ctx = self.ctx();
         let before = env::storage_usage();
-        let fx = self.engine().propose_round(&ctx, program_id, manifest_sha, overrides, slots, spec(&req)).unwrap_or_else(|e| fail(e));
+        let fx = self.engine().propose_round(&ctx, program_id, manifest_sha, slots, spec(&req)).unwrap_or_else(|e| fail(e));
         self.apply_run(fx, req, run_id, before);
     }
 
@@ -1327,6 +1326,10 @@ fn blob_json(b: &BlobIn, want: Option<H32>) -> Value {
 /// Low-order X25519 points are refused (spec §11.5): the eight small-order encodings and their
 /// non-canonical twins.
 pub fn contributory(pk: &[u8; 32]) -> bool {
+    // X25519 ignores the top bit (RFC 7748 §5): a point with it set is its twin without it.
+    let mut pk = *pk;
+    pk[31] &= 0x7f;
+    let pk = &pk;
     const LOW: [[u8; 32]; 2] = [[0u8; 32], {
         let mut x = [0u8; 32];
         x[0] = 1;

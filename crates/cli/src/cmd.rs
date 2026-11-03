@@ -1045,7 +1045,6 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     let bytes = std::fs::read(manifest)?;
     let m: Value = serde_json::from_slice(&bytes)?;
     let sha = hex::encode(sha256(&bytes));
-    let overrides = hex::encode(sha256(&serde_json::to_vec(&m["overrides"])?));
     let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
     // The round's base witness: what its own checks read at the anchor (new invariants, fixed code).
     // Built here, or earlier (`antibody round base`) while the anchor was within the RPC's proof window.
@@ -1071,7 +1070,7 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
         .filter(|s| !known.contains(&s["bit"].as_u64().unwrap_or(u64::MAX)))
         .map(|s| json!({"slot": s["bit"], "severity": s["severity"], "budget": budget}))
         .collect();
-    let args = json!({"program_id": program, "manifest": {"location": up["near_tx"], "sha256": sha}, "overrides_sha256": overrides,
+    let args = json!({"program_id": program, "manifest": {"location": up["near_tx"], "sha256": sha},
                       "new_slots": new_slots, "releases": releases, "base": {"location": rup["near_tx"], "sha256": rsha}});
     let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "propose_round", args, RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "propose_round")?;

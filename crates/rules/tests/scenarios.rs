@@ -365,7 +365,7 @@ fn a_failed_round_check_lets_the_project_propose_again() {
     let p = w.program_open(1_000, params());
     let ctx = w.ctx(PROJECT);
     let spec = w.spec();
-    let r = w.e.propose_round(&ctx, p, H32([8; 32]), H32([6; 32]), vec![], spec);
+    let r = w.e.propose_round(&ctx, p, H32([8; 32]), vec![], spec);
     let run = last_run(&w.ok(r));
     let now = w.ctx(PROJECT);
     let r = w.e.run_failed(&now, run, "outlayer unavailable");
@@ -819,11 +819,11 @@ fn a_round_check_without_a_quote_can_be_replaced() {
     let p = w.program_open(1_000, params());
     let ctx = w.ctx(PROJECT);
     let spec = w.spec();
-    let r = w.e.propose_round(&ctx, p, H32([8; 32]), H32([6; 32]), vec![], spec);
+    let r = w.e.propose_round(&ctx, p, H32([8; 32]), vec![], spec);
     let run = last_run(&w.ok(r));
     w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"round_check": {"ok": true, "canaries_ok": true}}));
     let spec = w.spec();
-    assert!(w.e.propose_round(&ctx, p, H32([9; 32]), H32([6; 32]), vec![], spec).is_err(), "it may still be confirmed");
+    assert!(w.e.propose_round(&ctx, p, H32([9; 32]), vec![], spec).is_err(), "it may still be confirmed");
     w.tick(61);
     w.propose(p, vec![], true);
     assert_eq!(w.program(p).proposal.as_ref().map(|x| x.manifest_sha256), Some(H32([8; 32])));

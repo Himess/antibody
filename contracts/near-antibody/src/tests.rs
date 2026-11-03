@@ -860,3 +860,16 @@ fn a_commits_settlement_is_prepaid() {
     eprintln!("settlement storage: first {first} B, one key {one} B, two keys {two} B, worst case {worst} B");
     assert!(worst <= SETTLEMENT_STORAGE_BYTES as i64, "{worst}");
 }
+
+#[test]
+fn low_order_points_and_their_top_bit_twins_are_refused() {
+    let mut one = [0u8; 32];
+    one[0] = 1;
+    assert!(!contributory(&one));
+    one[31] |= 0x80;
+    assert!(!contributory(&one), "X25519 ignores the top bit");
+    let mut p = [0xffu8; 32];
+    p[0] = 0xed;
+    assert!(!contributory(&p), "p, with the top bit set");
+    assert!(contributory(&[0x22; 32]));
+}

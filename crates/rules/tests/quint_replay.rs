@@ -388,7 +388,7 @@ impl Replay {
                 let slots = if self.adds_inv { vec![SlotRule { slot: 2, severity: Severity::Medium, budget: 500 }] } else { vec![] };
                 let ctx = self.ctx(PROJECT);
                 let spec = self.spec();
-                let run = last_run(&self.e.propose_round(&ctx, self.pid, H32([8; 32]), H32([6; 32]), slots, spec)?);
+                let run = last_run(&self.e.propose_round(&ctx, self.pid, H32([8; 32]), slots, spec)?);
                 self.answer_raw(run, Kind::NoViolation, &[], 0, serde_json::json!({"round_check": {"ok": true, "canaries_ok": canaries}}));
                 self.t1(run);
             }
