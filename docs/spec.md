@@ -102,6 +102,8 @@ source.
 | `protected_accounts[]` | Optional `{address, kind}`, `kind` being `user` or `protocol` (§7.7) |
 | `canaries[]` | Optional `{to, data}`: calls that must keep succeeding after a fix (§8.1) |
 | `round`, `overrides[]` | A round's manifest only (§8.1) |
+| `deploy` | Optional fork mode: `txs[]` {`to`?, `value`, `data`} from the deployer, run on top of the anchor before anything else; the targets are what they deploy (docs/fork-mode.md) |
+| `rule_strength` | Optional: the rule strength measured at this round's code, as `antibody invariants strength` reported it; the verifier does not read it (docs/rule-strength.md) |
 | `settlement` | Every term near-antibody enforces (below) |
 
 `settlement` (amounts are decimal strings in raw token units; windows are seconds):
