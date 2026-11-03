@@ -10,7 +10,8 @@ cargo_home="${CARGO_HOME:-$HOME/.cargo}"
 rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
 export RUSTFLAGS="--remap-path-prefix=$root=/antibody --remap-path-prefix=$cargo_home=/cargo --remap-path-prefix=$rustup_home=/rustup"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$root/target/reproducible}"
-rustup target add wasm32-wasip2 >/dev/null 2>&1 || true
+# The pinned toolchain and its wasm32-wasip2 target (rust-toolchain.toml).
+rustup toolchain install >/dev/null 2>&1 || rustup target add wasm32-wasip2 >/dev/null 2>&1 || true
 cargo build --release --locked --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify >&2
 wasm="$CARGO_TARGET_DIR/wasm32-wasip2/release/antibody-verify.wasm"
 echo "$(sha256sum "$wasm" | cut -d' ' -f1)  $wasm"
