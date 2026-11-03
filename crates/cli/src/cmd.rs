@@ -1210,6 +1210,52 @@ pub fn anchor_check(ctx: &Ctx, block: u64, forge: bool) -> Result<Value> {
     Ok(out)
 }
 
+/// NEAR mainnet's Ethereum light client, the one a mainnet program's anchor would be checked against.
+pub const MAINNET_LIGHT_CLIENT: &str = "client-eth2.bridge.near";
+/// Public Ethereum mainnet RPCs (no key), tried in order.
+pub const MAINNET_ETH_RPCS: [&str; 2] = ["https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth"];
+
+/// Read-only, for "How mainnet works" (docs/mainnet.md): the latest Ethereum block NEAR mainnet's light
+/// client holds, its hash there and on Ethereum, and how far it trails Ethereum's finalized head. View
+/// calls and `eth_getBlockByNumber` only: nothing is signed or sent.
+pub fn mainnet_check(near_rpc: Option<String>, eth_rpc: Option<&str>) -> Result<Value> {
+    let near = near::Near::new("mainnet", near_rpc);
+    let n = u64::from_le_bytes(
+        near.view_raw(MAINNET_LIGHT_CLIENT, "last_block_number", &[])?
+            .get(..8)
+            .and_then(|b| b.try_into().ok())
+            .ok_or_else(|| eyre!("last_block_number: not a u64"))?,
+    );
+    let raw = near.view_raw(MAINNET_LIGHT_CLIENT, "block_hash_safe", &n.to_le_bytes())?;
+    let on_near = match raw.first() {
+        Some(1) if raw.len() == 33 => format!("0x{}", hex::encode(&raw[1..])),
+        _ => return Err(eyre!("the light client has no hash for its own last block {n}")),
+    };
+    let http = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30)).build()?;
+    let block = |rpc: &str, tag: Value| -> Result<Value> {
+        let v: Value = http.post(rpc).json(&json!({"jsonrpc": "2.0", "id": 1, "method": "eth_getBlockByNumber", "params": [tag, false]})).send()?.json()?;
+        v.get("result").filter(|r| !r.is_null()).cloned().ok_or_else(|| eyre!("{rpc}: {}", v["error"]))
+    };
+    let rpcs: Vec<&str> = eth_rpc.map(|r| vec![r]).unwrap_or_else(|| MAINNET_ETH_RPCS.to_vec());
+    let mut last = None;
+    for rpc in rpcs {
+        match (block(rpc, json!(format!("{n:#x}"))), block(rpc, json!("finalized"))) {
+            (Ok(b), Ok(f)) => {
+                let on_eth = b["hash"].as_str().unwrap_or_default().to_string();
+                let finalized = u64::from_str_radix(f["number"].as_str().unwrap_or("0x0").trim_start_matches("0x"), 16).unwrap_or(0);
+                return Ok(json!({
+                    "network": "mainnet", "light_client": MAINNET_LIGHT_CLIENT, "near_rpc": near.rpc, "ethereum_rpc": rpc,
+                    "last_block": n, "hash_on_near": on_near, "hash_on_ethereum": on_eth, "equal": on_near.eq_ignore_ascii_case(&on_eth),
+                    "ethereum_finalized": finalized, "lag_blocks": finalized.saturating_sub(n), "transactions_sent": 0,
+                    "checked_at_unix": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+                }));
+            }
+            (Err(e), _) | (_, Err(e)) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| eyre!("no Ethereum RPC answered")))
+}
+
 // ----------------------------------------------------------------------- rounds
 
 /// Derives the round manifest of a fix from the program's round-0 manifest: each `(address, code

@@ -75,7 +75,9 @@ The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts ev
 
 `antibody admin record-deployment` pins each contract's code hash, its locked status, the verifier build
 and the source commit into `deployments/near-testnet.json` and `deployments/history/`. Transaction links
-for the live story go here when it runs.
+for the live story go here when it runs. What a mainnet program would change is in
+[docs/mainnet.md](docs/mainnet.md), with a live read-only check of NEAR mainnet's Ethereum light client
+(`antibody mainnet-check`: view calls only).
 
 ## The trust panel
 

@@ -1175,7 +1175,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
             break;
         }
     }
-    let api = crate::api::Api { near: near.clone(), dep: served.clone(), state_dir: services_dir.clone(), mock_dir: a.root.join("fixtures/mock-mainnet") };
+    let api = crate::api::Api { near: near.clone(), dep: served.clone(), state_dir: services_dir.clone() };
     let rt = tokio::runtime::Runtime::new()?;
     let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
     let addr = listener.local_addr()?;
@@ -1186,7 +1186,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         "/health".to_string(), "/v1/status".into(), "/v1/stats".into(), "/v1/programs".into(), format!("/v1/programs/{pid}"),
         format!("/v1/programs/{ppid}/feed"), format!("/v1/commits/{a_commit}"), "/v1/runs/0".into(), format!("/v1/accounts/{}", acct("agent-a")),
         "/v1/leaderboard".into(), "/v1/events?limit=5".into(), "/v1/guardian".into(), "/v1/judge".into(),
-        format!("/v1/programs/{pid}/reflex"), "/v1/trust".into(), "/v1/practice".into(),
+        format!("/v1/programs/{pid}/reflex"), "/v1/trust".into(), "/v1/practice".into(), "/v1/mainnet".into(),
     ];
     for path in &paths {
         let r = client.get(format!("http://{addr}{path}")).send()?;

@@ -1,7 +1,7 @@
 # Trust
 
 What you have to trust, and how to check it, for each part of Antibody. No mainnet transaction is ever
-sent; the mainnet explainer (`/v1/mock/mainnet`) is recorded data, marked `"mock": true`.
+sent; "How mainnet works" (docs/mainnet.md, `/v1/mainnet`) makes view calls only.
 
 | Part | What you trust | How to check it yourself |
 |---|---|---|
@@ -53,7 +53,6 @@ binds.
 
 ## What is mock
 
-- **The mainnet explainer** (`/v1/mock/mainnet`): recorded data only.
 - **The sandbox demo:** MOCK OutLayer, DCAP and MPC contracts, resolved by the real verifier with a TEST
   seed and a TEST secp256k1 key.
 - **Test keys in fixtures:** the fingerprint tags in `fixtures/acme-local/expected.json` use a TEST key.

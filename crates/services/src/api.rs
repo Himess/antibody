@@ -1,6 +1,7 @@
 //! HTTP API (read-only JSON) for UIs, agents and judges (docs/api.md, docs/openapi.yaml): near-antibody's
 //! live views, the indexer's event history with transaction links, the services' health and alerts, and
-//! the judge view. `/v1/mock/mainnet` serves the recorded MOCK dataset, flagged as such.
+//! the judge view. `/v1/mainnet` explains how mainnet works, with a live read-only check of NEAR
+//! mainnet's Ethereum light client (view calls only).
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
@@ -25,7 +26,6 @@ pub struct Api {
     pub near: Near,
     pub dep: Deployments,
     pub state_dir: PathBuf,
-    pub mock_dir: PathBuf,
 }
 
 type Shared = Arc<Api>;
@@ -49,7 +49,7 @@ pub const ENDPOINTS: &[&str] = &[
     "/v1/trust",
     "/v1/practice",
     "/v1/stream",
-    "/v1/mock/mainnet",
+    "/v1/mainnet",
 ];
 
 impl Api {
@@ -359,16 +359,30 @@ async fn judge(State(a): State<Shared>) -> Response {
     blocking(move || antibody_cli::judge::judge(&a.ctx(), None)).await
 }
 
-async fn mock_mainnet(State(a): State<Shared>) -> Response {
-    let mut items = serde_json::Map::new();
-    if let Ok(rd) = std::fs::read_dir(&a.mock_dir) {
-        for e in rd.flatten() {
-            if e.path().extension().and_then(|x| x.to_str()) == Some("json") {
-                items.insert(e.file_name().to_string_lossy().trim_end_matches(".json").to_string(), read_json(e.path()));
-            }
-        }
-    }
-    Json(json!({"mock": true, "notice": "MOCK: recorded data, not live. No mainnet transactions are sent.", "data": items})).into_response()
+/// "How mainnet works" (docs/mainnet.md): what a mainnet program changes, and a live read-only check of
+/// NEAR mainnet's Ethereum light client against Ethereum. View calls only: nothing is signed or sent.
+async fn mainnet() -> Response {
+    blocking(move || {
+        let check = cmd::mainnet_check(None, None).unwrap_or_else(|e| json!({"error": format!("{e:#}")}));
+        Ok(json!({
+            "title": "How mainnet works",
+            "same": ["the contracts and their settlement rules", "the verifier build, pinned by its hash",
+                     "sealed proofs, T1 quotes verified on NEAR, rounds and the release gate"],
+            "changes": [
+                {"part": "anchor", "testnet": "client-eth2.sepolia.testnet (one relayer)",
+                 "mainnet": "client-eth2.bridge.near: Ethereum mainnet's finalized chain, from BLS-verified sync-committee updates"},
+                {"part": "verification", "testnet": "OutLayer on testnet", "mainnet": "OutLayer's mainnet workers; their TDX quotes verified on NEAR mainnet"},
+                {"part": "pauses and releases", "testnet": "Chain Signatures on testnet, adapters on Sepolia and Base Sepolia",
+                 "mainnet": "Chain Signatures on NEAR mainnet, the program's adapters on Ethereum and other EVM chains"},
+                {"part": "payouts", "testnet": "wNEAR (wrap.testnet)", "mainnet": "the NEP-141 token the program commits"},
+            ],
+            "latency": "a program's anchor must be final on Ethereum (about 13 minutes) and held by the light client, which trails Ethereum by `lag_blocks` below",
+            "status": "no mainnet deployment; this page makes view calls only",
+            "light_client_check": check,
+            "transactions_sent": 0,
+        }))
+    })
+    .await
 }
 
 pub fn router(api: Api) -> Router {
@@ -390,7 +404,7 @@ pub fn router(api: Api) -> Router {
         .route("/v1/trust", get(trust))
         .route("/v1/practice", get(practice))
         .route("/v1/stream", get(stream))
-        .route("/v1/mock/mainnet", get(mock_mainnet))
+        .route("/v1/mainnet", get(mainnet))
         .layer(axum::middleware::map_response(|mut r: Response| async move {
             r.headers_mut().insert("access-control-allow-origin", HeaderValue::from_static("*"));
             r

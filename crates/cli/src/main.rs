@@ -538,6 +538,16 @@ enum Cmd {
         #[arg(long)]
         forge: bool,
     },
+    /// Read-only, NEAR mainnet: the Ethereum block NEAR's mainnet light client holds, its hash there
+    /// and on Ethereum, and its lag behind Ethereum's finalized head (docs/mainnet.md). Sends nothing
+    MainnetCheck {
+        /// An Ethereum mainnet RPC (default: public endpoints, no key)
+        #[arg(long)]
+        mainnet_eth_rpc: Option<String>,
+        /// A NEAR mainnet RPC (default: FastNEAR's)
+        #[arg(long)]
+        mainnet_near_rpc: Option<String>,
+    },
     /// Draft invariants for your program from its sources (a defensive helper; you review and
     /// approve the output before committing anything)
     Invariants {
@@ -801,6 +811,7 @@ fn run(cli: Cli) -> Result<Value> {
             }
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
+        Cmd::MainnetCheck { ref mainnet_eth_rpc, ref mainnet_near_rpc } => cmd::mainnet_check(mainnet_near_rpc.clone(), mainnet_eth_rpc.as_deref()),
         Cmd::Init { ref out, ref project, chain_id, days } => cmd::init(out, project, chain_id, days),
         Cmd::Invariants { cmd: InvariantsCmd::Validate { ref manifest, ref strength, min_strength } } => {
             let r = cmd::validate(&mk()?, manifest, strength.as_deref(), min_strength)?;

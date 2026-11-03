@@ -44,7 +44,7 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/trust` | The trust panel: each actor, what it is trusted for, and how anyone checks it |
 | `GET /v1/practice` | The try-it panel: the practice program, its faucet's balance, the public vend key, the steps |
 | `GET /v1/stream?after=` | The live timeline: every new event as a server-sent event (`event: antibody`, the event's JSON as data) |
-| `GET /v1/mock/mainnet` | `{"mock": true, …}`: recorded data, never live |
+| `GET /v1/mainnet` | How mainnet works (docs/mainnet.md), with a live read-only check of NEAR mainnet's Ethereum light client against Ethereum; view calls only, `transactions_sent: 0` |
 
 ## Monitoring
 

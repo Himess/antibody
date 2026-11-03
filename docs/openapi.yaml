@@ -223,12 +223,12 @@ paths:
           content:
             text/event-stream:
               schema: {type: string}
-  /v1/mock/mainnet:
+  /v1/mainnet:
     get:
-      summary: Recorded MOCK data, flagged as such
+      summary: How mainnet works, with a live read-only check of NEAR mainnet's Ethereum light client
       responses:
         "200":
-          description: '`{"mock": true, ...}`'
+          description: The explainer and `light_client_check` (the light client's last block, its hash on NEAR and on Ethereum, the lag); view calls only
           content:
             application/json:
               schema: {type: object}

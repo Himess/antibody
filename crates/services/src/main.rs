@@ -64,8 +64,6 @@ enum Cmd {
     Api {
         #[arg(long, default_value = "127.0.0.1:8787")]
         listen: String,
-        #[arg(long)]
-        mock_dir: Option<PathBuf>,
     },
     /// chain id = RPC URL (e.g. --chain 11155111=$SEPOLIA_RPC); defaults from $SEPOLIA_RPC/$BASE_SEPOLIA_RPC
     Relayer {
@@ -337,13 +335,12 @@ fn main() -> Result<()> {
             let status = load_dep(&cli).ok().map(|d| (near_for(&cli, &d), d));
             notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: *program, status }.run(*interval_ms)
         }
-        Cmd::Api { listen, mock_dir } => {
+        Cmd::Api { listen } => {
             let dep = load_dep(&cli)?;
             let api = api::Api {
                 near: near_for(&cli, &dep),
                 dep,
                 state_dir: state_dir(&cli),
-                mock_dir: mock_dir.clone().unwrap_or_else(|| repo_root().unwrap_or_default().join("fixtures/mock-mainnet")),
             };
             tokio::runtime::Runtime::new()?.block_on(api::serve(api, listen))
         }
@@ -394,7 +391,6 @@ fn main() -> Result<()> {
                 near: near_for(&cli, &dep),
                 dep,
                 state_dir: state_dir(&cli),
-                mock_dir: repo_root().unwrap_or_default().join("fixtures/mock-mainnet"),
             };
             tokio::runtime::Runtime::new()?.block_on(api::serve(api, listen))
         }
