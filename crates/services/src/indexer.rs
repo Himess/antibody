@@ -208,16 +208,15 @@ impl Indexer {
         let mut progs = Vec::new();
         for p in programs.as_array().into_iter().flatten() {
             let id = p["id"].as_u64().unwrap_or(0);
-            let commits = self.near.view(&self.antibody, "list_commits", json!({"program_id": id, "from": 0, "limit": 100}))?;
-            let keys = self.near.view(&self.antibody, "get_keys", json!({"program_id": id}))?;
-            progs.push(json!({"program": p, "commits": commits, "keys": keys}));
+            let commits = self.near.view(&self.antibody, "list_commits", json!({"program_id": id, "from": 0, "limit": 50}))?;
+            let record = self.near.view(&self.antibody, "program_record", json!({"program_id": id}))?;
+            progs.push(json!({"program": p, "record": record, "commits": commits}));
         }
         let guardian = match &self.guardian {
-            Some(g) => json!({"chains": self.near.view(g, "get_chains", json!({}))?, "config": self.near.view(g, "get_config", json!({}))?}),
+            Some(g) => json!({"config": self.near.view(g, "get_config", json!({}))?, "pending_permits": self.near.view(g, "pending_permits", json!({}))?}),
             None => Value::Null,
         };
-        let snap = json!({"taken_at": now_s(), "stats": stats, "programs": progs,
-                          "leaderboard": self.near.view(&self.antibody, "leaderboard", json!({"limit": 50}))?, "guardian": guardian});
+        let snap = json!({"taken_at": now_s(), "stats": stats, "programs": progs, "guardian": guardian});
         std::fs::write(self.path("snapshot.json"), serde_json::to_vec_pretty(&snap)?)?;
         std::fs::write(self.path("metrics.json"), serde_json::to_vec_pretty(&metrics(&read_events(&self.path("events.jsonl"), 0, usize::MAX)))?)?;
         Ok(snap)
@@ -257,7 +256,10 @@ fn pct(mut v: Vec<f64>, p: f64) -> Option<f64> {
     Some(v[i])
 }
 
-/// Latencies from the event log: submit → verdict and submit → payout, per commit.
+/// The events that settle a commit's verification (its verdict, as near-antibody applied it).
+pub const VERDICT_EVENTS: &[&str] = &["holder", "duplicate", "known_match", "forfeited", "gap_claim", "unevaluable", "run_failed"];
+
+/// Latencies from the event log: commit → verdict and commit → payout, per commit.
 pub fn metrics(events: &[Value]) -> Value {
     let mut submitted: BTreeMap<u64, u64> = BTreeMap::new();
     let mut verdict: BTreeMap<u64, u64> = BTreeMap::new();
@@ -268,11 +270,11 @@ pub fn metrics(events: &[Value]) -> Value {
         let c = e["data"]["commit_id"].as_u64();
         let ts = e["block_ts_ns"].as_u64().unwrap_or(0);
         match (e["event"].as_str(), c) {
-            (Some("submitted") | Some("known_issue_submitted"), Some(c)) => {
+            (Some("commit"), Some(c)) => {
                 submitted.insert(c, ts);
                 submit_block.insert(c, e["block_height"].as_u64().unwrap_or(0));
             }
-            (Some("verdict"), Some(c)) => {
+            (Some(v), Some(c)) if VERDICT_EVENTS.contains(&v) && !verdict.contains_key(&c) => {
                 verdict.insert(c, ts);
                 if let Some(b) = submit_block.get(&c) {
                     verdict_blocks.push((e["block_height"].as_u64().unwrap_or(0) - b) as f64);

@@ -4,8 +4,9 @@
 //! - `api`      — read-only JSON API (programs, feed, commits with duplicate proofs, leaderboard,
 //!                guardian/relayer status, events, MOCK mainnet data)
 //! - `relayer`  — submits the guardian's signed permits to each chain's adapter (its own EVM key)
-//! - `notifier` — posts new events to webhooks
-//! - `all`      — indexer + relayer + notifier + api in one process
+//! - `notifier` — posts new events and monitoring alerts to webhooks
+//! - `keeper`   — the permissionless settlement steps on every open program, in a loop
+//! - `all`      — indexer + relayer + notifier + api (+ keeper and T1 relayer with their accounts)
 //! - `t1`       — relays each answered run's quote to near-antibody (T1)
 //! - `worker-mock`, `signer-mock` — sandbox stand-ins for OutLayer and the MPC network
 //! - `demo`     — the offline end-to-end run on near-sandbox and anvil
@@ -14,9 +15,11 @@ mod api;
 mod demo;
 mod evm;
 mod indexer;
+mod keeper;
 mod mocks;
 mod notifier;
 mod relayer;
+mod status;
 mod t1;
 
 use std::{collections::BTreeMap, path::PathBuf};
@@ -87,6 +90,30 @@ enum Cmd {
         chains: Vec<String>,
         #[arg(long, default_value = "fastnear")]
         source: String,
+        /// Run the keeper bot as this account (its key: --keeper-key-file, or .secrets/near/<account>.json)
+        #[arg(long)]
+        keeper_account: Option<String>,
+        #[arg(long)]
+        keeper_key_file: Option<PathBuf>,
+        /// Run the T1 relayer as this account
+        #[arg(long)]
+        t1_account: Option<String>,
+        #[arg(long)]
+        t1_key_file: Option<PathBuf>,
+    },
+    /// The keeper bot: allocate, pay, pause tickets, debts, re-runs and pending permits on every open
+    /// program (or --program), every --interval-ms. Pays gas only
+    Keeper {
+        #[arg(long)]
+        account: String,
+        #[arg(long)]
+        key_file: Option<PathBuf>,
+        #[arg(long = "program")]
+        programs: Vec<u32>,
+        #[arg(long, default_value_t = 30_000)]
+        interval_ms: u64,
+        #[arg(long)]
+        once: bool,
     },
     /// T1 relayer: relays the quote of every answered run to near-antibody (`confirm_tee`). On
     /// testnet it needs the indexer's events; with --mock-outlayer (sandbox) it relays MOCK
@@ -307,7 +334,8 @@ fn main() -> Result<()> {
         }
         Cmd::Notifier { program, interval_ms } => {
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
-            notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: *program }.run(*interval_ms)
+            let status = load_dep(&cli).ok().map(|d| (near_for(&cli, &d), d));
+            notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: *program, status }.run(*interval_ms)
         }
         Cmd::Api { listen, mock_dir } => {
             let dep = load_dep(&cli)?;
@@ -319,7 +347,17 @@ fn main() -> Result<()> {
             };
             tokio::runtime::Runtime::new()?.block_on(api::serve(api, listen))
         }
-        Cmd::All { listen, chains: c, source } => {
+        Cmd::Keeper { account, key_file, programs, interval_ms, once } => {
+            let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(account.clone()), key_file.clone(), None)?;
+            let k = keeper::Keeper { ctx, programs: programs.clone(), state_file: state_dir(&cli).join("keeper.json") };
+            if *once {
+                println!("{}", serde_json::to_string_pretty(&k.tick()?)?);
+                Ok(())
+            } else {
+                k.run(*interval_ms)
+            }
+        }
+        Cmd::All { listen, chains: c, source, keeper_account, keeper_key_file, t1_account, t1_key_file } => {
             let dep = load_dep(&cli)?;
             let ix = indexer(&cli, &dep, source, 0)?;
             std::thread::spawn(move || ix.run(5000));
@@ -335,8 +373,23 @@ fn main() -> Result<()> {
                 std::thread::spawn(move || r.run(3000));
             }
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
-            let n = notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: None };
+            let n = notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: None, status: Some((near_for(&cli, &dep), dep.clone())) };
             std::thread::spawn(move || n.run(5000));
+            if let Some(acct) = keeper_account {
+                let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), keeper_key_file.clone(), None)?;
+                let k = keeper::Keeper { ctx, programs: vec![], state_file: state_dir(&cli).join("keeper.json") };
+                std::thread::spawn(move || k.run(30_000));
+            }
+            if let Some(acct) = t1_account {
+                let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), t1_key_file.clone(), None)?;
+                let r = t1::T1Relayer { ctx, source: t1::Source::OutLayer { api: antibody_cli::tee::DEFAULT_API.into() }, state_dir: state_dir(&cli), max_attempts: 5 };
+                std::thread::spawn(move || loop {
+                    if let Err(e) = r.tick() {
+                        eprintln!("t1 relayer: {e:#}");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10_000));
+                });
+            }
             let api = api::Api {
                 near: near_for(&cli, &dep),
                 dep,
