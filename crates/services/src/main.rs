@@ -131,6 +131,10 @@ enum Cmd {
         /// Keep the chains running at the end (for exploring with the CLI/API)
         #[arg(long)]
         keep: bool,
+        /// Keep the chains and the MOCK services running at the end, so the practice program can be
+        /// tried (by people or agents) against the sandbox; Ctrl-C stops
+        #[arg(long)]
+        serve: bool,
     },
 }
 
@@ -205,7 +209,7 @@ fn indexer(cli: &Cli, dep: &Deployments, source: &str, from_block: u64) -> Resul
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match &cli.cmd {
-        Cmd::Demo { sandbox_bin, work_dir, keep } => {
+        Cmd::Demo { sandbox_bin, work_dir, keep, serve } => {
             let root = repo_root().ok_or_else(|| eyre!("run the demo from inside the repository"))?;
             let exe = if cfg!(windows) { ".exe" } else { "" };
             let tool = |name: &str| -> PathBuf {
@@ -225,6 +229,7 @@ fn main() -> Result<()> {
                 antibody_bin: root.join(format!("target/release/antibody{exe}")),
                 root,
                 keep: *keep,
+                serve: *serve,
             })?;
             Ok(())
         }

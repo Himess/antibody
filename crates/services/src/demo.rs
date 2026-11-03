@@ -58,6 +58,7 @@ pub struct DemoArgs {
     pub forge_bin: PathBuf,
     pub antibody_bin: PathBuf,
     pub keep: bool,
+    pub serve: bool,
 }
 
 /// Kills child processes when the demo ends, whatever the outcome.
@@ -895,10 +896,13 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let pact = cmd::program_activate(&root_ctx, ppid, true)?;
     wait_t1(&root_ctx, pact["run_id"].as_u64().unwrap_or_default())?;
     cmd::program_open(&root_ctx, ppid)?;
-    cmd::admin_create_account(&root_ctx, &acct("practice"), "10", None, Some(&keys.join(format!("{}.json", acct("practice")))))?;
-    let terms = practice::Terms { gas_funds: ONE_NEAR / 20, allowance: ONE_NEAR / 20, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 6 };
+    cmd::admin_create_account(&root_ctx, &acct("practice"), "40", None, Some(&keys.join(format!("{}.json", acct("practice")))))?;
+    // The sandbox's gas price is ten times testnet's (1e9 yoctoNEAR per gas): a practice account needs
+    // 0.5 NEAR to prepay its 300 Tgas reveal here, where 0.05 does on testnet. Enough vends for the
+    // measured agent runs (`--serve`).
+    let terms = practice::Terms { gas_funds: ONE_NEAR / 2, allowance: ONE_NEAR / 2, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 30 };
     let vending_wasm = a.root.join("contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm");
-    let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, "test.near", ppid, 24, &terms, ONE_NEAR / 5)?;
+    let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, "test.near", ppid, 24, &terms, 5 * ONE_NEAR)?;
     let funded = practice::fund(&root_ctx, &acct("practice"), 2 * ONE_NEAR, 2 * ONE_TUSD)?;
     println!("practice program {ppid} open; vending {} with the public vend key {}", acct("practice"), vending["public_vend_key"]);
     // Judges: no account, no key and no Ethereum RPC. The public vend key calls `vend`, and the proof is
@@ -917,9 +921,15 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         && tries.iter().all(|r| r["vended_by"] == json!(acct("practice")) && r["witness_source"] == json!("base"));
     results["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&pm.canonical())),
                                  "vending": vending, "fund": funded, "tries": tries, "ok": practice_ok, "seconds": t.elapsed().as_secs_f64()});
-    stop.store(true, Ordering::Relaxed);
-    for h in handles {
-        let _ = h.join();
+    // The deployments file names the practice program, so `antibody try --name <you>` needs nothing else.
+    let mut served = dep.clone();
+    served.practice = Some(antibody_cli::ctx::PracticeDeployment { vending: acct("practice"), program: ppid });
+    std::fs::write(&dep_file, serde_json::to_vec_pretty(&served)?)?;
+    if !a.serve {
+        stop.store(true, Ordering::Relaxed);
+        for h in std::mem::take(&mut handles) {
+            let _ = h.join();
+        }
     }
 
     step("Results");
@@ -983,7 +993,11 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();
     std::fs::write(a.work.join("results.json"), serde_json::to_vec_pretty(&results)?)?;
-    if a.keep {
+    if a.serve {
+        println!("--serve: near-sandbox http://127.0.0.1:3030, anvil :8545 and :8546, the MOCK services and relayers stay up;");
+        println!("  deployments {} (practice program {ppid}, vending {}); Ctrl-C stops", dep_file.display(), acct("practice"));
+        std::thread::park();
+    } else if a.keep {
         println!("--keep: sandbox and anvil stay up; press Ctrl-C to stop");
         std::thread::park();
     }
