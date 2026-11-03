@@ -33,13 +33,14 @@ with a bond budget, and its proofs are judged like anyone's.
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
-**Status:** Antibody is deployed on NEAR testnet, **not locked yet**, and the whole story has run on that
-deployment as a staging run ([docs/results/testnet-staging-2026-11-03.json](docs/results/testnet-staging-2026-11-03.json)),
+**Status:** Antibody is deployed on NEAR testnet and **locked** (2026-11-03: near-antibody, near-guardian
+and the practice vending contract hold no full-access keys). Before the lock, the whole story ran on the
+same contracts as a staging run ([docs/results/testnet-staging-2026-11-03.json](docs/results/testnet-staging-2026-11-03.json)),
 with Acme Lend on Sepolia and Base Sepolia and the real services: OutLayer's TEE workers, their TDX quotes
 verified on NEAR (T1), the MPC network signing the permits, the Ethereum light client. From agent A's
 commit's block, its Critical was verified at 18.8 s, T1-confirmed at 26.3 s and paid 0.1 wNEAR at 42.0 s;
-both chains were paused by 48.1 s. JUDGES.md comes from that run, and its commands read testnet. Next, the
-contracts are locked and the story runs again on the locked deployment with the final code.
+both chains were paused by 48.1 s. JUDGES.md comes from that run, and its commands read testnet. The story
+is running again on the locked deployment, and its results replace JUDGES.md when it ends.
 
 The same story runs offline in a sandbox. On Linux or macOS:
 
@@ -81,9 +82,9 @@ every outcome of the story:
 
 | | Account / contract | Status |
 |---|---|---|
-| near-antibody | `bounty.antibody.testnet` | deployed, not locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
-| near-guardian | `guardian.antibody.testnet` | deployed, not locked (code `4SdG5PK9…`) |
-| Practice vending | `practice.antibody.testnet` | deployed, not locked (code `AdXwpxi5…`); practice program 2, its fork-mode twin program 3 |
+| near-antibody | `bounty.antibody.testnet` | locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
+| near-guardian | `guardian.antibody.testnet` | locked (code `4SdG5PK9…`) |
+| Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 2, its fork-mode twin program 3 |
 | Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |
 | OutLayer, light client, MPC | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet` | existing |
 | Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | deployed (staging run) |
@@ -247,7 +248,7 @@ are not done yet.
   window are required.
 - **Old anchors.** A proof that reads beyond the pinned base needs an RPC that keeps the anchor's state.
 - **Rule strength is the rules' measure,** and a survivor is not necessarily a bug.
-- **The testnet deployment is not locked yet**, and its payout token, wNEAR on testnet, has no value.
+- **Testnet only.** The payout token, wNEAR on testnet, has no value.
 
 ## Provenance
 
