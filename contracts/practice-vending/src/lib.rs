@@ -1,15 +1,19 @@
 //! Practice accounts for Antibody's practice program (docs/practice.md).
 //!
-//! `vend(name, public_key)` creates `<name>.<this account>` with a little NEAR for gas and one key: a
-//! function-call key for near-antibody's `commit`, `reveal` and `retry`, the permissionless `allocate`
-//! and `pay`, and FastFS uploads, nothing else. The account is registered as an agent of this
-//! contract, so near-antibody takes its bonds, its verification runs and its storage from this
-//! contract's credit there (the bonds within a small cap), and its payouts come back to that credit; it
-//! cannot withdraw. Each account is assigned its own tutorial vault. Vending is rate-limited per hour
-//! and the amounts are small; the owner refills.
+//! `vend(name, public_key)` creates `<name>.<this account>` with the NEAR its gas sets aside, the
+//! practice-account contract (contracts/practice-account) and one key: a function-call key for that
+//! account's own `commit`, `reveal`, `retry`, `allocate`, `pay` and `close`. The first five go on to
+//! near-antibody unchanged; `close` marks the try done here, and `reclaim` then deletes the account,
+//! its NEAR back here, so a try costs this contract only the gas it burnt. The account is registered
+//! as an agent of this contract, so
+//! near-antibody takes its bonds, its verification runs and its storage from this contract's credit
+//! there (the bonds within a small cap), and its payouts come back to that credit; it cannot withdraw.
+//! Each account is assigned its own tutorial vault. Vending is rate-limited per hour; an account left
+//! open may be reclaimed by anyone an hour after its vend.
 //!
 //! Anyone may call `vend`. The operator also adds a deliberately public function-call key for `vend`
-//! on this account, within an allowance, so a first try needs no NEAR account (`antibody try`).
+//! and `reclaim` on this account, within an allowance, so a first try needs no NEAR account
+//! (`antibody try`).
 //!
 //! Arguments and views are Borsh (the CLI encodes them): with no JSON the contract is half the size,
 //! and its storage stake half as large.
@@ -21,18 +25,35 @@ use near_sdk::{
     AccountId, Gas, NearToken, PanicOnDefault, Promise, PublicKey,
 };
 
-/// near-antibody methods a practice key may call: an agent key's (`cmd::AGENT_METHODS`) and the
-/// permissionless `allocate` and `pay`, so a practice account settles its own payout.
-pub const PRACTICE_METHODS: &str = "commit,reveal,retry,allocate,pay,__fastdata_fastfs";
+/// The practice account's own methods its key may call (its contract passes the first five on to
+/// near-antibody: an agent key's and the permissionless `allocate` and `pay`, so the account settles its
+/// own payout).
+pub const PRACTICE_METHODS: &str = "commit,reveal,retry,allocate,pay,close";
 pub const CALL_GAS: Gas = Gas::from_tgas(20);
 pub const FUND_GAS: Gas = Gas::from_tgas(150);
+/// The practice-account contract's `init` (it stores the near-antibody account) and `close`.
+pub const INIT_GAS: Gas = Gas::from_tgas(5);
+pub const CLOSE_GAS: Gas = Gas::from_tgas(10);
+/// How long a practice account stays before anyone may close it (a try takes a minute or two).
+pub const RECLAIM_AFTER_SECS: u64 = 3_600;
+
+/// A vended practice account: its tutorial vault, when it was vended (seconds), and whether its try is
+/// done (its key called `close`).
+#[near(serializers = [borsh])]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vended {
+    pub vault: u32,
+    pub at: u64,
+    pub done: bool,
+}
 
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Terms {
-    /// NEAR sent to the new account for its own gas (its key's allowance draws on it).
+    /// NEAR sent to the new account: its contract's storage and its calls' gas, which NEAR sets aside
+    /// up front (`close` returns what is left).
     pub gas_funds: U128,
-    /// The key's allowance.
+    /// The key's allowance: each call's set-aside gas counts against it.
     pub allowance: U128,
     /// Token units of this contract's credit the account may bond in all, and per commit.
     pub bond_budget: U128,
@@ -53,12 +74,15 @@ pub struct Vending {
     vended: u32,
     hour: u64,
     in_hour: u32,
-    accounts: LookupMap<AccountId, u32>,
+    accounts: LookupMap<AccountId, Vended>,
+    /// The practice-account contract each vend deploys.
+    account_code: Vec<u8>,
 }
 
 #[near]
 impl Vending {
     #[init]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         #[serializer(borsh)] owner: AccountId,
         #[serializer(borsh)] antibody: AccountId,
@@ -66,9 +90,11 @@ impl Vending {
         #[serializer(borsh)] program_id: u32,
         #[serializer(borsh)] vaults: u32,
         #[serializer(borsh)] terms: Terms,
+        #[serializer(borsh)] account_code: Vec<u8>,
     ) -> Self {
         require!(vaults > 0, "at least one vault");
-        Self { owner, antibody, token, program_id, vaults, terms, vended: 0, hour: 0, in_hour: 0, accounts: LookupMap::new(b"a") }
+        require!(account_code.starts_with(b"\0asm"), "the practice-account contract (wasm)");
+        Self { owner, antibody, token, program_id, vaults, terms, vended: 0, hour: 0, in_hour: 0, accounts: LookupMap::new(b"a"), account_code }
     }
 
     /// Creates the practice account `<name>.<this account>` for `public_key` and assigns it a vault.
@@ -88,17 +114,20 @@ impl Vending {
         require!(!self.accounts.contains_key(&account), "that practice account exists");
         let vault = self.vended % self.vaults;
         self.vended += 1;
-        self.accounts.insert(account.clone(), vault);
+        self.accounts.insert(account.clone(), Vended { vault, at: env::block_timestamp() / 1_000_000_000, done: false });
         let t = self.terms.clone();
         env::log_str(&format!(
             "EVENT_JSON:{{\"standard\":\"antibody-practice\",\"version\":\"0.1.0\",\"event\":\"vended\",\"data\":[{{\"account\":\"{account}\",\"vault\":{vault},\"program_id\":{}}}]}}",
             self.program_id
         ));
         let allowance = near_sdk::Allowance::limited(NearToken::from_yoctonear(t.allowance.0)).unwrap_or_else(|| env::panic_str("the allowance must be positive"));
+        // The key calls only the account's own contract, which passes the near-antibody calls on.
         let create = Promise::new(account.clone())
             .create_account()
             .transfer(NearToken::from_yoctonear(t.gas_funds.0))
-            .add_access_key_allowance(public_key, allowance, self.antibody.clone(), PRACTICE_METHODS.into());
+            .deploy_contract(self.account_code.clone())
+            .function_call("init".into(), self.antibody.as_bytes().to_vec(), NearToken::from_yoctonear(0), INIT_GAS)
+            .add_access_key_allowance(public_key, allowance, account.clone(), PRACTICE_METHODS.into());
         let agent = Promise::new(self.antibody.clone()).function_call(
             "register_agent".into(),
             // The practice account may commit to the practice program only.
@@ -128,10 +157,40 @@ impl Vending {
         )
     }
 
+    /// A practice account's try is done: its contract calls this when its key calls `close`, so that
+    /// `reclaim` may close the account at once.
+    pub fn done(&mut self) {
+        let account = env::predecessor_account_id();
+        let mut v = self.accounts.get(&account).copied().unwrap_or_else(|| env::panic_str("not a practice account vended here"));
+        v.done = true;
+        self.accounts.insert(account, v);
+    }
+
+    /// Anyone: closes a practice account whose try is done, or one vended at least
+    /// [`RECLAIM_AFTER_SECS`] ago, its NEAR back here. `antibody try` calls it with the public vend key:
+    /// an account deleted in a transaction it signed itself would lose that transaction's gas refunds.
+    pub fn reclaim(&mut self, #[serializer(borsh)] account: AccountId) -> Promise {
+        let v = self.accounts.get(&account).copied().unwrap_or_else(|| env::panic_str("not a practice account vended here"));
+        require!(
+            v.done || env::block_timestamp() / 1_000_000_000 >= v.at + RECLAIM_AFTER_SECS,
+            "a practice account may be reclaimed once its try is done, or an hour after its vend"
+        );
+        Promise::new(account).function_call("close".into(), vec![], NearToken::from_yoctonear(0), CLOSE_GAS)
+    }
+
     /// The tutorial vault assigned to a practice account.
     #[result_serializer(borsh)]
     pub fn vault_of(&self, #[serializer(borsh)] account: AccountId) -> Option<u32> {
-        self.accounts.get(&account).copied()
+        self.accounts.get(&account).map(|v| v.vault)
+    }
+
+    /// The owner: a new practice-account contract for later vends.
+    #[payable]
+    pub fn set_account_code(&mut self, #[serializer(borsh)] account_code: Vec<u8>) {
+        near_sdk::assert_one_yocto();
+        require!(env::predecessor_account_id() == self.owner, "owner only");
+        require!(account_code.starts_with(b"\0asm"), "the practice-account contract (wasm)");
+        self.account_code = account_code;
     }
 
     #[result_serializer(borsh)]
@@ -179,8 +238,12 @@ mod tests {
         "ed25519:6E8sCci9badyRkXb3JoRpBj5p8C6Tw41ELDZoiihKEtp".parse().unwrap()
     }
 
+    fn code() -> Vec<u8> {
+        b"\0asm\x01\0\0\0".to_vec()
+    }
+
     fn vending(per_hour: u32) -> Vending {
-        Vending::new("antibody.testnet".parse().unwrap(), "bounty.antibody.testnet".parse().unwrap(), "wrap.testnet".parse().unwrap(), 1, 3, terms(per_hour))
+        Vending::new("antibody.testnet".parse().unwrap(), "bounty.antibody.testnet".parse().unwrap(), "wrap.testnet".parse().unwrap(), 1, 3, terms(per_hour), code())
     }
 
     #[test]
@@ -261,6 +324,69 @@ mod tests {
         v.set_terms(2, 24, terms(3));
         let (.., program, vaults, t, _) = v.get_config();
         assert_eq!((program, vaults, t.per_hour), (2, 24, 3));
+    }
+
+    #[test]
+    fn an_account_left_open_is_reclaimed_after_an_hour_by_anyone() {
+        let at = 1_800_000_000 * 1_000_000_000u64;
+        ctx(at);
+        let mut v = vending(10);
+        let _ = v.vend("ann".into(), pk());
+        let ann: AccountId = "ann.practice.antibody.testnet".parse().unwrap();
+        ctx(at + 3_599 * 1_000_000_000);
+        let early = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = v.reclaim(ann.clone());
+        }));
+        assert!(early.is_err(), "within the hour a try may still be running");
+        ctx(at + 3_600 * 1_000_000_000);
+        let _ = v.reclaim(ann);
+    }
+
+    #[test]
+    fn an_account_whose_try_is_done_is_reclaimed_at_once() {
+        ctx(0);
+        let mut v = vending(10);
+        let _ = v.vend("ann".into(), pk());
+        let _ = v.vend("bob".into(), pk());
+        ctx_as(1_000_000_000, "ann.practice.antibody.testnet", 0);
+        v.done();
+        ctx(1_000_000_000);
+        let _ = v.reclaim("ann.practice.antibody.testnet".parse().unwrap());
+        let bob = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = v.reclaim("bob.practice.antibody.testnet".parse().unwrap());
+        }));
+        assert!(bob.is_err(), "bob's try is not done");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a practice account vended here")]
+    fn only_vended_accounts_mark_a_try_done() {
+        ctx(0);
+        vending(10).done();
+    }
+
+    #[test]
+    #[should_panic(expected = "not a practice account vended here")]
+    fn only_vended_accounts_are_reclaimed() {
+        ctx(0);
+        let _ = vending(10).reclaim("judge.testnet".parse().unwrap());
+    }
+
+    #[test]
+    fn the_owner_alone_replaces_the_account_code() {
+        ctx_as(0, "antibody.testnet", 1);
+        let mut v = vending(10);
+        v.set_account_code(code());
+        ctx_as(0, "judge.testnet", 1);
+        let other = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| v.set_account_code(code())));
+        assert!(other.is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "the practice-account contract (wasm)")]
+    fn the_account_code_is_wasm() {
+        ctx(0);
+        let _ = Vending::new("antibody.testnet".parse().unwrap(), "bounty.antibody.testnet".parse().unwrap(), "wrap.testnet".parse().unwrap(), 1, 3, terms(1), vec![1, 2]);
     }
 
     #[test]

@@ -40,6 +40,7 @@ flowchart LR
 | `contracts/near-antibody` | Settlement contract and the sandbox-only mocks (OutLayer, DCAP, MPC, light client, tUSD) |
 | `contracts/near-guardian` | Pause and release permits signed with Chain Signatures under each program's own path |
 | `contracts/practice-vending` | Practice accounts with scoped keys and bond credit |
+| `contracts/practice-account` | A practice account's own contract: passes its key's calls on to near-antibody, and closes the account when its try is done |
 | `contracts/verdict-guard` | A NEAR app consuming verdicts: a treasury that freezes on a verified Critical |
 | `contracts/evm` | `AntibodyAdapter`, Acme Lend (deliberately vulnerable) with its rules, proofs and fixes, the practice vaults |
 | `formal/` | The Quint model of the settlement rules |

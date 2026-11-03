@@ -19,8 +19,12 @@ use crate::{
     near::{self, Action, Permission, Signer, ONE_NEAR, ONE_YOCTO, TGAS},
 };
 
-/// Gas for calls that start a verifier run: the method, OutLayer (100) and the answer's callback (60).
-pub const RUN_TGAS: u64 = 300;
+/// Gas for calls that start a verifier run: near-antibody attaches OutLayer's (100) and the answer's
+/// callback (60) to the run; the method itself burns about 12 (measured on testnet: reveal, activation,
+/// a round's proposal). NEAR sets a call's whole prepaid gas aside up front, so no more than needed.
+pub const RUN_TGAS: u64 = 200;
+/// Opening a round may sign release permits through near-guardian and the MPC network.
+pub const ROUND_OPEN_TGAS: u64 = 300;
 pub const TUSD_DECIMALS: u32 = 6;
 /// Larger sealed blobs go through FastFS: near-antibody keeps every request within OutLayer's free input.
 pub const MAX_INLINE_BLOB: usize = 15 * 1024;
@@ -114,7 +118,7 @@ fn ft_transfer_call(ctx: &Ctx, signer: &Signer, amount: u128, msg: Value) -> Res
 }
 
 pub fn call(ctx: &Ctx, method: &str, args: Value, tgas: u64) -> Result<Value> {
-    let out = ctx.near.function_call(&ctx.signer()?, &ctx.dep.antibody, method, args, tgas, 0)?;
+    let out = ctx.near.function_call(&ctx.signer()?, ctx.hunter_calls(), method, args, tgas, 0)?;
     ensure_ok(ctx, &out, method)
 }
 
@@ -800,6 +804,9 @@ fn blob_arg(ctx: &Ctx, signer: &Signer, blob_bytes: &[u8], dir: &str) -> Result<
     if blob_bytes.len() <= MAX_INLINE_BLOB {
         return Ok((json!({"inline": hex::encode(blob_bytes)}), json!({"inline_bytes": blob_bytes.len()})));
     }
+    if ctx.via.is_some() {
+        return Err(eyre!("a proof sent through a practice account travels inline: this one is {} bytes (at most {MAX_INLINE_BLOB})", blob_bytes.len()));
+    }
     let up = blob::upload(ctx, signer, &format!("antibody/{dir}/{sha}.bin"), blob_bytes)?;
     Ok((json!({"near_tx": {"location": up["near_tx"], "sha256": sha}}), up))
 }
@@ -828,8 +835,9 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
     let agent = !me["agent"].is_null();
     let from_credit = agent || u128_of(&me["tokens"]) >= bond;
     let (commit_id, summary) = if from_credit {
-        let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "commit",
-            json!({"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}), 30, 0)?;
+        // near-antibody burns about 11 Tgas on a commit (measured on testnet).
+        let out = ctx.near.function_call(&signer, ctx.hunter_calls(), "commit",
+            json!({"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}), 25, 0)?;
         let summary = ensure_ok(ctx, &out, "commit")?;
         let id = near::return_value(&out).and_then(|v| v.as_u64()).ok_or_else(|| {
             eyre!("containment: the commit was refused (the bond is over this agent's cap or remaining budget)")
@@ -865,7 +873,7 @@ pub fn reveal(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Val
     if account(ctx, &signer.account_id)?["agent"].is_null() {
         ensure_near_credit(ctx, &signer, min_near_credit())?;
     }
-    let out = ctx.near.function_call(&signer, &ctx.dep.antibody, "reveal", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS, 0)?;
+    let out = ctx.near.function_call(&signer, ctx.hunter_calls(), "reveal", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "reveal")?;
     // Retries of an inline blob pass it again: keep the argument with the record.
     rec["blob_arg"] = arg;
@@ -1249,7 +1257,7 @@ pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
     }
     let mut pages = Vec::new();
     loop {
-        let s = call(ctx, "open_round", json!({"program_id": program, "max": 200}), RUN_TGAS)?;
+        let s = call(ctx, "open_round", json!({"program_id": program, "max": 200}), ROUND_OPEN_TGAS)?;
         if let Some(opened) = event(&s, "round_opened") {
             return Ok(json!({"program": program, "round_opened": opened, "allocated": allocated, "pages": pages, "tx": s}));
         }
@@ -1857,7 +1865,7 @@ mod tests {
         let state_dir = std::env::temp_dir().join(format!("antibody-cache-{}-{test}", std::process::id()));
         let _ = std::fs::remove_dir_all(&state_dir);
         let dep = serde_json::from_str(crate::ctx::TESTNET_DEPLOYMENTS).unwrap();
-        Ctx { near: near::Near::new("testnet", None), dep, account: None, key_file: None, eth_rpc: None, state_dir }
+        Ctx { near: near::Near::new("testnet", None), dep, account: None, key_file: None, eth_rpc: None, state_dir, via: None }
     }
 
     #[test]

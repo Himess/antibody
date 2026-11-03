@@ -11,13 +11,15 @@ program is counted apart from real programs.
 antibody --network testnet try --vending practice.antibody.testnet --program <id> --name <you>
 ```
 
-No NEAR account, no key and no API key are needed. The command:
+No NEAR account, no key, no API key and no Ethereum RPC are needed. The command:
 1. vends `<you>.practice.antibody.testnet` for a key it generates locally (`.antibody/practice/<you>/`);
-2. builds the tutorial proof against the vault assigned to you, seals it to the program's key, commits,
-   and reveals it;
+2. builds the tutorial proof against the vault assigned to you from the program's pinned base witness
+   (it already covers the tutorial proof, for every vault), seals it to the program's key, commits, and
+   reveals it;
 3. waits for the verdict and its T1 confirmation;
-4. calls `allocate` and `pay` (both permissionless) and prints the state (`Done:Paid`) with a link for
-   every transaction.
+4. calls `allocate` and `pay` (both permissionless), then closes the practice account (`close`, then the
+   vending contract's `reclaim`): its NEAR goes back to the vending contract. It prints the state
+   (`Done:Paid`) with a link for every transaction.
 
 ## The target
 
@@ -47,27 +49,42 @@ so `vault_keeps_its_ether` breaks: a Violation keyed to your vault and `sweep`.
 ## Practice accounts
 
 `contracts/practice-vending` creates `<name>.practice.<root>.testnet` for a key you hold:
-- a little NEAR for gas, and one function-call key that may only call near-antibody's `commit`, `reveal`
-  and `retry`, the permissionless `allocate` and `pay`, and FastFS uploads. It cannot withdraw or
-  transfer;
+- a little NEAR for its storage and gas, the code of `contracts/practice-account`, and one function-call
+  key for that account itself. Its contract passes `commit`, `reveal` and `retry` and the permissionless
+  `allocate` and `pay` on to near-antibody, for that key only, and `close` tells the vending contract
+  the try is done. The key cannot withdraw or transfer, and a proof it sends travels inline (at most
+  15 KB sealed);
 - registered as an **agent** of the vending contract: near-antibody takes its bonds (within a small
   cap), its verification runs and its storage from the vending contract's credit, and its payouts go
   back to that credit;
 - its own vault (`vault_of`).
 
+When a try is done, the practice key calls `close`, and the public vend key calls the vending contract's
+`reclaim`, which deletes the practice account: its NEAR goes back to the vending contract, what its gas
+did not burn and its storage stake. A try costs the vending contract the gas it burned, not the gas
+funds. (The deletion is not the practice account's own transaction: an account deleted in a
+transaction it signed loses the gas that transaction set aside.) If a try stops before `close`, anyone
+may call `reclaim` an hour after the vend.
+
 Anyone may call `vend`. So that a first try needs no account, the operator adds a **public vend key**
-to the vending account: a function-call key for `vend` only, within an allowance. Its secret is derived
-from a published seed (`practice::PUBLIC_VEND_SEED`); it is deliberately public and can do nothing else.
+to the vending account: a function-call key for `vend` and `reclaim` only, within an allowance. Its
+secret is derived from a published seed (`practice::PUBLIC_VEND_SEED`); it is deliberately public and can
+do nothing else.
 
 ## Operating it
 
 ```
 # on the vending account: deploy, initialise, and add the public vend key
 antibody practice deploy --account practice.antibody.testnet --wasm antibody_practice_vending.wasm \
+  --account-wasm antibody_practice_account.wasm \
   --owner antibody.testnet --program <id> --bond-budget <bond> --per-commit-cap <bond>
 # as the owner: NEAR credit at near-antibody (runs, storage) and tokens for the bonds
 antibody practice fund --account antibody.testnet --vending practice.antibody.testnet --near 0.5 --tokens <n>
 ```
+
+The practice program's base witness is built with `antibody program activate --cover <bundle>`: the base
+then also holds the state the tutorial proof reads (the `0x…dEaD` account it sweeps to), so every vault's
+proof seals against the pinned base alone.
 
 The sandbox demo (`make demo`) runs all of this: it opens the practice program, deploys and funds the
 vending contract, and two judges with no account try it.

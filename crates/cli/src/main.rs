@@ -184,6 +184,9 @@ enum PracticeCmd {
     Deploy {
         #[arg(long)]
         wasm: PathBuf,
+        /// The practice-account contract each vend deploys (contracts/practice-account)
+        #[arg(long, default_value = "contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm")]
+        account_wasm: PathBuf,
         /// Who funds it and may change its terms
         #[arg(long)]
         owner: String,
@@ -191,12 +194,12 @@ enum PracticeCmd {
         program: u32,
         #[arg(long, default_value_t = 24)]
         vaults: u32,
-        /// NEAR each practice account gets for its gas, and its key's allowance. NEAR sets aside a call's
-        /// prepaid gas at ten times the gas price before running it: the 300 Tgas reveal needs 0.301
-        /// NEAR free, its commit 0.031 (about a tenth of that is burnt)
-        #[arg(long, default_value = "0.34")]
+        /// NEAR each practice account gets: its contract's storage and its calls' gas, which NEAR sets
+        /// aside up front at ten times the gas price (the 200 Tgas reveal: 0.2 NEAR); closing the
+        /// account returns what is left. The key's allowance counts every call's set-aside gas
+        #[arg(long, default_value = "0.25")]
         gas_funds: String,
-        #[arg(long, default_value = "0.34")]
+        #[arg(long, default_value = "0.4")]
         allowance: String,
         /// Bonds a practice account may have locked, and per commit (tokens)
         #[arg(long)]
@@ -205,9 +208,32 @@ enum PracticeCmd {
         per_commit_cap: String,
         #[arg(long, default_value_t = 6)]
         per_hour: u32,
-        /// The public vend key's allowance (NEAR)
-        #[arg(long, default_value = "0.2")]
+        /// The public vend key's allowance (NEAR): a ceiling, each vend counts its set-aside gas
+        /// (0.06); a locked vending contract's key cannot be given more
+        #[arg(long, default_value = "10")]
         vend_allowance: String,
+    },
+    /// Point the vending contract at a new practice program (as its owner), with the practice-account
+    /// contract later vends deploy: a locked vending contract keeps serving new programs
+    Retarget {
+        #[arg(long)]
+        vending: String,
+        #[arg(long, default_value = "contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm")]
+        account_wasm: PathBuf,
+        #[arg(long)]
+        program: u32,
+        #[arg(long, default_value_t = 24)]
+        vaults: u32,
+        #[arg(long, default_value = "0.25")]
+        gas_funds: String,
+        #[arg(long, default_value = "0.4")]
+        allowance: String,
+        #[arg(long)]
+        bond_budget: String,
+        #[arg(long)]
+        per_commit_cap: String,
+        #[arg(long, default_value_t = 6)]
+        per_hour: u32,
     },
     /// Fund the vending contract (as its owner): NEAR credit at near-antibody, and tokens for bonds
     Fund {
@@ -830,7 +856,10 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(if json { r } else { Value::String(antibody_cli::practice::try_summary(&r, ctx.dep.decimals(), ctx.dep.symbol())) })
         }
         Cmd::Practice {
-            cmd: PracticeCmd::Deploy { ref wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance },
+            cmd:
+                PracticeCmd::Deploy {
+                    ref wasm, ref account_wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance,
+                },
         } => {
             let c = mk()?;
             let terms = antibody_cli::practice::Terms {
@@ -840,7 +869,20 @@ fn run(cli: Cli) -> Result<Value> {
                 per_commit_cap: cmd::parse_tokens(per_commit_cap, c.dep.decimals())?,
                 per_hour,
             };
-            antibody_cli::practice::deploy(&c, wasm, owner, program, vaults, &terms, cmd::parse_near(vend_allowance)?)
+            antibody_cli::practice::deploy(&c, wasm, account_wasm, owner, program, vaults, &terms, cmd::parse_near(vend_allowance)?)
+        }
+        Cmd::Practice {
+            cmd: PracticeCmd::Retarget { ref vending, ref account_wasm, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour },
+        } => {
+            let c = mk()?;
+            let terms = antibody_cli::practice::Terms {
+                gas_funds: cmd::parse_near(gas_funds)?,
+                allowance: cmd::parse_near(allowance)?,
+                bond_budget: cmd::parse_tokens(bond_budget, c.dep.decimals())?,
+                per_commit_cap: cmd::parse_tokens(per_commit_cap, c.dep.decimals())?,
+                per_hour,
+            };
+            antibody_cli::practice::retarget(&c, vending, account_wasm, program, vaults, &terms)
         }
         Cmd::Practice { cmd: PracticeCmd::Fund { ref vending, ref near, ref tokens } } => {
             let c = mk()?;

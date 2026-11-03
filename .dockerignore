@@ -10,6 +10,7 @@
 target/
 contracts/near-antibody/target/
 contracts/near-guardian/target/
+contracts/practice-account/target/
 contracts/practice-vending/target/
 contracts/evm/out/
 contracts/evm/cache/

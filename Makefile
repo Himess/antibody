@@ -19,6 +19,7 @@ contracts:
 	cd contracts/near-antibody && cargo build --release --target wasm32-unknown-unknown \
 		-p near-antibody -p antibody-tusd -p antibody-mock-outlayer -p antibody-mock-mpc -p antibody-mock-dcap -p antibody-mock-lc
 	cd contracts/near-guardian && cargo build --release --target wasm32-unknown-unknown
+	cd contracts/practice-account && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/practice-vending && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/verdict-guard && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/evm && forge build

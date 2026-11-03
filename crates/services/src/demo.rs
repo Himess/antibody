@@ -219,6 +219,7 @@ pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path,
         key_file: Some(key.to_path_buf()),
         eth_rpc: Some(eth_rpc.to_string()),
         state_dir: state.to_path_buf(),
+        via: None,
     }
 }
 
@@ -1106,21 +1107,22 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     cmd::keygen_x25519(&practice_key)?;
     let pc = cmd::program_create(&root_ctx, &pm_path, PRACTICE_ESCROW_TUSD, &practice_key, None)?;
     let ppid = pc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no practice program id: {pc}"))? as u32;
-    let pact = cmd::program_activate(&root_ctx, ppid, true)?;
+    let pact = cmd::program_activate(&root_ctx, ppid, &[tutorial_cover(&a.work, "practice", &pm)?], true)?;
     wait_t1(&root_ctx, pact["run_id"].as_u64().unwrap_or_default())?;
     cmd::program_open(&root_ctx, ppid)?;
     cmd::admin_create_account(&root_ctx, &acct("practice"), "40", None, Some(&keys.join(format!("{}.json", acct("practice")))))?;
-    // A practice account's 300 Tgas reveal needs its prepaid gas set aside up front (0.301 NEAR on
-    // testnet, at ten times the gas price): 0.5 covers it here. Enough vends for the measured agent runs
-    // (`--serve`).
-    let terms = practice::Terms { gas_funds: ONE_NEAR / 2, allowance: ONE_NEAR / 2, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 30 };
+    // A practice account's calls set their prepaid gas aside up front (the 200 Tgas reveal: 0.2 NEAR on
+    // testnet, at ten times the gas price); closing the account after its try returns what is left.
+    // Enough vends for the measured agent runs (`--serve`).
+    let terms = practice::Terms { gas_funds: ONE_NEAR / 2, allowance: ONE_NEAR, bond_budget: ONE_TUSD / 10, per_commit_cap: ONE_TUSD / 10, per_hour: 30 };
     let vending_wasm = a.root.join("contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm");
-    let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, "test.near", ppid, 24, &terms, 5 * ONE_NEAR)?;
+    let account_wasm = a.root.join("contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm");
+    let vending = practice::deploy(&ctx_of("practice"), &vending_wasm, &account_wasm, "test.near", ppid, 24, &terms, 5 * ONE_NEAR)?;
     let funded = practice::fund(&root_ctx, &acct("practice"), 2 * ONE_NEAR, 2 * ONE_TUSD)?;
     println!("practice program {ppid} open; vending {} with the public vend key {}", acct("practice"), vending["public_vend_key"]);
     // Judges: no account, no key and no Ethereum RPC. The public vend key calls `vend`, and the proof is
     // sealed against the pinned base witness alone.
-    let judge = Ctx { near: near.clone(), dep: dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges") };
+    let judge = Ctx { near: near.clone(), dep: dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges"), via: None };
     let mut tries = Vec::new();
     for name in ["ann", "bob"] {
         let r = practice::try_it(&judge, &acct("practice"), ppid, name)?;
@@ -1131,7 +1133,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     }
     let practice_ok = tries.iter().all(|r| r["state"] == json!("Done:Paid") && r["paid_raw"] == json!(ONE_TUSD.to_string()))
         && tries[0]["vault"] != tries[1]["vault"]
-        && tries.iter().all(|r| r["vended_by"] == json!(acct("practice")) && r["witness_source"] == json!("base"));
+        && tries.iter().all(|r| r["vended_by"] == json!(acct("practice")) && r["witness_source"] == json!("base") && r["closed"] == json!(true));
     results["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&pm.canonical())),
                                  "vending": vending, "fund": funded, "tries": tries, "ok": practice_ok, "seconds": t.elapsed().as_secs_f64()});
     step("Fork mode: the practice program again, deployed only inside the verifier (nothing of it is on chain)");
@@ -1249,7 +1251,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     results["judge"] = judged;
     // A versioned deployment record, as `antibody admin record-deployment` writes it from the served
     // deployments file (which names the practice vending contract too).
-    let served_ctx = Ctx { near: near.clone(), dep: served.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges") };
+    let served_ctx = Ctx { near: near.clone(), dep: served.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges"), via: None };
     let record = antibody_cli::judge::deployment_record(&served_ctx, None)?;
     let record_ok = record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
     println!("deployment record: {} contracts, verifier {}; ok: {record_ok}", record["contracts"].as_array().map(|c| c.len()).unwrap_or(0),

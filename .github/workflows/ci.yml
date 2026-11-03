@@ -132,6 +132,7 @@ jobs:
           workspaces: |
             contracts/near-guardian
             contracts/near-antibody
+            contracts/practice-account
             contracts/practice-vending
             contracts/verdict-guard
       - name: near-guardian
@@ -139,6 +140,9 @@ jobs:
         run: |
           cargo test --lib
           cargo build --release --target wasm32-unknown-unknown
+      - name: practice account (the code each vended account runs)
+        working-directory: contracts/practice-account
+        run: cargo build --release --target wasm32-unknown-unknown
       - name: practice vending
         working-directory: contracts/practice-vending
         run: |

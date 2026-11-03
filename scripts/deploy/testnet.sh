@@ -72,6 +72,7 @@ wasm_for() { # <name> <cargo output>
 ANTIBODY_WASM="$(wasm_for near_antibody "$REL/near_antibody.wasm")"
 GUARDIAN_WASM="$(wasm_for antibody_guardian contracts/near-guardian/target/wasm32-unknown-unknown/release/antibody_guardian.wasm)"
 VENDING_WASM="$(wasm_for antibody_practice_vending contracts/practice-vending/target/wasm32-unknown-unknown/release/antibody_practice_vending.wasm)"
+ACCOUNT_WASM="$(wasm_for antibody_practice_account contracts/practice-account/target/wasm32-unknown-unknown/release/antibody_practice_account.wasm)"
 VERIFIER_WASM="$ROOT/target/reproducible/wasm32-wasip2/release/antibody-verify.wasm"
 
 # Per account: the code stake (its wasm's bytes), the state it will hold, and its gas and run deposits.
@@ -92,11 +93,14 @@ declare -A AMOUNT=(
   [relayer]=700000000000000000000000                  # T1 relays (verify_quote ~0.0176 each, ~30 runs)
 )
 ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f agent-g keeper relayer)
-# NEAR sets aside a call's prepaid gas at ten times the gas price before running it: a 300 Tgas call (a
-# reveal, an activation, a T1 relay) needs 0.301 NEAR free, and burns about a tenth of it. The live run
-# (`antibody-services live`) tops each account up to 0.36 NEAR free from the root before such calls and
-# returns the agents' floats after their proofs; a vended practice account gets 0.34 (its commit and reveal).
-PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.83)"  # code, state, two vends' gas funds (0.34 each), deploy margin
+# NEAR sets aside a call's prepaid gas at ten times the gas price before running it: a 300 Tgas call (an
+# activation, a T1 relay) needs 0.301 NEAR free, a 200 Tgas reveal 0.201, and each burns about a tenth of
+# it. The live run (`antibody-services live`) tops each account up to 0.3 NEAR free from the root before
+# such calls and returns the agents' floats after their proofs. A vended practice account gets 0.25 (its
+# contract's storage and its reveal's set-aside gas); closing it after its try returns what is left.
+# The vending contract: its code, the practice-account code it keeps, its state, two tries' gas funds at
+# once (0.25 each, back when each account closes), and a margin for the deploy.
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" "$(( $(stat -c %s "$ACCOUNT_WASM") + 8000 ))" 0.65)"
 
 plan() {
   local total=0 a
@@ -107,7 +111,7 @@ plan() {
     total=$(python3 -c "print($total + ${AMOUNT[$n]})")
   done
   printf '%-34s %12s  %s\n' "practice.$HQ (optional)" "$(near "$PRACTICE_AMOUNT")" "$([ -n "$(balance_of "practice.$HQ")" ] && echo yes || echo no)"
-  echo "wasm: near-antibody $(stat -c %s "$ANTIBODY_WASM") B, guardian $(stat -c %s "$GUARDIAN_WASM") B, vending $(stat -c %s "$VENDING_WASM") B$(command -v wasm-opt >/dev/null || echo ' (no wasm-opt: unoptimized)')"
+  echo "wasm: near-antibody $(stat -c %s "$ANTIBODY_WASM") B, guardian $(stat -c %s "$GUARDIAN_WASM") B, vending $(stat -c %s "$VENDING_WASM") B, practice account $(stat -c %s "$ACCOUNT_WASM") B$(command -v wasm-opt >/dev/null || echo ' (no wasm-opt: unoptimized)')"
   echo "sub-accounts: $(near "$total") NEAR (+ $(near "$PRACTICE_AMOUNT") for the practice program)"
   local have; have="$(balance_of "$HQ")"
   echo "$HQ holds: $( [ -n "$have" ] && near "$have" || echo 'no account') NEAR; it keeps ~0.35 for T1 relays, registrations and gas"
@@ -183,7 +187,7 @@ practice() {
     --amount-near "$(near "$PRACTICE_AMOUNT")" --key-out "$KEYS/$a.json"
   # Practice bonds and payouts are tiny amounts of wNEAR; the owner funds near-antibody credit for runs.
   [ "$(code_of "$a")" = 11111111111111111111111111111111 ] && ab --key-file "$KEYS/$a.json" practice deploy \
-    --wasm "$VENDING_WASM" --owner "$HQ" --program "$PRACTICE_PROGRAM" --vaults 24 --bond-budget "${PRACTICE_BOND_BUDGET:-0.01}" --per-commit-cap "${PRACTICE_BOND:-0.001}"
+    --wasm "$VENDING_WASM" --account-wasm "$ACCOUNT_WASM" --owner "$HQ" --program "$PRACTICE_PROGRAM" --vaults 24 --bond-budget "${PRACTICE_BOND_BUDGET:-0.01}" --per-commit-cap "${PRACTICE_BOND:-0.001}"
   ab --key-file "$KEYS/$HQ.json" practice fund --vending "$a" --near "${PRACTICE_NEAR:-0.15}" --tokens "${PRACTICE_TOKENS:-0.01}"
 }
 

@@ -298,7 +298,7 @@ bonds are never revenue: they go to the program's escrow.
 | `crates/rules` | The settlement rule core near-antibody runs; Kani proofs |
 | `crates/cli` | `antibody`: CLI, MCP server, practice, judge view, rule strength, Foundry compatibility, drafter |
 | `crates/services` | Indexer, API, keeper, relayers, notifier, monitoring, sandbox mocks, the demo |
-| `contracts/near-antibody`, `near-guardian`, `practice-vending`, `verdict-guard` | The NEAR contracts |
+| `contracts/near-antibody`, `near-guardian`, `practice-vending`, `practice-account`, `verdict-guard` | The NEAR contracts |
 | `contracts/evm` | Acme Lend (deliberately vulnerable), its rules, proofs and fixes; the practice vaults; the adapter |
 | `formal/` | The Quint model of the settlement rules |
 | `fixtures/`, `golden/` | Recorded witnesses and verdicts; golden vectors |

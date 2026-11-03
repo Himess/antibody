@@ -66,6 +66,9 @@ pub struct Ctx {
     pub key_file: Option<PathBuf>,
     pub eth_rpc: Option<String>,
     pub state_dir: PathBuf,
+    /// A hunter's near-antibody calls (commit, reveal, retry, allocate, pay) go through this account's
+    /// contract, which passes them on: a practice account (contracts/practice-account).
+    pub via: Option<String>,
 }
 
 /// Reads `KEY=value` lines of a dotenv file without printing anything.
@@ -132,7 +135,7 @@ impl Ctx {
         let near = Near::new(network, rpc);
         let eth_rpc = eth_rpc.or_else(|| env_or_dotenv("SEPOLIA_RPC")).or_else(|| dep.eth_rpc.clone());
         let state_dir = PathBuf::from(".antibody");
-        Ok(Self { near, dep, account: account.or_else(|| std::env::var("ANTIBODY_ACCOUNT").ok()), key_file, eth_rpc, state_dir })
+        Ok(Self { near, dep, account: account.or_else(|| std::env::var("ANTIBODY_ACCOUNT").ok()), key_file, eth_rpc, state_dir, via: None })
     }
 
     /// The signing account: `--key-file`, else `.secrets/near/<account>.json`, else near-cli's
@@ -172,6 +175,11 @@ impl Ctx {
             .enumerate()
             .map(|(i, u)| std::sync::Arc::new(antibody_witness::rpc::Provider::new(&format!("eth{i}"), u)))
             .collect())
+    }
+
+    /// Where a hunter's near-antibody calls go: near-antibody, or the account that passes them on.
+    pub fn hunter_calls(&self) -> &str {
+        self.via.as_deref().unwrap_or(&self.dep.antibody)
     }
 
     pub fn view(&self, method: &str, args: Value) -> Result<Value> {

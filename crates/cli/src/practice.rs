@@ -18,8 +18,8 @@ use crate::{
 pub const TUTORIAL_CALL: &str = "0x01681a62000000000000000000000000000000000000000000000000000000000000dead";
 
 /// The public vend key's seed. Deliberately public: anyone derives this key, so a first try needs no
-/// NEAR account. On a vending contract it may call only `vend`, within the allowance the operator set,
-/// and vending is limited per hour.
+/// NEAR account. On a vending contract it may call only `vend` and `reclaim`, within the allowance the
+/// operator set, and vending is limited per hour.
 pub const PUBLIC_VEND_SEED: &str = "antibody/practice/public-vend-key/v1";
 
 /// The public vend key, signing as the vending account.
@@ -52,16 +52,31 @@ fn borsh_str(s: &str) -> Vec<u8> {
     v
 }
 
-/// The vending contract's `new` arguments, in Borsh.
-pub fn new_args(owner: &str, antibody: &str, token: &str, program: u32, vaults: u32, terms: &Terms) -> Vec<u8> {
+/// The vending contract's `new` arguments, in Borsh: the practice-account contract last.
+pub fn new_args(owner: &str, antibody: &str, token: &str, program: u32, vaults: u32, terms: &Terms, account_code: &[u8]) -> Vec<u8> {
     let mut v = borsh_str(owner);
     v.extend(borsh_str(antibody));
     v.extend(borsh_str(token));
     v.extend(program.to_le_bytes());
     v.extend(vaults.to_le_bytes());
     terms.borsh(&mut v);
+    v.extend((account_code.len() as u32).to_le_bytes());
+    v.extend(account_code);
     v
 }
+
+/// What a practice account's calls attach (near-antibody burns about 11 Tgas on a commit, 15 on an
+/// allocation, 11 on a payment, measured on testnet; the account's contract keeps 3 to pass each on).
+/// NEAR sets each call's prepaid gas aside up front: the account's gas funds cover the largest, the
+/// reveal ([`cmd::RUN_TGAS`]).
+pub const ALLOCATE_TGAS: u64 = 40;
+pub const PAY_TGAS: u64 = 30;
+/// `close` (the account tells the vending contract its try is done) and `reclaim` (the vending contract
+/// deletes it).
+pub const CLOSE_TGAS: u64 = 15;
+pub const RECLAIM_TGAS: u64 = 20;
+/// `vend`: the account, its contract and key, and its agent registration.
+pub const VEND_TGAS: u64 = 60;
 
 /// The vending contract's `vend(name, public_key)` arguments, in Borsh. near-sdk's `PublicKey` is a
 /// `Vec<u8>`: its length (33), the curve (0, ed25519) and the key.
@@ -107,11 +122,12 @@ pub fn check_name(name: &str) -> Result<()> {
 pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Value> {
     check_name(name)?;
     let account = format!("{name}.{vending}");
-    if ctx.near.account(&account)?.is_some() {
+    // A closed practice account is gone, but the vending contract keeps its name.
+    if ctx.near.account(&account)?.is_some() || vault_of(ctx, vending, &account)?.is_some() {
         return Err(eyre!("{account} is taken: pick another --name (a new one, lowercase)"));
     }
     let key = Signer::generate(Some(account.clone()))?;
-    let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: 100 * TGAS, deposit: 0 }];
+    let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: VEND_TGAS * TGAS, deposit: 0 }];
     let public = public_vend_signer(vending);
     let (out, by) = match ctx.near.send(&public, vending, call.clone(), "EXECUTED_OPTIMISTIC") {
         Ok(out) => (out, public.account_id),
@@ -129,6 +145,24 @@ pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Valu
     std::fs::write(key_out, serde_json::to_vec_pretty(&key.to_file_json())?)?;
     let vault = vault_of(ctx, vending, &account)?.ok_or_else(|| eyre!("{vending} assigned no vault to {account}"))?;
     Ok(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": by, "tx": s}))
+}
+
+/// Closes a practice account with the vending contract's `reclaim`, signed by the public vend key (by
+/// your own account once its allowance is spent, if you named one): the refunds of that transaction go
+/// to the vending contract, which stays. Allowed once the account's try is done, or an hour after its
+/// vend.
+pub fn reclaim(ctx: &Ctx, vending: &str, account: &str) -> Result<Value> {
+    let call = vec![Action::FunctionCall { method: "reclaim".into(), args: borsh_str(account), gas: RECLAIM_TGAS * TGAS, deposit: 0 }];
+    let out = match ctx.near.send(&public_vend_signer(vending), vending, call.clone(), "EXECUTED_OPTIMISTIC") {
+        Ok(out) => out,
+        Err(e) if ctx.account.is_some() || ctx.key_file.is_some() => {
+            let me = ctx.signer()?;
+            eprintln!("the public vend key could not call reclaim ({e}); calling it as {}", me.account_id);
+            ctx.near.send(&me, vending, call, "EXECUTED_OPTIMISTIC")?
+        }
+        Err(e) => return Err(e),
+    };
+    cmd::ensure_ok(ctx, &out, "reclaim")
 }
 
 /// Waits until a run is T1-confirmed (or failed).
@@ -153,13 +187,13 @@ fn wait_t1(ctx: &Ctx, run_id: u64, timeout_s: u64) -> Result<Value> {
 /// claims, then `pay` this one.
 pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
     let mut steps = Vec::new();
-    match cmd::call(ctx, "allocate", json!({"program_id": program, "max": 20}), 150) {
+    match cmd::call(ctx, "allocate", json!({"program_id": program, "max": 20}), ALLOCATE_TGAS) {
         Ok(s) => steps.push(json!({"allocate": s["tx"]})),
         Err(e) if e.to_string().contains("nothing to allocate") => {}
         Err(e) => return Err(e),
     }
     if cmd::state_label(&ctx.commit(commit)?["state"]) == "Holder" {
-        let s = cmd::call(ctx, "pay", json!({"commit_id": commit}), 60)?;
+        let s = cmd::call(ctx, "pay", json!({"commit_id": commit}), PAY_TGAS)?;
         steps.push(json!({"pay": s["tx"], "paid": cmd::event(&s, "paid")}));
     }
     Ok(Value::Array(steps))
@@ -182,8 +216,9 @@ pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Resul
 }
 
 /// The whole try-it: vend a practice account, prove its vault with the tutorial proof (commit, sealed
-/// reveal, verdict, T1), and settle as the practice account. With no `--account`, the public vend key
-/// calls `vend`, so nothing but this command is needed.
+/// reveal, verdict, T1), settle as the practice account, and close it (its NEAR back to the vending
+/// contract). With no `--account`, the public vend key calls `vend`, so nothing but this command is
+/// needed.
 pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Value> {
     check_name(name)?;
     let t0 = Instant::now();
@@ -201,12 +236,33 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
         key_file: Some(key_file),
         eth_rpc: ctx.eth_rpc.clone(),
         state_dir: dir.join("state"),
+        // Its key calls only its own contract, which passes the near-antibody calls on.
+        via: Some(account.clone()),
     };
-    let submitted = cmd::submit(&practice, program, &bundle, None, None, true)?;
-    let commit = submitted["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {submitted}"))?;
-    let run = submitted["reveal"]["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {submitted}"))?;
-    let t1 = wait_t1(&practice, run, 300)?;
-    let settled = settle(&practice, program, commit)?;
+    // The account says its try is done, and the public vend key has the vending contract delete it.
+    let close = || -> Result<(Value, Value)> {
+        let out = practice.near.function_call(&practice.signer()?, &account, "close", json!({}), CLOSE_TGAS, 0)?;
+        let done = cmd::ensure_ok(ctx, &out, "close")?;
+        Ok((done, reclaim(ctx, vending, &account)?))
+    };
+    let tried = (|| -> Result<_> {
+        let submitted = cmd::submit(&practice, program, &bundle, None, None, true)?;
+        let commit = submitted["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {submitted}"))?;
+        let run = submitted["reveal"]["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {submitted}"))?;
+        let t1 = wait_t1(&practice, run, 300)?;
+        let settled = settle(&practice, program, commit)?;
+        Ok((submitted, commit, run, t1, settled))
+    })();
+    // The try is over, done or not: the account goes, its NEAR back to the vending contract (one left
+    // open, the vending contract's `reclaim` closes an hour after its vend).
+    let (submitted, commit, run, t1, settled) = match tried {
+        Ok(t) => t,
+        Err(e) => {
+            let closed = close().map(|_| format!("{account} is closed, its NEAR back to {vending}")).unwrap_or_else(|c| format!("{account} stays open ({c})"));
+            return Err(e.wrap_err(closed));
+        }
+    };
+    let (done, reclaimed) = close()?;
     let c = ctx.commit(commit)?;
     let mut links = vec![json!({"vend": vended["tx"]["explorer"]}), json!({"commit": submitted["commit"]["tx"]["explorer"]}),
                          json!({"reveal": submitted["reveal"]["tx"]["explorer"]})];
@@ -217,11 +273,13 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
             }
         }
     }
+    links.push(json!({"close": done["explorer"]}));
+    links.push(json!({"reclaim": reclaimed["explorer"]}));
     Ok(json!({"account": account, "vault": vault, "vault_index": vended["vault"], "vended_by": vended["vended_by"], "commit_id": commit,
               "run_id": run, "verdict": submitted["reveal"]["result"], "witness_source": submitted["commit"]["witness_source"],
               "witness_bytes": submitted["commit"]["witness_bytes"], "t1": t1, "settle": settled,
               "state": cmd::state_label(&c["state"]), "paid_raw": cmd::paid_of(&c).to_string(), "beneficiary": c["beneficiary"],
-              "links": links, "seconds": t0.elapsed().as_secs_f64()}))
+              "closed": ctx.near.account(&account)?.is_none(), "links": links, "seconds": t0.elapsed().as_secs_f64()}))
 }
 
 /// `try`'s summary: what happened, in words, with each transaction (`--json` for the record).
@@ -243,8 +301,8 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
     ];
     for l in r["links"].as_array().into_iter().flatten() {
         for (k, v) in l.as_object().into_iter().flatten() {
-            // The vend is signed by whoever called it; the rest by the practice account.
-            let signer = if k == "vend" { r["vended_by"].as_str() } else { r["account"].as_str() }.unwrap_or("?");
+            // The vend and the reclaim are signed by whoever called them; the rest by the practice account.
+            let signer = if k == "vend" || k == "reclaim" { r["vended_by"].as_str() } else { r["account"].as_str() }.unwrap_or("?");
             let hash = v.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("");
             out.push(format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"));
         }
@@ -255,9 +313,11 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
 
 // ------------------------------------------------------------------------- the operator
 
-/// Deploys the vending contract on the signer's own account and adds the public vend key, for `vend`
-/// only, within `vend_allowance` yoctoNEAR. The payout token is the deployment's.
-pub fn deploy(ctx: &Ctx, wasm: &Path, owner: &str, program: u32, vaults: u32, terms: &Terms, vend_allowance: u128) -> Result<Value> {
+/// Deploys the vending contract on the signer's own account, with the practice-account contract it
+/// deploys on each vend (`account_wasm`), and adds the public vend key, for `vend` and `reclaim` only,
+/// within `vend_allowance` yoctoNEAR. The payout token is the deployment's.
+#[allow(clippy::too_many_arguments)]
+pub fn deploy(ctx: &Ctx, wasm: &Path, account_wasm: &Path, owner: &str, program: u32, vaults: u32, terms: &Terms, vend_allowance: u128) -> Result<Value> {
     let me = ctx.signer()?;
     let public = public_vend_signer(&me.account_id);
     let out = ctx.near.send(
@@ -267,13 +327,17 @@ pub fn deploy(ctx: &Ctx, wasm: &Path, owner: &str, program: u32, vaults: u32, te
             Action::DeployContract(std::fs::read(wasm)?),
             Action::FunctionCall {
                 method: "new".into(),
-                args: new_args(owner, &ctx.dep.antibody, &ctx.dep.token, program, vaults, terms),
+                args: new_args(owner, &ctx.dep.antibody, &ctx.dep.token, program, vaults, terms, &std::fs::read(account_wasm)?),
                 gas: 30 * TGAS,
                 deposit: 0,
             },
             Action::AddKey {
                 public_key: public.public_key(),
-                permission: Permission::FunctionCall { allowance: Some(vend_allowance), receiver_id: me.account_id.clone(), method_names: vec!["vend".into()] },
+                permission: Permission::FunctionCall {
+                    allowance: Some(vend_allowance),
+                    receiver_id: me.account_id.clone(),
+                    method_names: vec!["vend".into(), "reclaim".into()],
+                },
             },
         ],
         "EXECUTED_OPTIMISTIC",
@@ -281,6 +345,31 @@ pub fn deploy(ctx: &Ctx, wasm: &Path, owner: &str, program: u32, vaults: u32, te
     let s = cmd::ensure_ok(ctx, &out, "deploy")?;
     Ok(json!({"vending": me.account_id, "owner": owner, "program": program, "vaults": vaults,
               "public_vend_key": public.public_key_str(), "vend_allowance": vend_allowance.to_string(), "tx": s}))
+}
+
+/// The owner points the vending contract at a new practice program (`set_terms`) and gives it the
+/// practice-account contract later vends deploy (`set_account_code`): a locked vending contract keeps
+/// serving the deployment's new practice programs.
+pub fn retarget(ctx: &Ctx, vending: &str, account_wasm: &Path, program: u32, vaults: u32, terms: &Terms) -> Result<Value> {
+    let owner = ctx.signer()?;
+    let mut set_terms = program.to_le_bytes().to_vec();
+    set_terms.extend(vaults.to_le_bytes());
+    terms.borsh(&mut set_terms);
+    let code = std::fs::read(account_wasm)?;
+    let mut set_code = (code.len() as u32).to_le_bytes().to_vec();
+    set_code.extend(&code);
+    let out = ctx.near.send(
+        &owner,
+        vending,
+        vec![
+            Action::FunctionCall { method: "set_terms".into(), args: set_terms, gas: 10 * TGAS, deposit: ONE_YOCTO },
+            Action::FunctionCall { method: "set_account_code".into(), args: set_code, gas: 20 * TGAS, deposit: ONE_YOCTO },
+        ],
+        "EXECUTED_OPTIMISTIC",
+    )?;
+    let s = cmd::ensure_ok(ctx, &out, "set_terms")?;
+    Ok(json!({"vending": vending, "owner": owner.account_id, "program": program, "vaults": vaults, "retargeted": true,
+              "account_code_sha256": hex::encode(sha256(&code)), "public_vend_key": public_vend_signer(vending).public_key_str(), "tx": s}))
 }
 
 /// The owner funds the vending contract: NEAR credit at near-antibody for the practice accounts' runs
@@ -319,10 +408,11 @@ mod tests {
     #[test]
     fn borsh_args_match_the_contract() {
         let t = Terms { gas_funds: 1, allowance: 2, bond_budget: 3, per_commit_cap: 4, per_hour: 5 };
-        let a = new_args("o", "b", "t", 7, 24, &t);
-        // three strings (4 + 1 bytes each), two u32, four u128, one u32
-        assert_eq!(a.len(), 3 * 5 + 8 + 64 + 4);
+        let a = new_args("o", "b", "t", 7, 24, &t, b"\0asm");
+        // three strings (4 + 1 bytes each), two u32, four u128, one u32, then the code (4 + 4 bytes)
+        assert_eq!(a.len(), 3 * 5 + 8 + 64 + 4 + 8);
         assert_eq!(&a[15..19], &7u32.to_le_bytes());
+        assert_eq!(&a[a.len() - 8..], &[4, 0, 0, 0, 0, b'a', b's', b'm']);
         let v = vend_args("ann", &[9; 32]);
         assert_eq!(&v[..11], &[3, 0, 0, 0, b'a', b'n', b'n', 33, 0, 0, 0]);
         assert_eq!((v[11], v.len()), (0, 11 + 1 + 32));

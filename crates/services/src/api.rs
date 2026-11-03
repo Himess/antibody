@@ -55,7 +55,7 @@ pub const ENDPOINTS: &[&str] = &[
 impl Api {
     /// A read-only CLI context: no account, no key.
     fn ctx(&self) -> Ctx {
-        Ctx { near: self.near.clone(), dep: self.dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: self.state_dir.join("api") }
+        Ctx { near: self.near.clone(), dep: self.dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: self.state_dir.join("api"), via: None }
     }
 }
 
