@@ -112,59 +112,61 @@ fn start_anvil(bin: &Path, chain_id: u64, port: u16, log: &Path) -> Result<Child
     Ok(child)
 }
 
-fn deploy_acme(a: &DemoArgs, rpc: &str, guardian: &str, out: &Path) -> Result<Value> {
-    let st = Command::new(&a.forge_bin)
-        .current_dir(a.root.join("contracts/evm"))
-        .args(["script", "script/DeployAcme.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER, "--slow"])
-        .env("GUARDIAN_ADDRESS", guardian)
-        .env("SEED", "true")
-        // A real transfer before the anchor (anvil_setBalance would rewrite the anchor block's state).
-        .env("GUARDIAN_FUND_WEI", "100000000000000000")
-        .env("DEPLOYMENTS_OUT", out)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()?;
+/// Who broadcasts a forge script: an anvil account (unlocked), or the key the script reads from
+/// `DEPLOYER_KEY` (testnets).
+pub(crate) enum Broadcaster<'a> {
+    Unlocked(&'a str),
+    Key(&'a str),
+}
+
+/// Runs `script` (contracts/evm/script) and reads the JSON it writes to `out`. A key never appears in a
+/// command line or in an error.
+fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Broadcaster, env: &[(&str, &str)], out: &Path) -> Result<Value> {
+    let mut c = Command::new(forge_bin);
+    c.current_dir(root.join("contracts/evm")).args(["script", script, "--rpc-url", rpc, "--broadcast", "--slow"]);
+    match by {
+        Broadcaster::Unlocked(sender) => c.args(["--unlocked", "--sender", sender]).env_remove("DEPLOYER_KEY"),
+        Broadcaster::Key(key) => c.env("DEPLOYER_KEY", key),
+    };
+    for (k, v) in env {
+        c.env(k, v);
+    }
+    let st = c.stdout(Stdio::null()).stderr(Stdio::piped()).output()?;
     if !st.status.success() {
-        return Err(eyre!("forge script failed: {}", String::from_utf8_lossy(&st.stderr)));
+        let mut err = String::from_utf8_lossy(&st.stderr).to_string();
+        if let Broadcaster::Key(key) = by {
+            let hex = key.trim().trim_start_matches("0x").to_lowercase();
+            let dec = alloy_primitives::U256::from_str_radix(&hex, 16).map(|k| k.to_string()).unwrap_or_default();
+            for secret in [hex.as_str(), dec.as_str()].into_iter().filter(|s| !s.is_empty()) {
+                err = err.replace(secret, "<key>").replace(&secret.to_uppercase(), "<key>");
+            }
+        }
+        return Err(eyre!("forge script {script} failed: {err}"));
     }
     Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
 }
 
+pub(crate) fn deploy_acme(root: &Path, forge_bin: &Path, rpc: &str, by: &Broadcaster, guardian: &str, out: &Path) -> Result<Value> {
+    let out_s = out.to_string_lossy();
+    // A real transfer before the anchor (anvil_setBalance would rewrite the anchor block's state).
+    let env = [("GUARDIAN_ADDRESS", guardian), ("SEED", "true"), ("GUARDIAN_FUND_WEI", "100000000000000000"), ("DEPLOYMENTS_OUT", &out_s)];
+    forge_script(root, forge_bin, "script/DeployAcme.s.sol", rpc, by, &env, out)
+}
+
 /// The practice program's tutorial vaults (docs/practice.md): 24, a thousandth of an ether each.
-fn deploy_practice(a: &DemoArgs, rpc: &str, out: &Path) -> Result<Value> {
-    let st = Command::new(&a.forge_bin)
-        .current_dir(a.root.join("contracts/evm"))
-        .args(["script", "script/DeployPractice.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER_2, "--slow"])
-        .env_remove("DEPLOYER_KEY")
-        .env("COUNT", "24")
-        .env("VALUE_WEI", "24000000000000000")
-        .env("PRACTICE_OUT", out)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()?;
-    if !st.status.success() {
-        return Err(eyre!("forge script failed: {}", String::from_utf8_lossy(&st.stderr)));
-    }
-    Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
+pub(crate) fn deploy_practice(root: &Path, forge_bin: &Path, rpc: &str, by: &Broadcaster, out: &Path) -> Result<Value> {
+    let out_s = out.to_string_lossy();
+    let env = [("COUNT", "24"), ("VALUE_WEI", "24000000000000000"), ("PRACTICE_OUT", &out_s)];
+    forge_script(root, forge_bin, "script/DeployPractice.s.sol", rpc, by, &env, out)
 }
 
 /// The program's adapter on one chain (CREATE2: the same address everywhere), made Acme's pauser and
 /// the AcmeLend proxy's admin.
-fn deploy_adapter(a: &DemoArgs, rpc: &str, guardian: &str, program_key: &str, acme: &Path, out: &Path) -> Result<Value> {
-    let st = Command::new(&a.forge_bin)
-        .current_dir(a.root.join("contracts/evm"))
-        .args(["script", "script/DeployAdapter.s.sol", "--rpc-url", rpc, "--broadcast", "--unlocked", "--sender", ANVIL_SENDER, "--slow"])
-        .env("GUARDIAN_ADDRESS", guardian)
-        .env("PROGRAM_KEY", program_key)
-        .env("ACME", acme)
-        .env("ADAPTER_OUT", out)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()?;
-    if !st.status.success() {
-        return Err(eyre!("forge script DeployAdapter failed: {}", String::from_utf8_lossy(&st.stderr)));
-    }
-    Ok(serde_json::from_str(&std::fs::read_to_string(out)?)?)
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn deploy_adapter(root: &Path, forge_bin: &Path, rpc: &str, by: &Broadcaster, guardian: &str, program_key: &str, acme: &Path, out: &Path) -> Result<Value> {
+    let (acme_s, out_s) = (acme.to_string_lossy(), out.to_string_lossy());
+    let env = [("GUARDIAN_ADDRESS", guardian), ("PROGRAM_KEY", program_key), ("ACME", &acme_s), ("ADAPTER_OUT", &out_s)];
+    forge_script(root, forge_bin, "script/DeployAdapter.s.sol", rpc, by, &env, out)
 }
 
 /// The TEST key's public key as the MPC contract formats derived keys: `secp256k1:<base58 of x ‖ y>`.
@@ -194,6 +196,16 @@ fn start_sandbox(a: &DemoArgs, home: &Path, log: &Path) -> Result<(Child, Signer
     Ok((child, root))
 }
 
+/// What differs between the sandbox's programs and testnet's: the anchor's chain, how the anchor is
+/// trusted, and the label in the programs' names.
+pub(crate) struct Net {
+    pub chain_id: u64,
+    pub trust: &'static str,
+    pub label: &'static str,
+}
+
+const SANDBOX: Net = Net { chain_id: 31337, trust: "project-attested", label: "sandbox demo" };
+
 pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path, eth_rpc: &str, state: &Path) -> Ctx {
     Ctx {
         near: near.clone(),
@@ -205,7 +217,7 @@ pub(crate) fn ctx_for(near: &Near, dep: &Deployments, account: &str, key: &Path,
     }
 }
 
-fn code_hash(evm: &Evm, addr: &str, block: u64) -> Result<B256> {
+pub(crate) fn code_hash(evm: &Evm, addr: &str, block: u64) -> Result<B256> {
     let p = evm.call("eth_getProof", json!([addr, [], format!("{block:#x}")]))?;
     Ok(p["codeHash"].as_str().ok_or_else(|| eyre!("codeHash"))?.parse()?)
 }
@@ -241,8 +253,8 @@ fn demo_settlement(deadline: u64) -> Settlement {
     }
 }
 
-/// The demo program's manifest (v2): the Acme fixture and the demo's settlement terms.
-fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+/// The Acme program's manifest (v2): the Acme fixture and its settlement terms.
+pub(crate) fn acme_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project: &str, net: &Net, terms: Settlement) -> Result<Manifest> {
     let a = |k: &str| -> Result<alloy_primitives::Address> { Ok(dep[k].as_str().ok_or_else(|| eyre!("deployment {k}"))?.parse()?) };
     let code: alloy_primitives::Bytes = dep["invariantsRuntimeCode"].as_str().unwrap_or_default().parse()?;
     let mut targets = Vec::new();
@@ -253,11 +265,11 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
     Ok(Manifest {
         schema: MANIFEST_SCHEMA_V2.into(),
         program: ProgramInfo {
-            name: "Acme Lend v1 — pre-launch (sandbox demo)".into(),
+            name: format!("Acme Lend v1 — pre-launch ({})", net.label),
             project: project.into(),
             description: "Fictional lending protocol with planted bugs (DELIBERATELY VULNERABLE TEST FIXTURE).".into(),
         },
-        anchor: Anchor { chain_id: 31337, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: "project-attested".into() },
+        anchor: Anchor { chain_id: net.chain_id, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: net.trust.into() },
         targets,
         invariants: Invariants {
             address: inv_addr,
@@ -300,7 +312,7 @@ fn demo_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project:
             Canary { to: a("AcmeLend")?, data: keccak256(b"collateralPrice()")[..4].to_vec().into() },
             Canary { to: a("AcmeVault")?, data: keccak256(b"totalAssets()")[..4].to_vec().into() },
         ],
-        settlement: Some(serde_json::to_value(demo_settlement(deadline))?),
+        settlement: Some(serde_json::to_value(terms)?),
         deploy: None,
         rule_strength: None,
     })
@@ -339,7 +351,7 @@ fn practice_settlement(deadline: u64) -> Settlement {
 
 /// The practice program's manifest (v2): the factory and each vault as its own target (`vault-<i>`),
 /// and the one rule.
-fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+pub(crate) fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, project: &str, net: &Net, terms: Settlement) -> Result<Manifest> {
     let code: alloy_primitives::Bytes = dep["invariantsRuntimeCode"].as_str().unwrap_or_default().parse()?;
     let factory = dep["factory"].as_str().ok_or_else(|| eyre!("practice deployment: factory"))?;
     let mut targets = vec![Target { name: "factory".into(), address: factory.parse()?, code_hash: code_hash(evm, factory, anchor_n)? }];
@@ -349,7 +361,7 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
         targets.push(Target { name: format!("vault-{i}"), address: v.parse()?, code_hash: code_hash(evm, v, anchor_n)? });
         vaults.push(v.parse()?);
     }
-    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, deadline)?;
+    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, net, terms)?;
     m.targets = targets;
     m.impact.protocol_accounts = vaults;
     m.invariants.runtime_code_hash = keccak256(&code);
@@ -358,15 +370,15 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
 }
 
 /// The practice program's manifest, but for its targets and its rule's runtime code.
-fn practice_manifest_parts(anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+fn practice_manifest_parts(anchor_n: u64, anchor_h: B256, project: &str, net: &Net, terms: Settlement) -> Result<Manifest> {
     Ok(Manifest {
         schema: MANIFEST_SCHEMA_V2.into(),
         program: ProgramInfo {
-            name: "Practice program — a tutorial (sandbox demo)".into(),
+            name: format!("Practice program — a tutorial ({})", net.label),
             project: project.into(),
             description: "TUTORIAL TARGET: 24 vaults with one textbook bug (sweep has no access check), published with its proof (docs/practice.md).".into(),
         },
-        anchor: Anchor { chain_id: 31337, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: "project-attested".into() },
+        anchor: Anchor { chain_id: net.chain_id, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: net.trust.into() },
         targets: vec![],
         invariants: Invariants {
             address: alloy_primitives::Address::from_slice(&keccak256(b"antibody/invariants/v1")[12..]),
@@ -394,15 +406,15 @@ fn practice_manifest_parts(anchor_n: u64, anchor_h: B256, project: &str, deadlin
         groups: vec![],
         protected_accounts: vec![],
         canaries: vec![],
-        settlement: Some(serde_json::to_value(practice_settlement(deadline))?),
+        settlement: Some(serde_json::to_value(terms)?),
         deploy: None,
         rule_strength: None,
     })
 }
 
 /// A contract's creation code from the forge build (contracts/evm/out).
-fn creation_code(a: &DemoArgs, file: &str, contract: &str) -> Result<alloy_primitives::Bytes> {
-    let art: Value = serde_json::from_str(&std::fs::read_to_string(a.root.join(format!("contracts/evm/out/{file}/{contract}.json")))?)?;
+fn creation_code(root: &Path, file: &str, contract: &str) -> Result<alloy_primitives::Bytes> {
+    let art: Value = serde_json::from_str(&std::fs::read_to_string(root.join(format!("contracts/evm/out/{file}/{contract}.json")))?)?;
     Ok(art["bytecode"]["object"].as_str().ok_or_else(|| eyre!("{contract}: no bytecode"))?.parse()?)
 }
 
@@ -413,21 +425,22 @@ fn word(x: impl Into<alloy_primitives::U256>) -> [u8; 32] {
 /// The practice program in fork mode (docs/fork-mode.md): the factory and its 24 vaults exist only inside
 /// the verifier, deployed by the manifest's two transactions on top of the anchor (the second
 /// instantiates the rule, for its runtime code). Nothing of it is on chain.
-fn fork_practice_manifest(a: &DemoArgs, ctx: &Ctx, anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fork_practice_manifest(root: &Path, ctx: &Ctx, anchor_n: u64, anchor_h: B256, project: &str, net: &Net, terms: Settlement) -> Result<Manifest> {
     use antibody_verifier::manifest::{deployer, Deploy, DeployTx};
     let d = deployer();
     let factory = d.create(0);
     let rule = d.create(1);
-    let mut factory_init = creation_code(a, "Practice.sol", "PracticeFactory")?.to_vec();
+    let mut factory_init = creation_code(root, "Practice.sol", "PracticeFactory")?.to_vec();
     factory_init.extend(word(alloy_primitives::U256::from(24u64)));
-    let mut rule_init = creation_code(a, "Practice.sol", "PracticeInvariants")?.to_vec();
+    let mut rule_init = creation_code(root, "Practice.sol", "PracticeInvariants")?.to_vec();
     rule_init.extend(factory.into_word().0);
-    let mut vault_init = creation_code(a, "Practice.sol", "PracticeVault")?.to_vec();
+    let mut vault_init = creation_code(root, "Practice.sol", "PracticeVault")?.to_vec();
     vault_init.extend(d.into_word().0);
     let vault_hash = keccak256(&vault_init);
     let vaults: Vec<alloy_primitives::Address> = (0..24u64).map(|i| factory.create2(B256::from(word(alloy_primitives::U256::from(i))), vault_hash)).collect();
-    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, deadline)?;
-    m.program.name = "Practice program in fork mode — a tutorial (sandbox demo)".into();
+    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, net, terms)?;
+    m.program.name = format!("Practice program in fork mode — a tutorial ({})", net.label);
     m.program.description = "TUTORIAL TARGET deployed only inside the verifier (fork mode): 24 vaults with one textbook bug (docs/fork-mode.md).".into();
     m.deploy = Some(Deploy {
         txs: vec![
@@ -503,7 +516,7 @@ pub(crate) fn mcp_submit(
 
 /// Whether a verdict is above the program's instant cap: it is final only after an agreeing second
 /// run and the challenge window (docs/spec.md §6.2).
-fn above_cap(p: &Value, v: &Value) -> bool {
+pub(crate) fn above_cap(p: &Value, v: &Value) -> bool {
     let params = &p["params"];
     let cap = cmd::u128_of(&params["instant_cap"]);
     v["kind"] == json!("Violation")
@@ -515,8 +528,12 @@ fn above_cap(p: &Value, v: &Value) -> bool {
 
 /// Waits until run `run_id` is T1 (the relayer thread relays its MOCK attestation).
 fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
+    wait_t1_for(ctx, run_id, Duration::from_secs(120))
+}
+
+pub(crate) fn wait_t1_for(ctx: &Ctx, run_id: u64, timeout: Duration) -> Result<Value> {
     let mut last = Value::Null;
-    wait_for(&format!("T1 for run {run_id}"), Duration::from_secs(120), || {
+    wait_for(&format!("T1 for run {run_id}"), timeout, || {
         last = cmd::run(ctx, run_id).map(|r| cmd::run_view(&r)).unwrap_or(Value::Null);
         // An infrastructure error is never confirmed: stop at once with its reason.
         last["tier"] == json!("T1") || last.get("failed").is_some() || last["kind"] == json!("InfraError")
@@ -528,13 +545,13 @@ fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
 }
 
 /// G's bundle (the gap lane): PocG_ArbitraryFrom deposits the saver's approved acUSD for itself.
-fn gap_bundle(a: &DemoArgs, dep: &Value) -> Result<PathBuf> {
-    let art: Value = serde_json::from_slice(&std::fs::read(a.root.join("contracts/evm/out/AcmePocs.sol/PocG_ArbitraryFrom.json"))?)?;
+pub(crate) fn gap_bundle(root: &Path, work: &Path, dep: &Value) -> Result<PathBuf> {
+    let art: Value = serde_json::from_slice(&std::fs::read(root.join("contracts/evm/out/AcmePocs.sol/PocG_ArbitraryFrom.json"))?)?;
     let word = |k: &str| format!("{:0>64}", dep[k].as_str().unwrap_or_default().trim_start_matches("0x").to_lowercase());
     let data = format!("{}{}{}{}", art["bytecode"]["object"].as_str().unwrap_or_default(), word("AcmeVault"), word("acUSD"), word("saver"));
     let bundle = json!({"senders": 1, "endowment_wei": (10u128.pow(18)).to_string(), "protected": [],
                         "calls": [{"sender": 0, "to": null, "value": "0", "data": data, "gas_limit": 3_000_000}]});
-    let path = a.work.join("G.bundle.json");
+    let path = work.join("G.bundle.json");
     std::fs::write(&path, serde_json::to_vec_pretty(&bundle)?)?;
     Ok(path)
 }
@@ -603,7 +620,7 @@ fn run_round(a: &DemoArgs, acme: &Ctx, keeper: &Ctx, near: &Near, pid: u32, roun
 }
 
 /// Every payout transaction in a result (the keeper's `{"paid": commit, "tx": hash}` steps), by commit.
-fn pay_txs(v: &Value, out: &mut BTreeMap<u64, Value>) {
+pub(crate) fn pay_txs(v: &Value, out: &mut BTreeMap<u64, Value>) {
     match v {
         Value::Object(m) => {
             if let (Some(c), Some(tx)) = (m.get("paid").and_then(|c| c.as_u64()), m.get("tx").filter(|t| t.is_string())) {
@@ -630,14 +647,15 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     procs.0.push(start_anvil(&a.anvil_bin, 31337, 8545, &a.work.join("anvil-31337.log"))?);
     procs.0.push(start_anvil(&a.anvil_bin, 31338, 8546, &a.work.join("anvil-31338.log"))?);
     // No pauser yet: the program's adapter becomes the pauser once it exists.
-    let dep_a = deploy_acme(&a, "http://127.0.0.1:8545", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31337.json"))?;
-    let dep_b = deploy_acme(&a, "http://127.0.0.1:8546", "0x0000000000000000000000000000000000000000", &a.work.join("acme-31338.json"))?;
+    let by = Broadcaster::Unlocked(ANVIL_SENDER);
+    let dep_a = deploy_acme(&a.root, &a.forge_bin, "http://127.0.0.1:8545", &by, "0x0000000000000000000000000000000000000000", &a.work.join("acme-31337.json"))?;
+    let dep_b = deploy_acme(&a.root, &a.forge_bin, "http://127.0.0.1:8546", &by, "0x0000000000000000000000000000000000000000", &a.work.join("acme-31338.json"))?;
     let same = ["AcmeGuard", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeVaultImpl", "AcmeLendFixed", "AcmeLendFinal", "AcmeVaultFixed"]
         .iter()
         .all(|k| dep_a[k] == dep_b[k]);
     println!("same addresses on both chains: {same}");
     // The practice program's vaults exist at the same anchor (another deployer: Acme's nonces are untouched).
-    let dep_p = deploy_practice(&a, "http://127.0.0.1:8545", &a.work.join("practice-31337.json"))?;
+    let dep_p = deploy_practice(&a.root, &a.forge_bin, "http://127.0.0.1:8545", &Broadcaster::Unlocked(ANVIL_SENDER_2), &a.work.join("practice-31337.json"))?;
     let evm_a = Evm::new("http://127.0.0.1:8545");
     let anchor = evm_a.call("eth_getBlockByNumber", json!(["latest", false]))?;
     let anchor_n = crate::evm::hex_u64(&anchor["number"])?;
@@ -800,7 +818,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step(&format!("Program: manifest v2 committed on NEAR, escrow {ESCROW_TUSD} tUSD"));
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
-    let manifest = demo_manifest(&dep_a, &evm_a, anchor_n, anchor_h, &acct("acme"), now + 3_600)?;
+    let manifest = acme_manifest(&dep_a, &evm_a, anchor_n, anchor_h, &acct("acme"), &SANDBOX, demo_settlement(now + 3_600))?;
     let manifest_path = a.work.join("manifest.json");
     std::fs::write(&manifest_path, manifest.canonical())?;
     // The project key comes from acme's NEP-413 signature: the same NEAR key re-derives it.
@@ -817,8 +835,8 @@ pub fn run(a: DemoArgs) -> Result<Value> {
 
     step("Guardian: the program's adapter on both chains (CREATE2), registered with near-guardian");
     let guardian_evm = eth_address(&demo_mpc_key());
-    let ad_a = deploy_adapter(&a, "http://127.0.0.1:8545", &guardian_evm, &program_key, &a.work.join("acme-31337.json"), &a.work.join("adapter-31337.json"))?;
-    let ad_b = deploy_adapter(&a, "http://127.0.0.1:8546", &guardian_evm, &program_key, &a.work.join("acme-31338.json"), &a.work.join("adapter-31338.json"))?;
+    let ad_a = deploy_adapter(&a.root, &a.forge_bin, "http://127.0.0.1:8545", &by, &guardian_evm, &program_key, &a.work.join("acme-31337.json"), &a.work.join("adapter-31337.json"))?;
+    let ad_b = deploy_adapter(&a.root, &a.forge_bin, "http://127.0.0.1:8546", &by, &guardian_evm, &program_key, &a.work.join("acme-31338.json"), &a.work.join("adapter-31338.json"))?;
     let adapter = ad_a["adapter"].as_str().unwrap_or_default().to_lowercase();
     if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
         return Err(eyre!("the adapter's address differs between chains"));
@@ -946,7 +964,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                                          "frozen": state["frozen"], "transfer_before": before_freeze, "transfer_after_refused": refused.contains("frozen"), "ok": guard_ok});
 
     step("Agents B–G (library/CLI path); D commits after A; G harms the protected saver and breaks no invariant (the gap lane)");
-    let g_bundle = gap_bundle(&a, &dep_a)?;
+    let g_bundle = gap_bundle(&a.root, &a.work, &dep_a)?;
     // What one submission costs its hunter (B): near-antibody's storage, B's NEAR credit and wallet,
     // from before the commit to the verdict.
     let costs_of = |who: &str| -> Result<(u64, u128, u128)> {
@@ -1064,7 +1082,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let t = Instant::now();
     cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": "test.near", "amount": (100 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
     cmd::storage_deposit(&root_ctx, "1")?;
-    let pm = practice_manifest(&dep_p, &evm_a, anchor_n, anchor_h, "test.near", now + 3_600)?;
+    let pm = practice_manifest(&dep_p, &evm_a, anchor_n, anchor_h, "test.near", &SANDBOX, practice_settlement(now + 3_600))?;
     let pm_path = a.work.join("practice-manifest.json");
     std::fs::write(&pm_path, pm.canonical())?;
     let practice_key = a.work.join("keys/practice.x25519.json");
@@ -1101,7 +1119,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                                  "vending": vending, "fund": funded, "tries": tries, "ok": practice_ok, "seconds": t.elapsed().as_secs_f64()});
     step("Fork mode: the practice program again, deployed only inside the verifier (nothing of it is on chain)");
     let t = Instant::now();
-    let fm = fork_practice_manifest(&a, &root_ctx, anchor_n, anchor_h, "test.near", now + 3_600)?;
+    let fm = fork_practice_manifest(&a.root, &root_ctx, anchor_n, anchor_h, "test.near", &SANDBOX, practice_settlement(now + 3_600))?;
     let fm_path = a.work.join("practice-fork-manifest.json");
     std::fs::write(&fm_path, fm.canonical())?;
     let fork_key = a.work.join("keys/practice-fork.x25519.json");
