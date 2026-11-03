@@ -32,7 +32,7 @@ use antibody_cli::{
 use antibody_rules::settlement::{Fees, Gap, Instant as InstantRule, Known, Pause, Payouts, SWindows, Settlement};
 use antibody_verifier::facts::sha256;
 use base64::Engine;
-use eyre::{eyre, Result, WrapErr};
+use eyre::{eyre, Result};
 use serde_json::{json, Value};
 
 use crate::{
@@ -388,14 +388,19 @@ impl Live {
     fn forge_deploy(&self, rpc: &str, what: &str, deploy: impl Fn() -> Result<Value>) -> Result<Value> {
         let deployer = EvmSigner::from_hex(&self.evm_key()?)?.address;
         let evm = Evm::new(rpc);
-        let nonce = || evm.call("eth_getTransactionCount", json!([deployer, "pending"])).ok().and_then(|v| hex_u64(&v).ok());
+        let nonce = || {
+            (0..5).find_map(|i| {
+                std::thread::sleep(Duration::from_secs(3 * i));
+                evm.call("eth_getTransactionCount", json!([deployer, "pending"])).ok().and_then(|v| hex_u64(&v).ok())
+            })
+        };
         let before = nonce();
         for attempt in 1.. {
             match deploy() {
                 Ok(v) => return Ok(v),
-                Err(e) if attempt < 3 && before.is_some() && nonce() == before => {
-                    println!("  {what}: try {attempt} failed before sending anything ({e}); again in 20 s");
-                    std::thread::sleep(Duration::from_secs(20));
+                Err(e) if attempt < 4 && before.is_some() && nonce() == before => {
+                    println!("  {what}: try {attempt} failed before sending anything ({e}); again in 30 s");
+                    std::thread::sleep(Duration::from_secs(30));
                 }
                 Err(e) => return Err(e.wrap_err(what.to_string())),
             }
