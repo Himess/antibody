@@ -167,6 +167,21 @@ contract AntibodyAdapterTest {
         AntibodyProxy(payable(address(proxy))).upgradeTo(address(v2));
     }
 
+    function test_releasesOnlyMoveForward() public {
+        // Round 2's permit is relayed first; round 1's, still unexpired, would bring its code back.
+        AntibodyAdapter.ReleasePermit memory p2 = _releasePermit(address(v2).codehash);
+        p2.round = 2;
+        (uint8 v, bytes32 r, bytes32 s) = _sign(GUARDIAN_KEY, adapter.releaseDigest(p2));
+        adapter.release(p2, address(v2), v, r, s);
+        require(adapter.releasedRound(address(proxy)) == 2, "round 2 applied");
+        ImplV1 older = new ImplV1();
+        AntibodyAdapter.ReleasePermit memory p1 = _releasePermit(address(older).codehash);
+        (v, r, s) = _sign(GUARDIAN_KEY, adapter.releaseDigest(p1));
+        vm.expectRevert(AntibodyAdapter.StaleRelease.selector);
+        adapter.release(p1, address(older), v, r, s);
+        require(ImplV2(address(proxy)).version() == 2, "still the later round's code");
+    }
+
     function test_releaseOnlyTargetsRegisteredProxies() public {
         AntibodyAdapter.ReleasePermit memory p = _releasePermit(address(v2).codehash);
         p.proxy = address(guard);

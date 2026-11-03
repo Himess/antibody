@@ -15,7 +15,9 @@ interface IAntibodyUpgradeable {
 /// - `release` upgrades a registered proxy to `implementation`, only if its runtime code hash is the one
 ///   the permit names.
 /// Each permit names a replay key (a pause: its round and ticket; a release: its round and proxy), used
-/// once, and an expiry. Nothing here holds funds or can do anything else.
+/// once, and an expiry. A proxy's releases only move forward: a permit of an earlier round than the last
+/// one applied is refused, so relaying permits out of order cannot bring back code a later round fixed.
+/// Nothing here holds funds or can do anything else.
 contract AntibodyAdapter {
     struct PausePermit {
         bytes32 program;
@@ -47,6 +49,8 @@ contract AntibodyAdapter {
     address[] private targets;
     mapping(address => bool) public isProxy;
     mapping(bytes32 => bool) public used;
+    /// The round of the last release applied to each proxy.
+    mapping(address => uint32) public releasedRound;
 
     event PauseCalled(bytes32 indexed program, uint32 round, uint64 ticket, address indexed target, bool ok);
     event Released(bytes32 indexed program, uint32 round, address indexed proxy, address implementation, bytes32 codeHash);
@@ -57,6 +61,7 @@ contract AntibodyAdapter {
     error BadSignature();
     error NotAProxy();
     error CodeHashMismatch();
+    error StaleRelease();
 
     constructor(address guardian_, bytes32 program_, address[] memory targets_, address[] memory proxies) {
         guardian = guardian_;
@@ -100,6 +105,8 @@ contract AntibodyAdapter {
         _check(p.program, p.deadline, releaseDigest(p), v, r, s);
         if (!isProxy[p.proxy]) revert NotAProxy();
         if (implementation.codehash != p.codeHash) revert CodeHashMismatch();
+        if (p.round <= releasedRound[p.proxy]) revert StaleRelease();
+        releasedRound[p.proxy] = p.round;
         _use(keccak256(abi.encode("release", p.round, p.proxy)));
         IAntibodyUpgradeable(p.proxy).upgradeTo(implementation);
         emit Released(p.program, p.round, p.proxy, implementation, p.codeHash);
