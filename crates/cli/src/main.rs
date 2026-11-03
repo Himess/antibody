@@ -542,6 +542,18 @@ enum InvariantsCmd {
         #[arg(long, default_value_t = 16000)]
         max_tokens: u32,
     },
+    /// The validate gate: check a manifest as creation and activation will (settlement terms, the rules at
+    /// the anchor, target code hashes, canaries, a fork-mode deployment), and optionally a rule strength
+    /// floor. Nothing is sent; exits non-zero when a check fails
+    Validate {
+        #[arg(long)]
+        manifest: PathBuf,
+        /// A rule strength report (`antibody invariants strength`) to hold to --min-strength
+        #[arg(long)]
+        strength: Option<PathBuf>,
+        #[arg(long, default_value_t = 0.0)]
+        min_strength: f64,
+    },
     /// Foundry-style invariant functions (`invariant_*`) of a compiled contract as the program's slots:
     /// writes the rules contract (it inherits FoundryInvariants) and prints the manifest slots
     FromFoundry {
@@ -733,6 +745,14 @@ fn run(cli: Cli) -> Result<Value> {
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
         Cmd::Init { ref out, ref project, chain_id, days } => cmd::init(out, project, chain_id, days),
+        Cmd::Invariants { cmd: InvariantsCmd::Validate { ref manifest, ref strength, min_strength } } => {
+            let r = cmd::validate(&mk()?, manifest, strength.as_deref(), min_strength)?;
+            if r["ok"] != json!(true) {
+                println!("{}", serde_json::to_string_pretty(&r)?);
+                return Err(eyre::eyre!("the manifest does not pass the validate gate"));
+            }
+            Ok(r)
+        }
         Cmd::Invariants { cmd: InvariantsCmd::FromFoundry { ref artifact, ref import, ref base_import, ref order, ref out } } => {
             let a: Value = serde_json::from_str(&std::fs::read_to_string(artifact)?)?;
             let name = artifact.file_stem().and_then(|s| s.to_str()).ok_or_else(|| eyre::eyre!("artifact file name"))?;

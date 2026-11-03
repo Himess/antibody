@@ -13,6 +13,7 @@ name = "antibody"
 path = "src/main.rs"
 
 [dependencies]
+antibody-rules = { path = "../rules" }
 antibody-verifier = { path = "../verifier" }
 antibody-witness = { path = "../witness" }
 alloy-primitives.workspace = true

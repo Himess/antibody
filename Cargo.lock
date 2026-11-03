@@ -644,6 +644,7 @@ name = "antibody-cli"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "antibody-rules",
  "antibody-verifier",
  "antibody-witness",
  "base64 0.22.1",

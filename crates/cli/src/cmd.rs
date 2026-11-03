@@ -1010,6 +1010,47 @@ pub fn deployed_code(ctx: &Ctx, m: &Manifest, addresses: &[alloy_primitives::Add
     antibody_witness::program::deployed_code(&ctx.eth_pool()?, m, addresses)
 }
 
+/// The validate gate: a manifest checked as program creation and activation will check it, with nothing
+/// sent. Its settlement terms make valid parameters; at its anchor (from the Ethereum RPC) the rules pass
+/// the lint, the reserved address is empty, every target has its committed code hash, `snapshot()` and
+/// `check(snapshot()) == 0` succeed, the canaries pass, and a fork-mode deployment runs. With a rule
+/// strength report, its score must reach `min_strength` (caught / scored).
+pub fn validate(ctx: &Ctx, manifest: &Path, strength: Option<&Path>, min_strength: f64) -> Result<Value> {
+    let bytes = std::fs::read(manifest)?;
+    let mut checks = Vec::new();
+    let m = match Manifest::parse(&bytes) {
+        Ok(m) => m,
+        Err(e) => return Ok(json!({"manifest": manifest, "ok": false, "checks": [{"check": "parse", "ok": false, "reason": e}]})),
+    };
+    checks.push(json!({"check": "parse", "ok": true, "schema": m.schema, "sha256": hex::encode(sha256(&bytes))}));
+    let terms = m.settlement.clone().ok_or_else(|| eyre!("no settlement section")).and_then(|s| {
+        let s: antibody_rules::settlement::Settlement = serde_json::from_value(s)?;
+        let slots: Vec<(u8, antibody_rules::Severity)> = m
+            .invariants
+            .slots
+            .iter()
+            .map(|x| (x.bit, serde_json::from_value(json!(x.severity)).unwrap_or(antibody_rules::Severity::Low)))
+            .collect();
+        s.params(&slots, 1, 1).map_err(|e| eyre!(e))
+    });
+    checks.push(match terms {
+        Ok(_) => json!({"check": "settlement", "ok": true}),
+        Err(e) => json!({"check": "settlement", "ok": false, "reason": e.to_string()}),
+    });
+    checks.push(match build_base(ctx, &bytes, "validate/0") {
+        Ok((base, meta)) => json!({"check": "anchor", "ok": true, "base_witness_bytes": base.len(), "trace_ms": meta["trace_ms"], "fork_mode": m.deploy.is_some()}),
+        Err(e) => json!({"check": "anchor", "ok": false, "reason": format!("{e:#}")}),
+    });
+    if let Some(r) = strength {
+        let s = rule_strength_summary(r)?;
+        let (caught, total) = (s["caught"].as_f64().unwrap_or(0.0), s["total"].as_f64().unwrap_or(0.0));
+        let score = if total > 0.0 { caught / total } else { 0.0 };
+        checks.push(json!({"check": "rule_strength", "ok": score >= min_strength, "statement": s["statement"], "score": score, "floor": min_strength}));
+    }
+    let ok = checks.iter().all(|c| c["ok"] == json!(true));
+    Ok(json!({"manifest": manifest, "ok": ok, "checks": checks}))
+}
+
 /// What a round manifest commits of a rule strength report (docs/rule-strength.md).
 pub fn rule_strength_summary(report: &Path) -> Result<Value> {
     let bytes = std::fs::read(report)?;
