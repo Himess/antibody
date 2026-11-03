@@ -541,6 +541,11 @@ PoC's re-run.
 - the re-run window has passed, with no requested re-run still in flight;
 - every commit of the closing round is allocated or closed.
 
+It works a page of commits per call (`open_round(program_id, max)`) and keeps its progress, so no number
+of commits can make the opening exceed a call's gas; the call that finishes the last page opens the
+round. While it runs, commits, re-runs, payments, proposals and the exit wait. Its result is the same
+as one atomic opening.
+
 At opening, for each key held in round r:
 - **released** if its holder's re-run shows it fixed, or if nobody requested that re-run;
 - **carried** into round r+1 (same holder, no new payment) if its re-run still breaks it, or if a requested

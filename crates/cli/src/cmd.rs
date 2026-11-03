@@ -931,6 +931,13 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
         }
         return Ok(json!({"program": program, "steps": steps}));
     }
+    // A round opening left part-way (a page of commits per call) is finished first.
+    if !prog["opening"].is_null() {
+        match round_open(ctx, program) {
+            Ok(v) => steps.push(json!({"round_opened": v["round_opened"]})),
+            Err(e) => steps.push(json!({"opening_stopped": e.to_string()})),
+        }
+    }
     // Close what can no longer move, so allocation, and the exit, never wait on inaction: unrevealed
     // commits past their reveal window expire; runs past their timeout or grace time out.
     let windows = ctx.program(program)?["params"]["windows"].clone();
@@ -1080,9 +1087,17 @@ pub fn round_rerun(ctx: &Ctx, commit_id: u64) -> Result<Value> {
 
 /// Opens the next round once its minimum duration and re-run window have passed (permissionless). The
 /// `round_opened` event says whether the release gate held.
+/// Opens the next round: near-antibody works a page of commits per call and keeps its progress, so this
+/// calls until the round is open (permissionless).
 pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
-    let s = call(ctx, "open_round", json!({"program_id": program}), RUN_TGAS)?;
-    Ok(json!({"program": program, "round_opened": event(&s, "round_opened"), "tx": s}))
+    let mut pages = Vec::new();
+    loop {
+        let s = call(ctx, "open_round", json!({"program_id": program, "max": 200}), RUN_TGAS)?;
+        if let Some(opened) = event(&s, "round_opened") {
+            return Ok(json!({"program": program, "round_opened": opened, "pages": pages, "tx": s}));
+        }
+        pages.push(s["tx"].clone());
+    }
 }
 
 /// The keeper's part of immune memory: while a round is proposed, every commit that may be re-run at the
