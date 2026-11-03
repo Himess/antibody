@@ -476,7 +476,7 @@ fn commit_blob(ctx: &Ctx, c: &Value, from: &BlobFrom) -> Result<(Vec<u8>, Value)
 /// `release_wrap` run (the requester pays; only a paid first finding or a promoted duplicate is ever
 /// wrapped), then the CLI unwraps the content key with the project's key, opens the sealed blob, and
 /// re-runs the proof locally against the round it was judged in.
-pub fn program_read(ctx: &Ctx, commit_id: u64, project_key: &Path, out: &Path, from: &BlobFrom) -> Result<Value> {
+pub fn program_read(ctx: &Ctx, commit_id: u64, project_key: &Path, out: &Path, from: &BlobFrom, new_wrap: bool) -> Result<Value> {
     use antibody_verifier::{witness::Payload, Envelope, ProgramContext, ProgramWitness};
     let c = ctx.commit(commit_id)?;
     let program = c["program"].as_u64().ok_or_else(|| eyre!("commit {commit_id} has no program"))? as u32;
@@ -490,8 +490,8 @@ pub fn program_read(ctx: &Ctx, commit_id: u64, project_key: &Path, out: &Path, f
     }
     let mut requested = Value::Null;
     let wrapped = match c["wrapped"].as_u64() {
-        Some(r) => r,
-        None => {
+        Some(r) if !new_wrap => r,
+        _ => {
             let state = state_label(&c["state"]);
             if state != "Done:Paid" {
                 return Err(eyre!("commit {commit_id} is {state}: only a paid finding is released to the project"));
@@ -513,8 +513,14 @@ pub fn program_read(ctx: &Ctx, commit_id: u64, project_key: &Path, out: &Path, f
     let sk: [u8; 32] = hex::decode(pf["secret_key"].as_str().ok_or_else(|| eyre!("no secret_key in {}", project_key.display()))?)?
         .try_into()
         .map_err(|_| eyre!("the project secret key must be 32 bytes"))?;
-    let k = sealed::project_unwrap(&hex::decode(wrap)?, &x25519_dalek::StaticSecret::from(sk), &key)
-        .map_err(|e| eyre!("the wrap does not open with {}: {e}", project_key.display()))?;
+    let k = sealed::project_unwrap(&hex::decode(wrap)?, &x25519_dalek::StaticSecret::from(sk), &key).map_err(|e| {
+        if r["outcome"]["Answered"]["tier"] == "T1" {
+            eyre!("the wrap does not open with {}: {e}", project_key.display())
+        } else {
+            eyre!("the wrap of run {wrapped} does not open with {}: {e}. No quote confirmed it: after the run timeout, --new-wrap asks for another",
+                  project_key.display())
+        }
+    })?;
     let payload = sealed::open_with_key(&blob, &k, &key).map_err(|e| eyre!("{e}"))?;
     if payload.program_key != key || payload.hunter != hunter {
         return Err(eyre!("the blob is sealed for {} by {}, not commit {commit_id}", payload.program_key, payload.hunter));

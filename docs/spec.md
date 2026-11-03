@@ -684,6 +684,8 @@ would let a project read a duplicate's PoC for free. After payment, a `release_w
 project's X25519 key, for paid first findings and promoted duplicates only. Its ephemeral key is
 derived from κ and the project's key, so the output is deterministic. The project therefore sees exactly
 what it paid for: `antibody program read` requests the wrap, opens the proof and re-runs it locally.
+A T1-confirmed wrap stands. A wrap no quote confirmed within `run_timeout` may be requested again (an
+answer the TEE does not back may not open), and a later answer never replaces a confirmed one.
 
 ### 11.5 Project key
 

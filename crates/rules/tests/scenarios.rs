@@ -894,3 +894,36 @@ fn the_exit_is_bounded_by_keys_and_records_close_in_pages() {
     assert!(copies.iter().all(|c| w.end(*c) == Some(End::DuplicateConfirmed)));
     w.audit_ok(&[p]);
 }
+
+#[test]
+fn a_release_wrap_no_quote_confirms_can_be_requested_again() {
+    // A T0 wrap the TEE never backs may not open: after the run timeout the project asks again, and
+    // a confirmed wrap is never replaced.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c).unwrap();
+    let ctx = w.ctx(PROJECT);
+    let wrap = |n: u8| serde_json::json!({"wrap": hex::encode([n; 80])});
+    let spec = w.spec();
+    let r = w.e.release_wrap(&ctx, c, spec);
+    let first = last_run(&w.ok(r));
+    w.answer_x(first, Kind::NoViolation, &[], wrap(1)); // T0 only
+    assert_eq!(w.commit(c).wrapped, Some(first));
+    let spec = w.spec();
+    assert!(w.e.release_wrap(&ctx, c, spec).is_err(), "it may still be confirmed");
+    w.tick(61);
+    let ctx = w.ctx(PROJECT);
+    let spec = w.spec();
+    let r = w.e.release_wrap(&ctx, c, spec);
+    let second = last_run(&w.ok(r));
+    w.answer_x(second, Kind::NoViolation, &[], wrap(2));
+    w.t1(second);
+    assert_eq!(w.commit(c).wrapped, Some(second));
+    w.tick(61);
+    let ctx = w.ctx(PROJECT);
+    let spec = w.spec();
+    assert!(w.e.release_wrap(&ctx, c, spec).is_err(), "a confirmed wrap stands");
+    w.audit_ok(&[p]);
+}

@@ -880,9 +880,16 @@ impl<S: Store> Engine<S> {
                 if let Some(cid) = r.commit {
                     let mut c = self.get_commit(cid)?;
                     if let Extra::Wrap { wrap } = &facts.extra {
-                        c.wrapped = Some(r.id);
-                        fx.push(ev("release_wrap", serde_json::json!({"program_id": p.id, "commit_id": cid, "wrap": wrap})));
-                        self.store.put_commit(&c);
+                        // A later answer never replaces a wrap T1 confirmed.
+                        let confirmed = c
+                            .wrapped
+                            .and_then(|w| self.store.run(w))
+                            .is_some_and(|w| matches!(w.outcome, RunOutcome::Answered { tier: Tier::T1, .. }));
+                        if !confirmed {
+                            c.wrapped = Some(r.id);
+                            self.store.put_commit(&c);
+                        }
+                        fx.push(ev("release_wrap", serde_json::json!({"program_id": p.id, "commit_id": cid, "run_id": r.id, "wrap": wrap})));
                     }
                 }
             }
@@ -928,6 +935,14 @@ impl<S: Store> Engine<S> {
             Mode::Distinct => {
                 if let (Some(cid), Extra::Distinct { distinct: true }) = (r.commit, &facts.extra) {
                     fx.extend(self.distinct_top_up(ctx, p, cid)?);
+                }
+            }
+            Mode::ReleaseWrap => {
+                // A confirmed wrap is the commit's wrap, whichever run answered last.
+                if let (Some(cid), Extra::Wrap { .. }) = (r.commit, &facts.extra) {
+                    let mut c = self.get_commit(cid)?;
+                    c.wrapped = Some(r.id);
+                    self.store.put_commit(&c);
                 }
             }
             _ => {}
@@ -1535,8 +1550,18 @@ impl<S: Store> Engine<S> {
         if !matches!(c.state, CommitState::Done(End::Paid { .. })) {
             return Err(Error::State("only a paid finding is wrapped for the project"));
         }
-        if c.wrapped.is_some() {
-            return Err(Error::State("already wrapped"));
+        if let Some(prev) = c.wrapped {
+            // A wrap stands once T1 confirms it. One no quote confirmed within the run timeout (an
+            // answer the TEE does not back, which may not open) may be requested again.
+            let r = self.get_run(prev)?;
+            let confirmed = matches!(r.outcome, RunOutcome::Answered { tier: Tier::T1, .. });
+            let since = match r.outcome {
+                RunOutcome::Answered { at, .. } => at,
+                _ => r.started_at,
+            };
+            if confirmed || ctx.now <= since + p.params.windows.run_timeout {
+                return Err(Error::State("already wrapped"));
+            }
         }
         let run = self.new_run(&p, Some(commit), Mode::ReleaseWrap, c.round, &spec, ctx, &ctx.caller);
         let fx = self.request_run(&p, &run, &ctx.caller)?;

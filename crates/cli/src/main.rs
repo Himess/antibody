@@ -156,6 +156,9 @@ enum ProgramCmd {
         reveal_signer: Option<String>,
         #[arg(long)]
         api: Option<String>,
+        /// Ask for a new wrap: one no quote confirmed may be replaced after the run timeout
+        #[arg(long)]
+        new_wrap: bool,
     },
     /// Add escrow
     TopUp {
@@ -712,14 +715,14 @@ fn run(cli: Cli) -> Result<Value> {
                 ProgramCmd::Known { program, bundle, salt, report, no_wait } => cmd::submit_known(&c, *program, bundle, *salt, report.as_deref(), !no_wait),
                 ProgramCmd::Open { program } => cmd::program_open(&c, *program),
                 ProgramCmd::Show { program } => cmd::program_show(&c, *program),
-                ProgramCmd::Read { commit, project_key, out, blob, reveal_tx, reveal_signer, api } => {
+                ProgramCmd::Read { commit, project_key, out, blob, reveal_tx, reveal_signer, api, new_wrap } => {
                     let from = match (blob, reveal_tx, api) {
                         (Some(b), None, None) => cmd::BlobFrom::File(b.clone()),
                         (None, Some(h), None) => cmd::BlobFrom::Tx { hash: h.clone(), signer: reveal_signer.clone() },
                         (None, None, Some(a)) => cmd::BlobFrom::Api(a.clone()),
                         _ => return Err(eyre::eyre!("pass one of --blob, --reveal-tx or --api")),
                     };
-                    cmd::program_read(&c, *commit, project_key, out, &from)
+                    cmd::program_read(&c, *commit, project_key, out, &from, *new_wrap)
                 }
                 ProgramCmd::TopUp { program, amount } => cmd::top_up(&c, *program, amount),
                 ProgramCmd::Exit { program } => cmd::program_exit(&c, *program),

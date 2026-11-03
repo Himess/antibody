@@ -974,7 +974,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let t = Instant::now();
     let reveal_of = |name: &str| rows.iter().find(|r| r.0 == name).map(|r| (r.1, r.3["reveal"].as_str().unwrap_or_default().to_string()));
     let (a_id, a_reveal) = reveal_of("A (MCP)").ok_or_else(|| eyre!("no row for A"))?;
-    let read = cmd::program_read(&acme, a_id, &project_key, &a.work.join("read/A"), &cmd::BlobFrom::Tx { hash: a_reveal, signer: None })?;
+    let read = cmd::program_read(&acme, a_id, &project_key, &a.work.join("read/A"), &cmd::BlobFrom::Tx { hash: a_reveal, signer: None }, false)?;
     let again = a.work.join("keys/acme.x25519.again.json");
     let rederived = cmd::keygen_x25519_nep413(&acme, &again)?["public_key"] == derived["public_key"];
     // near-antibody itself refuses to wrap a duplicate, even with its blob.
@@ -1211,7 +1211,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         examples.insert(path.clone(), json!({"status": code, "body": r.json::<Value>().unwrap_or(Value::Null)}));
     }
     // A project finds a commit's blob through the API alone (the wrap exists: no new run).
-    let via_api = cmd::program_read(&acme, a_commit, &project_key, &a.work.join("read/A-via-api"), &cmd::BlobFrom::Api(format!("http://{addr}")))?;
+    let via_api = cmd::program_read(&acme, a_commit, &project_key, &a.work.join("read/A-via-api"), &cmd::BlobFrom::Api(format!("http://{addr}")), false)?;
     let api_ok = examples.values().all(|e| e["status"] == json!(200)) && indexed > 0 && via_api["receipt_matches_the_tee"] == json!(true);
     println!("API: {} events indexed; {} endpoints, all 200; the project's read through the API: {}; ok: {api_ok}", indexed, examples.len(),
              via_api["local_verdict"]["kind"]);
