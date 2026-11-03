@@ -268,21 +268,19 @@ impl Near {
     pub fn send(&self, signer: &Signer, receiver: &str, actions: Vec<Action>, wait_until: &str) -> Result<Value> {
         let pk = signer.public_key();
         let key = format!("{}:{}", signer.account_id, signer.public_key_str());
-        // A final block's hash: every node of a load-balanced RPC knows it (an optimistic one may reach a
-        // node that has not seen it, which refuses the transaction as expired). The nonce cache and the
-        // InvalidNonce retry cover a nonce the final state has not caught up with.
-        let access_key = || {
-            self.call(
-                "query",
-                json!({"request_type": "view_access_key", "finality": "final", "account_id": signer.account_id,
-                       "public_key": signer.public_key_str()}),
-            )
+        // The nonce from the latest state (a key added a moment ago is there), the block hash from a final
+        // block: every node of a load-balanced RPC knows it (an optimistic one may reach a node that has not
+        // seen it, which refuses the transaction as expired).
+        let ak = self.call(
+            "query",
+            json!({"request_type": "view_access_key", "finality": "optimistic", "account_id": signer.account_id,
+                   "public_key": signer.public_key_str()}),
+        )?;
+        let final_hash = || -> Result<[u8; 32]> {
+            let b = self.call("block", json!({"finality": "final"}))?;
+            bs58::decode(b["header"]["hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))
         };
-        let ak = access_key()?;
-        let hash_of = |ak: &Value| -> Result<[u8; 32]> {
-            bs58::decode(ak["block_hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))
-        };
-        let mut block_hash = hash_of(&ak)?;
+        let mut block_hash = final_hash()?;
         let mut nonce = ak["nonce"].as_u64().ok_or_else(|| eyre!("access key not found for {}", signer.account_id))? + 1;
         for attempt in 0..4 {
             {
@@ -309,7 +307,7 @@ impl Near {
                 }
                 // Refused before it ran: again with a fresh block hash.
                 Err(e) if attempt < 3 && e.to_string().contains("\"Expired\"") => {
-                    block_hash = hash_of(&access_key()?)?;
+                    block_hash = final_hash()?;
                 }
                 other => return other,
             }
