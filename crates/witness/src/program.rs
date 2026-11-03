@@ -129,7 +129,8 @@ pub fn build_program(
         match execute_program_witness(&envelope, w, None, reserved) {
             Ok(_) | Err(ProgramError::Verdict { .. }) => {
                 let digest: [u8; 32] = Sha256::digest(&bytes).into();
-                let receipt = run_program(&envelope, w, digest, &ProgramContext::default());
+                // The local receipt under the program's own reserved address, as the TEE will run it.
+                let receipt = run_program(&envelope, w, digest, &ProgramContext { reserved, ..Default::default() });
                 let meta = ProgramBuildMeta {
                     anchor_block: m,
                     anchor_hash,
@@ -200,7 +201,7 @@ pub fn build_submission_from_base(base_envelope: &[u8], manifest_json: &[u8], bu
         Err(ProgramError::Verify(e)) => return Err(eyre!("strict verification on the base failed: {e}")),
     }
     let digest: [u8; 32] = Sha256::digest(full.encode()).into();
-    let receipt = run_program(&full, &w, digest, &ProgramContext::default());
+    let receipt = run_program(&full, &w, digest, &ProgramContext { reserved, ..Default::default() });
     let env = Envelope {
         version: WITNESS_VERSION,
         chain_id: base_env.chain_id,

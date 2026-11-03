@@ -361,8 +361,9 @@ fn cached_base(ctx: &Ctx, parts: &[&[u8]], build: impl FnOnce() -> Result<(Vec<u
     Ok((bytes, meta))
 }
 
-/// A submission witness built from the RPC earlier, with its salt; the receipt is recomputed from it.
-fn cached_witness(path: &Path) -> Result<Option<(Vec<u8>, Value, ProgramReceipt, B256)>> {
+/// A submission witness built from the RPC earlier, with its salt; the receipt is recomputed from it, under
+/// the program's reserved address.
+fn cached_witness(path: &Path, program_key: &str) -> Result<Option<(Vec<u8>, Value, ProgramReceipt, B256)>> {
     let Ok(raw) = std::fs::read(path) else { return Ok(None) };
     let c: Value = serde_json::from_slice(&raw)?;
     let bytes = hex::decode(c["envelope"].as_str().unwrap_or_default())?;
@@ -371,7 +372,8 @@ fn cached_witness(path: &Path) -> Result<Option<(Vec<u8>, Value, ProgramReceipt,
     let antibody_verifier::Payload::Program(w) = &env.payload else {
         return Err(eyre!("cached witness {} is not a program witness", path.display()));
     };
-    let receipt = antibody_verifier::run_program(&env, w, sha256(&bytes), &antibody_verifier::ProgramContext::default());
+    let reserved = Some(antibody_verifier::run::reserved_address(program_key, env.claimed_block_hash));
+    let receipt = antibody_verifier::run_program(&env, w, sha256(&bytes), &antibody_verifier::ProgramContext { reserved, ..Default::default() });
     let mut meta = c["meta"].clone();
     meta["cached"] = json!(true);
     Ok(Some((bytes, meta, receipt, salt)))
@@ -667,7 +669,7 @@ pub fn build_witness(ctx: &Ctx, program: Option<u32>, manifest_json: &[u8], bund
     let bf: BundleFile = serde_json::from_slice(&bundle_bytes)?;
     let cache = cache_path(ctx, "witness", &[program_key.as_bytes(), manifest_json, &bundle_bytes]).with_extension("json");
     if salt.is_none() {
-        if let Some(hit) = cached_witness(&cache)? {
+        if let Some(hit) = cached_witness(&cache, program_key)? {
             return Ok(hit);
         }
     }
@@ -1852,10 +1854,12 @@ mod tests {
         let bundle = fx.join("submissions/A.bundle.json");
         let envelope = std::fs::read(fx.join("submissions/A.witness.bin")).unwrap();
         let salt = B256::repeat_byte(9);
+        // The fixture's program key (scripts/demo/v2keys.py): its witness proves that program's reserved address.
+        let key = "antibody.testnet/acme-local";
         // Kept as build_witness keeps one it built from the RPC.
-        let kept = cache_path(&ctx, "witness", &[b"p/0", &manifest, &std::fs::read(&bundle).unwrap()]).with_extension("json");
+        let kept = cache_path(&ctx, "witness", &[key.as_bytes(), &manifest, &std::fs::read(&bundle).unwrap()]).with_extension("json");
         write_json(&kept, &json!({"envelope": hex::encode(&envelope), "meta": {"source": "rpc"}, "salt": format!("{salt:#x}")})).unwrap();
-        let (bytes, meta, receipt, got) = build_witness(&ctx, None, &manifest, &bundle, None, "p/0").unwrap();
+        let (bytes, meta, receipt, got) = build_witness(&ctx, None, &manifest, &bundle, None, key).unwrap();
         assert_eq!((bytes, got, meta["source"].clone(), meta["cached"].clone()), (envelope, salt, json!("rpc"), json!(true)));
         // The fixture's receipt names its program and commit; a local one (as build_witness's) names neither.
         let mut native: Value = serde_json::from_slice(&std::fs::read(fx.join("submissions/A.native.json")).unwrap()).unwrap();
@@ -1863,7 +1867,7 @@ mod tests {
         native["receipt"]["commit_id"] = json!(0);
         assert_eq!(serde_json::to_value(&receipt).unwrap(), native["receipt"]);
         // A given salt is a new witness, built from the RPC.
-        assert!(build_witness(&ctx, None, &manifest, &bundle, Some(salt), "p/0").is_err());
+        assert!(build_witness(&ctx, None, &manifest, &bundle, Some(salt), key).is_err());
         let _ = std::fs::remove_dir_all(&ctx.state_dir);
     }
 }
