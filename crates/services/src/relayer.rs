@@ -126,7 +126,11 @@ impl Relayer {
                 if let Some(signer) = &self.signer {
                     let implementation = if kind == "release" { Some(self.implementation(p)?) } else { None };
                     let data = adapter_calldata(p, implementation)?;
-                    match signer.send(&evm, chain_id, adapter, data, 400_000) {
+                    // The node's estimate with a margin: gas schedules differ by chain and fork (Sepolia's
+                    // Glamsterdam prices new state several times higher); never below 400k.
+                    let estimate = evm.read("eth_estimateGas", json!([{"from": signer.address, "to": adapter, "data": format!("0x{}", hex::encode(&data))}, "latest"]));
+                    let gas = estimate.ok().and_then(|v| crate::evm::hex_u64(&v).ok()).map(|g| g * 3 / 2).unwrap_or(0).max(400_000);
+                    match signer.send(&evm, chain_id, adapter, data, gas) {
                         Ok(h) => {
                             e["status"] = "sent".into();
                             e["tx_hash"] = h.clone().into();
