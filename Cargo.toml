@@ -58,3 +58,5 @@ incremental = false
 [patch.crates-io]
 # Windows-only build fix (see third_party/patches/kzg-rs-0.2.9/build.rs); logic unchanged.
 kzg-rs = { path = "third_party/patches/kzg-rs-0.2.9" }
+# Malformed input becomes an error, not a panic (see third_party/patches/README.md).
+bitvec = { path = "third_party/patches/bitvec-1.0.1" }
