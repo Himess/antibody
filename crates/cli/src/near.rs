@@ -276,10 +276,10 @@ impl Near {
             json!({"request_type": "view_access_key", "finality": "optimistic", "account_id": signer.account_id,
                    "public_key": signer.public_key_str()}),
         )?;
-        let final_hash = || -> Result<[u8; 32]> {
-            let b = self.call("block", json!({"finality": "final"}))?;
-            bs58::decode(b["header"]["hash"].as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))
+        let hash_of = |s: &Value| -> Result<[u8; 32]> {
+            bs58::decode(s.as_str().unwrap_or_default()).into_vec()?.try_into().map_err(|_| eyre!("block hash"))
         };
+        let final_hash = || -> Result<[u8; 32]> { hash_of(&self.call("block", json!({"finality": "final"}))?["header"]["hash"]) };
         let mut block_hash = final_hash()?;
         let mut nonce = ak["nonce"].as_u64().ok_or_else(|| eyre!("access key not found for {}", signer.account_id))? + 1;
         for attempt in 0..4 {
@@ -305,9 +305,11 @@ impl Near {
                         nonce += 1;
                     }
                 }
-                // Refused before it ran: again with a fresh block hash.
+                // Refused before it ran: again with the latest block's hash first (right after a
+                // fast-forward the final block can be older than the validity window: the sandbox's
+                // rounds), then a fresh final one.
                 Err(e) if attempt < 3 && e.to_string().contains("\"Expired\"") => {
-                    block_hash = final_hash()?;
+                    block_hash = if attempt == 0 { hash_of(&ak["block_hash"])? } else { final_hash()? };
                 }
                 other => return other,
             }
