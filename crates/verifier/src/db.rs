@@ -190,3 +190,166 @@ impl<D: MissingTracker> MissingTracker for OverrideDb<'_, D> {
         self.inner.first_missing()
     }
 }
+
+/// The anchor's state with a fork-mode program's deployment applied (docs/fork-mode.md): every account
+/// the deployment changed, over the anchor. A contract the deployment created has only the storage it
+/// wrote (the anchor is never asked for the rest); any other account falls through to the anchor for
+/// what the deployment did not write.
+#[derive(Debug)]
+pub struct DeployDb<'a, D> {
+    inner: &'a D,
+    accounts: HashMap<Address, Deployed>,
+    codes: HashMap<B256, Bytecode>,
+}
+
+#[derive(Debug, Clone)]
+struct Deployed {
+    info: Option<AccountInfo>,
+    storage: HashMap<U256, U256>,
+    fresh: bool,
+}
+
+impl<'a, D> DeployDb<'a, D> {
+    /// No deployment: the anchor's state as it is.
+    pub fn none(inner: &'a D) -> Self {
+        Self { inner, accounts: HashMap::default(), codes: HashMap::default() }
+    }
+
+    /// The changes a deployment's execution left (its bundle state, plain state only).
+    pub fn from_bundle(inner: &'a D, bundle: revm::database::BundleState) -> Self {
+        let mut accounts = HashMap::default();
+        for (address, acc) in bundle.state {
+            let fresh = acc.original_info.is_none() || acc.was_destroyed();
+            let storage = acc.storage.iter().map(|(k, slot)| (*k, slot.present_value)).collect();
+            accounts.insert(address, Deployed { info: acc.info, storage, fresh });
+        }
+        Self { inner, accounts, codes: bundle.contracts.into_iter().collect() }
+    }
+
+    /// The contracts the deployment created, with their code hashes, in address order.
+    pub fn created(&self) -> Vec<(Address, B256)> {
+        let mut out: Vec<(Address, B256)> = self
+            .accounts
+            .iter()
+            .filter(|(_, d)| d.fresh)
+            .filter_map(|(a, d)| d.info.as_ref().filter(|i| i.code_hash != revm::primitives::KECCAK_EMPTY).map(|i| (*a, i.code_hash)))
+            .collect();
+        out.sort();
+        out
+    }
+}
+
+impl<D: DatabaseRef> DatabaseRef for DeployDb<'_, D> {
+    type Error = D::Error;
+
+    fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
+        match self.accounts.get(&address) {
+            Some(d) => Ok(d.info.clone()),
+            None => self.inner.basic_ref(address),
+        }
+    }
+
+    fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        match self.codes.get(&code_hash) {
+            Some(c) => Ok(c.clone()),
+            None => self.inner.code_by_hash_ref(code_hash),
+        }
+    }
+
+    fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
+        match self.accounts.get(&address) {
+            Some(d) => match d.storage.get(&index) {
+                Some(v) => Ok(*v),
+                None if d.fresh || d.info.is_none() => Ok(U256::ZERO),
+                None => self.inner.storage_ref(address, index),
+            },
+            None => self.inner.storage_ref(address, index),
+        }
+    }
+
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
+        self.inner.block_hash_ref(number)
+    }
+}
+
+impl<D: MissingTracker> MissingTracker for DeployDb<'_, D> {
+    fn first_missing(&self) -> Option<MissingWitness> {
+        self.inner.first_missing()
+    }
+}
+
+#[cfg(test)]
+mod deploy_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// An empty anchor that counts storage reads.
+    #[derive(Debug, Default)]
+    struct Empty {
+        storage_reads: Cell<u32>,
+    }
+
+    #[derive(Debug)]
+    struct Never;
+    impl std::fmt::Display for Never {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("never")
+        }
+    }
+    impl std::error::Error for Never {}
+    impl DBErrorMarker for Never {}
+
+    impl DatabaseRef for Empty {
+        type Error = Never;
+        fn basic_ref(&self, _: Address) -> Result<Option<AccountInfo>, Never> {
+            Ok(None)
+        }
+        fn code_by_hash_ref(&self, _: B256) -> Result<Bytecode, Never> {
+            Ok(Bytecode::default())
+        }
+        fn storage_ref(&self, _: Address, _: U256) -> Result<U256, Never> {
+            self.storage_reads.set(self.storage_reads.get() + 1);
+            Ok(U256::ZERO)
+        }
+        fn block_hash_ref(&self, _: u64) -> Result<B256, Never> {
+            Ok(B256::ZERO)
+        }
+    }
+
+    impl MissingTracker for Empty {
+        fn first_missing(&self) -> Option<MissingWitness> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_deployed_contract_is_there_and_its_unwritten_storage_is_zero_without_asking_the_anchor() {
+        use crate::manifest::{deployer, Deploy, DeployTx};
+        // Init code: SSTORE(1, 42), then return the one-byte runtime code 0x00 (STOP).
+        let init = alloy_primitives::hex::decode("602a60015560016000f3").unwrap();
+        let header = alloy_consensus::Header {
+            gas_limit: 30_000_000,
+            number: 1,
+            base_fee_per_gas: Some(0),
+            excess_blob_gas: Some(0),
+            blob_gas_used: Some(0),
+            parent_beacon_block_root: Some(B256::ZERO),
+            ..Default::default()
+        };
+        let mut m: crate::manifest::Manifest = serde_json::from_str(include_str!("../tests/data/minimal_manifest.json")).unwrap();
+        m.deploy = Some(Deploy { txs: vec![DeployTx { to: None, value: U256::ZERO, data: init.into() }] });
+        let anchor = Empty::default();
+        let spec = crate::run::program_chain_spec(m.anchor.chain_id).unwrap();
+        let db = crate::program::deployed(&header, &m, spec, &anchor).expect("the deployment runs");
+        let created = deployer().create(0);
+        let info = db.basic_ref(created).unwrap().expect("the contract exists");
+        assert_ne!(info.code_hash, revm::primitives::KECCAK_EMPTY);
+        assert_eq!(db.created(), vec![(created, info.code_hash)]);
+        assert_eq!(db.storage_ref(created, U256::from(1)).unwrap(), U256::from(42));
+        let before = anchor.storage_reads.get();
+        assert_eq!(db.storage_ref(created, U256::from(7)).unwrap(), U256::ZERO);
+        assert_eq!(anchor.storage_reads.get(), before, "a created contract's storage is the deployment's alone");
+        // The deployer is never read at the anchor, and it is not a target the deployment created.
+        assert_eq!(db.basic_ref(deployer()).unwrap().map(|i| i.nonce), Some(1));
+    }
+}

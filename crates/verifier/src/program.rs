@@ -37,7 +37,7 @@ use rsp_client_executor::custom::{CustomCrypto, CustomEvmFactory};
 
 use crate::{
     bundle::{sender_address, Bundle, CallOutcome, MAX_CALL_GAS},
-    db::{MissingTracker, OverrideDb},
+    db::{DeployDb, MissingTracker, OverrideDb},
     facts::{AccountValue, Fingerprint, ImpactV2, Kind},
     impact::{self, PROBE_CALLER},
     manifest::{parse_u128, usd_to_micro, Manifest, Severity},
@@ -372,8 +372,70 @@ where
     if manifest.overrides.iter().any(|o| o.address == manifest.invariants.address) {
         return Err(verdict(Kind::ProgramMisconfigured, "an override targets the reserved invariants address"));
     }
-    let odb = OverrideDb::new(db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+    let ddb = deployed(header, manifest, chain_spec.clone(), db)?;
+    let odb = OverrideDb::new(&ddb, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
     execute_on(header, manifest, inv_code, bundle, chain_spec, &odb, reserved)
+}
+
+/// The program's state at the anchor: the anchor's own, with a fork-mode deployment applied
+/// (docs/fork-mode.md). The deployer's transactions run in the anchor block, in order, each with the
+/// block's gas limit (at most 2^24, EIP-7825's cap) at the base fee, from a deployer funded with exactly
+/// what they need.
+/// A transaction that reverts makes the program misconfigured.
+pub fn deployed<'a, D>(
+    header: &Header,
+    manifest: &Manifest,
+    chain_spec: std::sync::Arc<reth_chainspec::ChainSpec>,
+    db: &'a D,
+) -> Result<DeployDb<'a, D>, ProgramError>
+where
+    D: DatabaseRef + MissingTracker + std::fmt::Debug,
+    D::Error: DBErrorMarker + std::error::Error + Send + Sync + 'static,
+{
+    let Some(dep) = &manifest.deploy else { return Ok(DeployDb::none(db)) };
+    manifest.check_deploy().map_err(|e| verdict(Kind::ProgramMisconfigured, e))?;
+    let spec = spec_id(&manifest.anchor.evm_spec)
+        .ok_or_else(|| verdict(Kind::ProgramMisconfigured, format!("unsupported evm_spec {}", manifest.anchor.evm_spec)))?;
+    revm::install_crypto(CustomCrypto::default());
+    let evm_config = EthEvmConfig::new_with_evm_factory(chain_spec, CustomEvmFactory::new(None));
+    let mut evm_env = evm_config.evm_env(header).map_err(|e| verdict(Kind::InfraError, e.to_string()))?;
+    evm_env.cfg_env.spec = spec;
+    evm_env.cfg_env.chain_id = manifest.anchor.chain_id;
+    let base_fee = header.base_fee_per_gas.unwrap_or_default() as u128;
+    let gas = header.gas_limit.min(1 << 24);
+    let deployer = crate::manifest::deployer();
+    let funding = dep.txs.iter().fold(U256::ZERO, |s, t| s + t.value + U256::from(gas) * U256::from(base_fee));
+    let mut state = State::builder().with_database(WrapDatabaseRef(db)).with_bundle_update().build();
+    state.insert_account(deployer, AccountInfo { balance: funding, nonce: 0, code_hash: KECCAK_EMPTY, code: None, account_id: None });
+    {
+        let mut evm = evm_config.evm_with_env(&mut state, evm_env);
+        for (i, t) in dep.txs.iter().enumerate() {
+            let tx = TxEnv {
+                caller: deployer,
+                gas_limit: gas,
+                gas_price: base_fee,
+                kind: match t.to {
+                    Some(a) => TxKind::Call(a),
+                    None => TxKind::Create,
+                },
+                value: t.value,
+                data: t.data.clone(),
+                nonce: i as u64,
+                chain_id: Some(manifest.anchor.chain_id),
+                ..Default::default()
+            };
+            let r = match evm.transact_commit(tx) {
+                Ok(r) => r,
+                Err(e) if e.is_invalid_tx_err() => return Err(verdict(Kind::ProgramMisconfigured, format!("deploy transaction {i}: {e}"))),
+                Err(e) => return Err(missing_or(db, e)),
+            };
+            if !r.is_success() {
+                return Err(verdict(Kind::ProgramMisconfigured, format!("deploy transaction {i} reverted")));
+            }
+        }
+    }
+    state.merge_transitions(revm::database::states::bundle_state::BundleRetention::PlainState);
+    Ok(DeployDb::from_bundle(db, state.take_bundle()))
 }
 
 /// What the anchor checks establish: the environment, the invariants at their address, and the

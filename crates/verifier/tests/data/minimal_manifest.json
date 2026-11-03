@@ -1,0 +1,44 @@
+{
+  "schema": "antibody.manifest.v2",
+  "program": {
+    "name": "minimal (unit tests)",
+    "project": "test.near",
+    "description": "A fork-mode manifest for unit tests."
+  },
+  "anchor": {
+    "chain_id": 31337,
+    "block_number": 1,
+    "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "evm_spec": "osaka",
+    "trust": "project-attested"
+  },
+  "targets": [],
+  "invariants": {
+    "address": "0x1111111111111111111111111111111111111111",
+    "runtime_code": "0x00",
+    "runtime_code_hash": "0xbc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a",
+    "gas_limit": 1000000,
+    "slots": [
+      {
+        "bit": 0,
+        "name": "x",
+        "severity": "low"
+      }
+    ]
+  },
+  "impact": {
+    "protocol_accounts": [],
+    "native_usd": "2000",
+    "tokens": []
+  },
+  "capabilities": {
+    "max_senders": 1,
+    "max_endowment_wei": "1",
+    "max_txs": 1,
+    "max_gas_per_tx": 1000000,
+    "max_total_gas": 1000000,
+    "max_blocks": 1,
+    "max_timestamp_delta": 0,
+    "max_entry_calls": 16
+  }
+}

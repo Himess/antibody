@@ -877,11 +877,14 @@ pub fn check_round_at_anchor(
 ) -> Result<(bool, bool), (crate::facts::Kind, String)> {
     let canaries_ok = check_program_at_anchor(env, w, reserved)?;
     let manifest = crate::manifest::Manifest::parse(&w.manifest_json).map_err(|e| (crate::facts::Kind::ProgramMisconfigured, e))?;
-    // The anchor's own state (no overrides), validated against the header by the checks above; read
-    // through its own log so a missing slot touches nothing else.
+    // The anchor's own state (no overrides; a fork-mode program's deployment applied), validated against
+    // the header by the checks above; read through its own log so a missing slot touches nothing else.
     let anchor_db = StrictDb::new(&w.state, HashMap::default(), HashMap::default());
+    let header = Header::decode(&mut w.header_rlp.as_ref()).map_err(|e| (crate::facts::Kind::ProgramMisconfigured, e.to_string()))?;
+    let spec = program_chain_spec(manifest.anchor.chain_id).map_err(|e| (crate::facts::Kind::ProgramMisconfigured, e.to_string()))?;
+    let program_db = crate::program::deployed(&header, &manifest, spec, &anchor_db).map_err(|e| crate::program::classify(&e))?;
     let releases_ok = releases.iter().all(|(proxy, code_hash)| {
-        let Ok(word) = anchor_db.storage_ref(*proxy, U256::from_be_bytes(EIP1967_IMPLEMENTATION_SLOT.0)) else {
+        let Ok(word) = program_db.storage_ref(*proxy, U256::from_be_bytes(EIP1967_IMPLEMENTATION_SLOT.0)) else {
             return false;
         };
         let implementation = Address::from_word(B256::from(word.to_be_bytes::<32>()));
@@ -931,7 +934,8 @@ pub fn anchor_checks_on_witness(env: &Envelope, w: &ProgramWitness, reserved: Op
     let spec = program_chain_spec(manifest.anchor.chain_id).map_err(|e| mis(e.to_string()))?;
     let inv_code = Bytecode::new_raw(w.invariants_code.clone());
     manifest.check_overrides().map_err(mis)?;
-    let odb = OverrideDb::new(&db, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
+    let ddb = crate::program::deployed(&header, &manifest, spec.clone(), &db)?;
+    let odb = OverrideDb::new(&ddb, manifest.overrides.iter().map(|o| (o.address, Bytecode::new_raw(o.runtime_code.clone()))));
     let anchor = anchor_checks(&header, &manifest, &inv_code, spec, &odb, reserved)?;
     canaries_pass(&manifest, &anchor, &odb)
 }

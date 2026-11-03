@@ -47,6 +47,37 @@ pub struct Manifest {
     /// The verifier carries it unchanged; the manifest hash covers it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settlement: Option<serde_json::Value>,
+    /// Fork mode (docs/fork-mode.md): the program's contracts are deployed inside the verifier, on top
+    /// of the anchor's state, by these committed transactions, so the project needs no staging
+    /// deployment. Absent: the targets are on chain at the anchor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy: Option<Deploy>,
+}
+
+/// A fork-mode deployment: transactions from [`deployer`], in order, in the anchor block.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Deploy {
+    pub txs: Vec<DeployTx>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeployTx {
+    /// The contract to call; absent, the transaction creates one and `data` is its init code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Address>,
+    /// Wei sent with the transaction.
+    #[serde(default, skip_serializing_if = "U256::is_zero")]
+    pub value: U256,
+    pub data: Bytes,
+}
+
+/// Most transactions in a deployment.
+pub const MAX_DEPLOY_TXS: usize = 64;
+
+/// The fork-mode deployer: a hash, nobody's key, so it is fresh by construction and its account is never
+/// read at the anchor. Its transaction i creates at `deployer().create(i)`.
+pub fn deployer() -> Address {
+    Address::from_slice(&keccak256(b"antibody/deployer/v1")[12..])
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -267,6 +298,19 @@ impl Manifest {
 
     /// Round rules: round 0 has no overrides; a later round overrides at least one target, each
     /// override's hash matches its code, and the overridden target carries that hash.
+    /// A deployment's bounds: at most [`MAX_DEPLOY_TXS`] transactions, each within EIP-3860's init code
+    /// limit, and at least one.
+    pub fn check_deploy(&self) -> Result<(), String> {
+        let Some(d) = &self.deploy else { return Ok(()) };
+        if d.txs.is_empty() || d.txs.len() > MAX_DEPLOY_TXS {
+            return Err(format!("manifest: a deployment has 1 to {MAX_DEPLOY_TXS} transactions"));
+        }
+        if d.txs.iter().any(|t| t.data.len() > MAX_OVERRIDE_CODE) {
+            return Err(format!("manifest: a deployment transaction's data is above {MAX_OVERRIDE_CODE} bytes"));
+        }
+        Ok(())
+    }
+
     pub fn check_overrides(&self) -> Result<(), String> {
         if (self.round == 0) != self.overrides.is_empty() {
             return Err("manifest: overrides are required in rounds > 0 and not allowed in round 0".into());
