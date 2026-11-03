@@ -164,6 +164,20 @@ def judges(d):
         out += [f"| {n} | Anyone can run the loop with no account: the practice program (a tutorial) | "
                 f"`{d.cli('try --name <you>')}` (sends transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')}) | "
                 f"`{t.get('state')}`, {tokens(t.get('paid_raw'))} tUSD, vault {t.get('vault_index')}, {t.get('seconds', 0):.0f} s | {links} |"]
+    rs = main.get("rule_strength") or {}
+    if rs.get("statement"):
+        n += 1
+        out += [f"| {n} | The program's rules catch deliberately broken versions of its final fix (rule strength: it measures the rules, not the code's security) | "
+                f"`{d.cli('judge --program ' + str(main.get('program_id', 0)))}` (`rule_strength`) | {rs['statement']} (report sha256 `{str(rs.get('report_sha256', ''))[:12]}…`) | "
+                f"docs/rule-strength.md, the report in docs/results/ |"]
+    fm = r.get("fork_mode", {})
+    if fm:
+        n += 1
+        txs = fm.get("txs", {})
+        out += [f"| {n} | A program needs no staging deployment: the practice program in fork mode exists only inside the verifier | "
+                f"`{d.cli('status --commit ' + str(fm.get('commit')))}`; `eth_getCode {fm.get('vault_3')}` at the anchor chain | "
+                f"`{fm.get('state')}`, {tokens(fm.get('paid_raw'))} tUSD; {fm.get('deploy_txs')} deploy transactions, {fm.get('targets')} targets; the vault's code on chain: `{fm.get('vault_3_code_on_chain')}` | "
+                f"commit {d.tx(txs.get('commit'))}, reveal {d.tx(txs.get('reveal'))} |"]
     au = r.get("audit", {})
     if au:
         n += 1
