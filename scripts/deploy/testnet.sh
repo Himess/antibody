@@ -78,7 +78,7 @@ VERIFIER_WASM="$ROOT/target/reproducible/wasm32-wasip2/release/antibody-verify.w
 stake() { python3 -c "import os,sys; print(int((os.path.getsize(sys.argv[1]) + int(sys.argv[2])) * 10**19 + float(sys.argv[3]) * 10**24))" "$@"; }
 declare -A AMOUNT=(
   [bounty]="$(stake "$ANTIBODY_WASM" 30000 0.02)"    # state: programs, commits, runs, images (~30 kB)
-  [guardian]="$(stake "$GUARDIAN_WASM" 8000 0.02)"   # state: chains, permits
+  [guardian]="$(stake "$GUARDIAN_WASM" 8000 0.12)"   # state: chains, permits; the deploy prepays its gas from here
   [acme]=850000000000000000000000                     # gas; NEAR credit (program storage, activation, rounds);
                                                       # 0.4 wrapped as the escrow; 0.1 near-guardian's MPC credit
   [agent-a]=120000000000000000000000                  # gas; one run deposit at a time (0.02), storage; a bond
@@ -92,7 +92,7 @@ declare -A AMOUNT=(
   [relayer]=700000000000000000000000                  # T1 relays (verify_quote ~0.0176 each, ~30 runs)
 )
 ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f agent-g keeper relayer)
-PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.47)"  # code, state, and ten vends' gas funds (0.04 each)
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.57)"  # code, state, and ten vends' gas funds (0.04 each)
 
 plan() {
   local total=0 a
