@@ -47,6 +47,10 @@ pub const TEE_VERIFY_GAS: Gas = Gas::from_tgas(200);
 pub const TEE_CB_GAS: Gas = Gas::from_tgas(30);
 /// Kept from each run's charge to pay for the storage its answer adds (about 1 KB).
 pub const RUN_STORAGE_ALLOWANCE: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR
+/// Prepaid by each commit for the storage its settlement adds later, when permissionless calls
+/// (`allocate`, `open_round`, `pay`) charge no one: a holder's record and its keys (at most four), a
+/// debt or a promotion, one challenge record. Measured in `a_commits_settlement_is_prepaid`.
+pub const SETTLEMENT_STORAGE_BYTES: u64 = 1_024;
 /// OutLayer holds extra deposit for `input_data` beyond 32 KB: requests stay within that.
 pub const OUTLAYER_FREE_INPUT: usize = 32 * 1024;
 /// An inline blob travels hex-encoded in the request; larger ones go through FastFS (`near-tx`).
@@ -240,6 +244,9 @@ pub struct Contract {
     defaults: Defaults,
     /// OutLayer's worker images known to this deployment, and when each was first seen.
     images: Vec<KnownImage>,
+    /// The image registries images may be synced from: every default the owner named, which every
+    /// program pinned at its creation.
+    registries: Vec<AccountId>,
     vetoed: Vec<Measurements>,
     store: NearStore,
     pins: LookupMap<u32, Pins>,
@@ -272,6 +279,7 @@ impl Contract {
         Self {
             owner,
             token,
+            registries: vec![defaults.image_registry.clone()],
             defaults,
             images: Vec::new(),
             vetoed: Vec::new(),
@@ -298,6 +306,9 @@ impl Contract {
         assert_one_yocto();
         require!(env::predecessor_account_id() == self.owner, "owner only");
         events::emit("defaults_changed", json!({"verifier_wasm_hash": defaults.verifier.wasm_hash}));
+        if !self.registries.contains(&defaults.image_registry) {
+            self.registries.push(defaults.image_registry.clone());
+        }
         self.defaults = defaults;
     }
 
@@ -312,24 +323,33 @@ impl Contract {
         events::emit("image_vetoed", json!({"mrtd": m.mrtd}));
     }
 
-    /// Permissionless: copies a registry's approved worker images (default: the current defaults'),
-    /// stamping the new ones with now and their registry. Each program counts only its own registry's.
+    /// Permissionless: copies the approved worker images of a known registry (default: the current
+    /// defaults'), stamping the new ones with now and their registry. Each program counts only its own
+    /// registry's. The caller pays the storage of what is added (the owner's own syncs excepted).
     pub fn sync_images(&mut self, registry: Option<AccountId>) -> Promise {
         let registry = registry.unwrap_or_else(|| self.defaults.image_registry.clone());
+        require!(self.registries.contains(&registry), "not a registry this deployment named");
         Promise::new(registry.clone())
             .function_call("get_approved_measurements".into(), b"{}".to_vec(), NearToken::from_yoctonear(0), LC_GAS)
-            .then(Self::ext(env::current_account_id()).with_static_gas(SMALL_CB_GAS).on_images(registry))
+            .then(Self::ext(env::current_account_id()).with_static_gas(SMALL_CB_GAS).on_images(registry, env::predecessor_account_id()))
     }
 
     #[private]
-    pub fn on_images(&mut self, registry: AccountId, #[callback_result] r: Result<Vec<Measurements>, PromiseError>) -> u32 {
+    pub fn on_images(&mut self, registry: AccountId, payer: AccountId, #[callback_result] r: Result<Vec<Measurements>, PromiseError>) -> u32 {
         let Ok(list) = r else { return 0 };
         let mut added = 0;
+        let mut bytes = 0u128;
         for m in list.into_iter().take(256) {
             if !self.images.iter().any(|k| k.m == m && k.registry == registry.as_str()) {
-                self.images.push(KnownImage { m, added_at: now(), registry: registry.to_string() });
+                let k = KnownImage { m, added_at: now(), registry: registry.to_string() };
+                bytes += near_sdk::borsh::to_vec(&k).map(|v| v.len() as u128).unwrap_or(0);
+                self.images.push(k);
                 added += 1;
             }
+        }
+        if bytes > 0 && payer != self.owner {
+            let cost = bytes * env::storage_byte_cost().as_yoctonear();
+            self.engine().charge_storage(payer.as_str(), cost).unwrap_or_else(|e| fail(e));
         }
         if added > 0 {
             events::emit("images_synced", json!({"added": added, "known": self.images.len()}));
@@ -391,6 +411,11 @@ impl Contract {
         }
     }
 
+    /// A commit pays for its record now and for the bytes its settlement adds later.
+    fn charge_commit_storage(&mut self, before: u64, payer: &str) {
+        self.charge_storage(before.saturating_sub(SETTLEMENT_STORAGE_BYTES), payer);
+    }
+
     // ---------------------------------------------------------------- tokens in (NEP-141 receiver)
 
     pub fn ft_on_transfer(&mut self, sender_id: AccountId, amount: U128, msg: String) -> PromiseOrValue<U128> {
@@ -413,14 +438,14 @@ impl Contract {
                 let cm = hex32(&commitment).unwrap_or_else(|| env::panic_str("commitment: 32 bytes of hex"));
                 let (_, fx) = self.engine().commit(&ctx, program_id, round, cm, terms_ok, amount.0, false).unwrap_or_else(|e| fail(e));
                 self.apply(fx);
-                self.charge_storage(before, sender_id.as_str());
+                self.charge_commit_storage(before, sender_id.as_str());
             }
             TokenMsg::Challenge { commit_id, blob } => {
                 let c = self.load_commit(commit_id);
                 let run_id = self.store.peek_id(IdKind::Run);
                 let req = self.request_for(Mode::Second, &c, run_id, blob.as_ref(), json!({}));
                 let fx = self.engine().challenge(&ctx, commit_id, amount.0, spec(&req)).unwrap_or_else(|e| fail(e));
-                self.apply_run(fx, req, run_id);
+                self.apply_run(fx, req, run_id, before);
             }
             TokenMsg::Deposit => {
                 self.engine().token_deposit(sender_id.as_str(), amount.0).unwrap_or_else(|e| fail(e));
@@ -524,6 +549,7 @@ impl Contract {
         valid_loc(&base);
         let p = self.load_program(program_id);
         require!(env::predecessor_account_id().as_str() == p.project, "only the project activates");
+        let before = env::storage_usage();
         let mut meta = self.meta.get(&program_id).unwrap().clone();
         meta.base = Some(base);
         self.meta.insert(program_id, meta);
@@ -531,7 +557,7 @@ impl Contract {
         let req = self.request(Mode::Activate, &p, None, run_id, 0, None, json!({}));
         let ctx = self.ctx();
         let fx = self.engine().activate(&ctx, program_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn submit_known(&mut self, program_id: u32, blob: BlobIn) {
@@ -540,8 +566,9 @@ impl Contract {
         let b = blob_json(&blob, None);
         let req = self.request(Mode::Verify, &p, None, run_id, 0, None, json!({"hunter": p.project, "blob": b}));
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().submit_known(&ctx, program_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn open_program(&mut self, program_id: u32) {
@@ -594,8 +621,7 @@ impl Contract {
         let ctx = self.ctx();
         let before = env::storage_usage();
         let fx = self.engine().propose_round(&ctx, program_id, manifest_sha, overrides, slots, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
-        self.charge_storage(before, &ctx.caller);
+        self.apply_run(fx, req, run_id, before);
     }
 
     /// Works up to `max` commits (default 100, at most 400) of the round opening; the call that finishes
@@ -637,7 +663,7 @@ impl Contract {
         };
         self.apply(fx);
         let payer = self.load_commit(id).beneficiary.clone();
-        self.charge_storage(before, &payer);
+        self.charge_commit_storage(before, &payer);
         Some(id)
     }
 
@@ -666,8 +692,7 @@ impl Contract {
         let ctx = self.ctx();
         let before = env::storage_usage();
         let fx = self.engine().reveal(&ctx, commit_id, commitment, blob_sha, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
-        self.charge_storage(before, &c.beneficiary);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn retry(&mut self, commit_id: u64, blob: Option<BlobIn>) {
@@ -675,8 +700,9 @@ impl Contract {
         let run_id = self.store.peek_id(IdKind::Run);
         let req = self.request_for(Mode::Verify, &c, run_id, blob.as_ref(), json!({}));
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().retry(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn request_second(&mut self, commit_id: u64, blob: Option<BlobIn>) {
@@ -684,8 +710,9 @@ impl Contract {
         let run_id = self.store.peek_id(IdKind::Run);
         let req = self.request_for(Mode::Second, &c, run_id, blob.as_ref(), json!({}));
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().request_second(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn retry_challenge(&mut self, commit_id: u64, blob: Option<BlobIn>) {
@@ -693,8 +720,9 @@ impl Contract {
         let run_id = self.store.peek_id(IdKind::Run);
         let req = self.request_for(Mode::Second, &c, run_id, blob.as_ref(), json!({}));
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().retry_challenge(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     /// A distinctness top-up (spec §7.5): `patch` is a FastFS upload of `[(target, code)]`.
@@ -712,8 +740,9 @@ impl Contract {
         });
         let req = self.request_for(Mode::Distinct, &c, run_id, blob.as_ref(), extra);
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().request_distinct(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     fn exhausted_slot(&self, c: &Commit) -> u8 {
@@ -771,8 +800,7 @@ impl Contract {
         let ctx = self.ctx();
         let before = env::storage_usage();
         let fx = self.engine().request_rerun(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
-        self.charge_storage(before, &ctx.caller);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn release_wrap(&mut self, commit_id: u64, blob: Option<BlobIn>) {
@@ -781,8 +809,9 @@ impl Contract {
         let run_id = self.store.peek_id(IdKind::Run);
         let req = self.request_for(Mode::ReleaseWrap, &c, run_id, blob.as_ref(), json!({"project_pk": pk}));
         let ctx = self.ctx();
+        let before = env::storage_usage();
         let fx = self.engine().release_wrap(&ctx, commit_id, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
+        self.apply_run(fx, req, run_id, before);
     }
 
     /// Discloses the proofs of each (round, tag) whose condition holds (spec §11.6).
@@ -795,8 +824,7 @@ impl Contract {
         let ctx = self.ctx();
         let before = env::storage_usage();
         let fx = self.engine().request_disclosure(&ctx, program_id, &parsed, spec(&req)).unwrap_or_else(|e| fail(e));
-        self.apply_run(fx, req, run_id);
-        self.charge_storage(before, &ctx.caller);
+        self.apply_run(fx, req, run_id, before);
     }
 
     pub fn exit(&mut self, program_id: u32) {
@@ -1026,14 +1054,23 @@ impl Contract {
     }
 
     /// Applies effects of a call that started run `run_id` with request bytes `req`.
-    fn apply_run(&mut self, fx: Vec<Effect>, req: String, run_id: u64) {
+    /// Applies a call that requests a run. The run's payer pays the storage the call added since
+    /// `before`; the storage of the run's answer comes from its deposit (`RUN_STORAGE_ALLOWANCE`).
+    fn apply_run(&mut self, fx: Vec<Effect>, req: String, run_id: u64, before: u64) {
         let mut req = Some(req);
+        let mut payer = None;
         for f in fx {
             let r = match &f {
-                Effect::RequestRun { run, .. } if *run == run_id => req.take(),
+                Effect::RequestRun { run, payer: who, .. } if *run == run_id => {
+                    payer = Some(who.clone());
+                    req.take()
+                }
                 _ => None,
             };
             self.effect(f, r);
+        }
+        if let Some(who) = payer {
+            self.charge_storage(before, &who);
         }
     }
 

@@ -692,8 +692,9 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     });
     cmd::admin_deploy(&ctx_of("bounty"), &rel.join("near_antibody.wasm"), Some("new".into()),
         Some(json!({"owner": "test.near", "token": acct("tusd"), "defaults": defaults}).to_string()))?;
-    // Permissionless: near-antibody copies the (MOCK) approved worker images before any program exists.
-    cmd::call(&ctx_of("keeper"), "sync_images", json!({}), 60)?;
+    // near-antibody copies the (MOCK) approved worker images before any program exists. The owner's sync
+    // is paid from the contract's balance; anyone may sync later, paying the new entries' storage.
+    cmd::admin_call(&root_ctx, &acct("bounty"), "sync_images", "{}", 0, 60)?;
     cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct("acme"), "amount": (50_000 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;
     for x in ["a", "b", "c", "d", "e", "f", "g"] {
         cmd::admin_call(&root_ctx, &acct("tusd"), "mint", &json!({"account_id": acct(&format!("agent-{x}")), "amount": (200 * ONE_TUSD).to_string()}).to_string(), 0, 30)?;

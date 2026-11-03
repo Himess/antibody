@@ -724,10 +724,15 @@ key derivation (`request_app_private_key`):
 - Each account holds an NEP-145-style **credit** in NEAR for storage and verification.
   - `storage_deposit` tops it up; a new account's entry is paid from its own deposit.
   - An agent key can spend it but not withdraw it.
-  - The storage a call adds (a program, a commit, an agent, a proposal, a disclosure request) is
-    charged to the payer's credit.
+  - The storage a call adds (a program, a commit, an agent, a proposal, a disclosure request, a run
+    request and what it records) is charged to the payer's credit; a call that requests a run charges
+    the run's payer.
   - Every run is charged the program's pinned deposit plus a 0.01 NEAR allowance for the storage of its
     answer. OutLayer refunds the unused part of the deposit to the requester (`payer_account_id`).
+  - The permissionless settlement calls (`allocate`, `pay`, `open_round`) charge no one: each commit
+    prepays 1 KiB for what its settlement adds (a holder and up to four keys, a debt or a promotion,
+    one challenge record; the measured worst case is about 920 bytes).
+  - `sync_images` charges its caller for the entries it adds (the owner's syncs excepted).
 - Withdrawals of token credit and of NEAR credit attach one yoctoNEAR, so only a full-access key withdraws.
 - OutLayer keeps its base fee (0.001 NEAR on testnet) on every attempt, failed ones included.
 - Projects pay activation, known issues, `check_round` and re-runs of their own choosing. Whoever
@@ -822,8 +827,10 @@ of the manifest (§3.2); fees accrue to the deployment's treasury.
 
 The owner's setters change the **defaults for new programs only**.
 
-- **Measurements.** The set is a snapshot of OutLayer's approved images at creation (`sync_images`,
-  permissionless, copies a registry's list), and the program pins that registry. Later approvals count
+- **Measurements.** The set is a snapshot of OutLayer's approved images at creation (`sync_images`
+  copies a registry's list), and the program pins that registry. Anyone may sync, but only from a
+  registry the owner named as a default, and the caller pays the new entries' storage from its NEAR
+  credit (the owner's syncs come from the contract's balance). Later approvals count
   for a program only if its own registry lists them, and only after `image_delay`, which is longer than
   the challenge window: a registry the owner names later never reaches a live program. A veto can only
   remove an image, which forces the window, and can never cancel a payout.

@@ -129,7 +129,7 @@ impl W {
         let mut w = W { c, now: START };
         // OutLayer's registry lists image 1 before any program exists.
         w.callback(vec![]);
-        assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), Ok(vec![image(1)])), 1);
+        assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), acc("owner.testnet"), Ok(vec![image(1)])), 1);
         w
     }
 
@@ -548,7 +548,7 @@ fn quotes_that_do_not_bind_or_come_from_other_images_are_refused() {
     assert!(!w.c.on_tee(run, hex::encode(&rd), Err(PromiseError::Failed)));
     // An image approved after the program was created counts only after the image delay.
     w.callback(vec![]);
-    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), Ok(vec![image(1), image(20)])), 1);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), acc("owner.testnet"), Ok(vec![image(1), image(20)])), 1);
     w.callback(vec![]);
     let v = w.verified(&image(20), &rd, "UpToDate");
     assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)));
@@ -772,7 +772,7 @@ fn the_owner_cannot_reach_a_live_program_through_another_image_registry() {
     w.call_with(&acc("owner.testnet"), 1);
     w.c.set_defaults(d);
     w.callback(vec![]);
-    assert_eq!(w.c.on_images(acc("evil-registry.testnet"), Ok(vec![image(30)])), 1);
+    assert_eq!(w.c.on_images(acc("evil-registry.testnet"), acc("owner.testnet"), Ok(vec![image(30)])), 1);
     w.tick(30 * 86_400);
     w.call(&project());
     w.c.activate(id, base());
@@ -784,4 +784,79 @@ fn the_owner_cannot_reach_a_live_program_through_another_image_registry() {
     let v = w.verified(&image(30), &rd, "UpToDate");
     assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)), "not the program's registry");
     assert!(w.c.get_program(id).unwrap().sealing_pk.is_none());
+}
+
+#[test]
+#[should_panic(expected = "not a registry this deployment named")]
+fn only_a_named_registry_is_synced() {
+    // Anyone may sync, but only from a registry the owner named: no one fills the contract's storage
+    // from a list they control.
+    let mut w = W::new();
+    w.call(&alice());
+    let _ = w.c.sync_images(Some(acc("my-registry.testnet")));
+}
+
+#[test]
+#[should_panic(expected = "not enough NEAR credit for storage")]
+fn a_sync_without_credit_adds_nothing() {
+    let mut w = W::new();
+    w.callback(vec![]);
+    w.c.on_images(acc("worker.outlayer.testnet"), alice(), Ok(vec![image(40)]));
+}
+
+#[test]
+fn a_sync_charges_its_caller_for_new_images_only() {
+    let mut w = W::new();
+    w.register(&alice());
+    w.call(&alice());
+    let _ = w.c.sync_images(None);
+    let before = w.c.storage_balance_of(alice()).unwrap().total.0;
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), alice(), Ok(vec![image(1), image(40), image(41)])), 2);
+    let after = w.c.storage_balance_of(alice()).unwrap().total.0;
+    assert!(after < before, "the new entries were paid from the caller's credit");
+    // Images it already knows cost nothing.
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), alice(), Ok(vec![image(40)])), 0);
+    assert_eq!(w.c.storage_balance_of(alice()).unwrap().total.0, after);
+}
+
+/// The storage a finding's allocation and payment add, from a context of its own (the mocked storage
+/// usage restarts with each).
+fn settlement_bytes(w: &mut W, id: u32, who: &AccountId, blob: &[u8], keys: Value) -> i64 {
+    w.register(who);
+    let cid = w.commit(id, who, blob);
+    w.call(who);
+    w.c.reveal(cid, BlobIn::Inline(hex::encode(blob)));
+    let run = w.c.get_commit(cid).unwrap().run.unwrap();
+    let out = w.facts(run, "Violation", keys, json!({"impact_usd_micro": "0"}));
+    w.answer(run, &out);
+    w.tick(1_801);
+    w.call(&acc("keeper.testnet"));
+    w.c.flush();
+    let before = env::storage_usage() as i64;
+    w.c.allocate(id, None);
+    w.c.flush();
+    let allocated = env::storage_usage() as i64 - before;
+    assert!(matches!(w.c.get_commit(cid).unwrap().state, CommitState::Holder { .. }));
+    w.c.pay(cid);
+    w.c.flush();
+    allocated.max(env::storage_usage() as i64 - before)
+}
+
+#[test]
+fn a_commits_settlement_is_prepaid() {
+    // allocate and pay charge no one: what they add must fit in what each commit prepaid. A finding
+    // holds at most four keys, and a commit takes at most one challenge record.
+    let mut w = W::new();
+    let id = w.open();
+    let key = |t: &str| json!({"slot": 0, "tag": t.repeat(32)});
+    // The program's first allocation also adds its own entries.
+    let first = settlement_bytes(&mut w, id, &alice(), b"first", json!([key("66")]));
+    let one = settlement_bytes(&mut w, id, &acc("bob.testnet"), b"one key", json!([key("67")]));
+    let two = settlement_bytes(&mut w, id, &acc("carol.testnet"), b"two keys", json!([key("68"), {"slot": 1, "tag": "69".repeat(32)}]));
+    let per_key = two - one;
+    let worst = first + 3 * per_key + (64 + 16 + 8 + 9 + 1);
+    eprintln!("settlement storage: first {first} B, one key {one} B, two keys {two} B, worst case {worst} B");
+    assert!(worst <= SETTLEMENT_STORAGE_BYTES as i64, "{worst}");
 }
