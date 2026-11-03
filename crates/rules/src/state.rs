@@ -477,6 +477,10 @@ pub struct Account {
     #[serde(with = "crate::types::amount")]
     pub near: Amount,
     pub agent: Option<Agent>,
+    /// The account committed as its own beneficiary. Such an account never becomes an agent: an agent
+    /// cannot withdraw, so its credit and the payouts of its commits would be locked.
+    #[serde(default)]
+    pub committed: bool,
 }
 
 /// Contract-wide totals for `audit()` (spec §7.10).

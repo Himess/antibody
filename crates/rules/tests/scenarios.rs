@@ -927,3 +927,26 @@ fn a_release_wrap_no_quote_confirms_can_be_requested_again() {
     assert!(w.e.release_wrap(&ctx, c, spec).is_err(), "a confirmed wrap stands");
     w.audit_ok(&[p]);
 }
+
+#[test]
+fn a_parent_never_makes_an_agent_of_an_account_with_value_of_its_own() {
+    // An agent cannot withdraw: its parent would lock the account's credit and the payouts of its commits.
+    let mut w = W::new();
+    let owner = "ops.testnet";
+    w.e.near_deposit(owner, 1_000).unwrap();
+    let octx = w.ctx(owner);
+    w.e.token_deposit("rich.ops.testnet", 5).unwrap();
+    assert!(w.e.register_agent(&octx, "rich.ops.testnet", 20, 10, None).is_err(), "token credit");
+    w.e.near_deposit("gas.ops.testnet", 5).unwrap();
+    assert!(w.e.register_agent(&octx, "gas.ops.testnet", 20, 10, None).is_err(), "NEAR credit");
+    let p = w.program_open(1_000, params());
+    let hctx = w.ctx("hunter.ops.testnet");
+    let (_, fx) = w.e.commit(&hctx, p, 0, H32([5; 32]), true, 10, false).unwrap();
+    w.log(&fx);
+    assert!(w.e.register_agent(&octx, "hunter.ops.testnet", 20, 10, None).is_err(), "a commit of its own");
+    // A fresh sub-account becomes an agent, and its owner may change its budget.
+    let r = w.e.register_agent(&octx, "fresh.ops.testnet", 20, 10, None);
+    w.ok(r);
+    let r = w.e.register_agent(&octx, "fresh.ops.testnet", 30, 10, None);
+    w.ok(r);
+}

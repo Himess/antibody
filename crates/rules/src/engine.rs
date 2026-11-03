@@ -317,10 +317,13 @@ impl<S: Store> Engine<S> {
         }
         let mut a = self.store.account(agent);
         let prev = a.agent.take();
-        if let Some(p) = &prev {
-            if p.owner != ctx.caller {
-                return Err(Error::Forbidden("another owner"));
+        match &prev {
+            Some(p) if p.owner != ctx.caller => return Err(Error::Forbidden("another owner")),
+            // A parent never captures a sub-account that holds value of its own: an agent cannot withdraw.
+            None if a.tokens > 0 || a.near > 0 || a.committed => {
+                return Err(Error::Forbidden("an account with credit or commits of its own cannot become an agent"));
             }
+            _ => {}
         }
         let mut ag = prev.unwrap_or(Agent {
             owner: ctx.caller.clone(),
@@ -571,6 +574,11 @@ impl<S: Store> Engine<S> {
             Some(ag) => (ag.owner.clone(), Some(ag.clone())),
             None => (hunter.clone(), None),
         };
+        if agent.is_none() && !acc.committed {
+            let mut a = acc.clone();
+            a.committed = true;
+            self.store.put_account(&hunter, &a);
+        }
         if let Some(ag) = &agent {
             if !bond_from_credit {
                 return Err(Error::Forbidden("an agent's bond comes from its owner's credit"));

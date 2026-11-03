@@ -759,7 +759,9 @@ The contract requires a positive bond. Bonds price slop:
 ## 13. Agents
 
 - **Registry.** `register_agent(agent, bond_budget, per_commit_cap)` is called by the owner. The agent is
-  a sub-account of the owner, so only the owner could create it.
+  a sub-account of the owner, so only the owner could create it. An account that holds token or NEAR
+  credit, or ever committed as its own beneficiary, cannot become an agent: an agent cannot withdraw,
+  so a parent would lock what the account owns.
 - **Key.** A function-call key on near-antibody, limited to `commit`, `reveal`, `retry` and FastFS
   uploads. It cannot withdraw (one yoctoNEAR is required), transfer tokens, or attach deposits.
 - **Bonds.** Agent bonds come from the owner's credit, within `bond_budget` (total locked) and
