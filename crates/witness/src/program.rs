@@ -164,7 +164,7 @@ pub fn build_program(
             Err(ProgramError::Verify(e)) => return Err(eyre!("strict verification failed (pass {pass}): {e}")),
         }
     }
-    Err(eyre!("fixpoint not reached after 8 passes"))
+    Err(eyre!("fixpoint not reached after 8 passes; missing in turn: {}", added.join(", ")))
 }
 
 /// A submission built from the program's pinned base witness alone, with no RPC (docs/spec.md §4.4):

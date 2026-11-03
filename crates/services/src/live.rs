@@ -439,8 +439,9 @@ impl Live {
         let last = [self.s["evm"]["acme"]["AcmeVaultFixed"].clone(), self.s["evm"]["practice"]["vaults"].as_array().and_then(|v| v.last().cloned()).unwrap_or(Value::Null)];
         let n = poll("a Sepolia block with both fixtures", Duration::from_secs(600), Duration::from_secs(12), || {
             let head = evm.call("eth_blockNumber", json!([])).ok().and_then(|v| hex_u64(&v).ok())?;
-            // Two blocks back: a block that may still be reorganised is no anchor.
-            let n = head.checked_sub(2)?;
+            // Eight blocks back: no anchor a reorganisation could still replace, and one every backend of a
+            // load-balanced RPC already holds (a backend behind the anchor answers its proofs wrongly).
+            let n = head.checked_sub(8)?;
             let has = |a: &Value| evm.call("eth_getCode", json!([a, format!("{n:#x}")])).ok().and_then(|c| c.as_str().map(|c| c.len() > 2)).unwrap_or(false);
             last.iter().all(has).then_some(n)
         })?;
