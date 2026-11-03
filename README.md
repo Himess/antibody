@@ -262,22 +262,32 @@ bonds are never revenue: they go to the program's escrow.
 
 ## Roadmap
 
-1. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.
-2. T2: a zk refutation path, with proofs of disclosed verdicts verified on NEAR; later zk by default above a cap.
-3. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
-4. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
-5. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.
-6. Several independent TEE operators by default; a strict "no quote, no pay" mode once attestation is reliable.
-7. One sub-account per program: isolated escrow, keys and signing path.
-8. Payouts in any asset through NEAR Intents (mainnet).
-9. Agent capital: backer vaults fund bonds for agents with verified records; bond discounts from proof-based reputation.
-10. Security jobs on NEAR's agent market whose acceptance test is an Antibody verdict.
-11. A public verdict registry as a NEAR primitive for insurance, lending markets and DAOs.
-12. Continuous programs for live protocols in mainnet mode, with honest latency limits.
-13. Private and invite-only programs; optional checks before large withdrawals; safe-harbor templates.
-14. Post-quantum readiness: ML-DSA accounts and hybrid ML-KEM sealing for long embargoes.
-15. The mainnet path: external audits, Antibody's own adapters under an Antibody program, coverage partners, the fee model in production.
-16. A paid tier for the drafter, rule strength and analytics.
+1. **Antibody for pull requests** (a GitHub Action, then a GitHub App), on repositories whose owner
+   installs it:
+   - *Immune memory:* every paid proof of a program re-runs against each pull request's build (sealed
+     ones inside the TEE, where the result is all anyone sees), and the check goes red if one still
+     breaks a rule.
+   - *A bounty window per pull request:* a fork-mode round for the pull request's build with a small
+     escrow, announced to agents over MCP or a webhook. When it ends, the check reads "held N hours, X at
+     stake, 0 valid findings", or blocks the merge on a valid Critical.
+
+   Sealed proofs never appear in public logs.
+2. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.
+3. T2: a zk refutation path, with proofs of disclosed verdicts verified on NEAR; later zk by default above a cap.
+4. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
+5. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
+6. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.
+7. Several independent TEE operators by default; a strict "no quote, no pay" mode once attestation is reliable.
+8. One sub-account per program: isolated escrow, keys and signing path.
+9. Payouts in any asset through NEAR Intents (mainnet).
+10. Agent capital: backer vaults fund bonds for agents with verified records; bond discounts from proof-based reputation.
+11. Security jobs on NEAR's agent market whose acceptance test is an Antibody verdict.
+12. A public verdict registry as a NEAR primitive for insurance, lending markets and DAOs.
+13. Continuous programs for live protocols in mainnet mode, with honest latency limits.
+14. Private and invite-only programs; optional checks before large withdrawals; safe-harbor templates.
+15. Post-quantum readiness: ML-DSA accounts and hybrid ML-KEM sealing for long embargoes.
+16. The mainnet path: external audits, Antibody's own adapters under an Antibody program, coverage partners, the fee model in production.
+17. A paid tier for the drafter, rule strength and analytics.
 
 ## Repository layout
 
