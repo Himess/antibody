@@ -16,6 +16,7 @@ mod demo;
 mod evm;
 mod indexer;
 mod keeper;
+mod live;
 mod mocks;
 mod notifier;
 mod relayer;
@@ -161,6 +162,17 @@ enum Cmd {
         #[arg(long)]
         serve: bool,
     },
+    /// The story on NEAR testnet with Sepolia and Base Sepolia: our own deployment
+    /// (deployments/near-testnet.json) and fixtures, every transaction on a testnet. Keys from
+    /// `.secrets/`, RPCs from `.env` (SEPOLIA_RPC, comma-separated, and BASE_SEPOLIA_RPC). Resumable:
+    /// `<work dir>/live.json` records each stage
+    Live {
+        #[arg(long)]
+        work_dir: Option<PathBuf>,
+        /// Stop after this stage
+        #[arg(long)]
+        until: Option<String>,
+    },
 }
 
 fn load_dep(cli: &Cli) -> Result<Deployments> {
@@ -255,6 +267,32 @@ fn main() -> Result<()> {
                 root,
                 keep: *keep,
                 serve: *serve,
+            })?;
+            Ok(())
+        }
+        Cmd::Live { work_dir, until } => {
+            let root = repo_root().ok_or_else(|| eyre!("run it from inside the repository"))?;
+            let dotenv = antibody_cli::ctx::load_dotenv(&root.join(".env"));
+            let var = |k: &str| -> Result<String> {
+                std::env::var(k)
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .or_else(|| dotenv.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()))
+                    .ok_or_else(|| eyre!("set {k} in .env"))
+            };
+            let exe = if cfg!(windows) { ".exe" } else { "" };
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
+            let forge = home.join(".foundry/bin").join(format!("forge{exe}"));
+            live::run(live::LiveArgs {
+                work: work_dir.clone().unwrap_or_else(|| root.join("target/live")),
+                forge_bin: if forge.exists() { forge } else { PathBuf::from(format!("forge{exe}")) },
+                antibody_bin: root.join(format!("target/release/antibody{exe}")),
+                keys: root.join(".secrets/near"),
+                evm_key: root.join(".secrets/sepolia_deployer.json"),
+                sepolia_rpc: var("SEPOLIA_RPC")?,
+                base_rpc: var("BASE_SEPOLIA_RPC")?,
+                until: until.clone(),
+                root,
             })?;
             Ok(())
         }
