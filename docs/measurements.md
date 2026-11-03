@@ -6,22 +6,24 @@ covers. The testnet run's numbers (real OutLayer, DCAP and MPC) replace the sand
 
 ## The sandbox run
 
-`antibody-services demo` on a Linux VPS, 2026-11-03 04:21 UTC, commit 0619160: near-sandbox and two
-anvils, the real verifier in TEE mode on MOCK OutLayer, MOCK DCAP quotes checked by the real T1 code,
-MOCK MPC. Results: [results/sandbox-2026-11-03.json](results/sandbox-2026-11-03.json). Times are
-sandbox wall clock: they show the flow's own latency, not OutLayer's or the MPC network's.
+`make serve` (`antibody-services demo --serve`) on a Linux VPS, 2026-11-03 05:16 UTC, commit 374eaa8:
+near-sandbox and two anvils, the real verifier in TEE mode on MOCK OutLayer, MOCK DCAP quotes checked by the real T1 code,
+MOCK MPC. Results: [results/sandbox-2026-11-03.json](results/sandbox-2026-11-03.json). Each moment is
+timed by its own block or receipt (NEAR events at their blocks, as the indexer recorded them; each EVM
+pause when its receipt came back): the times show the flow's own latency, not OutLayer's or the MPC
+network's.
 
 | What | Value | Field |
 |---|---|---|
-| The whole story, every check passed | 526.5 s | `seconds`, `all_ok` |
-| Activation (base witness pinned, sealing key T1-confirmed) | 14.4 s | `activation.seconds` |
-| Agent A over MCP: commit to verdict, to T1, to paid | 9.7 s, 13.8 s, 26.9 s | `one_moment.seconds_from_commit` |
-| Pause after A's commit: chain 31337, chain 31338 | 26.9 s, 28.3 s | same |
-| Commit to verdict, agents B–G | 9.7–10.4 s | `submissions[].seconds` |
-| A round (the keeper re-runs every eligible proof, then the round opens): round 1, round 2 | 66.2 s, 72.1 s | `rounds[].seconds` |
-| Release after round 2 opens: both proxies on both chains | 1.0 s | `release.seconds` |
+| The whole story, every check passed | 526.3 s | `seconds`, `all_ok` |
+| Activation (base witness pinned, sealing key T1-confirmed) | 12.7 s | `activation.seconds` |
+| Agent A over MCP, from its commit's block: the verdict, T1 and the payment at their NEAR blocks | 7.9 s, 11.5 s, 24.9 s | `one_moment.seconds_from_commit` |
+| The pause, asked for before the payment: permits signed by near-guardian (MOCK MPC), then each chain's receipt | signed 21.2 s and 23.1 s; paused on 31337 at 22.7 s, on 31338 at 24.5 s | same |
+| Commit to verdict, agents B–G | 9.7–10.4 s (from each submission's start: witness, seal, commit, reveal) | `submissions[].seconds` |
+| A round (the keeper re-runs every eligible proof, then the round opens): round 1, round 2 | 66.8 s, 72.7 s | `rounds[].seconds` |
+| Release after round 2 opens: both proxies on both chains | 1.1 s | `release.seconds` |
 | Practice try, vend to payout (two judges, no account) | 17.0 s each | `practice.tries[].seconds` |
-| Fork mode, the tutorial proof to payout | 36.6 s | `fork_mode.seconds` |
+| Fork mode, the tutorial proof to payout | 37.0 s | `fork_mode.seconds` |
 | A submission's records at near-antibody by its verdict (B) | 903 B | `costs.contract_storage_bytes` |
 | Its NEAR credit spent: the run deposit and answer allowance (0.02), storage with the 1 KiB settlement prepay (0.0166) | 0.0366 NEAR | `costs.near_credit_spent_yocto` |
 | API: endpoints answering, events indexed | 17 of 17, 233 events | `api` |
