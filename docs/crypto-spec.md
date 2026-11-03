@@ -144,8 +144,8 @@ commitment = SHA-256("antibody/commit/v2"
    commit's position in near-antibody's sequence: NEAR's execution order.
 2. **Reveal.** `reveal(commit_id, blob)` recomputes the commitment from the commit's program, round and
    hunter and the blob's hash (inline bytes are hashed on chain; a location carries its hash), and
-   refuses any mismatch. Anyone may reveal: only the committed blob matches, and only the hunter could
-   have sealed it for that hunter (§4.2).
+   refuses any mismatch. Only the committer reveals, and only the committed blob matches: a copy of
+   someone else's blob is sealed for its own hunter (§4.2).
 
 - **Hiding.** κ, `e` and the nonces are random, so a commitment reveals nothing about the proof.
 - **Binding.** It fixes the blob, so the content, and the account and round.

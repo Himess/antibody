@@ -76,7 +76,7 @@ is how anyone can verify it.
 | H12 | Re-finding a known Critical to force a pause | Tickets only for T1 holders of new keys in the pause policy, one per round |
 | H13 | Burning an earlier commit's retries during an outage | Retries are paid by the requester, and infrastructure failures keep priority until `infra_grace` |
 | H14 | Pre-funding the reserved address | The address is derived per program from the anchor hash, and a balance is tolerated |
-| H15 | A hostile program draining an agent's bond | Per-commit cap and bond budget per agent |
+| H15 | A hostile program draining an agent's bond | Per-commit cap, and a bond budget that counts bonds lost as well as locked; an agent may be bound to a list of programs (SA-13) |
 | H16 | Many entry points into one bug | A per-invariant budget per round; custom groups |
 
 ### Infrastructure

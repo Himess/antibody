@@ -176,7 +176,7 @@ program's escrow.
 
 ### 4.3 The sealed blob
 
-`ABSEAL2` (§11.3): the PoC bundle and its extra witness, encrypted to the program's sealing key. Only the
+`ABSEAL1` (§11.3): the PoC bundle and its extra witness, encrypted to the program's sealing key. Only the
 verifier can open it, until disclosure.
 
 ### 4.4 Witnesses
@@ -197,8 +197,8 @@ verifier can open it, until disclosure.
   a proof needs no Ethereum RPC at all, however old the anchor. Otherwise it builds the extra witness from
   an RPC at the anchor, which for an old anchor must keep historical state.
 
-The verifier fetches `near-tx` blobs and the base witness from at least two NEAR RPCs and accepts only
-bytes that match the committed hash.
+The verifier fetches `near-tx` blobs and the base witness from each of its archival NEAR RPCs in turn
+until one serves bytes that match the committed hash.
 
 ## 5. Verification
 
@@ -236,7 +236,6 @@ that hash against the quote.
 | `impact_usd_micro` | min(protocol loss, attacker gain) at committed prices (§5.6) |
 | `protected_harm_usd_micro` | Loss on declared protected accounts (§7.7) |
 | `receipt_sha256` | Hash of the full receipt, which is deterministic and byte-identical on every platform |
-| `poc_sha256` | Hash of the decrypted bundle |
 | `reason` | For `InvalidPoC`, `InfraError`, `ProgramMisconfigured`: a short code |
 
 Mode-specific fields: `activate` adds `sealing_pk`; `check_round` adds `round_check {ok, canaries_ok}`;
@@ -442,7 +441,8 @@ only against a T1-checked round's code and the holder that used up the budget (r
 Before open only, the project submits sealed PoCs of known issues. Each is verified like a submission and
 counts only when T1-confirmed.
 - **Public:** the count, the slots, the severities and the impact bounds.
-- **Sealed:** the content, until disclosure.
+- **Sealed:** the content, for good: a known issue's run carries no disclosure wrap (it is the project's
+  own proof, and it is never paid).
 - **Caps:** at most `max_count` issues, and `Σ base(severity) ≤ max_share_bps × escrow`.
 - **Never after open:** a round may not add known issues.
 - A known key blocks proofs of that key for the program's life.
@@ -601,7 +601,11 @@ The program record shows "survived N days, X at stake, N verified attempts", plu
 The manifest commits:
 - which slots may pause;
 - a minimum proven impact;
-- per chain, the adapter and the targets with their anchor code hashes.
+- per chain, the targets with their anchor code hashes.
+
+The project registers its adapter and proxies per chain at near-guardian (`register`, and `set_chains`
+to change them). That list only says where permits go: each adapter trusts only the project's guardian
+address and pauses only the targets fixed at its deployment.
 
 **A pause ticket** is issued for a holder whose verdict is **T1**, whose key is in the pause policy and
 whose impact reaches the minimum, on a program whose anchor is `LightClient`. At most one ticket per
@@ -664,15 +668,20 @@ disclose(p, t, r) = mac(label("antibody/v2/disclose", t ‖ u32(r)))  one key pe
 ```
 
 The `activate` run outputs `seal_pk(p) = X25519(seal_sk(p), 9)` and `key_epoch = SHA-256(seal_pk)[0..8]`.
-The contract accepts them only from a T1-confirmed activation (§3.1). A rotated key changes the epoch, and
-a submission sealed to another epoch is `InfraError`, never `InvalidPoC`.
+The contract accepts them only from a T1-confirmed activation (§3.1), and the program's epoch is fixed
+from then on. A build whose keys no longer give that epoch (a rotated keystore) answers every run with
+`InfraError`: no bond is lost to it. A blob sealed to any other key does not open: `InvalidPoC`, which
+the hunter's CLI checks before committing.
 
 ### 11.3 Sealed blob
 
 ```
 κ = random content key;  wrap_v = κ wrapped to seal_pk (X25519 ephemeral + HKDF + AEAD, bound to program_key)
-blob = "ABSEAL1\0" ‖ wrap_v ‖ nonce ‖ AEAD(κ, program_key ‖ hunter ‖ witness ‖ report, ad = program_key)
+P = "ABPOC1" ‖ program_key ‖ hunter ‖ witness envelope ‖ report       (each length-prefixed)
+blob = "ABSEAL1\0" ‖ wrap_v ‖ nonce ‖ AEAD(κ, P, ad = "antibody/sealed/v1" ‖ program_key)
 ```
+
+The byte layout is in [crypto-spec.md](crypto-spec.md) §4.
 
 The program and the hunter are inside the AEAD, so a blob replayed under another account is
 `InvalidPoC` for the replayer; the commitment binds the round (§4.1). The exact construction is in

@@ -79,6 +79,6 @@ vending contract, and two judges with no account try it.
   duplicate, as on any program.
 - Vending is limited per hour, and the public vend key's allowance caps the gas that calls to `vend`
   can spend; the operator refills both.
-- A practice account is an agent on any program whose bond fits its cap. The cap is the practice bond,
-  and its payouts go to the vending contract, so a practice key gains nothing elsewhere.
+- A practice account is an agent bound to the practice program: it cannot commit anywhere else. Its
+  cap is the practice bond, and its payouts go to the vending contract.
 - The proof is public. The point is the loop (sealing, verification, payment), not the finding.
