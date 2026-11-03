@@ -634,7 +634,8 @@ pub fn build_replay(
 }
 
 
-/// JSON form of a bundle (calldata may contain `5e…5e` (20 bytes) = sender 0, `5f…5f` = sender 1).
+/// JSON form of a bundle. Calldata may contain `5e…5e` (20 bytes) = sender 0, `5f…5f` = sender 1, and
+/// `5c…5c` followed by one byte k = the contract call k creates; `to` may be that placeholder too.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct BundleFile {
     pub senders: u8,
@@ -672,8 +673,19 @@ pub struct BundleBuildMeta {
 pub fn parse_bundle(f: &BundleFile, salt: B256) -> Result<antibody_verifier::bundle::Bundle> {
     use antibody_verifier::bundle::{sender_address, Bundle, BundleCall};
     let placeholders = [("5e".repeat(20), 0u8), ("5f".repeat(20), 1u8)];
-    let mut calls = Vec::new();
+    // Every call is a transaction from a fresh sender, so call k creates at its sender's count of earlier calls.
+    let mut nonces = vec![0u64; f.senders as usize];
+    let mut created = Vec::new();
     for c in &f.calls {
+        let n = nonces.get_mut(c.sender as usize).ok_or_else(|| eyre!("call from sender {} of {}", c.sender, f.senders))?;
+        created.push(c.to.is_none().then(|| sender_address(&salt, c.sender).create(*n)));
+        *n += 1;
+    }
+    let creation = |k: usize, at: usize| -> Result<Address> {
+        created.get(k).copied().flatten().ok_or_else(|| eyre!("call {at} names the contract call {k} creates, but call {k} creates none"))
+    };
+    let mut calls = Vec::new();
+    for (at, c) in f.calls.iter().enumerate() {
         let mut data = c.data.trim_start_matches("0x").to_lowercase();
         for (ph, i) in &placeholders {
             if *i < f.senders {
@@ -681,9 +693,24 @@ pub fn parse_bundle(f: &BundleFile, salt: B256) -> Result<antibody_verifier::bun
                 data = data.replace(ph.as_str(), &addr);
             }
         }
+        let prefix = "5c".repeat(19);
+        let mut p = 0;
+        while p + 40 <= data.len() {
+            if data[p..p + 38] == prefix {
+                let k = usize::from_str_radix(&data[p + 38..p + 40], 16)?;
+                data.replace_range(p..p + 40, &hex::encode(creation(k, at)?));
+                p += 40;
+            } else {
+                p += 2;
+            }
+        }
+        let to = match c.to {
+            Some(t) if t.as_slice()[..19] == [0x5c; 19] => Some(creation(t.as_slice()[19] as usize, at)?),
+            other => other,
+        };
         calls.push(BundleCall {
             sender: c.sender,
-            to: c.to,
+            to,
             value: c.value.parse()?,
             data: hex::decode(&data)?.into(),
             gas_limit: c.gas_limit,
@@ -810,4 +837,32 @@ pub fn build_bundle(
         }
     }
     Err(eyre!("fixpoint not reached after 8 passes"))
+}
+
+#[cfg(test)]
+mod parse_bundle_tests {
+    use super::*;
+    use antibody_verifier::bundle::sender_address;
+
+    #[test]
+    fn a_created_contract_placeholder_becomes_the_senders_create_address() {
+        let salt = B256::repeat_byte(7);
+        let call = |sender: u8, to: Option<&str>, data: String| BundleFileCall { sender, to: to.map(|t| t.parse().unwrap()), value: "0".into(), data, gas_limit: 1_000_000 };
+        let created = format!("0x{}00", "5c".repeat(19));
+        let f = BundleFile {
+            senders: 1,
+            endowment_wei: "1".into(),
+            protected: vec![],
+            calls: vec![
+                call(0, None, "0x6080".into()),
+                call(0, Some(&created), format!("0xdeadbeef{}{}", "0".repeat(24), &created[2..])),
+            ],
+        };
+        let b = parse_bundle(&f, salt).unwrap();
+        let want = sender_address(&salt, 0).create(0);
+        assert_eq!(b.calls[1].to, Some(want));
+        assert_eq!(&b.calls[1].data[16..], want.as_slice());
+        let bad = BundleFile { calls: vec![call(0, Some(&created), "0x".into())], ..f };
+        assert!(parse_bundle(&bad, salt).unwrap_err().to_string().contains("creates none"));
+    }
 }
