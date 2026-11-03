@@ -382,6 +382,27 @@ impl Live {
         }
     }
 
+    /// Runs a forge deploy on `rpc`, again (three tries) when it failed before sending anything: a public
+    /// RPC's backends sometimes disagree on the latest block during forge's simulation. Once a
+    /// transaction is out, a failure stops the run (forge's `--resume` finishes it by hand).
+    fn forge_deploy(&self, rpc: &str, what: &str, deploy: impl Fn() -> Result<Value>) -> Result<Value> {
+        let deployer = EvmSigner::from_hex(&self.evm_key()?)?.address;
+        let evm = Evm::new(rpc);
+        let nonce = || evm.call("eth_getTransactionCount", json!([deployer, "pending"])).ok().and_then(|v| hex_u64(&v).ok());
+        let before = nonce();
+        for attempt in 1.. {
+            match deploy() {
+                Ok(v) => return Ok(v),
+                Err(e) if attempt < 3 && before.is_some() && nonce() == before => {
+                    println!("  {what}: try {attempt} failed before sending anything ({e}); again in 20 s");
+                    std::thread::sleep(Duration::from_secs(20));
+                }
+                Err(e) => return Err(e.wrap_err(what.to_string())),
+            }
+        }
+        unreachable!()
+    }
+
     // ------------------------------------------------------------------------------------------ stages
 
     /// Acme Lend on Sepolia and Base Sepolia (CREATE2: the same addresses on both) with no pauser yet, and
@@ -391,13 +412,14 @@ impl Live {
         let by = Broadcaster::Key(&key);
         let (root, forge, w) = (&self.a.root, &self.a.forge_bin, &self.a.work);
         let zero = "0x0000000000000000000000000000000000000000";
-        let dep_a = demo::deploy_acme(root, forge, &self.sepolia(), &by, zero, &w.join("acme-sepolia.json")).wrap_err("Acme on Sepolia")?;
-        let dep_b = demo::deploy_acme(root, forge, &self.a.base_rpc, &by, zero, &w.join("acme-base-sepolia.json")).wrap_err("Acme on Base Sepolia")?;
+        let (sepolia, base) = (self.sepolia(), self.a.base_rpc.clone());
+        let dep_a = self.forge_deploy(&sepolia, "Acme on Sepolia", || demo::deploy_acme(root, forge, &sepolia, &by, zero, &w.join("acme-sepolia.json")))?;
+        let dep_b = self.forge_deploy(&base, "Acme on Base Sepolia", || demo::deploy_acme(root, forge, &base, &by, zero, &w.join("acme-base-sepolia.json")))?;
         let same = ["AcmeGuard", "AcmeLend", "AcmeLendImpl", "AcmeVault", "AcmeVaultImpl", "AcmeLendFixed", "AcmeLendFinal", "AcmeVaultFixed"].iter().all(|k| dep_a[k] == dep_b[k]);
         if !same {
             return Err(eyre!("the Acme addresses differ between Sepolia and Base Sepolia"));
         }
-        let dep_p = demo::deploy_practice(root, forge, &self.sepolia(), &by, &w.join("practice-sepolia.json")).wrap_err("the practice vaults on Sepolia")?;
+        let dep_p = self.forge_deploy(&sepolia, "the practice vaults on Sepolia", || demo::deploy_practice(root, forge, &sepolia, &by, &w.join("practice-sepolia.json")))?;
         let deployer = EvmSigner::from_hex(&key)?.address;
         println!("Acme Lend on {SEPOLIA} and {BASE_SEPOLIA} (same addresses: {same}); practice factory {} with {} vaults; deployer {deployer}",
                  dep_p["factory"], dep_p["vaults"].as_array().map(|v| v.len()).unwrap_or(0));
@@ -567,9 +589,14 @@ impl Live {
         let address = mpc_address(&self.near, &guardian, &path)?;
         let evm_key = self.evm_key()?;
         let by = Broadcaster::Key(&evm_key);
-        let w = &self.a.work;
-        let ad_a = demo::deploy_adapter(&self.a.root, &self.a.forge_bin, &self.sepolia(), &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))?;
-        let ad_b = demo::deploy_adapter(&self.a.root, &self.a.forge_bin, &self.a.base_rpc, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))?;
+        let (w, root, forge) = (&self.a.work, &self.a.root, &self.a.forge_bin);
+        let (sepolia, base) = (self.sepolia(), self.a.base_rpc.clone());
+        let ad_a = self.forge_deploy(&sepolia, "the adapter on Sepolia", || {
+            demo::deploy_adapter(root, forge, &sepolia, &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))
+        })?;
+        let ad_b = self.forge_deploy(&base, "the adapter on Base Sepolia", || {
+            demo::deploy_adapter(root, forge, &base, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))
+        })?;
         let adapter = ad_a["adapter"].as_str().unwrap_or_default().to_lowercase();
         if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
             return Err(eyre!("the adapter's address differs between chains"));
