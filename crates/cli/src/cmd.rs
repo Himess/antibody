@@ -1102,11 +1102,16 @@ pub fn round_rerun(ctx: &Ctx, commit_id: u64) -> Result<Value> {
 /// Opens the next round: near-antibody works a page of commits per call and keeps its progress, so this
 /// calls until the round is open (permissionless).
 pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
+    // The opening needs the allocation cursor past every commit: `allocate` steps over closed ones.
+    let mut allocated = Vec::new();
+    while let Ok(s) = call(ctx, "allocate", json!({"program_id": program, "max": 20}), 150) {
+        allocated.push(s["tx"].clone());
+    }
     let mut pages = Vec::new();
     loop {
         let s = call(ctx, "open_round", json!({"program_id": program, "max": 200}), RUN_TGAS)?;
         if let Some(opened) = event(&s, "round_opened") {
-            return Ok(json!({"program": program, "round_opened": opened, "pages": pages, "tx": s}));
+            return Ok(json!({"program": program, "round_opened": opened, "allocated": allocated, "pages": pages, "tx": s}));
         }
         pages.push(s["tx"].clone());
     }

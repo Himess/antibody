@@ -613,8 +613,9 @@ module antibody {
     all {
       s.phase == "open", not(s.misconfigured), s.proposed, s.round < MAXR, s.now >= s.roundStart + ROUND_MIN,
       s.now >= s.proposedAt + RERUN_WIN,
-      // nothing of round r may still decide a key
-      CIDS.forall(c => c >= s.n or s.cs.get(c).round != r or s.cs.get(c).st == "done" or s.cs.get(c).alloc != "none"),
+      // nothing of round r may still decide a key: the allocation cursor has passed every commit (closed
+      // ones too: `allocate` steps over them), the engine's constant-time check
+      s.cursor >= s.n,
       s' = ghost({ ...s,
         round: r1, roundStart: s.now, proposed: false, fix: Set(),
         cs: CIDS.mapBy(d => { ...nextC(d), rerun: "none" }),

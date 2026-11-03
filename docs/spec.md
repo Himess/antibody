@@ -540,7 +540,8 @@ PoC's re-run.
 `open_round` is permissionless once:
 - the round has run for at least `round_min`;
 - the re-run window has passed, with no requested re-run still in flight;
-- every commit of the closing round is allocated or closed.
+- every commit of the closing round is allocated or closed, and the allocation cursor has passed them
+  all (`allocate` steps over closed commits; the check is then a constant-time comparison).
 
 It works a page of commits per call (`open_round(program_id, max)`) and keeps its progress, so no number
 of commits can make the opening exceed a call's gas; the call that finishes the last page opens the
