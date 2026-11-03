@@ -320,16 +320,61 @@ pub fn program_create(ctx: &Ctx, manifest: &Path, escrow: &str, project_key: &Pa
 /// account and slot the activation checks read at the anchor, proven against its state root. The
 /// verifier's own activation check passes on it.
 pub fn build_base(ctx: &Ctx, manifest_json: &[u8], program_key: &str) -> Result<(Vec<u8>, Value)> {
-    let pool = ctx.eth_pool()?;
-    let (bytes, meta) = antibody_witness::program::build_base(&pool, manifest_json, 1, program_key)?;
-    Ok((bytes, serde_json::to_value(&meta)?))
+    cached_base(ctx, &[program_key.as_bytes(), manifest_json], || {
+        let pool = ctx.eth_pool()?;
+        let (bytes, meta) = antibody_witness::program::build_base(&pool, manifest_json, 1, program_key)?;
+        Ok((bytes, serde_json::to_value(&meta)?))
+    })
 }
 
 /// A round's base witness: the anchor state both the round-0 checks and the round's own checks read.
 pub fn build_round_base(ctx: &Ctx, manifest_json: &[u8], round_json: &[u8], program_key: &str) -> Result<(Vec<u8>, Value)> {
-    let pool = ctx.eth_pool()?;
-    let (bytes, meta) = antibody_witness::program::build_round_base(&pool, manifest_json, round_json, 1, program_key)?;
-    Ok((bytes, serde_json::to_value(&meta)?))
+    cached_base(ctx, &[program_key.as_bytes(), manifest_json, round_json], || {
+        let pool = ctx.eth_pool()?;
+        let (bytes, meta) = antibody_witness::program::build_round_base(&pool, manifest_json, round_json, 1, program_key)?;
+        Ok((bytes, serde_json::to_value(&meta)?))
+    })
+}
+
+/// Where a witness built from the Ethereum RPC is kept (in the state directory), by what it was built
+/// for. Public RPCs prove only recent blocks (about 128 on Sepolia), so a witness built while the anchor
+/// was recent serves every later call for the same program, manifest and bundle.
+fn cache_path(ctx: &Ctx, kind: &str, parts: &[&[u8]]) -> std::path::PathBuf {
+    let mut h = Vec::new();
+    for p in parts {
+        h.extend_from_slice(&sha256(p));
+    }
+    ctx.state_dir.join("witness-cache").join(kind).join(hex::encode(sha256(&h)))
+}
+
+fn cached_base(ctx: &Ctx, parts: &[&[u8]], build: impl FnOnce() -> Result<(Vec<u8>, Value)>) -> Result<(Vec<u8>, Value)> {
+    let dir = cache_path(ctx, "base", parts);
+    if let (Ok(bytes), Ok(meta)) = (std::fs::read(dir.join("base.bin")), std::fs::read(dir.join("meta.json"))) {
+        let mut meta: Value = serde_json::from_slice(&meta)?;
+        meta["cached"] = json!(true);
+        return Ok((bytes, meta));
+    }
+    let (bytes, meta) = build()?;
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("base.bin"), &bytes)?;
+    std::fs::write(dir.join("meta.json"), serde_json::to_vec(&meta)?)?;
+    Ok((bytes, meta))
+}
+
+/// A submission witness built from the RPC earlier, with its salt; the receipt is recomputed from it.
+fn cached_witness(path: &Path) -> Result<Option<(Vec<u8>, Value, ProgramReceipt, B256)>> {
+    let Ok(raw) = std::fs::read(path) else { return Ok(None) };
+    let c: Value = serde_json::from_slice(&raw)?;
+    let bytes = hex::decode(c["envelope"].as_str().unwrap_or_default())?;
+    let salt: B256 = c["salt"].as_str().unwrap_or_default().parse()?;
+    let env = antibody_verifier::Envelope::decode(&bytes).map_err(|e| eyre!("cached witness {}: {e}", path.display()))?;
+    let antibody_verifier::Payload::Program(w) = &env.payload else {
+        return Err(eyre!("cached witness {} is not a program witness", path.display()));
+    };
+    let receipt = antibody_verifier::run_program(&env, w, sha256(&bytes), &antibody_verifier::ProgramContext::default());
+    let mut meta = c["meta"].clone();
+    meta["cached"] = json!(true);
+    Ok(Some((bytes, meta, receipt, salt)))
 }
 
 /// Pins the base witness and asks the verifier for the program's sealing key (T1 makes it count).
@@ -614,10 +659,18 @@ pub fn pinned_base_at(ctx: &Ctx, program: u32, round: u32) -> Result<Vec<u8>> {
 
 /// Builds the witness for `bundle_file`. With a program: first from its pinned base witness alone, which
 /// needs no RPC (the proof must read only state the base proves); otherwise, or when it reads more,
-/// from the Ethereum RPC at the anchor. The meta says which (`source`).
+/// from the Ethereum RPC at the anchor. The meta says which (`source`). A witness built from the RPC is
+/// kept with its salt and reused for the same program, manifest and bundle unless a salt is given.
 pub fn build_witness(ctx: &Ctx, program: Option<u32>, manifest_json: &[u8], bundle_file: &Path, salt: Option<B256>, program_key: &str) -> Result<(Vec<u8>, Value, ProgramReceipt, B256)> {
     let m = Manifest::parse(manifest_json).map_err(|e| eyre!(e))?;
-    let bf: BundleFile = serde_json::from_str(&std::fs::read_to_string(bundle_file)?)?;
+    let bundle_bytes = std::fs::read(bundle_file)?;
+    let bf: BundleFile = serde_json::from_slice(&bundle_bytes)?;
+    let cache = cache_path(ctx, "witness", &[program_key.as_bytes(), manifest_json, &bundle_bytes]).with_extension("json");
+    if salt.is_none() {
+        if let Some(hit) = cached_witness(&cache)? {
+            return Ok(hit);
+        }
+    }
     let salt = match salt {
         Some(s) => s,
         None => B256::from(blob::random32()?),
@@ -643,6 +696,7 @@ pub fn build_witness(ctx: &Ctx, program: Option<u32>, manifest_json: &[u8], bund
     let mut v = serde_json::to_value(&meta)?;
     v["source"] = json!("rpc");
     v["base_not_enough"] = json!(skipped);
+    write_json(&cache, &json!({"envelope": hex::encode(&bytes), "meta": v, "salt": format!("{salt:#x}")}))?;
     Ok((bytes, v, receipt, salt))
 }
 
@@ -1768,5 +1822,48 @@ mod tests {
         assert_ne!(sk, nep413_project_key(&acme(1), "other.testnet").0);
         assert!(fields["message"].as_str().unwrap().contains("Sign this only in the antibody CLI"));
         assert!(sealed::is_contributory(&sealed::x25519_public(sk)));
+    }
+
+    fn offline_ctx(test: &str) -> Ctx {
+        let state_dir = std::env::temp_dir().join(format!("antibody-cache-{}-{test}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&state_dir);
+        let dep = serde_json::from_str(crate::ctx::TESTNET_DEPLOYMENTS).unwrap();
+        Ctx { near: near::Near::new("testnet", None), dep, account: None, key_file: None, eth_rpc: None, state_dir }
+    }
+
+    #[test]
+    fn a_base_witness_built_from_the_rpc_serves_later_calls_without_it() {
+        let ctx = offline_ctx("base");
+        assert!(build_base(&ctx, b"{}", "p/0").is_err(), "no RPC and nothing kept");
+        cached_base(&ctx, &[b"p/0", b"{}"], || Ok((vec![1, 2, 3], json!({"anchor_block": 7})))).unwrap();
+        let (bytes, meta) = build_base(&ctx, b"{}", "p/0").unwrap();
+        assert_eq!((bytes, meta["anchor_block"].clone(), meta["cached"].clone()), (vec![1, 2, 3], json!(7), json!(true)));
+        // Another program key or manifest is another witness.
+        assert!(build_base(&ctx, b"{}", "p/1").is_err());
+        assert!(build_base(&ctx, b"[]", "p/0").is_err());
+        let _ = std::fs::remove_dir_all(&ctx.state_dir);
+    }
+
+    #[test]
+    fn a_kept_submission_witness_keeps_its_salt_and_its_receipt() {
+        let ctx = offline_ctx("witness");
+        let fx = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/acme-local");
+        let manifest = std::fs::read(fx.join("manifest.json")).unwrap();
+        let bundle = fx.join("submissions/A.bundle.json");
+        let envelope = std::fs::read(fx.join("submissions/A.witness.bin")).unwrap();
+        let salt = B256::repeat_byte(9);
+        // Kept as build_witness keeps one it built from the RPC.
+        let kept = cache_path(&ctx, "witness", &[b"p/0", &manifest, &std::fs::read(&bundle).unwrap()]).with_extension("json");
+        write_json(&kept, &json!({"envelope": hex::encode(&envelope), "meta": {"source": "rpc"}, "salt": format!("{salt:#x}")})).unwrap();
+        let (bytes, meta, receipt, got) = build_witness(&ctx, None, &manifest, &bundle, None, "p/0").unwrap();
+        assert_eq!((bytes, got, meta["source"].clone(), meta["cached"].clone()), (envelope, salt, json!("rpc"), json!(true)));
+        // The fixture's receipt names its program and commit; a local one (as build_witness's) names neither.
+        let mut native: Value = serde_json::from_slice(&std::fs::read(fx.join("submissions/A.native.json")).unwrap()).unwrap();
+        native["receipt"]["program"] = json!("");
+        native["receipt"]["commit_id"] = json!(0);
+        assert_eq!(serde_json::to_value(&receipt).unwrap(), native["receipt"]);
+        // A given salt is a new witness, built from the RPC.
+        assert!(build_witness(&ctx, None, &manifest, &bundle, Some(salt), "p/0").is_err());
+        let _ = std::fs::remove_dir_all(&ctx.state_dir);
     }
 }
