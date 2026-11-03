@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes JUDGES.md and AGENTS.md from a results file (the sandbox demo's or the live run's), so every
+"""Writes JUDGES.md and AGENTS.md from a results file (the sandbox demo's or a testnet run's), so every
 claim, command, expected output and link comes from what actually ran and never drifts.
 
     python3 scripts/docs/judges.py target/demo/results.json [--out .] [--source <path shown in the header>]
@@ -129,9 +129,14 @@ class Doc:
         if self.net == "sandbox":
             lines += ["These are the results of the offline sandbox run (`make demo`: near-sandbox and anvil, MOCK OutLayer and MOCK DCAP "
                       "quotes checked by the real T1 code, MOCK MPC). To query that state yourself, keep it running: "
-                      "`make serve`. The testnet run's results replace this file when it is live.", ""]
+                      "`make serve`. A testnet run's results replace this file.", ""]
         elif self.net == "testnet":
-            lines += [f"These are the results of the live run on NEAR testnet (`antibody-services live`), with Acme Lend on Sepolia "
+            # Our contracts' locked status, as the run's deployment record read it (the payout token is not ours).
+            ours = [c for c in self.r.get("deployment_record", {}).get("contracts", []) if c.get("role") != "payout token"]
+            locked = bool(ours) and all(c.get("locked") for c in ours)
+            on = ("the locked deployment" if locked else
+                  "the deployment while it is still unlocked (a staging run: the run on the locked deployment replaces this file)")
+            lines += [f"These are the results of a run on NEAR testnet (`antibody-services live`) on {on}, with Acme Lend on Sepolia "
                       f"({self.chains[0]}: it verifies and pauses) and Base Sepolia ({self.chains[1]}: it pauses): real OutLayer TEE "
                       "workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. "
                       "Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls "
