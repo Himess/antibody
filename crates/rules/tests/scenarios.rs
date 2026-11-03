@@ -623,3 +623,78 @@ fn anchor_contradicted_refunds_escrow() {
     assert_eq!(w.e.store.account(PROJECT).tokens, before + 500);
     w.audit_ok(&[p]);
 }
+
+#[test]
+fn copies_of_a_held_proof_take_one_reservation() {
+    // The project reads A's paid proof and commits copies from other accounts: each is a duplicate
+    // with its bond refunded, but only the first reserves a promotion, so later holders are still paid.
+    let mut w = W::new();
+    let p = w.program_open(600, params());
+    let (a, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true); // holder 200
+    w.allocate(p).unwrap();
+    w.pay(a).unwrap();
+    let copies: Vec<_> = (0..3).map(|_| w.finding(p, H2, Kind::Violation, &[(A, tag(1))], true).0).collect();
+    let (b, _) = w.finding(p, H1, Kind::Violation, &[(B, tag(2))], true); // holder 100
+    w.allocate(p).unwrap();
+    let reserved: Vec<_> = copies.iter().map(|c| match w.commit(*c).state {
+        CommitState::Duplicate { reserved, .. } => reserved,
+        s => panic!("expected a duplicate, got {s:?}"),
+    }).collect();
+    assert_eq!(reserved, vec![200, 0, 0], "one promotion reservation per key");
+    assert!(matches!(w.commit(b).state, CommitState::Holder { reserved: 100, debt: 0, .. }));
+    w.pay(b).unwrap();
+    w.audit_ok(&[p]);
+}
+
+#[test]
+fn exit_funds_owed_claims_before_releasing_duplicates() {
+    // An open duplicate's reservation cannot leave a holder in debt at exit: it goes back first.
+    let mut w = W::new();
+    let p = w.program_open(300, params());
+    let (a, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true); // holder 200
+    let (d, _) = w.finding(p, H2, Kind::Violation, &[(A, tag(1))], true); // duplicate, reserves the last 100
+    let (b, _) = w.finding(p, H1, Kind::Violation, &[(B, tag(2))], true); // holder 100, all in debt
+    w.allocate(p).unwrap();
+    w.pay(a).unwrap();
+    assert!(matches!(w.commit(d).state, CommitState::Duplicate { reserved: 100, .. }));
+    assert!(matches!(w.commit(b).state, CommitState::Holder { reserved: 0, debt: 100, .. }));
+    w.tick(10_000 + 600);
+    let r = w.e.exit(&w.ctx("anyone.testnet"), p);
+    w.ok(r);
+    assert!(matches!(w.end(b), Some(End::Paid { amount: 100, .. })), "the duplicate's reservation funded the debt");
+    assert_eq!(w.end(d), Some(End::DuplicateConfirmed));
+    assert_eq!(w.program(p).defaulted, 0);
+    w.audit_ok(&[p]);
+}
+
+#[test]
+fn one_gap_bug_is_promoted_once() {
+    // Copies of one gap proof: the first takes the round's gap reservation; when a round adds the rule,
+    // the earliest is promoted and paid, the copies are its duplicates.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let mut claims = vec![];
+    for h in [H1, H2, H1] {
+        let (c, run) = w.commit_reveal(p, h);
+        w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"protected_harm_usd_micro": "5000"}));
+        w.t1(run);
+        claims.push(c);
+    }
+    w.allocate(p).unwrap();
+    let reserved: Vec<_> = claims.iter().map(|c| match w.commit(*c).state {
+        CommitState::GapClaim { reserved, .. } => reserved,
+        s => panic!("expected a gap claim, got {s:?}"),
+    }).collect();
+    assert_eq!(reserved, vec![20, 0, 0], "one gap reservation per round");
+    w.propose(p, vec![SlotRule { slot: 7, severity: Severity::High, budget: 500 }], true);
+    for c in &claims {
+        w.rerun(*c, Kind::Violation, &[(7, tag(9))]);
+    }
+    w.tick(61);
+    w.open_round(p).unwrap();
+    w.pay(claims[0]).unwrap();
+    assert!(matches!(w.end(claims[0]), Some(End::Paid { amount: 20, .. })));
+    assert_eq!(w.end(claims[1]), Some(End::DuplicateConfirmed));
+    assert_eq!(w.end(claims[2]), Some(End::DuplicateConfirmed));
+    w.audit_ok(&[p]);
+}

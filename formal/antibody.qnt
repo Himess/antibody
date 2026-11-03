@@ -439,16 +439,22 @@ module antibody {
           bondLocked: s.bondLocked - BOND, bondRefunded: s.bondRefunded + BOND, credits: s.credits + BOND,
           firstClaim: if (s.firstClaim.get(k) == -1) s.firstClaim.set(k, s.now) else s.firstClaim })
       } else if (VIOL.contains(x.facts)) {
-        // A later proof of a held key: a duplicate. Nothing paid; a promotion reservation is taken in
-        // commit order, so a promotion pays at the original priority.
-        val resv = if (blocked) 0 else mn(AMT.get(k), s.available)
+        // A later proof of a held key: a duplicate. Nothing paid; the key's first duplicate takes the
+        // one promotion reservation (only one duplicate per key can be promoted), in commit order, so a
+        // promotion pays at the original priority and copies cannot lock the escrow.
+        val dupHeld = CIDS.exists(d => d < s.n and s.cs.get(d).round == r and s.cs.get(d).alloc == "dup"
+                                       and s.cs.get(d).end == "" and keyOf(s.cs.get(d).facts) == k and s.cs.get(d).res > 0)
+        val resv = if (blocked or dupHeld) 0 else mn(AMT.get(k), s.available)
         s' = ghost({ ...s, cursor: c + 1,
           cs: withC(c, { ...x, alloc: "dup", of: s.holder.get((r, k)), amount: AMT.get(k), res: resv }),
           available: s.available - resv, reserved: s.reserved + resv,
           bondLocked: s.bondLocked - BOND, bondRefunded: s.bondRefunded + BOND, credits: s.credits + BOND })
       } else if (x.facts == "Gap") {
-        // Gap lane: harm on a protected account but no invariant broken. Bond refunded, sealed claim.
-        val resv = if (blocked) 0 else mn(GAPAMT, s.available)
+        // Gap lane: harm on a protected account but no invariant broken. Bond refunded, sealed claim. A
+        // claim is keyed only once a round adds its rule, so one gap reservation per round.
+        val gapHeld = CIDS.exists(d => d < s.n and s.cs.get(d).round == r and s.cs.get(d).alloc == "gap"
+                                       and s.cs.get(d).end == "" and s.cs.get(d).res > 0)
+        val resv = if (blocked or gapHeld) 0 else mn(GAPAMT, s.available)
         s' = ghost({ ...s, cursor: c + 1,
           cs: withC(c, { ...x, alloc: "gap", amount: GAPAMT, res: resv }),
           available: s.available - resv, reserved: s.reserved + resv,
@@ -574,10 +580,13 @@ module antibody {
                        and keyOf(s.cs.get(d).facts) == k and s.cs.get(d).rerun == "breaks")
           .fold(-1, (a, d) => if (a == -1 or d < a) d else a)
     val promoted = released.filter(k => promoteOf(k) != -1).map(k => promoteOf(k))
-    val gapPromoted = if (s.addsInv)
+    // The earliest gap claim that breaks the added rule is promoted; later copies of it are its duplicates.
+    val gapBreaking = if (s.addsInv)
         CIDS.filter(d => d < s.n and s.cs.get(d).round == r and s.cs.get(d).alloc == "gap" and s.cs.get(d).end == ""
                          and s.cs.get(d).rerun == "breaks")
       else Set()
+    val gapFirst = gapBreaking.fold(-1, (a, d) => if (a == -1 or d < a) d else a)
+    val gapPromoted = gapBreaking.filter(d => d == gapFirst)
     val gate = releaseGate
     // New state of every commit of round r that is still waiting on the round.
     def nextC(d: int): Commit = {
@@ -589,6 +598,8 @@ module antibody {
         { ...x, alloc: "promoted", amount: amt, res: use, debt: amt - use }
       } else if (gapPromoted.contains(d)) {
         { ...x, alloc: "promoted", amount: GAPAMT, res: mn(x.res, GAPAMT), debt: GAPAMT - mn(x.res, GAPAMT) }
+      } else if (gapBreaking.contains(d)) {
+        { ...x, st: "done", end: "dupconf", res: 0 }
       } else if (x.round == r and (x.alloc == "dup" or x.alloc == "gap") and x.end == "")
         { ...x, st: "done", end: if (x.alloc == "dup") "dupconf" else "gapopen", res: 0 }
       else x
@@ -635,8 +646,15 @@ module antibody {
 
   // ---- the exit: after the deadline and its grace, nothing can stay stuck
   action Exit = {
-    // Debts first, in commit order, from what is available.
-    val settled = range(0, NC).foldl((s.available, CIDS.mapBy(d => s.cs.get(d))), (acc, d) => {
+    // Duplicates and gap claims can no longer be promoted: their reservations go back first, so they
+    // fund the owed claims' debts before anything returns to the project.
+    def openClaim(d: int): bool = {
+      val x = s.cs.get(d)
+      x.st != "free" and x.st != "done" and (x.alloc == "dup" or x.alloc == "gap") and x.end == ""
+    }
+    val freedFirst = CIDS.filter(d => openClaim(d)).fold(0, (a, d) => a + s.cs.get(d).res)
+    // Then debts, in commit order, from what is available.
+    val settled = range(0, NC).foldl((s.available + freedFirst, CIDS.mapBy(d => if (openClaim(d)) { ...s.cs.get(d), res: 0 } else s.cs.get(d))), (acc, d) => {
       val x = acc._2.get(d)
       val owed = (x.alloc == "holder" or x.alloc == "promoted") and x.end == "" and x.st != "done"
       val m = if (owed) mn(x.debt, acc._1) else 0
@@ -865,6 +883,32 @@ module antibody {
       .expect(s.cs.get(2).debt == 100)
       .then(TopUp).then(SettleDebt(2)).then(Pay(2))
       .expect(and { s.cs.get(2).end == "paid", s.paid == 400, all_properties })
+
+  // Copies of a held proof (their bonds refunded) take one promotion reservation per key, so they cannot
+  // lock the escrow against later holders.
+  run copiesTakeOneReservationTest =
+    init.then(Open)
+      .then(MakeCommit("h1")).then(MakeCommit("h2")).then(MakeCommit("h2"))
+      .then(Reveal(0, "VA1")).then(Reveal(1, "VA1")).then(Reveal(2, "VA1"))
+      .then(FactsT1(0)).then(FactsT1(1)).then(FactsT1(2))
+      .then(Allocate).then(Allocate).then(Allocate)
+      .expect(and { s.cs.get(1).alloc == "dup", s.cs.get(1).res == 200, s.cs.get(2).alloc == "dup", s.cs.get(2).res == 0,
+                    all_properties })
+
+  // At exit, an open duplicate's reservation goes back before debts are funded: it pays an owed claim,
+  // not the project.
+  run exitFundsDebtsBeforeDuplicatesTest =
+    init.then(Open)
+      .then(MakeCommit("h1")).then(MakeCommit("h2")).then(MakeCommit("h1"))
+      .then(Reveal(0, "VA1")).then(Reveal(1, "VA2")).then(Reveal(2, "VC1"))
+      .then(FactsT1(0)).then(FactsT1(1)).then(FactsT1(2))
+      .then(Allocate).then(Allocate)
+      .then(SecondRun(2, "VC")).then(3.reps(_ => Tick))
+      .then(Allocate).then(Pay(0))
+      .expect(and { s.cs.get(1).res == 200, s.cs.get(2).debt == 300 })
+      .then(9.reps(_ => Tick)).then(Exit)
+      .expect(and { s.paid == 500, s.cs.get(2).end == "defaulted", s.cs.get(1).end == "dupconf", s.returned == 0,
+                    all_properties })
 
   run challengeOverturnsLyingT0Test =
     init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "VA1"))

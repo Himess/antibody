@@ -381,6 +381,8 @@ impl<S: Store> Engine<S> {
             first_claim_at: None,
             paid_first_hour: 0,
             defaulted: 0,
+            dup_reserved: vec![],
+            gap_reserved: vec![],
         };
         let mut t = self.store.totals();
         t.tokens_in += np.escrow;
@@ -1207,6 +1209,7 @@ impl<S: Store> Engine<S> {
                     // Duplicate of the earliest holder of its highest-severity key.
                     let (want, _) = self.nominal(p, &f, None);
                     let mut of = cid;
+                    let mut of_key = None;
                     let mut best: Option<Severity> = None;
                     for k in &f.keys {
                         if let Some(h) = self.store.holder(p.id, c.round, &k.tag) {
@@ -1214,10 +1217,16 @@ impl<S: Store> Engine<S> {
                             if best.map(|b| sev > b || (sev == b && h < of)).unwrap_or(true) {
                                 best = Some(sev);
                                 of = h;
+                                of_key = Some(k.tag);
                             }
                         }
                     }
-                    let (reserved, _) = arith::cover(want, p.ledger.available, blocked);
+                    // One promotion reservation per key: copies of a held proof cannot lock the escrow.
+                    let key = (c.round, of_key.unwrap_or_default());
+                    let (reserved, _) = if p.dup_reserved.contains(&key) { (0, 0) } else { arith::cover(want, p.ledger.available, blocked) };
+                    if reserved > 0 {
+                        p.dup_reserved.push(key);
+                    }
                     p.ledger.reserve(reserved);
                     c.state = CommitState::Duplicate { of, amount: want, reserved };
                     return Ok(vec![ev("duplicate", serde_json::json!({"commit_id": cid, "of": of, "reserved": reserved.to_string()}))]);
@@ -1256,7 +1265,12 @@ impl<S: Store> Engine<S> {
                 if let Some(g) = p.params.gap.clone() {
                     if f.protected_harm_usd_micro > g.threshold_usd_micro {
                         self.refund_bond(c);
-                        let (reserved, _) = arith::cover(g.claim_amount, p.ledger.available, blocked);
+                        // One gap reservation per round: a claim is keyed only once a round adds its rule.
+                        let (reserved, _) =
+                            if p.gap_reserved.contains(&c.round) { (0, 0) } else { arith::cover(g.claim_amount, p.ledger.available, blocked) };
+                        if reserved > 0 {
+                            p.gap_reserved.push(c.round);
+                        }
                         p.ledger.reserve(reserved);
                         c.state = CommitState::GapClaim { amount: g.claim_amount, reserved };
                         return Ok(vec![ev("gap_claim", serde_json::json!({"commit_id": cid, "harm_usd_micro": f.protected_harm_usd_micro.to_string()}))]);
@@ -1618,13 +1632,17 @@ impl<S: Store> Engine<S> {
     }
 
     /// The gap claim's T1 re-run breaks an invariant this round adds.
-    fn rerun_breaks_new_slot(&self, p: &Program, c: &Commit) -> Option<bool> {
+    /// The keys of the round's new slots a gap claim's T1 re-run breaks (empty: none), or `None` without
+    /// a judged T1 re-run.
+    fn rerun_new_slot_keys(&self, p: &Program, c: &Commit) -> Option<Vec<H32>> {
         let pr = p.proposal.as_ref()?;
         let r = self.rerun_at(c, pr.round)?;
         match &r.outcome {
-            RunOutcome::Answered { facts, tier: Tier::T1, .. } if Self::judged(facts) => {
-                Some(facts.kind == Kind::Violation && facts.keys.iter().any(|k| pr.new_slots.iter().any(|s| s.slot == k.slot)))
-            }
+            RunOutcome::Answered { facts, tier: Tier::T1, .. } if Self::judged(facts) => Some(if facts.kind == Kind::Violation {
+                facts.keys.iter().filter(|k| pr.new_slots.iter().any(|s| s.slot == k.slot)).map(|k| k.tag).collect()
+            } else {
+                vec![]
+            }),
             _ => None,
         }
     }
@@ -1784,12 +1802,24 @@ impl<S: Store> Engine<S> {
             }
             self.store.put_commit(&c);
         }
-        // 3. Gap claims.
+        // 3. Gap claims: the earliest claim breaking a new key is promoted; later copies of it are its
+        // duplicates, so one gap bug is paid once.
+        let mut gap_keys: Vec<H32> = vec![];
         for &cid in &ids {
             let mut c = self.get_commit(cid)?;
             let CommitState::GapClaim { amount, reserved } = c.state.clone() else { continue };
-            match self.rerun_breaks_new_slot(&p, &c) {
-                Some(true) => {
+            let keys = self.rerun_new_slot_keys(&p, &c).unwrap_or_default();
+            let fresh = !keys.is_empty() && keys.iter().any(|t| !gap_keys.contains(t));
+            if !keys.is_empty() && !fresh {
+                p.ledger.unreserve(reserved);
+                c.state = CommitState::Done(End::DuplicateConfirmed);
+                fx.push(ev("duplicate_confirmed", serde_json::json!({"commit_id": cid, "gap": true})));
+                self.store.put_commit(&c);
+                continue;
+            }
+            gap_keys.extend(keys.iter().copied());
+            match fresh {
+                true => {
                     let (use_, released, debt) = arith::refit(reserved, amount);
                     p.ledger.unreserve(released);
                     if debt > 0 {
@@ -1807,6 +1837,9 @@ impl<S: Store> Engine<S> {
             }
             self.store.put_commit(&c);
         }
+        // Every duplicate and gap claim of round r is promoted or closed: their reservations are settled.
+        p.dup_reserved.retain(|(x, _)| *x != r);
+        p.gap_reserved.retain(|x| *x != r);
         // 4. Holders of round r+1: carried keys and promotions.
         for (t, h) in &carried {
             self.store.set_holder(program, r1, t, Some(*h));
@@ -1898,7 +1931,22 @@ impl<S: Store> Engine<S> {
             return Err(Error::State("exit opens after the deadline and its grace"));
         }
         let mut fx = vec![];
-        // Debts first, in commit order.
+        // Duplicates and gap claims can no longer be promoted: their reservations go back first, so they
+        // fund the owed claims' debts before anything returns to the project.
+        for i in 0..p.commits {
+            let cid = self.store.commit_at(program, i).unwrap();
+            let mut c = self.get_commit(cid)?;
+            if let CommitState::Duplicate { reserved, .. } | CommitState::GapClaim { reserved, .. } = &mut c.state {
+                if *reserved > 0 {
+                    p.ledger.unreserve(*reserved);
+                    *reserved = 0;
+                    self.store.put_commit(&c);
+                }
+            }
+        }
+        p.dup_reserved.clear();
+        p.gap_reserved.clear();
+        // Then debts, in commit order.
         fx.extend(self.fund_debts(&mut p, u32::MAX)?);
         for i in 0..p.commits {
             let cid = self.store.commit_at(program, i).unwrap();

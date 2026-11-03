@@ -213,6 +213,11 @@ pub struct Program {
     pub paid_first_hour: Amount,
     #[serde(with = "crate::types::amount")]
     pub defaulted: Amount,
+    /// (round, key) pairs whose promotion amount a duplicate reserves: one reservation per key, since
+    /// one duplicate per key can be promoted (spec §7.8).
+    pub dup_reserved: Vec<(u32, H32)>,
+    /// Rounds in which a gap claim holds a reservation: one per round (spec §7.7).
+    pub gap_reserved: Vec<u32>,
 }
 
 impl Program {
