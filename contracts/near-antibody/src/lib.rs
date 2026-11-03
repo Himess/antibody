@@ -118,6 +118,14 @@ pub enum BlobIn {
     NearTx(Loc),
 }
 
+/// A tag to disclose and the round whose proofs its key opens.
+#[near(serializers = [json])]
+#[derive(Clone, Debug)]
+pub struct DiscloseTag {
+    pub round: u32,
+    pub tag: String,
+}
+
 /// What a round's release permits allow: upgrading `proxy` to an implementation with this code hash.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq)]
@@ -770,9 +778,11 @@ impl Contract {
         self.apply_run(fx, req, run_id);
     }
 
-    pub fn request_disclosure(&mut self, program_id: u32, tags: Vec<String>) {
+    /// Discloses the proofs of each (round, tag) whose condition holds (spec §11.6).
+    pub fn request_disclosure(&mut self, program_id: u32, tags: Vec<DiscloseTag>) {
         let p = self.load_program(program_id);
-        let parsed: Vec<H32> = tags.iter().map(|t| hex32(t).unwrap_or_else(|| env::panic_str("tag: 32 bytes of hex"))).collect();
+        let parsed: Vec<(u32, H32)> =
+            tags.iter().map(|t| (t.round, hex32(&t.tag).unwrap_or_else(|| env::panic_str("tag: 32 bytes of hex")))).collect();
         let run_id = self.store.peek_id(IdKind::Run);
         let req = self.request(Mode::Disclose, &p, None, run_id, p.round, None, json!({"tags": tags}));
         let ctx = self.ctx();

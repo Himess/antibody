@@ -91,9 +91,12 @@ impl<'a> ProgramKeys<'a> {
         self.mac.mac(&label("antibody/v2/tag", self.program_key, &rest))
     }
 
-    /// The disclosure key of a tag: opens every PoC whose primary tag it is.
-    pub fn disclose(&self, tag: &[u8; 32]) -> Result<[u8; 32], String> {
-        self.mac.mac(&label("antibody/v2/disclose", self.program_key, tag))
+    /// The disclosure key of a tag in a round: opens every PoC committed in that round whose primary tag
+    /// it is. A later round's proof of the same tag needs its own key.
+    pub fn disclose(&self, tag: &[u8; 32], round: u32) -> Result<[u8; 32], String> {
+        let mut rest = tag.to_vec();
+        rest.extend_from_slice(&round.to_be_bytes());
+        self.mac.mac(&label("antibody/v2/disclose", self.program_key, &rest))
     }
 }
 
@@ -126,7 +129,8 @@ mod tests {
         assert_ne!(a.seal_public().unwrap(), b.seal_public().unwrap());
         assert_eq!(a.key_epoch().unwrap().len(), 16);
         let t = a.tag(0, &group_bytes(None, &[1; 20], &[2; 4])).unwrap();
-        assert_ne!(t, a.disclose(&t).unwrap());
+        assert_ne!(t, a.disclose(&t, 0).unwrap());
+        assert_ne!(a.disclose(&t, 0).unwrap(), a.disclose(&t, 1).unwrap(), "one disclosure key per round");
         assert_ne!(t, a.tag(1, &group_bytes(None, &[1; 20], &[2; 4])).unwrap());
         assert_eq!(t, ProgramKeys::new(&m, "antibody.testnet/0").tag(0, &group_bytes(None, &[1; 20], &[2; 4])).unwrap());
     }

@@ -907,10 +907,10 @@ impl<S: Store> Engine<S> {
                 // Disclosure keys count only with T1: a wrong key from a lying operator must not mark a
                 // tag disclosed (spec §11.6).
                 if let Extra::Disclosed { keys } = &facts.extra {
-                    for (tag, key) in keys {
-                        if self.disclosure_condition(p, tag, ctx.now) && !p.disclosed.iter().any(|(t, _)| t == tag) {
-                            p.disclosed.push((*tag, *key));
-                            fx.push(ev("disclosed", serde_json::json!({"program_id": p.id, "tag": tag, "key": key})));
+                    for (round, tag, key) in keys {
+                        if self.disclosure_condition(p, *round, tag, ctx.now) && !p.disclosed.iter().any(|(r, t, _)| r == round && t == tag) {
+                            p.disclosed.push((*round, *tag, *key));
+                            fx.push(ev("disclosed", serde_json::json!({"program_id": p.id, "round": round, "tag": tag, "key": key})));
                         }
                     }
                 }
@@ -1253,8 +1253,8 @@ impl<S: Store> Engine<S> {
                 self.store.set_spent(p.id, c.round, slot, spent + amount);
                 for t in &new_keys {
                     self.store.set_holder(p.id, c.round, t, Some(cid));
-                    if !p.claimed.iter().any(|(x, _, _)| x == t) {
-                        p.claimed.push((*t, ctx.now, false));
+                    if !p.claimed.iter().any(|(r, x, _, _)| *r == c.round && x == t) {
+                        p.claimed.push((c.round, *t, ctx.now, false));
                     }
                 }
                 if p.first_claim_at.is_none() {
@@ -1406,8 +1406,8 @@ impl<S: Store> Engine<S> {
             _ => c.run.and_then(|r| self.store.run(r)).and_then(|r| r.facts().map(|f| f.keys.iter().map(|k| k.tag).collect())).unwrap_or_default(),
         };
         for t in &tags {
-            if let Some(e) = p.claimed.iter_mut().find(|(x, _, _)| x == t) {
-                e.2 = true;
+            if let Some(e) = p.claimed.iter_mut().find(|(r, x, _, _)| *r == c.round && x == t) {
+                e.3 = true;
             }
         }
         let beneficiary = c.beneficiary.clone();
@@ -1712,6 +1712,9 @@ impl<S: Store> Engine<S> {
             p.params.slot(slot).map(|s| s.severity >= Severity::High).unwrap_or(false)
         };
         let mut released: Vec<H32> = vec![];
+        // Keys this fix stops count as fixed, for disclosure, only if the release gate holds (the fixed
+        // code ships): a disclosed proof must never work against the deployed code.
+        let mut fixed_now: Vec<H32> = vec![];
         let mut carried: Vec<(H32, CommitId)> = vec![];
         let mut gate = pr.canaries_ok;
         let mut fx = vec![];
@@ -1729,11 +1732,7 @@ impl<S: Store> Engine<S> {
             match self.rerun_breaks(&c, &tags, r1) {
                 Some(false) => {
                     released.extend(tags.iter().copied());
-                    for t in &tags {
-                        if !p.fixed_tags.contains(t) {
-                            p.fixed_tags.push(*t);
-                        }
-                    }
+                    fixed_now.extend(tags.iter().copied());
                 }
                 Some(true) => {
                     for (t, s) in &held {
@@ -1870,6 +1869,13 @@ impl<S: Store> Engine<S> {
                 }
             }
         }
+        if gate {
+            for t in &fixed_now {
+                if !p.fixed_tags.contains(&(r, *t)) {
+                    p.fixed_tags.push((r, *t));
+                }
+            }
+        }
         p.params.slots.extend(pr.new_slots.iter().cloned());
         p.round_manifests.push(pr.manifest_sha256);
         p.rounds.push(RoundRecord {
@@ -1901,11 +1907,12 @@ impl<S: Store> Engine<S> {
 
     // ------------------------------------------------------------------ disclosure (spec §11.6)
 
-    pub fn disclosure_condition(&self, p: &Program, tag: &H32, now: Time) -> bool {
-        if p.tag_fixed(tag) {
+    /// Whether the proofs of `tag` committed in `round` may be disclosed (spec §11.6).
+    pub fn disclosure_condition(&self, p: &Program, round: u32, tag: &H32, now: Time) -> bool {
+        if p.tag_fixed(round, tag) {
             return true;
         }
-        if let Some((_, at, paid)) = p.claimed.iter().find(|(t, _, _)| t == tag) {
+        if let Some((_, _, at, paid)) = p.claimed.iter().find(|(r, t, _, _)| *r == round && t == tag) {
             if *paid && now >= at + p.params.windows.disclosure_max_delay {
                 return true;
             }
@@ -1916,17 +1923,17 @@ impl<S: Store> Engine<S> {
         false
     }
 
-    /// Paged disclosure: permissionless; anyone funds it.
-    pub fn request_disclosure(&mut self, ctx: &Ctx, program: ProgramId, tags: &[H32], spec: RunSpec) -> R<Vec<Effect>> {
+    /// Paged disclosure: permissionless; anyone funds it. Each item is a (round, tag).
+    pub fn request_disclosure(&mut self, ctx: &Ctx, program: ProgramId, tags: &[(u32, H32)], spec: RunSpec) -> R<Vec<Effect>> {
         let p = self.get_program(program)?;
         if tags.is_empty() || tags.len() > facts::MAX_DISCLOSE {
             return Err(Error::Invalid("1 to 8 tags per disclosure".into()));
         }
-        for t in tags {
-            if !self.disclosure_condition(&p, t, ctx.now) {
+        for (round, t) in tags {
+            if !self.disclosure_condition(&p, *round, t, ctx.now) {
                 return Err(Error::State("a tag's disclosure condition does not hold"));
             }
-            if p.disclosed.iter().any(|(x, _)| x == t) {
+            if p.disclosed.iter().any(|(r, x, _)| r == round && x == t) {
                 return Err(Error::State("a tag is already disclosed"));
             }
         }

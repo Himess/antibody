@@ -202,11 +202,11 @@ pub struct Program {
     pub ticket_rounds: Vec<u32>,
     pub release_permits: u32,
     /// Tags whose holder was paid (project has seen it), with the time of the first claim.
-    pub claimed: Vec<(H32, Time, bool)>,
+    pub claimed: Vec<(u32, H32, Time, bool)>,
     /// Tags fixed by a round.
-    pub fixed_tags: Vec<H32>,
-    /// Tags disclosed, with their disclosure keys.
-    pub disclosed: Vec<(H32, H32)>,
+    pub fixed_tags: Vec<(u32, H32)>,
+    /// (round, tag, key): the proofs of a tag committed in a round open with that round's key.
+    pub disclosed: Vec<(u32, H32, H32)>,
     /// Bait metrics: time of the first claim, and paid within the first hour.
     pub first_claim_at: Option<Time>,
     #[serde(with = "crate::types::amount")]
@@ -229,8 +229,9 @@ impl Program {
         }
     }
 
-    pub fn tag_fixed(&self, t: &H32) -> bool {
-        self.fixed_tags.contains(t)
+    /// A tag held in `round` whose fix was released (the release gate held).
+    pub fn tag_fixed(&self, round: u32, t: &H32) -> bool {
+        self.fixed_tags.contains(&(round, *t))
     }
 
     pub fn known_tag(&self, t: &H32) -> bool {

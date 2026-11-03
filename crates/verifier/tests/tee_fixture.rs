@@ -261,7 +261,7 @@ fn disclosure_keys_open_the_disclosure_wraps() {
     let req = w.request("verify", Some(1), serde_json::json!({"hunter": "agent.testnet", "blob": w.upload(&blob)}));
     let (out, _) = w.run(&req, CONTRACT);
     let tag = out.facts.keys[0].tag.clone();
-    let req = w.request("disclose", None, serde_json::json!({"tags": [tag]}));
+    let req = w.request("disclose", None, serde_json::json!({"tags": [{"round": 0, "tag": tag}]}));
     let (dout, bytes) = w.run(&req, CONTRACT);
     w.parse(&req, &bytes, antibody_rules::Mode::Disclose, None);
     let dk: [u8; 32] = hex::decode(&dout.facts.disclosed[0].key).unwrap().try_into().unwrap();

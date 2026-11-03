@@ -648,7 +648,7 @@ rule exists that anyone could change. The guest never sees the key. It asks the 
 label(l, rest)  = l ‖ 0x00 ‖ u32_be(len(program_key)) ‖ program_key ‖ rest
 seal_sk(p)      = mac(label("antibody/v2/seal", ""))                X25519 secret, clamped
 tag(p, s, g)    = mac(label("antibody/v2/tag", u8(s) ‖ g))
-disclose(p, t)  = mac(label("antibody/v2/disclose", t))             one key per tag
+disclose(p, t, r) = mac(label("antibody/v2/disclose", t ‖ u32(r)))  one key per tag and round
 ```
 
 The `activate` run outputs `seal_pk(p) = X25519(seal_sk(p), 9)` and `key_epoch = SHA-256(seal_pk)[0..8]`.
@@ -683,17 +683,21 @@ the verifier never panics on one. `rotate_project_key` changes the key for futur
 
 ### 11.6 Disclosure
 
-A tag's PoCs become public when either:
-- the tag was **fixed** in a round (§8.3); or
-- the tag's holder was paid (the project has seen it, §11.4) and `disclosure_max_delay` has passed since
-  the claim.
+Disclosure is per (round, tag): the proofs of a tag committed in round `r` become public when either:
+- the tag, held in round `r`, was **fixed** by the next round's code **and the release gate held**, so
+  the fixed code ships (§8.3, §9): a disclosed proof never works against the code a failed gate kept; or
+- the tag's holder in round `r` was paid (the project has seen it, §11.4) and `disclosure_max_delay` has
+  passed since the claim.
 
-After `exit`, every claimed tag qualifies. **No live bug goes public before the project has seen it.**
+After `exit`, every claimed (round, tag) qualifies. **No live bug goes public before the project has seen
+it**, and a later round's proof of the same tag (a new bug behind the same entry point) stays sealed
+under its own round's key.
 
-**Paged disclosure (shipped).** `request_disclosure(program_id, tags[])` is permissionless and anyone may fund it.
-A `disclose` run outputs `disclose(p, t)` for each qualifying tag. Every fact of that tag carries
-`wrap_d = AEAD(disclose(p, t), κ)`, so one key per tag opens all of the tag's PoCs, duplicates included.
-The condition is monotone and depends on nobody's consent, so disclosure cannot be blocked once it holds.
+**Paged disclosure (shipped).** `request_disclosure(program_id, [{round, tag}])` is permissionless and
+anyone may fund it. A `disclose` run outputs `disclose(p, t, r)` for each qualifying item. Every round-`r`
+fact of that tag carries `wrap_d = AEAD(disclose(p, t, r), κ)`, so one key opens all of the tag's round-`r`
+PoCs, duplicates included. The condition is monotone and depends on nobody's consent, so disclosure cannot
+be blocked once it holds.
 
 **Scheduled disclosure (target, gated by the CKD spike).** Per-tag keys come from NEAR MPC confidential
 key derivation (`request_app_private_key`):

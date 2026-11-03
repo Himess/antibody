@@ -618,16 +618,64 @@ fn disclosure_needs_condition_and_t1() {
     w.pay(c0).unwrap();
     let ctx = w.ctx("anyone.testnet");
     let spec = w.spec();
-    assert!(w.e.request_disclosure(&ctx, p, &[tag(1)], spec).is_err(), "not before the delay or a fix");
+    assert!(w.e.request_disclosure(&ctx, p, &[(0, tag(1))], spec).is_err(), "not before the delay or a fix");
     w.tick(601);
     let ctx = w.ctx("anyone.testnet");
     let spec = w.spec();
-    let r = w.e.request_disclosure(&ctx, p, &[tag(1)], spec);
+    assert!(w.e.request_disclosure(&ctx, p, &[(1, tag(1))], spec).is_err(), "round 1 holds no claim of the tag");
+    let spec = w.spec();
+    let r = w.e.request_disclosure(&ctx, p, &[(0, tag(1))], spec);
     let run = last_run(&w.ok(r));
-    w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"disclosed": [{"tag": tag(1), "key": H32([4; 32])}]}));
+    w.answer_x(run, Kind::NoViolation, &[], serde_json::json!({"disclosed": [{"round": 0, "tag": tag(1), "key": H32([4; 32])}]}));
     assert!(w.program(p).disclosed.is_empty(), "a T0 key is not trusted");
     w.t1(run);
-    assert_eq!(w.program(p).disclosed, vec![(tag(1), H32([4; 32]))]);
+    assert_eq!(w.program(p).disclosed, vec![(0, tag(1), H32([4; 32]))]);
+}
+
+#[test]
+fn a_fix_that_does_not_ship_discloses_nothing() {
+    // Round 1's code stops A's bug, but a Critical duplicate still breaks it, so the release gate fails:
+    // the tag is not "fixed" for disclosure, and A's working proof stays sealed.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    let (c1, _) = w.finding(p, H2, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::NoViolation, &[]);
+    w.rerun(c1, Kind::Violation, &[(A, tag(1))]);
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert!(!fx.iter().any(|f| matches!(f, Effect::ReleasePermit { .. })));
+    assert!(!w.program(p).tag_fixed(0, &tag(1)), "fixed only when the fix ships");
+    let ctx = w.ctx("anyone.testnet");
+    let spec = w.spec();
+    assert!(w.e.request_disclosure(&ctx, p, &[(0, tag(1))], spec).is_err());
+}
+
+#[test]
+fn a_released_fix_discloses_its_round_only() {
+    // The fix ships, so round 0's proofs of the tag may be disclosed; a round-1 proof of the same tag
+    // (a new bug behind the same entry point) needs its own round's condition.
+    let mut w = W::new();
+    let p = w.program_open(1_000, params());
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(A, tag(1))], true);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::NoViolation, &[]);
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert!(fx.contains(&Effect::ReleasePermit { program: p, round: 1 }));
+    assert!(w.program(p).tag_fixed(0, &tag(1)));
+    assert!(!w.program(p).tag_fixed(1, &tag(1)));
+    let ctx = w.ctx("anyone.testnet");
+    let spec = w.spec();
+    assert!(w.e.request_disclosure(&ctx, p, &[(1, tag(1))], spec).is_err(), "round 1's proofs stay sealed");
+    let spec = w.spec();
+    let r = w.e.request_disclosure(&ctx, p, &[(0, tag(1))], spec);
+    w.ok(r);
 }
 
 #[test]

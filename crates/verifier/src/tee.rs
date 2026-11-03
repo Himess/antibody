@@ -84,7 +84,7 @@ pub struct Request {
     #[serde(default)]
     pub slot: Option<u8>,
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub tags: Vec<DiscloseTag>,
     /// `check_round`: the releases the round proposes (spec §9).
     #[serde(default)]
     pub releases: Vec<ReleaseIn>,
@@ -131,7 +131,15 @@ pub struct RoundCheck {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Disclosed {
     pub tag: String,
+    pub round: u32,
     pub key: String,
+}
+
+/// A tag to disclose, and the round whose proofs its key opens.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscloseTag {
+    pub round: u32,
+    pub tag: String,
 }
 
 /// Facts v2 (spec §5.2): what `crates/rules` parses. Fields a mode does not use are omitted.
@@ -365,8 +373,8 @@ fn judge(keys: &ProgramKeys, ctx: &ProgramContext, envelope: &Envelope, w: &Prog
 
 /// The content key under the disclosure key of the primary tag (spec §11.6), with a nonce derived
 /// from the commit and the tag, so the output is deterministic.
-fn wrap_d(keys: &ProgramKeys, program_key: &str, commit_id: u64, tag: &[u8; 32], k: &[u8; 32]) -> Result<String, Stop> {
-    let dk = keys.disclose(tag).map_err(infra)?;
+fn wrap_d(keys: &ProgramKeys, program_key: &str, commit_id: u64, round: u32, tag: &[u8; 32], k: &[u8; 32]) -> Result<String, Stop> {
+    let dk = keys.disclose(tag, round).map_err(infra)?;
     let mut n = b"antibody/v2/wrap-d".to_vec();
     n.extend_from_slice(&commit_id.to_be_bytes());
     n.extend_from_slice(tag);
@@ -507,7 +515,7 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
             facts.receipt_sha256 = hex::encode(v.receipt.hash());
             if req.mode != Mode::Rerun && req.commit_id.is_some() {
                 if let Some(t) = v.primary {
-                    facts.wrap_d = Some(wrap_d(&keys, &req.program_key, commit_id, &t, &k)?);
+                    facts.wrap_d = Some(wrap_d(&keys, &req.program_key, commit_id, req.round, &t, &k)?);
                 }
             }
             *receipt_out = Some(v.receipt);
@@ -622,12 +630,13 @@ fn run_mode(req: &Request, env: &Env, facts: &mut FactsOut, receipt_out: &mut Op
             }
             let mut out = vec![];
             for t in &req.tags {
-                let tag = hex32(t).ok_or_else(|| infra("bad tag"))?;
-                out.push(Disclosed { tag: hex::encode(tag), key: hex::encode(keys.disclose(&tag).map_err(infra)?) });
+                let tag = hex32(&t.tag).ok_or_else(|| infra("bad tag"))?;
+                out.push(Disclosed { tag: hex::encode(tag), round: t.round, key: hex::encode(keys.disclose(&tag, t.round).map_err(infra)?) });
             }
             let mut r = b"antibody/v2/disclose".to_vec();
             for d in &out {
                 r.extend_from_slice(d.tag.as_bytes());
+                r.extend_from_slice(&d.round.to_be_bytes());
             }
             facts.kind = Kind::NoViolation;
             facts.receipt_sha256 = hex::encode(sha256(&r));

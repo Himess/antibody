@@ -409,9 +409,10 @@ impl Replay {
             }
             "Disclose" => {
                 let k = string(&pick(st, "k").unwrap());
+                let r = int(&pick(st, "dr").unwrap()) as u32;
                 let spec = self.spec();
-                let run = last_run(&self.e.request_disclosure(&ctx_keeper, self.pid, &[tag(&k)], spec)?);
-                self.answer_raw(run, Kind::NoViolation, &[], 0, serde_json::json!({"disclosed": [{"tag": tag(&k), "key": H32([4; 32])}]}));
+                let run = last_run(&self.e.request_disclosure(&ctx_keeper, self.pid, &[(r, tag(&k))], spec)?);
+                self.answer_raw(run, Kind::NoViolation, &[], 0, serde_json::json!({"disclosed": [{"round": r, "tag": tag(&k), "key": H32([4; 32])}]}));
                 self.t1(run);
             }
             "Exit" => {
@@ -457,9 +458,15 @@ impl Replay {
         eq("release permits", int(&s["permits"]), p.release_permits as Amount)?;
         let tickets: i64 = map(&s["tickets"]).iter().map(|(_, v)| int(v)).sum();
         eq("pause tickets", tickets, p.ticket_rounds.len() as Amount)?;
-        let mut disclosed: Vec<H32> = set(&s["disclosed"]).iter().map(|k| tag(&string(k))).collect();
+        let mut disclosed: Vec<(u32, H32)> = set(&s["disclosed"])
+            .iter()
+            .map(|rk| {
+                let rk = tup(rk);
+                (int(&rk[0]) as u32, tag(&string(&rk[1])))
+            })
+            .collect();
         disclosed.sort();
-        let mut ed: Vec<H32> = p.disclosed.iter().map(|(t, _)| *t).collect();
+        let mut ed: Vec<(u32, H32)> = p.disclosed.iter().map(|(r, t, _)| (*r, *t)).collect();
         ed.sort();
         if disclosed != ed {
             return Err("disclosed tags differ".into());

@@ -55,7 +55,7 @@ seal_sk     = mac(label("antibody/v2/seal", ""))                    X25519 secre
 seal_pk     = X25519(seal_sk, 9)
 key_epoch   = hex(SHA-256(seal_pk)[0..8])
 tag(s, g)   = mac(label("antibody/v2/tag", u8(s) ‖ g))               §7.1
-disclose(t) = mac(label("antibody/v2/disclose", t))                  §7.2
+disclose(t, r) = mac(label("antibody/v2/disclose", t ‖ u32(r)))     §7.2, one key per tag and round
 ```
 
 - **Activation.** The `activate` run outputs `seal_pk`; near-antibody records it, and the program's
@@ -192,18 +192,19 @@ key = (s, tag(s, g))
 
 ### 7.2 Disclosure keys
 
-A verify or second run of a commit whose verdict has a primary tag `t` also wraps κ under that tag's
-disclosure key:
+A verify or second run of a commit of round `r` whose verdict has a primary tag `t` also wraps κ under
+that tag's disclosure key for round `r`:
 
 ```
 nonce_d = SHA-256("antibody/v2/wrap-d" ‖ u64(commit_id) ‖ t)[0..12]
-wrap_d  = nonce_d ‖ AEAD_{disclose(t)}(nonce_d, κ, ad = program_key)
+wrap_d  = nonce_d ‖ AEAD_{disclose(t, r)}(nonce_d, κ, ad = program_key)
 ```
 
-`wrap_d` is public in the facts, and useless until `disclose(t)` is. A `disclose` run, which near-antibody
-requests (`request_disclosure(program_id, tags)`, at most eight tags) only once each tag's condition holds
-(spec §11.6), outputs `disclose(t)` for each tag. One key then opens every proof whose primary tag is
-`t`, duplicates included. Anyone can then:
+`wrap_d` is public in the facts, and useless until `disclose(t, r)` is. A `disclose` run, which
+near-antibody requests (`request_disclosure(program_id, [{round, tag}])`, at most eight items) only once
+each item's condition holds (spec §11.6), outputs `disclose(t, r)` for each. One key then opens every
+proof of `t` committed in round `r`, duplicates included, and nothing of a later round: a new bug behind
+the same entry point in round `r + 1` stays sealed under its own key. Anyone can then:
 1. fetch each blob and open it with κ;
 2. re-run the verifier locally on the envelope;
 3. recompute the receipt, its hash and every tag's root cause, and the priority order.
@@ -223,7 +224,7 @@ requests (`request_disclosure(program_id, tags)`, at most eight tags) only once 
 | Activation receipt | `SHA-256("antibody/v2/activation" ‖ program_key ‖ manifest hash ‖ seal_pk)` |
 | Round-check receipt | `SHA-256("antibody/v2/round-check" ‖ SHA-256(round manifest) ‖ u8(ok) ‖ u8(canaries_ok))` |
 | Distinctness receipt (the top-up is off, spec §7.5) | `SHA-256("antibody/v2/distinct" ‖ SHA-256(patch) ‖ u64(commit) ‖ u64(earlier commit) ‖ u8(distinct))` |
-| Disclosure receipt | `SHA-256("antibody/v2/disclose" ‖ hex tags)` |
+| Disclosure receipt | `SHA-256("antibody/v2/disclose" ‖ (hex tag ‖ u32(round)) for each item)` |
 
 ## 9. Tiers (who vouches for the facts)
 

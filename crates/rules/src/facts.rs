@@ -28,6 +28,8 @@ pub struct RoundCheck {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Disclosed {
     pub tag: H32,
+    #[serde(default)]
+    pub round: u32,
     pub key: H32,
 }
 
@@ -98,7 +100,8 @@ pub enum Extra {
     RoundCheck { ok: bool, canaries_ok: bool },
     Wrap { wrap: String },
     WrapD { wrap_d: String },
-    Disclosed { keys: Vec<(H32, H32)> },
+    /// (round, tag, key)
+    Disclosed { keys: Vec<(u32, H32, H32)> },
     Distinct { distinct: bool },
 }
 
@@ -196,7 +199,7 @@ pub fn parse(bytes: &[u8], ex: &Expect) -> Result<FactsSummary, String> {
             if f.disclosed.len() > MAX_DISCLOSE {
                 return Err("too many disclosed keys".into());
             }
-            Extra::Disclosed { keys: f.disclosed.iter().map(|d| (d.tag, d.key)).collect() }
+            Extra::Disclosed { keys: f.disclosed.iter().map(|d| (d.round, d.tag, d.key)).collect() }
         }
         Mode::Distinct => match f.distinct {
             Some(d) => Extra::Distinct { distinct: d },

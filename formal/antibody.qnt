@@ -120,10 +120,11 @@ module antibody {
     credits: int, withdrawn: int,
     iEpoch: int, iSpent: int,
     tickets: int -> int, permits: int,
-    firstClaim: str -> int, fixedKeys: Set[str], disclosed: Set[str], wrapped: Set[str],
+    // Disclosure is per (round, key): a round's proofs of a key open with that round's key.
+    firstClaim: (int, str) -> int, fixedKeys: Set[(int, str)], disclosed: Set[(int, str)], wrapped: Set[(int, str)],
     pins: int, pinsAtOpen: int,
     // ghost state for the properties
-    prevPaid: int, prevSlots: Set[int], prevCond: Set[str], knownAfterOpen: bool,
+    prevPaid: int, prevSlots: Set[int], prevCond: Set[(int, str)], knownAfterOpen: bool,
     payLog: Set[(int, str, int)],       // (round, key, commit) of every payment for a key
     instLog: Set[(int, int, int, str)], // (instant window, commit, amount, tier) of every instant payment
     ticketLog: Set[int], permitLog: Set[(int, bool)],
@@ -149,10 +150,10 @@ module antibody {
 
   def earlierDebt(c: int): bool = CIDS.exists(d => d < c and s.cs.get(d).debt > 0)
 
-  def discloseCond(k: str): bool = or {
-    s.fixedKeys.contains(k),
-    s.wrapped.contains(k) and s.firstClaim.get(k) >= 0 and s.now >= s.firstClaim.get(k) + DISCLOSE_DELAY,
-    s.phase == "closed" and s.firstClaim.get(k) >= 0,
+  def discloseCond(rk: (int, str)): bool = or {
+    s.fixedKeys.contains(rk),
+    s.wrapped.contains(rk) and s.firstClaim.get(rk) >= 0 and s.now >= s.firstClaim.get(rk) + DISCLOSE_DELAY,
+    s.phase == "closed" and s.firstClaim.get(rk) >= 0,
   }
 
   def exitEnabled: bool = s.phase != "closed" and (s.now >= DEADLINE + EXIT_GRACE or s.misconfigured)
@@ -238,7 +239,7 @@ module antibody {
       credits: 0, withdrawn: 0,
       iEpoch: 0, iSpent: 0,
       tickets: ROUNDS.mapBy(_ => 0), permits: 0,
-      firstClaim: KEYS.mapBy(_ => -1), fixedKeys: Set(), disclosed: Set(), wrapped: Set(),
+      firstClaim: tuples(ROUNDS, KEYS).mapBy(_ => -1), fixedKeys: Set(), disclosed: Set(), wrapped: Set(),
       pins: 0, pinsAtOpen: 0,
       prevPaid: 0, prevSlots: Set(0, 1), prevCond: Set(), knownAfterOpen: false,
       payLog: Set(), instLog: Set(), ticketLog: Set(), permitLog: Set(),
@@ -247,7 +248,7 @@ module antibody {
   }
 
   // Every action records the previous paid total and invariant set, for property 5.
-  def ghost(t: St): St = { ...t, prevPaid: s.paid, prevSlots: s.slots, prevCond: KEYS.filter(k => discloseCond(k)) }
+  def ghost(t: St): St = { ...t, prevPaid: s.paid, prevSlots: s.slots, prevCond: tuples(ROUNDS, KEYS).filter(rk => discloseCond(rk)) }
 
   action Tick = all { s.now < TMAX, s' = ghost({ ...s, now: s.now + 1 }) }
 
@@ -437,7 +438,7 @@ module antibody {
           spent: s.spent.set((r, sl), s.spent.get((r, sl)) + amt),
           available: s.available - resv, reserved: s.reserved + resv,
           bondLocked: s.bondLocked - BOND, bondRefunded: s.bondRefunded + BOND, credits: s.credits + BOND,
-          firstClaim: if (s.firstClaim.get(k) == -1) s.firstClaim.set(k, s.now) else s.firstClaim })
+          firstClaim: if (s.firstClaim.get((r, k)) == -1) s.firstClaim.set((r, k), s.now) else s.firstClaim })
       } else if (VIOL.contains(x.facts)) {
         // A later proof of a held key: a duplicate. Nothing paid; the key's first duplicate takes the
         // one promotion reservation (only one duplicate per key can be promoted), in commit order, so a
@@ -491,7 +492,7 @@ module antibody {
         iSpent: if (useInstant) spentNow + x.amount else s.iSpent,
         payLog: s.payLog.union(Set((x.round, keyOf(x.facts), c))),
         instLog: if (useInstant) s.instLog.union(Set((ep, c, x.amount, x.tier))) else s.instLog,
-        wrapped: s.wrapped.union(Set(keyOf(x.facts))),
+        wrapped: s.wrapped.union(Set((x.round, keyOf(x.facts)))),
       }),
     }
   }
@@ -506,7 +507,7 @@ module antibody {
         cs: withC(c, { ...x, st: "done", end: "paid", res: 0 }),
         reserved: s.reserved - x.amount, paid: s.paid + x.amount,
         available: s.available - fee, fees: s.fees + fee, credits: s.credits + x.amount + fee,
-        wrapped: if (VIOL.contains(x.facts)) s.wrapped.union(Set(keyOf(x.facts))) else s.wrapped,
+        wrapped: if (VIOL.contains(x.facts)) s.wrapped.union(Set((x.round, keyOf(x.facts)))) else s.wrapped,
       }),
     }
   }
@@ -627,7 +628,8 @@ module antibody {
                + (if (rs._2 == GAPSLOT) gapPromoted.size() * GAPAMT else 0)),
         available: s.available + freed, reserved: s.reserved - freed,
         slots: if (s.addsInv) s.slots.union(Set(GAPSLOT)) else s.slots,
-        fixedKeys: s.fixedKeys.union(fixedNow),
+        // a key counts as fixed, for disclosure, only when the fix ships (the release gate holds)
+        fixedKeys: if (gate) s.fixedKeys.union(fixedNow.map(k => (r, k))) else s.fixedKeys,
         permits: s.permits + (if (gate) 1 else 0),
         permitLog: s.permitLog.union(Set((r, gate))),
         payLog: s.payLog.union(promoted.map(d => (r1, keyOf(s.cs.get(d).facts), d))),
@@ -639,9 +641,9 @@ module antibody {
   }
 
   // ---- disclosure: permissionless once its condition holds
-  action Disclose(k: str): bool = all {
-    not(s.disclosed.contains(k)), discloseCond(k),
-    s' = ghost({ ...s, disclosed: s.disclosed.union(Set(k)) }),
+  action Disclose(dr: int, k: str): bool = all {
+    not(s.disclosed.contains((dr, k))), discloseCond((dr, k)),
+    s' = ghost({ ...s, disclosed: s.disclosed.union(Set((dr, k))) }),
   }
 
   // ---- the exit: after the deadline and its grace, nothing can stay stuck
@@ -735,7 +737,7 @@ module antibody {
     nondet f = BUGS.powerset().oneOf() nondet a = Set(true, false).oneOf() nondet b = Set(true, false).oneOf() ProposeRound(f, a, b),
     nondet c = CIDS.oneOf() Rerun(c),
     OpenRound,
-    nondet k = KEYS.oneOf() Disclose(k),
+    nondet dr = ROUNDS.oneOf() nondet k = KEYS.oneOf() Disclose(dr, k),
     Exit,
   }
 
@@ -804,8 +806,8 @@ module antibody {
   // 10. Disclosure cannot be blocked once its condition holds, and never happens before it.
   //     The condition depends on no one's consent and, once true, stays true; `Disclose` is permissionless.
   val p10_disclosure = and {
-    s.prevCond.forall(k => discloseCond(k)),
-    s.disclosed.forall(k => discloseCond(k)),
+    s.prevCond.forall(rk => discloseCond(rk)),
+    s.disclosed.forall(rk => discloseCond(rk)),
   }
 
   // 11. Permits follow the committed policy: pause tickets only for T1 holders of policy keys, at most
