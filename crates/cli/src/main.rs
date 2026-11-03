@@ -487,6 +487,18 @@ enum Cmd {
     Judge {
         #[arg(long)]
         program: Option<u32>,
+        /// The full record as JSON (default: a one-screen summary)
+        #[arg(long)]
+        json: bool,
+    },
+    /// A view call on any NEAR contract (no account, no key), e.g. a consumer's state
+    View {
+        #[arg(long)]
+        contract: String,
+        #[arg(long)]
+        method: String,
+        #[arg(long, default_value = "{}")]
+        args: String,
     },
     /// Permissionless: allocate final verdicts in commit order, pay funded claims, settle debts
     Keeper {
@@ -505,6 +517,9 @@ enum Cmd {
         /// Your practice account's name: <name>.<vending>
         #[arg(long)]
         name: String,
+        /// The full record as JSON (default: a summary with each transaction)
+        #[arg(long)]
+        json: bool,
     },
     /// The practice program's operator: deploy and fund the vending contract
     Practice {
@@ -759,7 +774,15 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Retry { program, commit, no_wait } => cmd::retry(&mk()?, program, commit, !no_wait),
         Cmd::Second { program, commit, no_wait } => cmd::second(&mk()?, program, commit, !no_wait),
         Cmd::Status { commit, run, program, ref of } => cmd::status(&mk()?, commit, run, program, of.clone()),
-        Cmd::Judge { program } => antibody_cli::judge::judge(&mk()?, program),
+        Cmd::Judge { program, json } => {
+            let j = antibody_cli::judge::judge(&mk()?, program)?;
+            Ok(if json { j } else { Value::String(antibody_cli::judge::summary(&j)) })
+        }
+        Cmd::View { ref contract, ref method, ref args } => {
+            let c = mk()?;
+            let a: Value = serde_json::from_str(args).map_err(|e| eyre::eyre!("--args is not JSON: {e}"))?;
+            c.near.view(contract, method, a)
+        }
         Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
         Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, ref base_witness, no_wait } } => {
             let releases = releases.iter().map(|r| cmd::parse_release(r)).collect::<eyre::Result<Vec<_>>>()?;
@@ -773,10 +796,11 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
-        Cmd::Try { ref vending, program, ref name } => {
+        Cmd::Try { ref vending, program, ref name, json } => {
             let ctx = mk()?;
             let (vending, program) = antibody_cli::practice::target(&ctx, vending.clone(), program)?;
-            antibody_cli::practice::try_it(&ctx, &vending, program, name)
+            let r = antibody_cli::practice::try_it(&ctx, &vending, program, name)?;
+            Ok(if json { r } else { Value::String(antibody_cli::practice::try_summary(&r, ctx.dep.decimals(), ctx.dep.symbol())) })
         }
         Cmd::Practice {
             cmd: PracticeCmd::Deploy { ref wasm, ref owner, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour, ref vend_allowance },
@@ -901,6 +925,8 @@ fn main() {
     let cli = Cli::parse();
     let is_mcp = matches!(cli.cmd, Cmd::Mcp { .. });
     match run(cli) {
+        // A command that returns text (a summary) prints it as it is.
+        Ok(Value::String(s)) if !is_mcp => println!("{s}"),
         Ok(v) if !is_mcp => println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default()),
         Ok(_) => {}
         Err(e) => {

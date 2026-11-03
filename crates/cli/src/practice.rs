@@ -168,7 +168,7 @@ pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Resul
     let none = || {
         eyre!(
             "the {} deployment has no practice program yet (the README's Status says when it is); the sandbox has one: \
-             antibody-services demo --serve, then antibody --network sandbox --rpc http://127.0.0.1:3030 \
+             `make serve` in the repository, then antibody --network sandbox --rpc http://127.0.0.1:3030 \
              --deployments target/demo/deployments.json try --name <you>",
             ctx.near.network
         )
@@ -219,6 +219,32 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
               "witness_bytes": submitted["commit"]["witness_bytes"], "t1": t1, "settle": settled,
               "state": cmd::state_label(&c["state"]), "paid_raw": cmd::paid_of(&c).to_string(), "beneficiary": c["beneficiary"],
               "links": links, "seconds": t0.elapsed().as_secs_f64()}))
+}
+
+/// `try`'s summary: what happened, in words, with each transaction (`--json` for the record).
+pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
+    let paid = r["paid_raw"].as_str().and_then(|p| p.parse::<u128>().ok()).unwrap_or(0);
+    let amount = cmd::fmt_tokens(paid, decimals);
+    let amount = amount.trim_end_matches('0').trim_end_matches('.');
+    let to = r["beneficiary"].as_str().unwrap_or("?");
+    let mut out = vec![
+        format!("Practice try: {}, vault {} ({})", r["account"].as_str().unwrap_or("?"), r["vault_index"], r["vault"].as_str().unwrap_or("?")),
+        format!("  proof: the public tutorial proof, sealed against the program's pinned base witness ({} bytes; no Ethereum RPC)", r["witness_bytes"]),
+        format!(
+            "  verdict: {}, first answered at T0 (OutLayer's result), then T1 (its TDX quote verified on NEAR)",
+            r["t1"]["kind"].as_str().or(r["verdict"]["kind"].as_str()).unwrap_or("?")
+        ),
+        format!("  state: {}, {amount} {symbol} paid to {to}: the vending contract paid your bond and your run, so the payout returns to it",
+                r["state"].as_str().unwrap_or("?")),
+        format!("  {:.1} s from vend to payout; transactions:", r["seconds"].as_f64().unwrap_or(0.0)),
+    ];
+    for l in r["links"].as_array().into_iter().flatten() {
+        for (k, v) in l.as_object().into_iter().flatten() {
+            out.push(format!("    {k:<9} {}", v.as_str().unwrap_or("")));
+        }
+    }
+    out.push("The full record: add --json".into());
+    out.join("\n")
 }
 
 // ------------------------------------------------------------------------- the operator

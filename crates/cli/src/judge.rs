@@ -101,7 +101,7 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
     if ctx.near.account(&ctx.dep.antibody)?.is_none() {
         return Err(eyre::eyre!(
             "near-antibody is not deployed at {} on {} yet (the README's Status says when it is); \
-             the sandbox runs the same checks: antibody-services demo --serve, then antibody --network sandbox \
+             the sandbox runs the same checks: `make serve` in the repository, then antibody --network sandbox \
              --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json judge",
             ctx.dep.antibody, ctx.near.network
         ));
@@ -124,5 +124,36 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
     let programs = ids.into_iter().map(|i| program(ctx, i, &signed)).collect::<Result<Vec<_>>>()?;
     Ok(json!({"network": ctx.near.network, "note": "view calls only: no account and no key",
               "contracts": contracts, "defaults": ctx.view("get_defaults", json!({}))?, "images": ctx.view("get_images", json!({}))?,
-              "guardian": guardian, "programs": programs}))
+              "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "programs": programs}))
+}
+
+/// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
+pub fn summary(j: &Value) -> String {
+    let mut out = vec![format!("Antibody on {} (view calls only: no account, no key)", j["network"].as_str().unwrap_or("?"))];
+    for c in j["contracts"].as_array().into_iter().flatten() {
+        out.push(format!("  {:<17} {:<32} locked: {}", c["role"].as_str().unwrap_or(""), c["account"].as_str().unwrap_or(""), c["locked"]));
+    }
+    out.push(format!("  contract audit ok: {} (every credit, escrow and bond it holds balances)", j["audit_contract"]["ok"]));
+    let programs = j["programs"].as_array().cloned().unwrap_or_default();
+    out.push(format!("{} programs", programs.len()));
+    for p in &programs {
+        out.push(format!(
+            "  program {} ({}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} payouts, {} pause and {} release permits, audit ok: {}",
+            p["program_id"], p["name"].as_str().unwrap_or(""), p["phase"].as_str().unwrap_or("?"), p["anchor"]["status"].as_str().unwrap_or("?"),
+            p["verdicts"]["t1_confirmed"], p["verdicts"]["runs"], p["payouts"].as_array().map(|x| x.len()).unwrap_or(0), p["pauses"], p["releases"],
+            p["audit_ok"]
+        ));
+        if let Some(s) = p["rule_strength"]["statement"].as_str() {
+            out.push(format!("    rule strength: {s} (it measures the rules, not the code's security)"));
+        }
+        for x in p["payouts"].as_array().into_iter().flatten() {
+            out.push(format!("    paid: commit {} to {}, {} (raw units)", x["commit"], x["paid_to"].as_str().unwrap_or(""), x["amount_raw"].as_str().unwrap_or("")));
+        }
+        for x in p["permits"].as_array().into_iter().flatten() {
+            let kind = if x["body"].get("Pause").is_some() { "pause" } else { "release" };
+            out.push(format!("    permit {}: {kind}, chain {}, round {}", x["id"], x["chain_id"], x["round"]));
+        }
+    }
+    out.push("The full record, with code hashes, pins and links: add --json".into());
+    out.join("\n")
 }
