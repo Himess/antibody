@@ -182,6 +182,47 @@ paths:
           content:
             application/json:
               schema: {type: object}
+  /v1/programs/{id}/reflex:
+    get:
+      summary: The reflex and release panel
+      description: Per chain, whether the program's targets are live, paused or released, with each permit and its transaction there.
+      parameters: [{$ref: "#/components/parameters/ProgramId"}]
+      responses:
+        "200":
+          description: Chains
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/trust:
+    get:
+      summary: The trust panel
+      responses:
+        "200":
+          description: Each actor, what it is trusted for, and how anyone checks it
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/practice:
+    get:
+      summary: The try-it panel
+      responses:
+        "200":
+          description: The practice program, its faucet's balance, the public vend key and the steps
+          content:
+            application/json:
+              schema: {type: object}
+  /v1/stream:
+    get:
+      summary: The live timeline
+      description: Every new indexer event as a server-sent event (`event: antibody`, the event's JSON as data), from `after`.
+      parameters:
+        - {name: after, in: query, schema: {type: integer}}
+      responses:
+        "200":
+          description: An event stream
+          content:
+            text/event-stream:
+              schema: {type: string}
   /v1/mock/mainnet:
     get:
       summary: Recorded MOCK data, flagged as such

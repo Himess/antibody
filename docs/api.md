@@ -31,15 +31,19 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), and the alerts |
 | `GET /v1/stats` | Contract totals, and commit-to-verdict and commit-to-payout latencies (p50, p95) from the event log |
 | `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
-| `GET /v1/programs/{id}` | The program, its meta (manifest, anchor, targets, slots, base witness), its record, its audit, its commits and its events |
+| `GET /v1/programs/{id}` | The program, its rules (each slot's severity and payout, the payout table, bond and instant terms, escrow coverage, the sealed known-issue count, the anchor and its check), its meta, its record (bait metrics), its audit, its commits and its events |
 | `GET /v1/programs/{id}/feed` | The sealed feed: who committed when, the state, the verdict (kind, tier, keys) and the payout. Never the PoC |
-| `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links |
+| `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links, and its proof card (the facts, the receipt hash, whether its proof is still sealed, how to check it) |
 | `GET /v1/runs/{id}` | One verification run: kind, keys, impact, tier |
 | `GET /v1/accounts/{id}` | Credit at near-antibody, the agent statement (bonds, verification spend, payouts, containment events), the token balance |
 | `GET /v1/leaderboard` | Paid findings and payouts by beneficiary, with duplicates and forfeited commits |
 | `GET /v1/events?after=&limit=` | Events in `seq` order, each with `tx`, `block_height`, `block_ts_ns`, `explorer` |
 | `GET /v1/guardian` | near-guardian's configuration, its signed permits, pending permits, the relayer's state |
 | `GET /v1/judge` | `antibody judge`: code hashes, locked status, pins, T1 confirmations, payouts, permits, rule strength |
+| `GET /v1/programs/{id}/reflex` | The reflex and release panel: per chain, live, paused or released, with each permit and its transaction there |
+| `GET /v1/trust` | The trust panel: each actor, what it is trusted for, and how anyone checks it |
+| `GET /v1/practice` | The try-it panel: the practice program, its faucet's balance, the public vend key, the steps |
+| `GET /v1/stream?after=` | The live timeline: every new event as a server-sent event (`event: antibody`, the event's JSON as data) |
 | `GET /v1/mock/mainnet` | `{"mock": true, …}`: recorded data, never live |
 
 ## Monitoring
