@@ -123,7 +123,9 @@ impl Indexer {
                 let mut out = Vec::new();
                 let mut heights: BTreeMap<String, (u64, u64)> = BTreeMap::new();
                 for h in start..=final_h.min(start + 400) {
-                    let b = match self.near.call("block", json!({"block_id": h})) {
+                    // A height with no block (skipped, or garbage-collected by the node) is an answer:
+                    // no retry.
+                    let b = match self.near.call_once("block", json!({"block_id": h})) {
                         Ok(b) => b,
                         Err(e) if e.to_string().contains("UNKNOWN_BLOCK") => continue,
                         Err(e) => return Err(e),

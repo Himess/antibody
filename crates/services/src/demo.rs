@@ -743,6 +743,30 @@ pub fn run(a: DemoArgs) -> Result<Value> {
             }
         }));
     }
+    // The indexer runs from the start, as it does next to a deployment: a node garbage-collects old
+    // blocks, so an indexer started late would miss their events. It stops after the API step (or with
+    // the chains, under --serve).
+    let services_dir = a.work.join("services/api");
+    let ix_stop = Arc::new(AtomicBool::new(false));
+    let ix_handle = {
+        let ix = crate::indexer::Indexer {
+            near: near.clone(),
+            contracts: vec![acct("bounty"), acct("tusd"), acct("guardian")],
+            antibody: acct("bounty"),
+            guardian: Some(acct("guardian")),
+            source: crate::indexer::Source::Blocks { from: 0 },
+            state_dir: services_dir.clone(),
+        };
+        let stop = ix_stop.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                if let Err(e) = ix.tick() {
+                    eprintln!("indexer: {e:#}");
+                }
+                std::thread::sleep(Duration::from_millis(1_000));
+            }
+        })
+    };
     let relayer_file = a.work.join("services/relayer.json");
     {
         let r = Relayer {
@@ -1158,25 +1182,15 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
     results["deployment_record"] = record;
 
-    step("API: the indexer reads every block's events, then each endpoint answers once (docs/openapi.yaml's examples)");
-    let services_dir = a.work.join("services/api");
-    let ix = crate::indexer::Indexer {
-        near: near.clone(),
-        contracts: vec![acct("bounty"), acct("tusd"), acct("guardian")],
-        antibody: acct("bounty"),
-        guardian: Some(acct("guardian")),
-        source: crate::indexer::Source::Blocks { from: 0 },
-        state_dir: services_dir.clone(),
-    };
+    step("API: the indexer, running since the start, has every block's events; each endpoint answers once (docs/openapi.yaml's examples)");
     let head = near.call("block", json!({"finality": "final"}))?["header"]["height"].as_u64().unwrap_or(0);
-    let mut indexed = 0usize;
-    for _ in 0..64 {
-        indexed += ix.tick()?.len();
-        let at = serde_json::from_str::<Value>(&std::fs::read_to_string(services_dir.join("cursor.json")).unwrap_or_default()).unwrap_or(Value::Null)["last_block"].as_u64().unwrap_or(0);
-        if at >= head {
-            break;
-        }
-    }
+    wait_for("the indexer at the chain head", Duration::from_secs(300), || {
+        serde_json::from_str::<Value>(&std::fs::read_to_string(services_dir.join("cursor.json")).unwrap_or_default()).unwrap_or(Value::Null)["last_block"]
+            .as_u64()
+            .unwrap_or(0)
+            >= head
+    })?;
+    let indexed = crate::indexer::read_events(&services_dir.join("events.jsonl"), 0, usize::MAX).len();
     let api = crate::api::Api { near: near.clone(), dep: served.clone(), state_dir: services_dir.clone() };
     let rt = tokio::runtime::Runtime::new()?;
     let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
@@ -1205,6 +1219,10 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                             "project_read": {"receipt_matches_the_tee": via_api["receipt_matches_the_tee"], "requested": via_api["requested"]},
                             "failures": examples.iter().filter(|(_, e)| e["status"] != json!(200)).map(|(k, e)| json!({"path": k, "status": e["status"], "body": e["body"]})).collect::<Vec<_>>()});
     ok &= api_ok;
+    if !a.serve {
+        ix_stop.store(true, Ordering::Relaxed);
+        let _ = ix_handle.join();
+    }
     results["all_ok"] = ok.into();
     results["seconds"] = t_all.elapsed().as_secs_f64().into();
     std::fs::write(a.work.join("results.json"), serde_json::to_vec_pretty(&results)?)?;

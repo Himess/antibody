@@ -187,6 +187,16 @@ impl Near {
         }
     }
 
+    /// One attempt, no retry: for queries whose error is an answer (a height with no block).
+    pub fn call_once(&self, method: &str, params: Value) -> Result<Value> {
+        let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
+        let v = self.client.post(&self.rpc).json(&body).send().and_then(|r| r.json::<Value>()).map_err(|e| eyre!("{method}: {e}"))?;
+        match v.get("error") {
+            Some(e) => Err(eyre!("{method}: {e}")),
+            None => Ok(v["result"].clone()),
+        }
+    }
+
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
         let mut last = eyre!("no attempt");
         for attempt in 0..4 {
