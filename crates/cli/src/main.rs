@@ -539,6 +539,23 @@ enum InvariantsCmd {
         #[arg(long, default_value_t = 16000)]
         max_tokens: u32,
     },
+    /// Foundry-style invariant functions (`invariant_*`) of a compiled contract as the program's slots:
+    /// writes the rules contract (it inherits FoundryInvariants) and prints the manifest slots
+    FromFoundry {
+        /// The contract's Foundry artifact (out/<File>.sol/<Contract>.json)
+        #[arg(long)]
+        artifact: PathBuf,
+        /// The contract's source and FoundryInvariants.sol, as the generated file imports them
+        #[arg(long)]
+        import: String,
+        #[arg(long)]
+        base_import: String,
+        /// Slot order: the invariant functions, comma-separated (default: by name)
+        #[arg(long, value_delimiter = ',')]
+        order: Option<Vec<String>>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Rule strength: mutate the protocol's sources (labeled: missing access checks, flipped
     /// comparisons, unchecked transfers) and count the mutants the program's rules catch under the
     /// project's Foundry invariant test. Measures the rules, not the code's security
@@ -713,6 +730,14 @@ fn run(cli: Cli) -> Result<Value> {
         }
         Cmd::AnchorCheck { block, forge } => cmd::anchor_check(&mk()?, block, forge),
         Cmd::Init { ref out, ref project, chain_id, days } => cmd::init(out, project, chain_id, days),
+        Cmd::Invariants { cmd: InvariantsCmd::FromFoundry { ref artifact, ref import, ref base_import, ref order, ref out } } => {
+            let a: Value = serde_json::from_str(&std::fs::read_to_string(artifact)?)?;
+            let name = artifact.file_stem().and_then(|s| s.to_str()).ok_or_else(|| eyre::eyre!("artifact file name"))?;
+            let abi = a["abi"].as_array().ok_or_else(|| eyre::eyre!("{}: no abi", artifact.display()))?;
+            let (src, slots) = antibody_cli::compat::rules_from_foundry(name, abi, import, base_import, order.as_deref())?;
+            std::fs::write(out, src)?;
+            Ok(json!({"rules": out, "generated": slots}))
+        }
         Cmd::Invariants {
             cmd: InvariantsCmd::Strength { ref project, ref test, ref files, runs, depth, seed, workers, timeout, ref forge, ref work, ref out },
         } => {
