@@ -349,6 +349,16 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
         targets.push(Target { name: format!("vault-{i}"), address: v.parse()?, code_hash: code_hash(evm, v, anchor_n)? });
         vaults.push(v.parse()?);
     }
+    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, deadline)?;
+    m.targets = targets;
+    m.impact.protocol_accounts = vaults;
+    m.invariants.runtime_code_hash = keccak256(&code);
+    m.invariants.runtime_code = code;
+    Ok(m)
+}
+
+/// The practice program's manifest, but for its targets and its rule's runtime code.
+fn practice_manifest_parts(anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
     Ok(Manifest {
         schema: MANIFEST_SCHEMA_V2.into(),
         program: ProgramInfo {
@@ -357,15 +367,15 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
             description: "TUTORIAL TARGET: 24 vaults with one textbook bug (sweep has no access check), published with its proof (docs/practice.md).".into(),
         },
         anchor: Anchor { chain_id: 31337, block_number: anchor_n, block_hash: anchor_h, evm_spec: "osaka".into(), trust: "project-attested".into() },
-        targets,
+        targets: vec![],
         invariants: Invariants {
             address: alloy_primitives::Address::from_slice(&keccak256(b"antibody/invariants/v1")[12..]),
-            runtime_code_hash: keccak256(&code),
-            runtime_code: code,
+            runtime_code_hash: keccak256([]),
+            runtime_code: Default::default(),
             gas_limit: 5_000_000,
             slots: vec![Slot { bit: 0, name: "vault_keeps_its_ether".into(), severity: Severity::Low }],
         },
-        impact: ImpactConfig { protocol_accounts: vaults, native_usd: "2000".into(), tokens: vec![] },
+        impact: ImpactConfig { protocol_accounts: vec![], native_usd: "2000".into(), tokens: vec![] },
         capabilities: Capabilities {
             max_senders: 1,
             max_endowment_wei: 10u128.pow(16).to_string(),
@@ -388,6 +398,54 @@ fn practice_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B256, proj
         deploy: None,
         rule_strength: None,
     })
+}
+
+/// A contract's creation code from the forge build (contracts/evm/out).
+fn creation_code(a: &DemoArgs, file: &str, contract: &str) -> Result<alloy_primitives::Bytes> {
+    let art: Value = serde_json::from_str(&std::fs::read_to_string(a.root.join(format!("contracts/evm/out/{file}/{contract}.json")))?)?;
+    Ok(art["bytecode"]["object"].as_str().ok_or_else(|| eyre!("{contract}: no bytecode"))?.parse()?)
+}
+
+fn word(x: impl Into<alloy_primitives::U256>) -> [u8; 32] {
+    x.into().to_be_bytes::<32>()
+}
+
+/// The practice program in fork mode (docs/fork-mode.md): the factory and its 24 vaults exist only inside
+/// the verifier, deployed by the manifest's two transactions on top of the anchor (the second
+/// instantiates the rule, for its runtime code). Nothing of it is on chain.
+fn fork_practice_manifest(a: &DemoArgs, ctx: &Ctx, anchor_n: u64, anchor_h: B256, project: &str, deadline: u64) -> Result<Manifest> {
+    use antibody_verifier::manifest::{deployer, Deploy, DeployTx};
+    let d = deployer();
+    let factory = d.create(0);
+    let rule = d.create(1);
+    let mut factory_init = creation_code(a, "Practice.sol", "PracticeFactory")?.to_vec();
+    factory_init.extend(word(alloy_primitives::U256::from(24u64)));
+    let mut rule_init = creation_code(a, "Practice.sol", "PracticeInvariants")?.to_vec();
+    rule_init.extend(factory.into_word().0);
+    let mut vault_init = creation_code(a, "Practice.sol", "PracticeVault")?.to_vec();
+    vault_init.extend(d.into_word().0);
+    let vault_hash = keccak256(&vault_init);
+    let vaults: Vec<alloy_primitives::Address> = (0..24u64).map(|i| factory.create2(B256::from(word(alloy_primitives::U256::from(i))), vault_hash)).collect();
+    let mut m = practice_manifest_parts(anchor_n, anchor_h, project, deadline)?;
+    m.program.name = "Practice program in fork mode — a tutorial (sandbox demo)".into();
+    m.program.description = "TUTORIAL TARGET deployed only inside the verifier (fork mode): 24 vaults with one textbook bug (docs/fork-mode.md).".into();
+    m.deploy = Some(Deploy {
+        txs: vec![
+            DeployTx { to: None, value: alloy_primitives::U256::from(24_000_000_000_000_000u64), data: factory_init.into() },
+            DeployTx { to: None, value: alloy_primitives::U256::ZERO, data: rule_init.into() },
+        ],
+    });
+    let mut addrs = vec![factory, rule];
+    addrs.extend(&vaults);
+    let codes = cmd::deployed_code(ctx, &m, &addrs)?;
+    m.targets = std::iter::once(("factory".to_string(), factory, codes[0].0))
+        .chain(vaults.iter().zip(&codes[2..]).enumerate().map(|(i, (v, c))| (format!("vault-{i}"), *v, c.0)))
+        .map(|(name, address, code_hash)| Target { name, address, code_hash })
+        .collect();
+    m.impact.protocol_accounts = vaults;
+    m.invariants.runtime_code = codes[1].1.clone();
+    m.invariants.runtime_code_hash = keccak256(&codes[1].1);
+    Ok(m)
 }
 
 /// Agent A submits through the MCP server, the way an AI agent would. `net` selects the NEAR
@@ -928,6 +986,41 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         && tries.iter().all(|r| r["vended_by"] == json!(acct("practice")) && r["witness_source"] == json!("base"));
     results["practice"] = json!({"program_id": ppid, "create_tx": pc["tx"]["tx"], "manifest_sha256": hex::encode(sha256(&pm.canonical())),
                                  "vending": vending, "fund": funded, "tries": tries, "ok": practice_ok, "seconds": t.elapsed().as_secs_f64()});
+    step("Fork mode: the practice program again, deployed only inside the verifier (nothing of it is on chain)");
+    let t = Instant::now();
+    let fm = fork_practice_manifest(&a, &root_ctx, anchor_n, anchor_h, "test.near", now + 3_600)?;
+    let fm_path = a.work.join("practice-fork-manifest.json");
+    std::fs::write(&fm_path, fm.canonical())?;
+    let fork_key = a.work.join("keys/practice-fork.x25519.json");
+    cmd::keygen_x25519(&fork_key)?;
+    let fc = cmd::program_create(&root_ctx, &fm_path, PRACTICE_ESCROW_TUSD, &fork_key, None)?;
+    let fpid = fc["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no fork-mode program id: {fc}"))? as u32;
+    let fact = cmd::program_activate(&root_ctx, fpid, true)?;
+    wait_t1(&root_ctx, fact["run_id"].as_u64().unwrap_or_default())?;
+    cmd::program_open(&root_ctx, fpid)?;
+    let vault3 = fm.targets.iter().find(|x| x.name == "vault-3").map(|x| format!("{:#x}", x.address)).ok_or_else(|| eyre!("no vault-3"))?;
+    let on_chain = evm_a.call("eth_getCode", json!([vault3, "latest"]))?;
+    let fork_bundle = a.work.join("fork-tutorial.bundle.json");
+    std::fs::write(&fork_bundle, serde_json::to_vec_pretty(&practice::tutorial_bundle(&vault3))?)?;
+    let fr = cmd::submit(&ctx_of("agent-a"), fpid, &fork_bundle, None, None, true)?;
+    let fcid = fr["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no fork-mode commit id: {fr}"))?;
+    wait_t1(&root_ctx, root_ctx.commit(fcid)?["run"].as_u64().unwrap_or_default())?;
+    let fkeeper = cmd::keeper(&ctx_of("keeper"), fpid)?;
+    let fcommit = root_ctx.commit(fcid)?;
+    let fork_ok = cmd::state_label(&fcommit["state"]) == "Done:Paid"
+        && cmd::paid_of(&fcommit) == ONE_TUSD
+        && on_chain == json!("0x")
+        && fr["commit"]["witness_source"] == json!("base");
+    println!("fork-mode program {fpid}: {} deploy transactions, {} targets, vault-3 on chain: {on_chain}; the tutorial proof: {} {} ({} witness), {} in {:.1}s",
+             fm.deploy.as_ref().map(|d| d.txs.len()).unwrap_or(0), fm.targets.len(), fr["reveal"]["result"]["kind"].as_str().unwrap_or("-"),
+             fr["reveal"]["result"]["tier"].as_str().unwrap_or("-"), fr["commit"]["witness_source"].as_str().unwrap_or("-"),
+             cmd::state_label(&fcommit["state"]), t.elapsed().as_secs_f64());
+    results["fork_mode"] = json!({"program_id": fpid, "manifest_sha256": hex::encode(sha256(&fm.canonical())), "create_tx": fc["tx"]["tx"],
+                                  "deploy_txs": fm.deploy.as_ref().map(|d| d.txs.len()), "targets": fm.targets.len(), "vault_3": vault3,
+                                  "vault_3_code_on_chain": on_chain, "commit": fcid, "verdict": fr["reveal"]["result"], "witness_source": fr["commit"]["witness_source"],
+                                  "state": cmd::state_label(&fcommit["state"]), "paid_raw": cmd::paid_of(&fcommit).to_string(), "keeper": fkeeper,
+                                  "txs": {"commit": fr["commit"]["tx"]["tx"], "reveal": fr["reveal"]["tx"]["tx"]}, "ok": fork_ok, "seconds": t.elapsed().as_secs_f64()});
+
     // The deployments file names the practice program, so `antibody try --name <you>` needs nothing else.
     let mut served = dep.clone();
     served.practice = Some(antibody_cli::ctx::PracticeDeployment { vending: acct("practice"), program: ppid });
@@ -958,6 +1051,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= gate(&results["rounds"][1]) == Some(true) && results["rounds"][1]["opened"]["released"] == json!(2);
     ok &= results["release"]["ok"] == json!(true);
     ok &= results["practice"]["ok"] == json!(true);
+    ok &= results["fork_mode"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     let mut pays = BTreeMap::new();
     pay_txs(&results, &mut pays);
@@ -982,17 +1076,20 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let audit = root_ctx.view("audit", json!({"program_id": pid}))?;
     let contract_audit = root_ctx.view("audit_contract", json!({}))?;
     let practice_audit = root_ctx.view("audit", json!({"program_id": results["practice"]["program_id"]}))?;
-    ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true) && practice_audit["ok"] == json!(true);
+    let fork_audit = root_ctx.view("audit", json!({"program_id": results["fork_mode"]["program_id"]}))?;
+    ok &= audit["ok"] == json!(true) && contract_audit["ok"] == json!(true) && practice_audit["ok"] == json!(true) && fork_audit["ok"] == json!(true);
     println!("known issues: {known_n}; audit(program): {}; audit(practice): {}; audit(contract): {}; B withdrew 3000 tUSD: {}; A paid instantly: {}; paused on both chains: {}; practice: {}",
              audit["ok"], practice_audit["ok"], contract_audit["ok"], after == before + 3_000 * ONE_TUSD, one["instant"], one["paused_both"], results["practice"]["ok"]);
     results["submissions"] = Value::Array(table);
-    results["audit"] = json!({"program": audit, "practice": practice_audit, "contract": contract_audit});
+    results["audit"] = json!({"program": audit, "practice": practice_audit, "fork_mode": fork_audit, "contract": contract_audit});
     results["record"] = root_ctx.view("program_record", json!({"program_id": pid}))?;
     let judged = antibody_cli::judge::judge(&judge, None)?;
-    let judge_ok = judged["programs"].as_array().map(|p| p.len()) == Some(2)
+    let judge_ok = judged["programs"].as_array().map(|p| p.len()) == Some(3)
         && judged["programs"][0]["verdicts"]["t1_confirmed"].as_u64() >= Some(7)
         && judged["programs"][0]["pauses"].as_u64() == Some(2)
-        && judged["programs"][1]["payouts"].as_array().map(|p| p.len()) == Some(2);
+        && judged["programs"][0]["rule_strength"]["statement"].is_string()
+        && judged["programs"][1]["payouts"].as_array().map(|p| p.len()) == Some(2)
+        && judged["programs"][2]["payouts"].as_array().map(|p| p.len()) == Some(1);
     println!("judge (view calls only): {} programs, {} pause permits, {} release permits; ok: {judge_ok}", judged["programs"].as_array().map(|p| p.len()).unwrap_or(0),
              judged["programs"][0]["pauses"], judged["programs"][0]["releases"]);
     ok &= judge_ok;
