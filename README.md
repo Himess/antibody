@@ -2,283 +2,262 @@
 
 [![ci](https://github.com/Himess/antibody/actions/workflows/ci.yml/badge.svg)](https://github.com/Himess/antibody/actions/workflows/ci.yml)
 
-> Proof, not reports. Your invariants are your bounty terms.
+> **We don't read reports. We run them.**
 
 **The problem.** Bug bounties judge text: a person reads every report. In January 2026, curl ended its
 bug bounty after a flood of AI-generated reports
 ([The Register](https://www.theregister.com/2026/01/21/curl_ends_bug_bounty/),
 [BleepingComputer](https://bleepingcomputer.com/news/security/curl-ending-bug-bounty-program-after-flood-of-ai-slop-reports/)).
-When reports are cheap to produce, judging text does not scale.
+When reports cost nothing to produce, judging text does not scale.
 
-**Antibody judges code.**
-- **A project opens a program** before a launch or an upgrade. It commits, immutably on NEAR:
-  - an anchor block of its staging deployment;
-  - its rules as code: an invariants contract and a severity/payout table;
-  - an escrowed reward pool.
-- **Hunters (people or AI agents) submit sealed proofs of concept.**
-- **A deterministic verifier re-executes each PoC** on the proven anchor state inside an OutLayer TEE. It
-  reports which committed invariants broke, in which function, and the impact.
-- **near-antibody applies the committed rules:**
-  - the first finder of each (invariant, function) key is paid;
-  - a duplicate is shown verifiable proof of the earlier claim;
-  - the project's known issues are declared at t0;
-  - bonds deter slop: refunded on any Violation, forfeited on NoViolation or InvalidPoC;
-  - a Critical makes Chain Signatures pause the protocol on every chain where it runs.
+**Antibody judges code.** It is an auto-pay lane next to a project's existing bounty:
+- **A project opens a program** before a launch or an upgrade. It commits on NEAR an anchor block, its
+  rules as code (an invariants contract, a severity and payout table) and an escrow.
+- **Anyone, a person or an AI agent, submits a sealed proof**: a sequence of calls. Nobody, the project
+  included, can read it before its verdict.
+- **A deterministic verifier re-runs the proof** on the proven state at the anchor, inside a TEE, and
+  reports which committed rule broke, where, and the impact. Its TDX quote is then verified on NEAR (T1).
+- **near-antibody applies the committed terms**: the first proof of each (rule, entry point) is paid,
+  in seconds under the instant cap (larger payouts after a challenge window); a duplicate gets the
+  earlier claim's proof; bonds go to the program's escrow when a proof breaks nothing.
+- **A Critical pauses the protocol on every chain** where it runs (MPC-signed permits). The project's fix
+  is re-checked against every paid proof, and only a fix they all fail against is released.
 
-No LLM decides who gets paid. Report text is never read; only the PoC's code runs. The one human step is
-the T0 arbiter: a payout above the instant cap that someone challenges is resolved by the contract owner,
-unless a T1 confirmation resolves it first.
+**Agents can't be trusted; their proofs can.** An agent works through an account that cannot withdraw,
+with a bond budget, and its proofs are judged like anyone's.
 
-## Run it (offline, one command)
+**Pay on proof. Pause on proof. Ship only what survived.**
 
-```bash
-make demo
-```
+## Check it in two minutes
 
-Prerequisites:
-- **OS:** Linux x86_64 with glibc 2.38 or newer (Ubuntu 24.04+, Debian 13), which near-sandbox 2.14.0
-  requires. macOS arm64 is supported by near-sandbox but is not tested in CI.
-- **Tools:** Rust (rustup), Foundry, Python 3 and a C compiler (clang or gcc).
-- **Network:** the first build downloads toolchains, crates, Foundry components and near-sandbox.
-
-Anywhere else, use Docker:
+[JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
+transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
 ```bash
-docker build --platform linux/amd64 -t antibody-demo .
-docker run --rm --platform linux/amd64 antibody-demo
+antibody judge                 # view calls only: code hashes, locked status, pins, T1 confirmations, payouts, permits
+antibody try --name <you>      # the practice program (a tutorial): no account, no key, no RPC; paid in seconds
 ```
 
-It needs no keys and no funds. It builds everything, then:
-1. checks the recorded fixtures natively and as wasm;
-2. runs the contract rule tests;
-3. plays the whole flow on near-sandbox with two anvils, using MOCK OutLayer and MOCK MPC driven by the
-   real verifier, and asserts every outcome.
+Prebuilt binaries and a CLI image come with each release (`.github/workflows/release.yml`); the testnet
+deployment is built into the binary. **Status:** the testnet deployment is not live yet (it waits for
+testnet funds), so today [JUDGES.md](JUDGES.md) is generated from the offline sandbox run, and the same
+commands run against it:
 
-CI runs these steps on every push to `main` and on pull requests:
-- fixtures: job `verifier`;
-- rule tests: jobs `evm` and `near`;
-- sandbox end to end: job `e2e`.
-
-The `docker demo` workflow runs the container.
-
-| Step in the demo | What happens | Asserted |
-|---|---|---|
-| Program | Acme Lend's manifest committed on NEAR; 25,000 tUSD escrowed | `program_created` |
-| t0 | The project's known issue is verified by the same TEE path and claims its key | `KnownIssue` |
-| Agent A over MCP | `antibody mcp` with a function-call key: commit, then sealed submit | Paid 10,000 tUSD after the T0 delay |
-| Guardian | A's Critical makes near-guardian sign `pause()` for two chains; the relayer broadcasts | `paused()` on both chains, 0.5 s after the verdict |
-| B–F | B paid (3,000); C rejected; D a duplicate of A; E known; F paid as a new key | All five outcomes |
-| Round 1 | The project ships the fix for A's bug as a code override; the TEE re-runs the claimed findings | A released; B, F and the known issue carried |
-| Disclosure | One TEE run publishes every content key; `antibody verify` re-checks D against A | Same rule, same function, committed earlier |
-
-Results are written to `target/demo/results.json`. One CI run's numbers are in
-[docs/measurements.md](docs/measurements.md).
-
-## The fixture: six scripted agents against "Acme Lend"
-
-`contracts/evm/src/acme/` is a fictional lending protocol with **four bugs planted on purpose**
-(DELIBERATELY VULNERABLE TEST FIXTURE: never deploy it to mainnet). Its invariants define three rules:
-solvency at a committed reference price, accrued fees plus the treasury balance never decreasing, and a share price that never
-falls.
-
-| Submission | Verdict | Key (invariant, function) | Outcome |
-|---|---|---|---|
-| Known issue (project, t0) | Violation | share_price, `AcmeVault.withdraw` | Known issue, no payout |
-| A: spot-price collateral via a swap (submitted over MCP) | Violation | solvency, `AcmeLend.borrow` | Paid (Critical) |
-| B: `sweepFees` without access control | Violation | fees_to_treasury, `AcmeVault.sweepFees` | Paid (High) |
-| C: profitable arbitrage, plus a prompt injection in the report | NoViolation | none | Rejected, bond forfeited |
-| D: A's bug via a donation + `sync()` | Violation | solvency, `AcmeLend.borrow` | Duplicate of A, with proof |
-| E: withdraw rounding | Violation | share_price, `AcmeVault.withdraw` | Known, no payout |
-| F: `repay` ignores `transferFrom`'s return value | Violation | solvency, `AcmeLend.repay` | Paid: a new key under the same rule |
-
-[`fixtures/acme-local/expected.json`](fixtures/acme-local/expected.json) records, for each submission:
-- the verdict and its keys;
-- the HMAC fingerprint tags;
-- the impact at the reference prices;
-- the receipt hash.
-
-CI re-runs every fixture natively and as `wasm32-wasip2` under wasmtime with OutLayer's engine
-configuration, and requires byte-identical output (`scripts/demo/check_fixtures.py`).
-
-## How it works
-
-```mermaid
-flowchart LR
-  P[Project] -- "manifest + escrow (tUSD)" --> AB[near-antibody]
-  H[Hunter / AI agent] -- "commit(hash) → sealed blob (FastFS) → submit" --> AB
-  AB -- "request_execution (pinned wasm)" --> OL[OutLayer TEE: verifier]
-  OL -- "facts ≤ 1 KB" --> AB
-  AB -- "anchor check" --> LC[Sepolia light client]
-  AB -- "Critical → pause_all" --> G[near-guardian] -- "sign" --> MPC[Chain Signatures]
-  G -- "signed pause() txs" --> R[relayer] --> S[(Sepolia + Base Sepolia)]
+```bash
+make demo        # Linux (or `docker build -t antibody-demo . && docker run --rm antibody-demo`): everything, asserted
+antibody-services demo --serve   # the same, then the chains and services stay up for `antibody … try` and `judge`
 ```
 
-- **Verifier** (`crates/verifier`). Program mode:
-  - binds the witness to the manifest hash and the anchor header, and verifies every Merkle-Patricia proof;
-  - injects the invariants at a reserved address that only evaluation calls can see;
-  - requires `check(snapshot()) == 0` at the anchor;
-  - runs the PoC from fresh salted senders with a bounded endowment;
-  - records, for each broken invariant, the protocol-entry call where it last flipped (its root-cause
-    fingerprint);
-  - measures the impact as min(protocol loss, attacker gain) at committed prices.
+The sandbox run (`results.json`, also [docs/results/](docs/results/)) asserts every outcome of the story:
 
-  The same build runs natively and under wasmtime with OutLayer's engine configuration, byte for byte.
-  The run on OutLayer itself is part of the pending live deployment.
-- **Sealed submissions** ([docs/crypto-spec.md](docs/crypto-spec.md)):
-  - X25519 + HKDF-SHA256 + ChaCha20-Poly1305 to a verifier key derived inside the TEE from a
-    `PROTECTED_` secret, bound to the wasm hash and to near-antibody as the caller;
-  - commit-reveal fixes priority;
-  - the project receives a key wrap for every Violation, so a paying project can read what it pays for;
-  - a disclosure run publishes every content key, so anyone can re-verify everything.
-- **Rules** (`contracts/near-antibody`, [docs/architecture.md](docs/architecture.md)):
-  - keys are `(slot, HMAC tag)`, with priority by commit order;
-  - duplicates and known issues get no payout, but their bond is refunded and they get the earlier
-    claim's proof;
-  - T0 delay and `challenge()` above a cap;
-  - reputation and NEP-297 events.
-- **Rounds** ([docs/rounds.md](docs/rounds.md)). A fix is committed as code overrides at the same anchor.
-  The TEE re-runs each claimed finding with the same PoC hash, and keys that no longer break are
-  released. So a second bug in the same function can be paid once the first is fixed. The contract
-  rejects a round that changes anything but target code.
-- **Guardian** (`contracts/near-guardian`). It signs EIP-1559 `pause()` transactions for every
-  registered chain through `v1.signer-prod.testnet`, and `ecrecover` checks each signature. The signed
-  transactions are public, so anyone can relay them.
-- **Agents.** `antibody mcp` exposes 8 tools over stdio: list and get programs, fetch the environment,
-  check a PoC locally, commit, submit, status, verify a receipt. An agent gets a NEAR function-call key
-  that can only commit, submit and upload its sealed blob: it cannot attach deposits or withdraw.
-- **Backend** (`crates/services`, [docs/api.md](docs/api.md)): indexer, read-only API, pause relayer,
-  T1 relayer and notifier.
-
-## Trust: tiers, and what is mock
-
-Full table: [docs/trust.md](docs/trust.md).
-
-| Tier | Who vouches for a verdict | Status |
+| Step | What happens | Recorded |
 |---|---|---|
-| **T0** | OutLayer's operator delivers the TEE worker's output. Above the instant cap, payouts wait a challenge window; anyone may `challenge()` | Implemented. Live run pending (see Deployment) |
-| **T1** | The run's TDX quote, verified on NEAR (`confirm_tee`). Its `report_data` must bind the exact input and output that near-antibody recorded, the pinned wasm, the caller and the secrets. The worker image must be pinned | Implemented and tested with a real quote from a third-party OutLayer run (request 6496). On 2026-11-02, `antibody tee check --request-id 6496` verified it live with a free view call: `Verified`, `UpToDate`. When OutLayer's on-chain collateral expires (2026-11-08), fresh collateral comes from Intel PCS (`--collateral pcs`, verified the same day); `fixtures/t1/` keeps the recorded answer |
-| **T2** | zk proof of the same execution | Roadmap |
+| Program | Acme Lend's manifest (v2) and escrow on NEAR; the anchor checked by the light client; activation pins the base witness and the program's sealing key | T1 |
+| The one moment | Agent A, over MCP, submits a sealed proof of a Critical: verified, T1-confirmed, **paid** about 27 s after its commit, and **both chains paused** by 28 s | sandbox timings, from block timestamps |
+| A NEAR app reacts | A DAO treasury that watches the program reads near-antibody and freezes on A's verified Critical | its next transfer is refused |
+| B–G | B paid; C (a prompt injection in its report) breaks nothing and forfeits its bond; D a duplicate, confirmed at the fix; E a known issue; F paid; G harms a protected user without breaking a rule: refunded, recorded, and paid once round 1 adds the rule | every state |
+| Rounds | Round 1's partial fix: every paid proof re-run at it, two still break, so nothing is released; round 2's final fix: all fail, the release permits upgrade both proxies on both chains, and B's exploit reverts | the release gate |
+| Practice | Two judges with no account vend practice accounts and run the tutorial proof; it is sealed against the pinned base alone | Done:Paid |
+| Fork mode | The practice program again, deployed only inside the verifier: nothing of it is on chain | Done:Paid |
+| Audits | Every conservation equation, per program and for the contract | ok |
 
-**What is mock:**
-- **The mainnet view** (`/v1/mock/mainnet`, `"mock": true`). It is recorded or synthetic data only. No
-  mainnet transaction is ever sent. The mainnet light-client figures come from the previous prototype's
-  recorded results (`fixtures/mock-mainnet/v03-evidence.json`).
-- **The sandbox demo.** It uses MOCK OutLayer and MOCK MPC contracts, resolved by the real verifier with
-  a TEST seed and a TEST secp256k1 key.
-- **The fixture keys.** The fixtures' `k_program` is a TEST key.
+## Deployment
 
-## Deployment (NEAR testnet, Sepolia, Base Sepolia)
+| | Account / contract | Status |
+|---|---|---|
+| near-antibody | `bounty.antibody.testnet` | planned, waiting for testnet funds |
+| near-guardian | `guardian.antibody.testnet` | planned |
+| Practice vending | `practice.antibody.testnet` | planned |
+| Payout token | `wrap.testnet` (wNEAR) | existing |
+| OutLayer, light client, MPC | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet` | existing |
+| Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | planned |
 
-**Status: not deployed yet. It is waiting for testnet funds and archive RPC keys.**
-`scripts/deploy/testnet.sh` is an idempotent runbook. It:
-1. creates `antibody-hq.testnet` and its sub-accounts;
-2. derives the guardian's EVM address;
-3. deploys Acme Lend to Sepolia (seeded) and Base Sepolia (pause-only) at the same CREATE2 addresses;
-4. publishes the verifier wasm as a GitHub release;
-5. deploys tUSD, near-antibody and near-guardian;
-6. creates the verifier seed as an OutLayer `PROTECTED_` secret;
-7. registers both chains;
-8. configures T1 with OutLayer's latest approved worker images.
+`antibody admin record-deployment` pins each contract's code hash, its locked status, the verifier build
+and the source commit into `deployments/near-testnet.json` and `deployments/history/`. Transaction links
+for the live story go here when it runs.
 
-**The live story.** Two more steps run it with nothing mocked.
-1. `python scripts/demo/acme_fixture.py --net sepolia --rpc "$SEPOLIA_RPC" --anchor N` builds the
-   Sepolia fixture at block N, natively, and checks every expected verdict before anything is spent.
-   N must be a finalized block that the light client already has; `antibody anchor-check --block N`
-   tells.
-2. `target/release/antibody-services live` runs the Acme story on NEAR testnet, Sepolia and Base
-   Sepolia:
-   - the program, with its anchor checked by the light client;
-   - the known issue;
-   - agent A over MCP;
-   - the MPC-signed pause on both chains;
-   - agents B–F;
-   - a challenge of A's delayed payout, settled by A's TDX quote verified on NEAR, and F's payout
-     released early the same way;
-   - round 1;
-   - disclosure and `verify` of D.
+## The trust panel
 
-   Each step records its transactions in `target/live/live.json`, and a re-run skips the finished
-   steps. `target/live/results.json` collects, measured from block timestamps:
-   - tx links, verdicts and outcomes;
-   - OutLayer and Chain Signatures latency;
-   - DCAP gas;
-   - submit-to-payout time.
+| Actor | Trusted for | How anyone checks it |
+|---|---|---|
+| The light client | The anchor block's hash | The program's anchor check (`antibody judge`) against any RPC |
+| The TEE (OutLayer worker) | Running the pinned verifier on the sealed proof | **T1:** the run's TDX quote is verified on NEAR; `antibody tee check --request-id <id>` |
+| The verifier | Nothing beyond its pinned build | Native and wasm builds agree byte for byte; `antibody check` re-runs a proof locally; after disclosure every verdict can be recomputed |
+| The MPC network | Signing the pause and release permits near-guardian builds | `AntibodyAdapter` recomputes each permit's EIP-712 digest on chain |
+| near-antibody's owner | The defaults of new programs only | A live program's pins never change (property 12); `antibody judge` shows whether the contract is locked |
+| The project | Its manifest, escrow and fixes | The manifest hash is committed; known issues are sealed before open; a fix is released only after every paid proof re-runs against it and fails |
+| Relayers, keeper, indexer, API | Nothing: permissionless calls and derived data | Everything they show is re-derivable from NEAR |
 
-Transaction links, latency and cost from the live run will be listed here when it runs.
+Tiers: **T0** (OutLayer delivers the TEE's output), **T1** (its quote verified on NEAR). Instant payouts
+need T1. Above the cap, a payout also needs an independent second run that agrees, and waits its
+challenge window. Full table: [docs/trust.md](docs/trust.md).
 
-| Account / contract | Planned |
+## The properties
+
+Twelve settlement properties, each a Quint invariant checked by 21 scenarios, 20,000 random traces and
+Apalache, and each replayed against the rule core near-antibody runs (600 traces of 60 steps, no
+divergence). Kani proves the payout arithmetic and every escrow movement (41 proofs). Details and the
+check behind each: [docs/properties.md](docs/properties.md).
+
+| # | Property |
 |---|---|
-| near-antibody | `bounty.antibody-hq.testnet` |
-| tUSD (test token, no value) | `tusd.antibody-hq.testnet` |
-| near-guardian | `guardian.antibody-hq.testnet` |
-| OutLayer / light client / MPC / DCAP | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet`, `tee-verifier-2026-07-22.testnet` |
+| 1 | Escrow conservation: `funded = available + reserved + paid + fees + returned`, per program and for the contract |
+| 2 | At most one payout per key per round, within each rule's budget |
+| 3 | Payment goes to the earliest valid commit |
+| 4 | Duplicates are never paid, except through the one-way appeal |
+| 5 | A round never removes a payment or a rule |
+| 6 | Every in-flight state reaches a terminal state; the exit is never blocked |
+| 7 | Bonds are never lost: refunded or forfeited to the program's escrow |
+| 8 | Instant payments happen only with T1, below the cap, within their window's budget |
+| 9 | No known issue is added after open |
+| 10 | Disclosure cannot be blocked once its condition holds |
+| 11 | Permits follow the committed policy: pause tickets only for T1 holders, releases only when the release gate holds |
+| 12 | The owner cannot change a live program |
 
-## Why NEAR
+Beside them: parser fuzzing (manifests, witnesses, sealed payloads, the verifier on mutated witnesses),
+golden vectors for every format two components share (the commitment, addresses, EIP-712 permit
+digests recomputed in Solidity), native == wasm on every fixture, and the sandbox story end to end.
 
-- **OutLayer:** a TEE runs the pinned verifier wasm, with `PROTECTED_` secrets that only that build,
-  called by near-antibody, can read. That makes sealed PoCs possible.
-- **Chain Signatures:** one verified Critical pauses the protocol on every chain, by an MPC-signed
-  transaction.
-- **The Ethereum light client:** the anchor hash is checked on chain when the program is created.
-- **NEAR's DCAP verifier:** TEE quotes are verified on chain (T1).
-- **FastFS:** sealed blobs are stored as transaction arguments, readable from any archival RPC.
-- **Function-call access keys:** they give AI agents scoped, deposit-less authority.
-- **NEAR Intents:** the payout path in mainnet mode (MOCK).
+## The self-attack log
 
+We attack our own system. Each Critical below was found by us, fixed, and is pinned by a test.
+
+| Id | What broke | Fix | Test |
+|---|---|---|---|
+| SA-1 | **Fingerprint steering.** Evaluations inside a frame that later reverted stayed on the timeline, so one bug could be re-keyed to any entry point and paid again | A failing frame truncates the evaluation timeline | `fixtures/regressions` (`steering`), native and wasm |
+| SA-2 | **Tampered jump tables.** A witness's jump table was trusted, so a hunter could make the anchor snapshot fail and close the program | Every bytecode is re-analysed from its hashed bytes | `fixtures/regressions` (`jump-table-*`) |
+| SA-3 | **Relabelled trie nodes.** A leaf and an extension can encode alike, so a witness could forge absent state under a valid root | Every trie node's kind is validated | `trie::tests::relabelled_extension_is_refused` |
+| SA-4 | **A partial fix locked a program out of releases.** Re-runs were never reset between proposals, so a key one fix carried could never be re-run at the next | Re-runs count per proposal | `later_fix_releases_carried_key`, Quint `laterFixReleasesCarriedKeyTest` |
+| SA-5 | **A release permit was not bound to the checked code**: it could install code the re-runs never ran | The round check binds each release's proxy and code hash | `a_round_check_binds_its_releases` |
+| SA-6 | **An unjudged re-run counted as fixed.** A re-run that returned `InvalidPoC` opened the release gate | Only a T1 Violation or NoViolation is evidence | `an_unjudged_rerun_is_no_evidence` |
+| SA-7 | **A round could drop the rule the round before added** | A round keeps every slot of the open round | `a_round_keeps_the_invariants_of_the_round_before` |
+| SA-8 | **Re-runs used the witness's rule code**, not the round manifest's | The manifest's code is the rule code | `a_rerun_uses_the_rounds_invariants_code` |
+
+Building the end-to-end story found more (fixed, with tests): a failed round check stranded its proposal;
+four permits did not fit one call; the gap lane's model allowed a re-run after exit. See
+[docs/properties.md](docs/properties.md).
+
+## The cost of an attack
+
+| Attack | What it costs the attacker | What the defense gives up | Check |
+|---|---|---|---|
+| Slop and spam | A bond per commit, forfeited to the program's escrow, plus the verification run | Nothing: bonds are sized from measured cost | Property 7 |
+| Prompt injection in a report | The bond | Nothing: the verifier never reads reports | Story step C |
+| Copying or front-running a proof | Impossible before its verdict: proofs are sealed to the verifier and priority is the commit | — | AEAD binds the hunter |
+| A forged or tampered witness | The bond (`InvalidPoC`) | Nothing: proofs, code and tries are validated | SA-2, SA-3, fuzzing |
+| Steering a finding to a new key to be paid twice | The bond | Nothing | SA-1 |
+| A dishonest TEE operator | It can delay; it cannot pay without a quote verified on NEAR | T0 payouts above the cap wait their window and a second run | Property 8 |
+| Challenging honest payouts to delay them | A challenge bond, lost when T1 upholds the payout | A delay up to the resolve window | Threat P12 |
+| A project closing its program to escape payouts | Needs a T1 `ProgramMisconfigured` or the window; the escrow stays until exit | — | Property 6 |
+| A compromised owner | Can change the defaults of new programs only | — | Property 12 |
+| A hijacked agent | Bonds within its budget and per-commit cap; its key cannot withdraw | Its owner's capped credit | Containment tests |
+| Draining the practice faucet | Rate-limited per hour; the public vend key's allowance caps the gas | A small, refilled float | `/v1/status` alerts |
+
+## Agents
+
+`antibody mcp` serves 8 tools over stdio. Every result is marked untrusted data; file access is confined
+to a workspace and key files are refused. An agent account is a sub-account whose bonds come from its
+owner's credit within a cap, whose payouts go to the owner, and whose key cannot withdraw. See
+[AGENTS.md](AGENTS.md) and [docs/agent-runs.md](docs/agent-runs.md) for measured runs of an off-the-shelf
+agent completing the loop on the practice program (measuring the loop, not bug finding).
+
+## For projects
+
+- **Rules as code:** an `IAntibodyInvariants` contract, or Foundry-style `invariant_*` functions
+  (`antibody invariants from-foundry`, [docs/foundry.md](docs/foundry.md)); the drafter
+  ([docs/invariants-drafting.md](docs/invariants-drafting.md)) proposes a first set.
+- **The validate gate:** `antibody invariants validate` checks a manifest as creation and activation will.
+- **Rule strength:** `antibody invariants strength` mutates the code and counts the mutants the rules
+  catch under the fuzzer: Acme's catch 8 of 28 at the final fix
+  ([docs/rule-strength.md](docs/rule-strength.md)). It measures the rules, not the code's security.
+- **No staging deployment:** fork mode deploys the program's contracts inside the verifier
+  ([docs/fork-mode.md](docs/fork-mode.md)).
+- **NEAR apps can act on verdicts** ([docs/verdict-guard.md](docs/verdict-guard.md)).
 
 ## Limitations
 
-- **Only invariant breaks are paid automatically.** Everything else is at the project's discretion:
-  `top_up` pays more, never less.
-- **Duplicates are judged by (invariant, function).** Two bugs inside the same function count as one
-  until the first is fixed (rounds).
-- **Trust in the OutLayer operator** is handled by tiers. T1 needs fresh DCAP collateral, which comes
-  from Intel PCS once OutLayer's on-chain copy expires (2026-11-08).
-- **Verification covers Ethereum L1** (Sepolia). Base Sepolia is pause-only.
-- **One block.** A PoC runs in the anchor block's environment: no time travel and no multi-block attacks.
-- **The testnet light client** has a single trusted relayer. Anchors it cannot confirm are labelled
+- **Only rule breaks are paid automatically.** Anything else is at the project's discretion (`top_up`).
+- **Duplicates are judged by (rule, entry point).** Two bugs behind one entry point count as one until
+  the first is fixed (rounds).
+- **One block.** A proof runs in the anchor block's environment: no time travel, no multi-block attacks.
+- **Ethereum L1 for verification** (Sepolia). Other chains are pause and release targets.
+- **The testnet light client has one trusted relayer.** Anchors it cannot confirm are labelled
   project-attested.
-- **The live testnet deployment is pending** (see Deployment).
+- **TEE trust is tiered, not removed.** T1 needs DCAP collateral; above the cap a second run and a
+  window are required.
+- **Old anchors.** A proof that reads beyond the pinned base needs an RPC that keeps the anchor's state.
+- **Rule strength is the rules' measure,** and a survivor is not necessarily a bug.
+- **The testnet deployment is not live yet.**
 
-## Quickstarts and docs
+## Provenance
 
-- **Projects:** [docs/project-quickstart.md](docs/project-quickstart.md). Write invariants, or draft them
-  with [`antibody invariants draft`](docs/invariants-drafting.md), then commit, open, read findings, ship
-  fixes in rounds, and close.
-- **Hunters and agents:** [docs/hunter-quickstart.md](docs/hunter-quickstart.md). It covers the CLI,
-  `antibody check`, the MCP server and agent keys.
-- **Reference:**
-  - [architecture](docs/architecture.md)
-  - [crypto spec](docs/crypto-spec.md)
-  - [threat model](docs/threat-model.md)
-  - [trust](docs/trust.md)
-  - [rounds](docs/rounds.md)
-  - [API](docs/api.md)
-  - [measurements](docs/measurements.md)
+- **Built during the hackathon:** all code was written after the October 19, 2026 announcement, and
+  the commits reflect when it was written. Tags: `hackathon-start`, milestone tags, and
+  `hackathon-submission` at submission.
+- **AI-assisted:** written with Claude Code (Claude Opus 5.5). The design, the rules and every decision
+  on scope were reviewed by the team.
+- **Libraries** (direct dependencies, by license):
+  - MIT or Apache-2.0: alloy, reth 2.2, rsp, serde, serde_json, clap, reqwest, borsh, sha2, hkdf,
+    chacha20poly1305, k256, getrandom, near-sdk 5.9, proptest, futures-util;
+  - MIT: revm 38, axum, tokio, bincode;
+  - BSD-3-Clause: ed25519-dalek, x25519-dalek;
+  - Apache-2.0 with LLVM exception: wasmtime 28.
+  - Tools: Foundry, Quint and Apalache, Kani, near-sandbox.
+- **Patches:** `third_party/patches/` holds two small build fixes (for `kzg-rs` and `near-vm-runner`).
+
+## Tracks
+
+**06 AI Security & Defense** (primary): proofs, not reports, judged by a deterministic verifier in a TEE,
+with pause and release on every chain. **07 Agent Economy**: agents earn on proof, through accounts that
+contain them. **03 Privacy & Private AI** once caller-derived keys, scheduled disclosure and
+private-inference drafting ship.
+
+## Business model
+
+The requester pays verification at cost. Revenue is a fee on payouts and a fee per release permit,
+both pinned per program, and later a paid tier for the drafter, rule strength and analytics. Forfeited
+bonds are never revenue: they go to the program's escrow.
+
+## Roadmap
+
+1. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.
+2. T2: a zk refutation path, with proofs of disclosed verdicts verified on NEAR; later zk by default above a cap.
+3. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
+4. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
+5. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.
+6. Several independent TEE operators by default; a strict "no quote, no pay" mode once attestation is reliable.
+7. One sub-account per program: isolated escrow, keys and signing path.
+8. Payouts in any asset through NEAR Intents (mainnet).
+9. Agent capital: backer vaults fund bonds for agents with verified records; bond discounts from proof-based reputation.
+10. Security jobs on NEAR's agent market whose acceptance test is an Antibody verdict.
+11. A public verdict registry as a NEAR primitive for insurance, lending markets and DAOs.
+12. Continuous programs for live protocols in mainnet mode, with honest latency limits.
+13. Private and invite-only programs; optional checks before large withdrawals; safe-harbor templates.
+14. Post-quantum readiness: ML-DSA accounts and hybrid ML-KEM sealing for long embargoes.
+15. The mainnet path: external audits, Antibody's own adapters under an Antibody program, coverage partners, the fee model in production.
+16. A paid tier for the drafter, rule strength and analytics.
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `crates/verifier` | Deterministic verifier: program mode, rounds (code overrides), receipts, facts, TEE modes (pubkey, verify, rerun, disclose), sealed-submission crypto |
-| `crates/witness` | Witness builder: traces the PoC through the verifier's own path, fetches proofs at the anchor, then a strict fixpoint |
-| `crates/runner` | wasmtime host with OutLayer's engine config, for local wasm runs |
-| `crates/cli` | `antibody` CLI and MCP server, invariant drafter, T1 tools |
-| `crates/services` | Indexer, API, relayers (pause, T1), notifier, sandbox mocks, offline demo |
-| `contracts/near-antibody` | Settlement contract, tUSD, and the sandbox-only MOCK OutLayer and MOCK MPC |
-| `contracts/near-guardian` | Chain Signatures pause signer |
-| `contracts/evm` | The Acme Lend fixture (deliberately vulnerable), its invariants, PoCs and fix, the deploy script |
-| `fixtures/` | Recorded witnesses, manifests and expected verdicts (round 0, round 1), T1 test vectors, MOCK mainnet data |
-| `scripts/` | Fixture pipeline, testnet runbook, sandbox fetch |
+| `crates/verifier` | The deterministic verifier: program mode, rounds, fork mode, receipts, TEE modes, sealed submissions |
+| `crates/witness` | Witness builder: traces a proof through the verifier's own path, base witnesses, submissions from the base |
+| `crates/rules` | The settlement rule core near-antibody runs; Kani proofs |
+| `crates/cli` | `antibody`: CLI, MCP server, practice, judge view, rule strength, Foundry compatibility, drafter |
+| `crates/services` | Indexer, API, keeper, relayers, notifier, monitoring, sandbox mocks, the demo |
+| `contracts/near-antibody`, `near-guardian`, `practice-vending`, `verdict-guard` | The NEAR contracts |
+| `contracts/evm` | Acme Lend (deliberately vulnerable), its rules, proofs and fixes; the practice vaults; the adapter |
+| `formal/` | The Quint model of the settlement rules |
+| `fixtures/`, `golden/` | Recorded witnesses and verdicts; golden vectors |
 
 ## Safety
 
-The Acme Lend contracts are a **deliberately vulnerable test fixture**. Their PoCs exist only for the
-bugs planted in this repository, and everything runs on testnets or local chains. Antibody verifies; it
-does not hunt. See [SECURITY.md](SECURITY.md). Keys live only in the git-ignored `.secrets/` and
-`.env`, and gitleaks runs in the pre-commit hook and in CI.
+Acme Lend and the practice vaults are **deliberately vulnerable test fixtures**, with textbook bugs
+labeled in their code. Their proofs exist only for those bugs, and everything runs on testnets or local
+chains. Antibody verifies; it does not hunt. See [SECURITY.md](SECURITY.md). Keys live only in the
+git-ignored `.secrets/` and `.env`, and gitleaks runs in the pre-commit hook and in CI.
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). Third-party code is used under its own licenses. `third_party/patches/`
-holds two small build fixes, for `kzg-rs` and `near-vm-runner`; see its README.
+MIT (see [LICENSE](LICENSE)). Third-party code is used under its own licenses.
