@@ -33,23 +33,39 @@ fn now_s() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// A transaction's receipt tree may still grow this long after its newest receipt: OutLayer answers a
+/// run by resuming the request's receipt, some seconds to minutes after the transaction that asked.
+const SETTLE_SECS: u64 = 600;
+
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct Cursor {
+    /// Transactions whose receipts are all read (their tree settled).
     seen_txs: BTreeSet<String>,
+    /// Transactions read but maybe not finished: read again each pass, with their signer.
+    #[serde(default)]
+    open_txs: BTreeMap<String, String>,
+    /// Every event appended, by receipt and position, so a transaction read again (or an indexer
+    /// restarted) appends each event once.
+    #[serde(default)]
+    emitted: BTreeSet<String>,
     last_block: u64,
     next_seq: u64,
 }
 
-/// Events from one transaction's receipts: (block height, block ns, receipt id, event JSON).
-fn events_of_receipts(receipts: &[(u64, u64, String, Vec<String>)]) -> Vec<(u64, u64, String, Value)> {
+/// Whether a transaction's receipts are all in: its newest receipt is older than [`SETTLE_SECS`].
+fn settled(receipts: &[(u64, u64, String, Vec<String>)]) -> bool {
+    let newest_s = receipts.iter().map(|r| r.1 / 1_000_000_000).max().unwrap_or(0);
+    now_s().saturating_sub(newest_s) > SETTLE_SECS
+}
+
+/// Events from one transaction's receipts: (block height, block ns, receipt id, its position among the
+/// receipt's events, event JSON).
+fn events_of_receipts(receipts: &[(u64, u64, String, Vec<String>)]) -> Vec<(u64, u64, String, usize, Value)> {
     let mut out = Vec::new();
     for (h, ts, id, logs) in receipts {
-        for l in logs {
-            if let Some(j) = l.strip_prefix("EVENT_JSON:") {
-                if let Ok(v) = serde_json::from_str::<Value>(j) {
-                    out.push((*h, *ts, id.clone(), v));
-                }
-            }
+        let events = logs.iter().filter_map(|l| l.strip_prefix("EVENT_JSON:")).filter_map(|j| serde_json::from_str::<Value>(j).ok());
+        for (n, v) in events.enumerate() {
+            out.push((*h, *ts, id.clone(), n, v));
         }
     }
     out.sort_by_key(|e| (e.0, e.1));
@@ -74,7 +90,8 @@ impl Indexer {
     fn new_transactions(&self, cur: &mut Cursor) -> Result<Vec<(String, String, Vec<(u64, u64, String, Vec<String>)>)>> {
         match &self.source {
             Source::FastNear { base } => {
-                let mut hashes = BTreeSet::new();
+                // Transactions whose trees may still grow are read again.
+                let mut hashes: BTreeSet<String> = cur.open_txs.keys().cloned().collect();
                 for c in &self.contracts {
                     let v: Value = self.http().post(format!("{base}/v0/account")).json(&json!({"account_id": c})).send()?.json()?;
                     for t in v["account_txs"].as_array().into_iter().flatten() {
@@ -109,9 +126,11 @@ impl Indexer {
                                 eo["outcome"]["logs"].as_array().into_iter().flatten().filter_map(|l| l.as_str().map(String::from)).collect(),
                             ));
                         }
-                        // Only finished trees: an empty receipt list may still be executing.
+                        // An empty receipt list is still executing: read again next pass.
                         if t["receipts"].as_array().map(|a| !a.is_empty()).unwrap_or(false) {
                             out.push((hash, signer, receipts));
+                        } else {
+                            cur.open_txs.insert(hash, signer);
                         }
                     }
                 }
@@ -183,11 +202,21 @@ impl Indexer {
         let txs = self.new_transactions(&mut cur)?;
         let mut new_events = Vec::new();
         let mut all: Vec<(u64, u64, String, String, String, Value)> = Vec::new();
+        // FastNEAR lists a transaction as soon as its first receipts ran; one whose tree is not settled
+        // stays open and is read again (the blocks source reads each one when final).
+        let reread = matches!(self.source, Source::FastNear { .. });
         for (hash, signer, receipts) in txs {
-            for (h, ts, rid, ev) in events_of_receipts(&receipts) {
-                all.push((h, ts, rid, hash.clone(), signer.clone(), ev));
+            for (h, ts, rid, n, ev) in events_of_receipts(&receipts) {
+                if cur.emitted.insert(format!("{rid}:{n}")) {
+                    all.push((h, ts, rid, hash.clone(), signer.clone(), ev));
+                }
             }
-            cur.seen_txs.insert(hash);
+            if reread && !settled(&receipts) {
+                cur.open_txs.insert(hash, signer);
+            } else {
+                cur.open_txs.remove(&hash);
+                cur.seen_txs.insert(hash);
+            }
         }
         all.sort_by_key(|e| (e.0, e.1));
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(self.path("events.jsonl"))?;
@@ -299,4 +328,22 @@ pub fn metrics(events: &[Value]) -> Value {
         "submit_to_verdict_blocks": {"p50": pct(verdict_blocks.clone(), 0.5), "p95": pct(verdict_blocks, 0.95)},
         "submit_to_payout_s": {"n": to_paid.len(), "p50": pct(to_paid.clone(), 0.5), "p95": pct(to_paid, 0.95)},
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tree_that_may_still_grow_stays_open_and_each_event_is_numbered_in_its_receipt() {
+        let ev = |e: &str| format!("EVENT_JSON:{{\"standard\":\"antibody\",\"version\":\"1\",\"event\":\"{e}\",\"data\":[{{}}]}}");
+        let ns = |s: u64| s * 1_000_000_000;
+        let fresh = vec![(10, ns(now_s() - 5), "r1".to_string(), vec![ev("reveal"), "a plain log".into(), ev("run_requested")])];
+        let got = events_of_receipts(&fresh);
+        assert_eq!(got.iter().map(|e| (e.2.as_str(), e.3, e.4["event"].as_str().unwrap())).collect::<Vec<_>>(),
+                   vec![("r1", 0, "reveal"), ("r1", 1, "run_requested")]);
+        // OutLayer's answer resumes the request's receipt later: the tree is open until it settles.
+        assert!(!settled(&fresh));
+        assert!(settled(&[(10, ns(now_s() - SETTLE_SECS - 1), "r1".to_string(), vec![])]));
+    }
 }
