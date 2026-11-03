@@ -79,16 +79,20 @@ stake() { python3 -c "import os,sys; print(int((os.path.getsize(sys.argv[1]) + i
 declare -A AMOUNT=(
   [bounty]="$(stake "$ANTIBODY_WASM" 30000 0.02)"    # state: programs, commits, runs, images (~30 kB)
   [guardian]="$(stake "$GUARDIAN_WASM" 8000 0.02)"   # state: chains, permits
-  [acme]=300000000000000000000000                     # gas; NEAR credit for program storage, activation, rounds
-  [agent-a]=100000000000000000000000                  # gas; one run deposit at a time (0.02) and storage
-  [agent-b]=100000000000000000000000
-  [agent-c]=100000000000000000000000
-  [agent-d]=100000000000000000000000
-  [agent-e]=100000000000000000000000
-  [agent-f]=100000000000000000000000
+  [acme]=850000000000000000000000                     # gas; NEAR credit (program storage, activation, rounds);
+                                                      # 0.4 wrapped as the escrow; 0.1 near-guardian's MPC credit
+  [agent-a]=120000000000000000000000                  # gas; one run deposit at a time (0.02), storage; a bond
+  [agent-b]=120000000000000000000000
+  [agent-c]=120000000000000000000000
+  [agent-d]=120000000000000000000000
+  [agent-e]=120000000000000000000000
+  [agent-f]=120000000000000000000000
+  [agent-g]=120000000000000000000000
+  [keeper]=600000000000000000000000                   # gas; second runs and re-runs at each fix (0.02 deposit each)
+  [relayer]=700000000000000000000000                  # T1 relays (verify_quote ~0.0176 each, ~30 runs)
 )
-ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f)
-PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.02)"
+ORDER=(bounty guardian acme agent-a agent-b agent-c agent-d agent-e agent-f agent-g keeper relayer)
+PRACTICE_AMOUNT="$(stake "$VENDING_WASM" 8000 0.47)"  # code, state, and ten vends' gas funds (0.04 each)
 
 plan() {
   local total=0 a
