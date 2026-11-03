@@ -743,6 +743,18 @@ fn the_commitment_binds_the_hunter() {
 pub extern "C" fn promise_yield_create(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> u64 {
     unreachable!("yield/resume is not used by near-antibody")
 }
+/// golden/vectors.json (written by crates/cli/tests/golden.rs): the CLI's commitments are this contract's.
+#[test]
+fn golden_commitments_match_the_cli() {
+    let g: near_sdk::serde_json::Value = near_sdk::serde_json::from_str(include_str!("../../../golden/vectors.json")).unwrap();
+    for v in g["commitment"].as_array().unwrap() {
+        let mut blob = [0u8; 32];
+        blob.copy_from_slice(&hex::decode(v["blob_sha256"].as_str().unwrap()).unwrap());
+        let c = commitment_for(v["program_key"].as_str().unwrap(), v["round"].as_u64().unwrap() as u32, v["hunter"].as_str().unwrap(), &H32(blob));
+        assert_eq!(c.hex(), v["commitment"].as_str().unwrap());
+    }
+}
+
 #[cfg(windows)]
 #[no_mangle]
 pub extern "C" fn promise_yield_resume(_: u64, _: u64, _: u64, _: u64) -> u32 {

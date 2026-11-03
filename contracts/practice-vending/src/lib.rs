@@ -226,6 +226,21 @@ mod tests {
         assert_eq!(bytes, want);
     }
 
+    /// golden/vectors.json (written by crates/cli/tests/golden.rs).
+    #[test]
+    fn golden_vend_args_match_the_cli() {
+        let g: near_sdk::serde_json::Value = near_sdk::serde_json::from_str(include_str!("../../../golden/vectors.json")).unwrap();
+        let v = &g["vend_args"];
+        let key_hex = v["public_key"].as_str().unwrap();
+        let key_bytes: Vec<u8> = (0..key_hex.len()).step_by(2).map(|i| u8::from_str_radix(&key_hex[i..i + 2], 16).unwrap()).collect();
+        let mut data = vec![0u8];
+        data.extend(&key_bytes);
+        let pk = PublicKey::try_from(data).unwrap();
+        let bytes = near_sdk::borsh::to_vec(&(v["name"].as_str().unwrap().to_string(), pk)).unwrap();
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(hex, v["borsh"].as_str().unwrap());
+    }
+
     #[test]
     #[should_panic(expected = "owner only")]
     fn only_the_owner_funds() {
