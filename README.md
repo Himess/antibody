@@ -113,7 +113,7 @@ challenge window. Full table: [docs/trust.md](docs/trust.md).
 
 ## The properties
 
-Twelve settlement properties, each a Quint invariant checked by 23 scenarios, 20,000 random traces and
+Twelve settlement properties, each a Quint invariant checked by 24 scenarios, 20,000 random traces and
 Apalache, and each replayed against the rule core near-antibody runs (600 traces of 60 steps, no
 divergence). Kani proves the payout arithmetic and every escrow movement (41 proofs). Details and the
 check behind each: [docs/properties.md](docs/properties.md).

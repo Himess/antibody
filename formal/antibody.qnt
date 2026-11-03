@@ -591,12 +591,20 @@ module antibody {
     val gapFirst = gapBreaking.fold(-1, (a, d) => if (a == -1 or d < a) d else a)
     val gapPromoted = gapBreaking.filter(d => d == gapFirst)
     val gate = releaseGate
+    // Promotions share their slot's budget in the new round, in commit order, as the engine allocates
+    // them: a second promotion into a slot gets what the first left.
+    val promoAmt = range(0, NC).foldl(Map(), (acc, d) =>
+      if (promoted.contains(d)) {
+        val sl = SLOT.get(keyOf(s.cs.get(d).facts))
+        val used = acc.keys().filter(e => SLOT.get(keyOf(s.cs.get(e).facts)) == sl).fold(0, (a, e) => a + acc.get(e))
+        val room = BUDGET - s.spent.get((r1, sl)) - used
+        acc.put(d, mn(s.cs.get(d).amount, if (room > 0) room else 0))
+      } else acc)
     // New state of every commit of round r that is still waiting on the round.
     def nextC(d: int): Commit = {
       val x = s.cs.get(d)
       if (promoted.contains(d)) {
-        val k = keyOf(x.facts)
-        val amt = mn(x.amount, BUDGET - s.spent.get((r1, SLOT.get(k))))
+        val amt = promoAmt.get(d)
         val use = mn(x.res, amt)
         { ...x, alloc: "promoted", amount: amt, res: use, debt: amt - use }
       } else if (gapPromoted.contains(d)) {
@@ -953,6 +961,26 @@ module antibody {
       .expect(and { s.cs.get(1).alloc == "promoted", s.holder.get((1, "A")) == 1 })
       .then(PayPromoted(1))
       .expect(and { s.paid == 400, s.payLog.contains((1, "A", 1)), s.permits == 0, all_properties })
+
+  // Duplicates of two keys that share a slot (B and C) are promoted in the same round: they share the
+  // slot's budget in commit order, as the engine allocates them, so the second gets what the first left.
+  run promotionsShareTheirSlotBudgetTest =
+    init.then(Open).then(TopUp).then(TopUp)
+      .then(MakeCommit("h1")).then(MakeCommit("h2")).then(MakeCommit("h1")).then(MakeCommit("h2"))
+      .then(Reveal(0, "VB1")).then(Reveal(1, "VC1")).then(Reveal(2, "VB2")).then(Reveal(3, "VC2"))
+      .then(FactsT1(0)).then(FactsT1(1)).then(FactsT1(2)).then(FactsT1(3))
+      // B and C are above the instant cap: an agreeing second run each, then their window
+      .then(SecondRun(0, "VB")).then(SecondRun(1, "VC")).then(SecondRun(2, "VB")).then(SecondRun(3, "VC"))
+      .then(3.reps(_ => Tick))
+      .then(Allocate).then(Allocate).then(Allocate).then(Allocate)
+      .expect(and { s.cs.get(2).alloc == "dup", s.cs.get(3).alloc == "dup" })
+      .then(Pay(0)).then(Pay(1))
+      .then(ProposeRound(Set("VB1", "VC1"), false, true))  // the fix stops the holders' bugs, not the copies'
+      .then(Rerun(0)).then(Rerun(1)).then(Rerun(2)).then(Rerun(3))
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(and { s.cs.get(2).alloc == "promoted", s.cs.get(3).alloc == "promoted",
+                    s.cs.get(2).amount == 400, s.cs.get(3).amount == BUDGET - 400, s.spent.get((1, 1)) == BUDGET,
+                    all_properties })
 
   run confirmedDuplicateReleasesReservationTest =
     init.then(Open).then(MakeCommit("h1")).then(MakeCommit("h2"))

@@ -242,6 +242,36 @@ fn appeal_promotes_distinct_bug_and_blocks_release() {
     w.audit_ok(&[p]);
 }
 
+/// `promotionsShareTheirSlotBudgetTest`: duplicates of two keys in one slot, promoted in the same round,
+/// share the slot's budget in commit order: the second gets what the first left.
+#[test]
+fn promotions_share_their_slot_budget() {
+    let mut w = W::new();
+    let mut prm = params();
+    prm.slots[1].budget = 150; // a High payout and a half per round
+    let p = w.program_open(1_000, prm);
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(B, tag(1))], true);
+    let (c1, _) = w.finding(p, H2, Kind::Violation, &[(B, tag(2))], true); // another entry point, the same slot
+    let (c2, _) = w.finding(p, H1, Kind::Violation, &[(B, tag(1))], true); // a copy of c0's key
+    let (c3, _) = w.finding(p, H2, Kind::Violation, &[(B, tag(2))], true); // a copy of c1's key
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    w.pay(c1).unwrap();
+    assert!(matches!(w.commit(c2).state, CommitState::Duplicate { .. }));
+    assert!(matches!(w.commit(c3).state, CommitState::Duplicate { .. }));
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::NoViolation, &[]); // the fix stops the holders' bugs, not the copies'
+    w.rerun(c1, Kind::NoViolation, &[]);
+    w.rerun(c2, Kind::Violation, &[(B, tag(1))]);
+    w.rerun(c3, Kind::Violation, &[(B, tag(2))]);
+    w.tick(61);
+    w.open_round(p).unwrap();
+    assert!(matches!(w.commit(c2).state, CommitState::Promoted { round: 1, amount: 100, .. }));
+    assert!(matches!(w.commit(c3).state, CommitState::Promoted { round: 1, amount: 50, .. }));
+    assert_eq!(w.e.store.spent(p, 1, B), 150);
+    w.audit_ok(&[p]);
+}
+
 #[test]
 fn confirmed_duplicate_releases_reservation_and_release_ships() {
     let mut w = W::new();

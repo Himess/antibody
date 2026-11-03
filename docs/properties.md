@@ -8,7 +8,7 @@ Twelve properties of Antibody's settlement rules ([spec.md](spec.md)), and the c
    T0 and T1 verdicts from an adversarial operator, challenges, the allocation cursor, payments, debts,
    rounds with immune memory and appeals, known issues, the gap lane, permits, disclosure and the exit.
    Each property below is a Quint invariant, checked three ways:
-   - by 23 deterministic scenarios (`quint test`);
+   - by 24 deterministic scenarios (`quint test`);
    - on every state of 20,000 random traces (`quint run --invariant=all_properties`);
    - by bounded model checking with Apalache (`quint verify`).
 2. **The code against the model.** `crates/rules` (the settlement engine near-antibody runs) replays
