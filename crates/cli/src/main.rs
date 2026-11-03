@@ -297,8 +297,6 @@ enum AdminCmd {
         #[arg(long)]
         signer: String,
     },
-    /// A versioned deployment record: each contract's code hash and locked status, the pinned verifier
-    /// and the source commit, written to the deployments file (`release`) and to deployments/history/
     /// Lock the signer's contract account: delete its full-access keys (irreversible; its function-call
     /// keys stay)
     Lock {
@@ -306,6 +304,17 @@ enum AdminCmd {
         #[arg(long)]
         confirm_irreversible: String,
     },
+    /// Delete the signer's account, its NEAR to the beneficiary (irreversible: for an account a run no
+    /// longer needs, such as a staging vending contract)
+    DeleteAccount {
+        #[arg(long)]
+        beneficiary: String,
+        /// The signer's own account id, typed again
+        #[arg(long)]
+        confirm_irreversible: String,
+    },
+    /// A versioned deployment record: each contract's code hash and locked status, the pinned verifier
+    /// and the source commit, written to the deployments file (`release`) and to deployments/history/
     RecordDeployment {
         /// The source commit the deployment was built from
         #[arg(long)]
@@ -852,6 +861,7 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
                 AdminCmd::Lock { confirm_irreversible } => cmd::admin_lock(&c, confirm_irreversible),
+                AdminCmd::DeleteAccount { beneficiary, confirm_irreversible } => cmd::admin_delete_account(&c, beneficiary, confirm_irreversible),
                 AdminCmd::RecordDeployment { git_commit, out } => {
                     let record = antibody_cli::judge::deployment_record(&c, git_commit.as_deref())?;
                     let root = ctx::repo_root().unwrap_or_default();

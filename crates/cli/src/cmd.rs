@@ -1793,6 +1793,22 @@ pub fn admin_call(ctx: &Ctx, contract: &str, method: &str, args: &str, deposit_y
     Ok(json!({"result": near::return_value(&out), "tx": s}))
 }
 
+/// Deletes the signer's own account, its NEAR to `beneficiary`, which must exist (NEAR sent to a missing
+/// account is lost). `confirm` is the signer's account id, typed again.
+pub fn admin_delete_account(ctx: &Ctx, beneficiary: &str, confirm: &str) -> Result<Value> {
+    let signer = ctx.signer()?;
+    if confirm != signer.account_id {
+        return Err(eyre!("--confirm-irreversible must name the account being deleted ({})", signer.account_id));
+    }
+    if beneficiary == signer.account_id || ctx.near.account(beneficiary)?.is_none() {
+        return Err(eyre!("the beneficiary {beneficiary} must be another account that exists: its NEAR would be lost"));
+    }
+    let a = ctx.near.account(&signer.account_id)?.ok_or_else(|| eyre!("no account {}", signer.account_id))?;
+    let out = ctx.near.send(&signer, &signer.account_id, vec![Action::DeleteAccount { beneficiary: beneficiary.into() }], "EXECUTED_OPTIMISTIC")?;
+    let s = ensure_ok(ctx, &out, "delete_account")?;
+    Ok(json!({"deleted": signer.account_id, "beneficiary": beneficiary, "balance": fmt_tokens(u128_of(&a["amount"]), 24), "tx": s}))
+}
+
 pub fn admin_send_near(ctx: &Ctx, to: &str, amount_near: &str) -> Result<Value> {
     let out = ctx.near.send(&ctx.signer()?, to, vec![Action::Transfer(parse_near(amount_near)?)], "EXECUTED_OPTIMISTIC")?;
     ensure_ok(ctx, &out, "transfer")

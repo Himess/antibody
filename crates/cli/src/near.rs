@@ -36,6 +36,7 @@ pub enum Action {
     Transfer(u128),
     AddKey { public_key: [u8; 32], permission: Permission },
     DeleteKey { public_key: [u8; 32] },
+    DeleteAccount { beneficiary: String },
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +105,10 @@ impl Action {
             Action::DeleteKey { public_key } => {
                 o.push(6);
                 b_pk(o, public_key);
+            }
+            Action::DeleteAccount { beneficiary } => {
+                o.push(7);
+                b_str(o, beneficiary);
             }
         }
     }
@@ -431,5 +436,15 @@ mod tests {
         assert_eq!(o.len(), 34);
         assert_eq!(&o[..2], &[6, 0]);
         assert!(o[2..].iter().all(|b| *b == 7));
+    }
+
+    /// nearcore's `Action::DeleteAccount` is variant 7, then the beneficiary (a borsh string).
+    #[test]
+    fn delete_account_encoding() {
+        let mut o = vec![];
+        Action::DeleteAccount { beneficiary: "antibody.testnet".into() }.borsh(&mut o);
+        assert_eq!(o[0], 7);
+        assert_eq!(&o[1..5], &16u32.to_le_bytes());
+        assert_eq!(&o[5..], b"antibody.testnet");
     }
 }
