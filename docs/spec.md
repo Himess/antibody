@@ -807,8 +807,9 @@ of the manifest (§3.2); fees accrue to the deployment's treasury.
 The owner's setters change the **defaults for new programs only**.
 
 - **Measurements.** The set is a snapshot of OutLayer's approved images at creation (`sync_images`,
-  permissionless, copies OutLayer's list). Later approvals count for a program only after `image_delay`,
-  which is longer than the challenge window. A veto can only
+  permissionless, copies a registry's list), and the program pins that registry. Later approvals count
+  for a program only if its own registry lists them, and only after `image_delay`, which is longer than
+  the challenge window: a registry the owner names later never reaches a live program. A veto can only
   remove an image, which forces the window, and can never cancel a payout.
 - **Locked deployment.** The launch accounts (near-antibody, guardian, practice vending) hold no
   full-access keys, and their builds are reproducible (NEP-330 metadata).

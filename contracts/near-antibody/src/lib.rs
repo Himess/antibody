@@ -76,8 +76,10 @@ pub struct Pins {
     pub accepted_tcb: Vec<String>,
     /// OutLayer's approved worker images at creation.
     pub images: Vec<Measurements>,
-    /// Images approved later count only after this delay (longer than any challenge window).
+    /// Images approved later count only after this delay (longer than any challenge window), and only
+    /// from this registry: the owner's later defaults never reach a live program (spec §15).
     pub image_delay_secs: u64,
+    pub image_registry: AccountId,
     pub light_client: Option<AccountId>,
     /// The chain the light client follows: only anchors on it can be checked.
     pub light_client_chain_id: u64,
@@ -310,20 +312,22 @@ impl Contract {
         events::emit("image_vetoed", json!({"mrtd": m.mrtd}));
     }
 
-    /// Permissionless: copies OutLayer's approved worker images, stamping the new ones with now.
-    pub fn sync_images(&mut self) -> Promise {
-        Promise::new(self.defaults.image_registry.clone())
+    /// Permissionless: copies a registry's approved worker images (default: the current defaults'),
+    /// stamping the new ones with now and their registry. Each program counts only its own registry's.
+    pub fn sync_images(&mut self, registry: Option<AccountId>) -> Promise {
+        let registry = registry.unwrap_or_else(|| self.defaults.image_registry.clone());
+        Promise::new(registry.clone())
             .function_call("get_approved_measurements".into(), b"{}".to_vec(), NearToken::from_yoctonear(0), LC_GAS)
-            .then(Self::ext(env::current_account_id()).with_static_gas(SMALL_CB_GAS).on_images())
+            .then(Self::ext(env::current_account_id()).with_static_gas(SMALL_CB_GAS).on_images(registry))
     }
 
     #[private]
-    pub fn on_images(&mut self, #[callback_result] r: Result<Vec<Measurements>, PromiseError>) -> u32 {
+    pub fn on_images(&mut self, registry: AccountId, #[callback_result] r: Result<Vec<Measurements>, PromiseError>) -> u32 {
         let Ok(list) = r else { return 0 };
         let mut added = 0;
         for m in list.into_iter().take(256) {
-            if !self.images.iter().any(|k| k.m == m) {
-                self.images.push(KnownImage { m, added_at: now() });
+            if !self.images.iter().any(|k| k.m == m && k.registry == registry.as_str()) {
+                self.images.push(KnownImage { m, added_at: now(), registry: registry.to_string() });
                 added += 1;
             }
         }
@@ -449,6 +453,7 @@ impl Contract {
             accepted_tcb: d.accepted_tcb.clone(),
             images,
             image_delay_secs: d.image_delay_secs,
+            image_registry: d.image_registry.clone(),
             light_client: d.light_client.clone(),
             light_client_chain_id: d.light_client_chain_id,
             guardian: d.guardian.clone(),
@@ -865,7 +870,8 @@ impl Contract {
         if self.vetoed.contains(m) {
             return false;
         }
-        pins.images.contains(m) || self.images.iter().any(|k| &k.m == m && k.added_at + pins.image_delay_secs <= now())
+        pins.images.contains(m)
+            || self.images.iter().any(|k| &k.m == m && k.registry == pins.image_registry.as_str() && k.added_at + pins.image_delay_secs <= now())
     }
 
     // ---------------------------------------------------------------- OutLayer runs

@@ -129,7 +129,7 @@ impl W {
         let mut w = W { c, now: START };
         // OutLayer's registry lists image 1 before any program exists.
         w.callback(vec![]);
-        assert_eq!(w.c.on_images(Ok(vec![image(1)])), 1);
+        assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), Ok(vec![image(1)])), 1);
         w
     }
 
@@ -548,7 +548,7 @@ fn quotes_that_do_not_bind_or_come_from_other_images_are_refused() {
     assert!(!w.c.on_tee(run, hex::encode(&rd), Err(PromiseError::Failed)));
     // An image approved after the program was created counts only after the image delay.
     w.callback(vec![]);
-    assert_eq!(w.c.on_images(Ok(vec![image(1), image(20)])), 1);
+    assert_eq!(w.c.on_images(acc("worker.outlayer.testnet"), Ok(vec![image(1), image(20)])), 1);
     w.callback(vec![]);
     let v = w.verified(&image(20), &rd, "UpToDate");
     assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)));
@@ -759,4 +759,29 @@ fn golden_commitments_match_the_cli() {
 #[no_mangle]
 pub extern "C" fn promise_yield_resume(_: u64, _: u64, _: u64, _: u64) -> u32 {
     unreachable!("yield/resume is not used by near-antibody")
+}
+
+#[test]
+fn the_owner_cannot_reach_a_live_program_through_another_image_registry() {
+    // A program pins its image registry: images the owner's later registry lists never count for it,
+    // however long ago they were synced.
+    let mut w = W::new();
+    let id = w.create();
+    let mut d = defaults(&wasm_hash());
+    d.image_registry = acc("evil-registry.testnet");
+    w.call_with(&acc("owner.testnet"), 1);
+    w.c.set_defaults(d);
+    w.callback(vec![]);
+    assert_eq!(w.c.on_images(acc("evil-registry.testnet"), Ok(vec![image(30)])), 1);
+    w.tick(30 * 86_400);
+    w.call(&project());
+    w.c.activate(id, base());
+    let run = w.c.get_program(id).unwrap().activation_run.unwrap();
+    let out = w.facts(run, "NoViolation", json!([]), json!({"sealing_pk": "55".repeat(32)}));
+    w.answer(run, &out);
+    let rd = w.attestation(run, &out).task_hash();
+    w.callback(vec![]);
+    let v = w.verified(&image(30), &rd, "UpToDate");
+    assert!(!w.c.on_tee(run, hex::encode(&rd), Ok(v)), "not the program's registry");
+    assert!(w.c.get_program(id).unwrap().sealing_pk.is_none());
 }

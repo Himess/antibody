@@ -71,6 +71,8 @@ pub struct Measurements {
 pub struct KnownImage {
     pub m: Measurements,
     pub added_at: u64,
+    /// The registry it was read from: a program accepts later images from its pinned registry only.
+    pub registry: String,
 }
 
 // Borsh mirrors of near/mpc `tee-verifier-interface` (the DCAP verifier's return value).
