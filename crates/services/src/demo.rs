@@ -126,10 +126,12 @@ fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Bro
     c.current_dir(root.join("contracts/evm")).args(["script", script, "--rpc-url", rpc, "--broadcast", "--slow"]);
     match by {
         Broadcaster::Unlocked(sender) => c.args(["--unlocked", "--sender", sender]).env_remove("DEPLOYER_KEY"),
-        // A public testnet RPC: forge's simulation paced within free tiers, and retried when refused.
-        Broadcaster::Key(key) => {
-            c.args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000"]).env("DEPLOYER_KEY", key)
-        }
+        // A public testnet RPC: forge's simulation paced within free tiers and retried when refused. Sepolia
+        // (Glamsterdam) prices state creation five to seven times what forge's Cancun simulation counts, so
+        // its gas limits are nine times the simulation's (the node charges only the gas used).
+        Broadcaster::Key(key) => c
+            .args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier", "900"])
+            .env("DEPLOYER_KEY", key),
     };
     for (k, v) in env {
         c.env(k, v);
