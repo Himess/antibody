@@ -25,8 +25,22 @@ A copy of [`bitvec` 1.0.1](https://crates.io/crates/bitvec) (MIT, © myrrlyn; se
 applied through `[patch.crates-io]` in the workspace `Cargo.toml`.
 
 - **Change:** only `src/serdes/slice.rs`, the `BitVec` deserializer. A bit length larger than the
-  deserialized storage now returns an error; upstream calls `set_len`, which asserts and panics.
+  deserialized storage now returns an error; upstream calls `set_len`, which asserts and panics, and
+  maps every assembly error to `todo!()`, also a panic.
 - **Why:** revm's jump tables are `BitVec`s inside the witnesses the verifier decodes from untrusted
   input. The parser fuzz test (`a_mutated_witness_is_refused_or_decodes`) found a mutated witness that
   panicked while decoding; in wasm a panic is a trap, not a typed `InvalidPoC`.
+- **Everything else:** unchanged, including the serialized format.
+
+## revm-bytecode 10.0.0
+
+A copy of [`revm-bytecode` 10.0.0](https://crates.io/crates/revm-bytecode) (MIT, © Dragan Rakita; see
+`revm-bytecode-10.0.0/LICENSE`), applied through `[patch.crates-io]` in the workspace `Cargo.toml`.
+
+- **Change:** only `src/bytecode/serde_impl.rs`. Deserializing an analyzed bytecode now checks the
+  invariants `Bytecode::new_analyzed` asserts (`original_len` within the bytes and the jump table) and
+  returns an error when they fail; upstream builds the value unchecked, and a later
+  `original_bytes()` slices out of bounds and panics.
+- **Why:** witnesses carry bytecodes the verifier decodes from untrusted input; the parser fuzz test
+  (`the_verifier_answers_any_mutated_program_witness`) found the panic.
 - **Everything else:** unchanged, including the serialized format.

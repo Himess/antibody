@@ -217,7 +217,9 @@ where
 		let bits = self.bits.take().ok_or_else(|| E::missing_field("bits"))?;
 		let data = self.data.take().ok_or_else(|| E::missing_field("data"))?;
 
-		(self.func)(data, head, bits as usize).map_err(|_| todo!())
+		// Antibody patch: upstream maps the error to `todo!()`, a panic.
+		(self.func)(data, head, bits as usize)
+			.map_err(|_| E::custom("a bit-sequence's head, length and storage disagree"))
 	}
 }
 
