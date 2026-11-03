@@ -514,25 +514,6 @@ fn above_cap(p: &Value, v: &Value) -> bool {
 }
 
 /// Waits until run `run_id` is T1 (the relayer thread relays its MOCK attestation).
-/// When an event happened on NEAR: the timestamp (ns) of the block holding the receipt that emitted it.
-fn event_time_ns(near: &Near, hash: &str, signer: &str, event: &str) -> Result<u128> {
-    let tx = near.tx_status(hash, signer)?;
-    let marker = format!("\"event\":\"{event}\"");
-    let block = tx["receipts_outcome"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|r| r["outcome"]["logs"].as_array().into_iter().flatten().any(|l| l.as_str().is_some_and(|l| l.contains(&marker))))
-        .and_then(|r| r["block_hash"].as_str().map(String::from))
-        .ok_or_else(|| eyre!("transaction {hash} emitted no {event} event"))?;
-    let b = near.call("block", json!({"block_id": block}))?;
-    b["header"]["timestamp_nanosec"].as_str().and_then(|t| t.parse().ok()).ok_or_else(|| eyre!("block {block} has no timestamp"))
-}
-
-fn now_ns() -> u128 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
-}
-
 fn wait_t1(ctx: &Ctx, run_id: u64) -> Result<Value> {
     let mut last = Value::Null;
     wait_for(&format!("T1 for run {run_id}"), Duration::from_secs(120), || {
@@ -890,12 +871,10 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let sandbox_net = ["--network", "sandbox", "--rpc", "http://127.0.0.1:3030"];
     let mcp = mcp_submit(&a.antibody_bin, &sandbox_net, &dep_file, &acct("agent-a"), &agent_key, Some("http://127.0.0.1:8545"), &state_a, pid, &fx.join("A.bundle.json"))?;
     let a_commit = mcp["result"]["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("MCP submit: no commit id: {mcp}"))?;
-    let verdict_ns = now_ns();
     results["mcp"] = json!({"tools": mcp["mcp_tools"], "tool_names": mcp["tool_names"], "commit_id": a_commit});
 
     step("The one moment: A's verdict is T1, A is paid in seconds, and both chains pause");
     wait_t1(&root_ctx, root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default())?;
-    let t1_ns = now_ns();
     let keeper_a = cmd::keeper(&ctx_of("keeper"), pid)?;
     let paid_a = cmd::paid_of(&root_ctx.commit(a_commit)?);
     let mut confirmed: BTreeMap<String, Value> = BTreeMap::new();
@@ -908,15 +887,32 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         }
         confirmed.len() == 2
     })?;
-    // Each moment on its own clock: the commit and the payment at their NEAR blocks, the verdict and T1
-    // when the demo saw them (it polls every 0.5 s), each pause when its chain's receipt came back.
+    // Each moment on its own chain's clock: on NEAR, the block of the receipt that emitted its event (the
+    // commit, the verdict, T1, the payment, as the indexer recorded them); each permit when near-guardian
+    // signed it; each pause when its chain's receipt came back.
     let commit_tx = mcp["result"]["commit"]["tx"]["tx"].as_str().unwrap_or_default().to_string();
-    let committed_ns = event_time_ns(&near, &commit_tx, &acct("agent-a"), "commit")?;
     let pay_tx = keeper_a["steps"].as_array().into_iter().flatten().find(|s| s["paid"] == json!(a_commit)).and_then(|s| s["tx"].as_str()).unwrap_or_default().to_string();
-    let paid_ns = event_time_ns(&near, &pay_tx, &acct("keeper"), "paid")?;
+    let a_run = root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default();
+    let events_file = services_dir.join("events.jsonl");
+    let mut near_at: BTreeMap<&str, u128> = BTreeMap::new();
+    wait_for("the indexer to reach A's payment", Duration::from_secs(60), || {
+        for e in crate::indexer::read_events(&events_file, 0, usize::MAX) {
+            let (Some(ts), d) = (e["block_ts_ns"].as_u64(), &e["data"]) else { continue };
+            let k = match e["event"].as_str() {
+                Some("commit") if d["commit_id"] == json!(a_commit) => "commit",
+                Some("run_answered") if d["run_id"] == json!(a_run) => "verdict",
+                Some("t1_confirmed") if d["run_id"] == json!(a_run) => "t1",
+                Some("paid") if d["commit_id"] == json!(a_commit) => "paid",
+                _ => continue,
+            };
+            near_at.entry(k).or_insert(ts as u128);
+        }
+        near_at.len() == 4
+    })?;
+    let committed_ns = near_at["commit"];
     let since = |ns: u128| ns.saturating_sub(committed_ns) as f64 / 1e9;
     let ms = |v: &Value, k: &str| v[k].as_u64().map(|m| since(m as u128 * 1_000_000));
-    let (t_verdict, t_t1, t_paid) = (since(verdict_ns), since(t1_ns), since(paid_ns));
+    let (t_verdict, t_t1, t_paid) = (since(near_at["verdict"]), since(near_at["t1"]), since(near_at["paid"]));
     let at = |c: &str, k: &str| confirmed.get(c).and_then(|v| ms(v, k));
     let signed = |c: &str| confirmed.get(c).and_then(|v| v["signed_ns"].as_u64()).map(|n| since(n as u128));
     let relayed: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
@@ -928,7 +924,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     results["one_moment"] = json!({"commit": a_commit, "seconds_from_commit": {"verdict": t_verdict, "t1": t_t1, "paid": t_paid,
                                    "permit_signed_31337": signed("31337"), "permit_signed_31338": signed("31338"),
                                    "paused_31337": at("31337", "confirmed_ms"), "paused_31338": at("31338", "confirmed_ms")},
-                                   "clock": "from the commit's NEAR block: the payment at its NEAR block, each permit when near-guardian signed it, each pause when its chain's receipt came back; the verdict and T1 when the demo saw them (it polls every 0.5 s)",
+                                   "clock": "from the commit's NEAR block: the verdict, T1 and the payment at their NEAR blocks (the indexer's events), each permit when near-guardian signed it, each pause when its chain's receipt came back",
                                    "pay_tx": pay_tx,
                                    "paid_raw": paid_a.to_string(), "instant": root_ctx.commit(a_commit)?["state"]["Done"]["Paid"]["instant"],
                                    "paused_both": paused_both, "keeper": keeper_a, "permits": relayed});
