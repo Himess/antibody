@@ -1,11 +1,44 @@
 {
-  "network": "testnet",
   "antibody": "bounty.antibody.testnet",
+  "eth_rpc": null,
+  "guardian": "guardian.antibody.testnet",
+  "light_client": "client-eth2.sepolia.testnet",
+  "network": "testnet",
+  "outlayer": "outlayer.testnet",
+  "practice": null,
+  "release": {
+    "contracts": [
+      {
+        "account": "bounty.antibody.testnet",
+        "code_hash": "7RJsf5xSV8NiqGJgmrL6Uaj8fmYmTnjFeVbpGTUitnQZ",
+        "locked": false,
+        "role": "near-antibody"
+      },
+      {
+        "account": "wrap.testnet",
+        "code_hash": "DsbyUrKaSJAT91Pewfi71QExPLBooDp1z4sL9GUDhNHa",
+        "locked": false,
+        "role": "payout token"
+      },
+      {
+        "account": "guardian.antibody.testnet",
+        "code_hash": "4SdG5PK9odaohbgqFrF1HYjQTUydbqug4GMCXhqHtCCj",
+        "locked": false,
+        "role": "near-guardian"
+      }
+    ],
+    "git_commit": "d4bce8a8192760fd8043714ab022842e94605e59",
+    "light_client": "client-eth2.sepolia.testnet",
+    "network": "testnet",
+    "outlayer": "outlayer.testnet",
+    "recorded_at": 1793696892,
+    "verifier": {
+      "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
+      "wasm_url": "https://github.com/Himess/antibody/releases/download/verifier-ccc27f0ca60c/antibody-verify.wasm"
+    }
+  },
+  "rpc": "https://rpc.testnet.fastnear.com",
   "token": "wrap.testnet",
   "token_decimals": 24,
-  "token_symbol": "wNEAR",
-  "guardian": "guardian.antibody.testnet",
-  "outlayer": "outlayer.testnet",
-  "light_client": "client-eth2.sepolia.testnet",
-  "rpc": "https://rpc.testnet.fastnear.com"
+  "token_symbol": "wNEAR"
 }
