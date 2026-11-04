@@ -128,9 +128,11 @@ fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Bro
         Broadcaster::Unlocked(sender) => c.args(["--unlocked", "--sender", sender]).env_remove("DEPLOYER_KEY"),
         // A public testnet RPC: forge's simulation paced within free tiers and retried when refused. Sepolia
         // (Glamsterdam) prices state creation five to seven times what forge's Cancun simulation counts, so
-        // its gas limits are nine times the simulation's (the node charges only the gas used).
+        // its gas limits are nine times the simulation's (the node charges only the gas used). Its tips are
+        // a few wei: forge's default of 1 gwei made one deployment cost 0.024 ETH, so the tip is 0.001 gwei.
         Broadcaster::Key(key) => c
-            .args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier", "900"])
+            .args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier", "900",
+                   "--priority-gas-price", "1000000"])
             .env("DEPLOYER_KEY", key),
     };
     for (k, v) in env {
