@@ -61,10 +61,10 @@ const ESCROW: &str = "0.4";
 const PRACTICE_ESCROW: &str = "0.03";
 /// A real OutLayer run and its T1 relay (DCAP on NEAR) take longer than the sandbox's MOCK.
 const T1_WAIT: Duration = Duration::from_secs(900);
-/// NEAR free of storage stake an account needs to send a call that starts a run (`cmd::RUN_TGAS`, set
-/// aside up front at ten times the gas price: 0.2 NEAR, most of it refunded), with a margin for the
-/// calls before it (a sealed blob's upload burns about 0.035).
-const FREE_FOR_RUNS: u128 = 300 * MILLI;
+/// NEAR free of storage stake an account needs for its largest call: 300 Tgas (a round's opening, a pause
+/// ticket), set aside up front at ten times the gas price (0.301 NEAR, most of it refunded), with a margin.
+/// A run's 200 Tgas (`cmd::RUN_TGAS`) fits within it.
+const FREE_FOR_RUNS: u128 = 350 * MILLI;
 /// What each vended practice account gets: its contract's storage (0.03), and the gas its commit and its
 /// reveal set aside (0.025 and 0.201: the reveal goes out before the commit's unused gas has come back);
 /// closing the account after its try returns what is left to the vending contract.
@@ -861,12 +861,20 @@ impl Live {
         };
         let a_run = root_ctx.commit(a_commit)?["run"].as_u64().unwrap_or_default();
         demo::wait_t1_for(&root_ctx, a_run, T1_WAIT)?;
+        // The keeper asks for the pause ticket (300 Tgas set aside) before it pays.
+        self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
         let keeper_a = cmd::keeper(&self.ctx_of("keeper"), pid)?;
+        let steps = keeper_a["steps"].as_array().cloned().unwrap_or_default();
+        if !steps.iter().any(|x| x.get("pause_ticket").is_some()) && self.near.view(&self.dep.antibody, "get_program", json!({"program_id": pid}))?["ticket_rounds"] == json!([]) {
+            let refused: Vec<&Value> = steps.iter().filter(|x| x.get("pause_ticket_refused").is_some()).collect();
+            return Err(eyre!("no pause ticket for A's Critical: {}", serde_json::to_string(&refused)?));
+        }
         let paid_a = cmd::paid_of(&root_ctx.commit(a_commit)?);
         let relayer_file = self.relayer_file();
+        let key = self.key("acme");
         let mut confirmed: BTreeMap<String, Value> = BTreeMap::new();
         poll("pause() on both chains", Duration::from_secs(900), Duration::from_secs(3), || {
-            for v in permits(&relayer_file).values() {
+            for v in permits(&relayer_file).values().filter(|v| v["program_key"] == json!(key)) {
                 if v["kind"] == "pause" && v["status"] == "confirmed" && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true)) {
                     confirmed.entry(v["chain_id"].to_string()).or_insert_with(|| v.clone());
                 }
