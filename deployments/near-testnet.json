@@ -6,7 +6,7 @@
   "network": "testnet",
   "outlayer": "outlayer.testnet",
   "practice": {
-    "program": 2,
+    "program": 6,
     "vending": "practice.antibody.testnet"
   },
   "release": {
@@ -40,7 +40,7 @@
     "light_client": "client-eth2.sepolia.testnet",
     "network": "testnet",
     "outlayer": "outlayer.testnet",
-    "recorded_at": 1793719461,
+    "recorded_at": 1793810475,
     "verifier": {
       "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
       "wasm_url": "https://github.com/Himess/antibody/releases/download/verifier-ccc27f0ca60c/antibody-verify.wasm"
