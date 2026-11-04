@@ -704,6 +704,8 @@ impl Live {
             self.ensure_liquid(&Self::acct("acme"), escrow + FREE_FOR_RUNS)?;
             wrap(&acme, escrow)?;
         }
+        // The creation: acme's NEAR credit at near-antibody (storage) and the call's 300 Tgas set aside.
+        self.ensure_liquid(&Self::acct("acme"), FREE_FOR_RUNS + 100 * MILLI)?;
         let project_key = self.a.work.join("keys/acme.x25519.json");
         let derived = cmd::keygen_x25519_nep413(&acme, &project_key)?;
         let manifest = self.a.work.join("manifest.json");
