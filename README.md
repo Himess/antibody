@@ -33,14 +33,14 @@ with a bond budget, and its proofs are judged like anyone's.
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
-**Status:** Antibody is deployed on NEAR testnet and **locked** (2026-11-03: near-antibody, near-guardian
-and the practice vending contract hold no full-access keys). Before the lock, the whole story ran on the
-same contracts as a staging run ([docs/results/testnet-staging-2026-11-03.json](docs/results/testnet-staging-2026-11-03.json)),
-with Acme Lend on Sepolia and Base Sepolia and the real services: OutLayer's TEE workers, their TDX quotes
-verified on NEAR (T1), the MPC network signing the permits, the Ethereum light client. From agent A's
-commit's block, its Critical was verified at 18.8 s, T1-confirmed at 26.3 s and paid 0.1 wNEAR at 42.0 s;
-both chains were paused by 48.1 s. JUDGES.md comes from that run, and its commands read testnet. The story
-is running again on the locked deployment, and its results replace JUDGES.md when it ends.
+**Status:** Antibody runs on NEAR testnet, **locked** (near-antibody, near-guardian and the practice vending
+contract hold no full-access keys), and the whole story ran on the locked deployment with the final code
+([docs/results/testnet-2026-11-04.json](docs/results/testnet-2026-11-04.json), all checks passed), with Acme
+Lend on Sepolia and Base Sepolia and the real services: OutLayer's TEE workers, their TDX quotes verified
+on NEAR (T1), the MPC network signing the permits, the Ethereum light client. From agent A's commit's block,
+its Critical was verified at 18.5 s, T1-confirmed at 29.1 s and paid 0.1 wNEAR at 71.0 s; both chains were
+paused by 90.6 s. JUDGES.md comes from that run, and its commands read testnet. A staging run on the same
+contracts before the lock is kept in [docs/results/testnet-staging-2026-11-03.json](docs/results/testnet-staging-2026-11-03.json).
 
 The same story runs offline in a sandbox. On Linux or macOS:
 
@@ -84,10 +84,10 @@ every outcome of the story:
 |---|---|---|
 | near-antibody | `bounty.antibody.testnet` | locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
 | near-guardian | `guardian.antibody.testnet` | locked (code `4SdG5PK9…`) |
-| Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 2, its fork-mode twin program 3 |
+| Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 6, its fork-mode twin program 7 |
 | Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |
 | OutLayer, light client, MPC | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet` | existing |
-| Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | deployed (staging run) |
+| Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | deployed (program 5; addresses in the results file) |
 
 `antibody admin record-deployment` pins each contract's code hash, its locked status, the verifier build
 and the source commit into `deployments/near-testnet.json` and `deployments/history/`. Every transaction of

@@ -93,6 +93,11 @@ vending contract, and two judges with no account try it.
 ## Limits
 
 - Practice payouts are small and go to the vending contract, which paid the bonds and the runs.
+- A try costs the vending contract about 0.046 NEAR (gas, OutLayer's net charge, and the commit's, run's
+  and agent's storage at near-antibody) and our relayer about 0.02 for its T1 relay, measured on testnet;
+  the 0.28 NEAR of gas funds come back when the account closes.
+- Claims are paid in commit order: a commit that is never revealed holds the later tries' payouts until
+  its reveal window ends and the keeper expires it.
 - With 24 vaults, the 25th account in a round gets a vault someone already proved: its proof is a
   duplicate, as on any program.
 - Vending is limited per hour, and the public vend key's allowance caps the gas that calls to `vend`
