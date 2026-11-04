@@ -1134,15 +1134,27 @@ impl Live {
     fn release(&mut self) -> Result<()> {
         let t = Instant::now();
         let relayer_file = self.relayer_file();
+        let key = self.key("acme");
+        let ours = |v: &Value| v["program_key"] == json!(key) && v["kind"] == "release";
         poll("4 releases confirmed", Duration::from_secs(1_200), Duration::from_secs(5), || {
-            (permits(&relayer_file).values().filter(|v| v["kind"] == "release" && v["status"] == "confirmed").count() == 4).then_some(())
+            (permits(&relayer_file).values().filter(|v| ours(v) && v["status"] == "confirmed").count() == 4).then_some(())
         })?;
         let mut released = Vec::new();
         for (chain, rpc, dep) in [(SEPOLIA, self.sepolia(), &self.s["evm"]["acme"]), (BASE_SEPOLIA, self.a.base_rpc.clone(), &self.s["evm"]["acme_base_sepolia"])] {
             let evm = Evm::new(&rpc);
             for (proxy, fix) in round_code(2).1 {
-                let word = evm.read("eth_getStorageAt", json!([dep[*proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
-                let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
+                // A load-balanced RPC may answer from a node a block behind the upgrade: the slot is read
+                // until it shows the fix, for a minute and a half at most.
+                let want = dep[*fix].as_str().unwrap_or_default().to_string();
+                let until = Instant::now() + Duration::from_secs(90);
+                let now = loop {
+                    let word = evm.read("eth_getStorageAt", json!([dep[*proxy], format!("{:#x}", antibody_verifier::run::EIP1967_IMPLEMENTATION_SLOT), "latest"]))?;
+                    let now = format!("0x{}", &word.as_str().unwrap_or_default().trim_start_matches("0x")[24..]);
+                    if now.eq_ignore_ascii_case(&want) || Instant::now() > until {
+                        break now;
+                    }
+                    std::thread::sleep(Duration::from_secs(5));
+                };
                 released.push(json!({"chain_id": chain, "rpc": rpc, "proxy": proxy, "address": dep[*proxy], "implementation": now, "expected": dep[*fix],
                                      "ok": now.eq_ignore_ascii_case(dep[*fix].as_str().unwrap_or_default())}));
             }
@@ -1152,7 +1164,7 @@ impl Live {
             released.push(json!({"chain_id": chain, "b_exploit_reverts": reverts}));
         }
         let ok = released.iter().all(|r| r["ok"] != json!(false) && r["b_exploit_reverts"] != json!(false));
-        let txs: Vec<Value> = permits(&relayer_file).values().filter(|v| v["kind"] == "release").cloned().collect();
+        let txs: Vec<Value> = permits(&relayer_file).values().filter(|v| ours(v)).cloned().collect();
         println!("released on both chains in {:.1} s: {}", t.elapsed().as_secs_f64(), if ok { "both proxies run the final fix; B's exploit reverts" } else { "MISMATCH" });
         self.s["release"] = json!({"checks": released, "ok": ok, "permits": txs, "seconds": t.elapsed().as_secs_f64()});
         Ok(())
