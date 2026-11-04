@@ -151,7 +151,9 @@ def judges(d):
     secs = one.get("seconds_from_commit", {})
     j = r.get("judge", {})
     progs = j.get("programs", [])
-    main = progs[0] if progs else {}
+    # The run's own Acme program (a deployment may list earlier runs' programs before it).
+    pid = r.get("program", {}).get("program_id")
+    main = next((p for p in progs if p.get("program_id") == pid), progs[0] if progs else {})
     practice = r.get("practice", {})
 
     out += ["## One look", "", "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.", ""]
@@ -161,6 +163,10 @@ def judges(d):
         locked = ", ".join(f"{c['role']} `{c['account']}` locked: {str(c.get('locked')).lower()}" for c in j.get("contracts", []))
         audit_c = (r.get("audit", {}).get("contract") or {}).get("ok")
         out += [f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; {len(progs)} programs."]
+        ours = r.get("prebuild", {}).get("programs", {})
+        if len(progs) > len(ours) > 0:
+            out += [f"This run's programs are {ours.get('acme')} (Acme Lend), {ours.get('practice')} (practice) and {ours.get('fork')} (fork mode); "
+                    "the others are earlier runs' on the same deployment."]
         for p in progs:
             v = p.get("verdicts", {})
             each_try = " (each `try` adds one verdict and one payout)" if p.get("program_id") == practice.get("program_id") else ""
