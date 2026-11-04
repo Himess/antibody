@@ -62,6 +62,8 @@ impl Evm {
             };
             match r {
                 Ok(v) => return Ok(v),
+                // The node ran it and the contract refused: asking again changes nothing.
+                Err(e) if e.to_string().contains("revert") => return Err(e),
                 Err(e) => last = Some(e),
             }
             std::thread::sleep(std::time::Duration::from_millis(250 << attempt.min(4)));

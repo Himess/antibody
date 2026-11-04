@@ -129,15 +129,25 @@ impl Relayer {
                     // The node's estimate with a margin: gas schedules differ by chain and fork (Sepolia's
                     // Glamsterdam prices new state several times higher); never below 400k.
                     let estimate = evm.read("eth_estimateGas", json!([{"from": signer.address, "to": adapter, "data": format!("0x{}", hex::encode(&data))}, "latest"]));
-                    let gas = estimate.ok().and_then(|v| crate::evm::hex_u64(&v).ok()).map(|g| g * 3 / 2).unwrap_or(0).max(400_000);
-                    match signer.send(&evm, chain_id, adapter, data, gas) {
-                        Ok(h) => {
-                            e["status"] = "sent".into();
-                            e["tx_hash"] = h.clone().into();
-                            e["explorer"] = format!("{explorer}{h}").into();
-                            e["sent_ms"] = now_ms().into();
+                    match estimate {
+                        // The adapter refuses it (a permit used already, as when a new state file meets an
+                        // earlier run's permits): never sent, so no gas is spent on a revert.
+                        Err(err) if err.to_string().contains("revert") => {
+                            e["status"] = "refused".into();
+                            e["last_error"] = err.to_string().into();
                         }
-                        Err(err) => e["last_error"] = err.to_string().into(),
+                        estimate => {
+                            let gas = estimate.ok().and_then(|v| crate::evm::hex_u64(&v).ok()).map(|g| g * 3 / 2).unwrap_or(0).max(400_000);
+                            match signer.send(&evm, chain_id, adapter, data, gas) {
+                                Ok(h) => {
+                                    e["status"] = "sent".into();
+                                    e["tx_hash"] = h.clone().into();
+                                    e["explorer"] = format!("{explorer}{h}").into();
+                                    e["sent_ms"] = now_ms().into();
+                                }
+                                Err(err) => e["last_error"] = err.to_string().into(),
+                            }
+                        }
                     }
                 }
             }

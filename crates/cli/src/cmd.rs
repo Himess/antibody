@@ -1154,9 +1154,13 @@ pub fn keeper(ctx: &Ctx, program: u32) -> Result<Value> {
         for c in list_commits(ctx, program)? {
             let st = state_label(&c["state"]);
             if c["round"] == p["round"] && c["ticket"] == json!(false) && (st == "Holder" || st == "Done:Paid") {
-                if let Ok(s) = call(ctx, "pause_ticket", json!({"commit_id": c["id"]}), 300) {
-                    steps.push(json!({"pause_ticket": c["id"], "tx": s["tx"], "permit_requested": event(&s, "permit_requested")}));
-                    break;
+                match call(ctx, "pause_ticket", json!({"commit_id": c["id"]}), 300) {
+                    Ok(s) => {
+                        steps.push(json!({"pause_ticket": c["id"], "tx": s["tx"], "permit_requested": event(&s, "permit_requested")}));
+                        break;
+                    }
+                    // An ineligible commit is refused; so is a keeper that cannot set the gas aside: say which.
+                    Err(e) => steps.push(json!({"pause_ticket_refused": c["id"], "why": e.to_string()})),
                 }
             }
         }
