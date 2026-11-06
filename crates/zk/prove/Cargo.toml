@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 sp1-sdk = { version = "=6.10.0", features = ["network"] }
+# The proofs checked natively, with SP1's own verifier and the Groth16 key it ships.
+sp1-verifier = "=6.10.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
 hex = "0.4"

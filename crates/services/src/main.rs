@@ -130,7 +130,8 @@ enum Cmd {
         t2_min_prove: f64,
         /// NEAR each operating account keeps liquid for gas (alerts below it): the keeper, the T1 relayer,
         /// the T2 prover
-        #[arg(long, default_value_t = 0.3)]
+        /// (The keeper's `sync_images` sets 300 Tgas aside: 0.301 NEAR.)
+        #[arg(long, default_value_t = 0.4)]
         keeper_float: f64,
         #[arg(long, default_value_t = 0.5)]
         relayer_float: f64,

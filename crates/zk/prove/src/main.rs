@@ -9,7 +9,11 @@
 //! ```text
 //! antibody-zk-prove [--mode network|cuda|execute] [--vkey 0x…] [--key-file <file>] <elf> <case dir>…
 //! antibody-zk-prove balance [--key-file <file>]
+//! antibody-zk-prove verify --vkey 0x… <case dir>…
 //! ```
+//!
+//! `verify` checks each case's `proof.bin` against `public_values.bin` with `sp1-verifier` (SP1 6.10.0's
+//! Groth16 key, as SP1 ships it), with no network and no prover.
 //!
 //! - `network` (default): SP1's prover network. The requester key comes from `NETWORK_PRIVATE_KEY` or
 //!   `--key-file` (default `.secrets/sp1-requester.key`); it is never printed. Writes `proof.bin` (the
@@ -94,7 +98,7 @@ struct Args {
 fn args() -> Result<(Option<String>, Args)> {
     let mut it = std::env::args().skip(1).peekable();
     let mut cmd = None;
-    if it.peek().map(String::as_str) == Some("balance") {
+    if matches!(it.peek().map(String::as_str), Some("balance" | "verify")) {
         cmd = it.next();
     }
     let mut a = Args { mode: "network".into(), vkey: None, key_file: ".secrets/sp1-requester.key".into(), timeout_s: 3600, elf: PathBuf::new(), cases: vec![] };
@@ -108,7 +112,9 @@ fn args() -> Result<(Option<String>, Args)> {
             _ => rest.push(PathBuf::from(x)),
         }
     }
-    if cmd.is_none() {
+    if cmd.as_deref() == Some("verify") {
+        a.cases = rest;
+    } else if cmd.is_none() {
         if rest.len() < 2 {
             bail!("usage: antibody-zk-prove [--mode network|cuda|execute] [--vkey 0x…] [--key-file <file>] <elf> <case dir>…");
         }
@@ -152,6 +158,23 @@ async fn main() -> Result<()> {
         let client = ProverClient::builder().network().private_key(&requester_key(&a)?).build().await;
         let b = client.get_balance().await?;
         println!("{}", json!({"balance_prove": prove_units(&b.to_string()), "balance_wei": b.to_string()}));
+        return Ok(());
+    }
+
+    if cmd.as_deref() == Some("verify") {
+        let vkey = a.vkey.clone().ok_or_else(|| anyhow!("verify needs --vkey"))?;
+        let mut all = true;
+        for d in &a.cases {
+            let proof = std::fs::read(d.join("proof.bin")).with_context(|| format!("{}: proof.bin", d.display()))?;
+            let pv = std::fs::read(d.join("public_values.bin")).with_context(|| format!("{}: public_values.bin", d.display()))?;
+            let r = sp1_verifier::Groth16Verifier::verify(&proof, &pv, &vkey, &sp1_verifier::GROTH16_VK_BYTES);
+            all &= r.is_ok();
+            println!("{}", json!({"case": d.display().to_string(), "sp1_verifier": r.is_ok(), "error": r.err().map(|e| e.to_string()),
+                                   "proof_sha256": sha256_hex(&proof), "public_values_sha256": sha256_hex(&pv)}));
+        }
+        if !all {
+            bail!("a proof does not verify");
+        }
         return Ok(());
     }
 
