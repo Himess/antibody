@@ -32,9 +32,9 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/stats` | Contract totals, and commit-to-verdict and commit-to-payout latencies (p50, p95) from the event log |
 | `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
 | `GET /v1/programs/{id}` | The program, its rules (each slot's severity and payout, the payout table, bond and instant terms, escrow coverage, the sealed known-issue count, the anchor and its check), its meta, its record (bait metrics), its audit, its commits and its events |
-| `GET /v1/programs/{id}/feed` | The sealed feed: who committed when, the state, the verdict (kind, tier, keys) and the payout. Never the PoC |
+| `GET /v1/programs/{id}/feed` | The sealed feed: who committed when, the state, the verdict (kind, tier, keys, and `t2`: near-t2's outcome for its run, when there is one) and the payout. Never the PoC |
 | `GET /v1/commits/{id}` | One commit as stored, its feed row, its events with transaction links, and its proof card (the facts, the receipt hash, whether its proof is still sealed, how to check it: `antibody status`, `antibody tee check`, and on testnet `outlayer-verify tx <the transaction that requested the run>`). Its `run_requested` events name the transactions that carried the sealed blob: `antibody program read --api` finds the blob there |
-| `GET /v1/runs/{id}` | One verification run: kind, keys, impact, tier |
+| `GET /v1/runs/{id}` | One verification run: kind, keys, impact, its TEE tier, and `tier` with T2 (T0, T1, or T2 when near-t2 confirmed a validity proof of it), with near-t2's record (`t2`) |
 | `GET /v1/accounts/{id}` | Credit at near-antibody, the agent statement (bonds, verification spend, payouts, containment events), the token balance |
 | `GET /v1/leaderboard` | Paid findings and payouts by beneficiary, with duplicates and forfeited commits |
 | `GET /v1/events?after=&limit=` | Events in `seq` order, each with `tx`, `block_height`, `block_ts_ns`, `explorer` |
@@ -45,6 +45,7 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/practice` | The try-it panel: the practice program, its faucet's balance, the public vend key, the steps |
 | `GET /v1/stream?after=` | The live timeline: every new event as a server-sent event (`event: antibody`, the event's JSON as data) |
 | `GET /v1/mainnet` | How mainnet works (docs/mainnet.md), with a live read-only check of NEAR mainnet's Ethereum light client against Ethereum; view calls only, `transactions_sent: 0` |
+| `GET /v1/t2` | T2 (docs/zk.md): near-t2's pins (SP1 6.10.0's Groth16 key, the guest's program vkey, near-antibody, the verifier), its counts, every record (confirmed or contradicted, with the receipts compared), the indexed `t2_*` events and the prover service's state. A validity proof of a disclosed verdict: no privacy is claimed, and payouts in the locked deployment do not depend on it |
 
 ## Monitoring
 
@@ -70,4 +71,7 @@ near-antibody also emits `permit_requested` when it asks near-guardian to sign. 
 `antibody-guardian`): `program_registered`, `chains_set`, `permit_queued`, `permit_signed`, `permit_skipped`,
 `permit_failed`.
 The practice vending contract (`antibody-practice`): `vended`. The verdict guard
-(`antibody-verdict-guard`): `frozen`.
+(`antibody-verdict-guard`): `frozen`. near-t2 (`antibody-t2`): `t2_confirmed` (a run's validity proof
+equals near-antibody's record of it), `t2_contradicts` (the same input re-ran to another receipt, kind or
+slots: recorded, it reverses nothing in the locked deployment), `t2_rejected` (the proof is about
+something else; nothing stored, the deposit refunded).

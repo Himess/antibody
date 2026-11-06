@@ -267,6 +267,8 @@ fn indexer(cli: &Cli, dep: &Deployments, source: &str, from_block: u64) -> Resul
     let near = near_for(cli, dep);
     let mut contracts = vec![dep.antibody.clone(), dep.token.clone()];
     contracts.extend(dep.guardian.clone());
+    // T2's events (t2_confirmed, t2_contradicts, t2_rejected) come from near-t2's own receipts.
+    contracts.extend(dep.t2.clone());
     let source = match source {
         "fastnear" => indexer::Source::FastNear {
             base: if cli.network == "mainnet" { "https://tx.main.fastnear.com".into() } else { "https://tx.test.fastnear.com".into() },

@@ -126,7 +126,7 @@ paths:
         - {name: id, in: path, required: true, schema: {type: integer}}
       responses:
         "200":
-          description: The run's verdict (kind, keys, impact, tier T0 or T1) and the stored run
+          description: The run's verdict (kind, keys, impact, its TEE tier T0 or T1), `tier` with T2 (T2 when near-t2 confirmed a validity proof of the disclosed verdict), near-t2's record (`t2`, null if none) and the stored run
           content:
             application/json:
               schema: {type: object}
@@ -234,6 +234,25 @@ paths:
           content:
             application/json:
               schema: {type: object}
+  /v1/t2:
+    get:
+      summary: T2, validity proofs of disclosed verdicts (near-t2)
+      description: A validity proof of a disclosed verdict claims no privacy, and payouts in the locked deployment do not depend on it (docs/zk.md).
+      responses:
+        "200":
+          description: near-t2's pins and counts, every record (outcome confirmed or contradicts, the receipts compared, the submitter, the block), the indexed t2_confirmed, t2_contradicts and t2_rejected events, and the prover service's state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract: {type: string}
+                  pins: {type: object}
+                  stats: {type: object, properties: {records: {type: integer}, confirmed: {type: integer}, contradicted: {type: integer}}}
+                  records: {type: array, items: {type: object}}
+                  events: {type: array, items: {type: object}}
+                  prover: {type: object}
+        "502": {$ref: "#/components/responses/Upstream"}
 components:
   parameters:
     ProgramId: {name: id, in: path, required: true, schema: {type: integer}}

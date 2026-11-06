@@ -802,7 +802,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let ix_handle = {
         let ix = crate::indexer::Indexer {
             near: near.clone(),
-            contracts: vec![acct("bounty"), acct("tusd"), acct("guardian")],
+            contracts: vec![acct("bounty"), acct("tusd"), acct("guardian"), acct("zk")],
             antibody: acct("bounty"),
             guardian: Some(acct("guardian")),
             source: crate::indexer::Source::Blocks { from: 0 },
@@ -1222,6 +1222,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     // The deployments file names the practice program, so `antibody try --name <you>` needs nothing else.
     let mut served = dep.clone();
     served.practice = Some(antibody_cli::ctx::PracticeDeployment { vending: acct("practice"), program: ppid });
+    served.t2 = Some(acct("zk"));
     std::fs::write(&dep_file, serde_json::to_vec_pretty(&served)?)?;
     if !a.serve {
         stop.store(true, Ordering::Relaxed);
@@ -1299,7 +1300,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     // deployments file (which names the practice vending contract too).
     let served_ctx = Ctx { near: near.clone(), dep: served.clone(), account: None, key_file: None, eth_rpc: None, state_dir: a.work.join("state/judges"), via: None };
     let record = antibody_cli::judge::deployment_record(&served_ctx, None)?;
-    let record_ok = record["contracts"].as_array().map(|c| c.len()) == Some(4) && record["verifier"]["wasm_hash"].is_string();
+    let record_ok = record["contracts"].as_array().map(|c| c.len()) == Some(5) && record["verifier"]["wasm_hash"].is_string();
     println!("deployment record: {} contracts, verifier {}; ok: {record_ok}", record["contracts"].as_array().map(|c| c.len()).unwrap_or(0),
              record["verifier"]["wasm_hash"].as_str().unwrap_or("-"));
     ok &= record_ok;
@@ -1325,7 +1326,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         "/health".to_string(), "/v1/status".into(), "/v1/stats".into(), "/v1/programs".into(), format!("/v1/programs/{pid}"),
         format!("/v1/programs/{ppid}/feed"), format!("/v1/commits/{a_commit}"), "/v1/runs/0".into(), format!("/v1/accounts/{}", acct("agent-a")),
         "/v1/leaderboard".into(), "/v1/events?limit=5".into(), "/v1/guardian".into(), "/v1/judge".into(),
-        format!("/v1/programs/{pid}/reflex"), "/v1/trust".into(), "/v1/practice".into(), "/v1/mainnet".into(),
+        format!("/v1/programs/{pid}/reflex"), "/v1/trust".into(), "/v1/practice".into(), "/v1/mainnet".into(), "/v1/t2".into(),
     ];
     for path in &paths {
         let r = client.get(format!("http://{addr}{path}")).send()?;

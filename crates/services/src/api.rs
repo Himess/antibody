@@ -50,6 +50,7 @@ pub const ENDPOINTS: &[&str] = &[
     "/v1/practice",
     "/v1/stream",
     "/v1/mainnet",
+    "/v1/t2",
 ];
 
 impl Api {
@@ -83,9 +84,28 @@ fn events_for(a: &Api, pred: impl Fn(&Value) -> bool) -> Vec<Value> {
 /// run) and its payout. Never the PoC: sealed blobs are not in near-antibody's views.
 fn commit_row(ctx: &Ctx, c: &Value) -> Value {
     let verdict = c["run"].as_u64().and_then(|r| cmd::run(ctx, r).ok()).map(|r| cmd::run_view(&r)).unwrap_or(Value::Null);
+    let t2 = c["run"].as_u64().map(|r| t2_record(ctx, r)).unwrap_or(Value::Null);
     json!({"commit_id": c["id"], "program_id": c["program"], "index": c["index"], "round": c["round"], "hunter": c["hunter"],
            "beneficiary": c["beneficiary"], "committed_at": c["committed_at"], "state": cmd::state_label(&c["state"]), "run_id": c["run"],
-           "verdict": {"kind": verdict["kind"], "tier": verdict["tier"], "keys": verdict["keys"]}, "paid_raw": cmd::paid_of(c).to_string(), "sealed": true})
+           "verdict": {"kind": verdict["kind"], "tier": verdict["tier"], "keys": verdict["keys"], "t2": t2_badge(&t2)},
+           "paid_raw": cmd::paid_of(c).to_string(), "sealed": true})
+}
+
+/// A run's near-t2 record (null when the deployment has no near-t2 or the run has no record).
+fn t2_record(ctx: &Ctx, run_id: u64) -> Value {
+    match &ctx.dep.t2 {
+        Some(t) => ctx.near.view(t, "get_record", json!({"run_id": run_id.to_string()})).unwrap_or(Value::Null),
+        None => Value::Null,
+    }
+}
+
+/// What a UI shows for T2: confirmed (a validity proof of the disclosed verdict, checked on NEAR),
+/// contradicted, or nothing yet.
+fn t2_badge(r: &Value) -> Value {
+    match r["outcome"].as_str() {
+        Some(o) => json!({"outcome": o, "differ": r["differ"], "receipt_sha256": r["receipt_sha256"], "at": r["at"], "block": r["block"]}),
+        None => Value::Null,
+    }
 }
 
 async fn health(State(a): State<Shared>) -> Response {
@@ -285,8 +305,10 @@ async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
 
 async fn run(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
     blocking(move || {
-        let r = cmd::run(&a.ctx(), id)?;
-        Ok(json!({"run": cmd::run_view(&r), "raw": r}))
+        let ctx = a.ctx();
+        let r = cmd::run(&ctx, id)?;
+        let t2 = t2_record(&ctx, id);
+        Ok(json!({"run": cmd::run_view(&r), "tier": antibody_cli::zk::tier(&r, (!t2.is_null()).then_some(&t2)), "t2": t2, "raw": r}))
     })
     .await
 }
@@ -355,6 +377,23 @@ async fn guardian(State(a): State<Shared>) -> Response {
 }
 
 /// `antibody judge` as JSON: code hashes, locked status, pins, T1 confirmations, payouts, permits.
+/// T2 (docs/zk.md): near-t2's pins and counts, every record (newest last), the indexed `t2_*` events,
+/// and the prover service's state. A validity proof of a disclosed verdict: no privacy is claimed, and
+/// payouts in the locked deployment do not depend on it.
+async fn t2(State(a): State<Shared>) -> Response {
+    blocking(move || {
+        let ctx = a.ctx();
+        let t = a.dep.t2.clone().ok_or_else(|| eyre::eyre!("this deployment names no near-t2 contract yet"))?;
+        let records: Vec<Value> = antibody_cli::zk::records(&ctx, &t)?.into_values().collect();
+        Ok(json!({"contract": t, "pins": a.near.view(&t, "get_pins", json!({}))?, "stats": a.near.view(&t, "get_stats", json!({}))?,
+                  "records": records, "events": events_for(&a, |e| e["standard"] == "antibody-t2"),
+                  "prover": read_json(a.state_dir.join("prover.json")),
+                  "note": "a validity proof of a disclosed verdict: no privacy is claimed, and payouts in the locked deployment do not depend on it",
+                  "docs": "docs/zk.md"}))
+    })
+    .await
+}
+
 async fn judge(State(a): State<Shared>) -> Response {
     blocking(move || antibody_cli::judge::judge(&a.ctx(), None)).await
 }
@@ -405,6 +444,7 @@ pub fn router(api: Api) -> Router {
         .route("/v1/practice", get(practice))
         .route("/v1/stream", get(stream))
         .route("/v1/mainnet", get(mainnet))
+        .route("/v1/t2", get(t2))
         .layer(axum::middleware::map_response(|mut r: Response| async move {
             r.headers_mut().insert("access-control-allow-origin", HeaderValue::from_static("*"));
             r
