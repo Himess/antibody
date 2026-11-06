@@ -187,6 +187,10 @@ enum Cmd {
         /// Run the practice and fork-mode stages again, on new programs at a new anchor
         #[arg(long)]
         redo_practice: bool,
+        /// After the story: deploy the verdict guard (a DAO treasury watching the Acme program), show it
+        /// acting on the run's verdicts, lock it, and add the steps to the results
+        #[arg(long)]
+        verdict_consumer: bool,
         /// The EVM deployer's key file (default .secrets/sepolia_deployer.json): a new deployer deploys
         /// the fixtures at new addresses
         #[arg(long)]
@@ -299,7 +303,7 @@ fn main() -> Result<()> {
             })?;
             Ok(())
         }
-        Cmd::Live { work_dir, until, redo_practice, evm_key } => {
+        Cmd::Live { work_dir, until, redo_practice, verdict_consumer, evm_key } => {
             let root = repo_root().ok_or_else(|| eyre!("run it from inside the repository"))?;
             let dotenv = antibody_cli::ctx::load_dotenv(&root.join(".env"));
             let var = |k: &str| -> Result<String> {
@@ -323,6 +327,7 @@ fn main() -> Result<()> {
                 base_rpc: var("BASE_SEPOLIA_RPC")?,
                 until: until.clone(),
                 redo_practice: *redo_practice,
+                verdict_consumer: *verdict_consumer,
                 root,
             })?;
             Ok(())

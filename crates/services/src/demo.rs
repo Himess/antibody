@@ -704,6 +704,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         rpc: Some("http://127.0.0.1:3030".into()),
         eth_rpc: None,
         practice: None,
+        verdict_guard: None,
         release: None,
     };
     let dep_file = a.work.join("deployments.json");

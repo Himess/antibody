@@ -35,6 +35,10 @@ pub struct Deployments {
     /// The practice program (docs/practice.md): `antibody try` needs only a name.
     #[serde(default)]
     pub practice: Option<PracticeDeployment>,
+    /// A NEAR app consuming verdicts (docs/verdict-guard.md): a treasury that freezes on a program's
+    /// verified Critical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict_guard: Option<String>,
     /// The versioned record of what is deployed (`antibody admin record-deployment`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<serde_json::Value>,

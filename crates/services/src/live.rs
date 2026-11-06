@@ -73,6 +73,8 @@ const PRACTICE_GAS_FUNDS: u128 = 280 * MILLI;
 const PRACTICE_ALLOWANCE: u128 = 400 * MILLI;
 /// The practice tries' names (with the program's id, each names a new practice account).
 const TRIERS: [&str; 2] = ["judge-1", "judge-2"];
+/// The verdict guard's treasury on testnet: enough for one transfer, then a frozen balance.
+const GUARD_TREASURY: u128 = 50 * MILLI;
 /// The NEAR credit the CLI keeps at near-antibody for each account: one run (0.02 deposit, 0.01 storage
 /// allowance) and a commit's storage, within the story accounts' lean funding (scripts/deploy/testnet.sh).
 const MIN_NEAR_CREDIT: &str = "0.045";
@@ -102,6 +104,8 @@ pub struct LiveArgs {
     /// Run the practice and fork-mode stages again, on new programs at a new anchor (their bases rebuilt
     /// from the RPC): the rest of the story stays as it ran.
     pub redo_practice: bool,
+    /// After the story: the verdict guard on testnet (`Live::verdict_consumer`).
+    pub verdict_consumer: bool,
 }
 
 /// A contract's wasm to deploy: the size-optimized copy in target/deploy (scripts/deploy/testnet.sh makes
@@ -339,6 +343,107 @@ impl Live {
     fn save(&self) -> Result<()> {
         std::fs::write(self.a.work.join("live.json"), serde_json::to_vec_pretty(&self.s)?)?;
         Ok(())
+    }
+
+    /// A NEAR app consuming the run's verdicts (docs/verdict-guard.md): a DAO treasury the Acme project
+    /// owns, watching its program. The owner's transfer goes through; D's duplicate does not freeze it; A's
+    /// T1-confirmed Critical on the light-client-confirmed anchor does, and the next transfer is refused.
+    /// Then its full-access key is deleted. Each step lands under `verdict_consumer`; a rerun resumes after
+    /// the last one done. Returns whether every step went as expected.
+    fn verdict_consumer(&mut self) -> Result<bool> {
+        let guard = Self::acct("guard");
+        let owner = Self::acct("acme");
+        let pid = self.pid("acme");
+        let subs = self.s["submissions"].as_array().cloned().unwrap_or_default();
+        let commit_of = |letter: &str| {
+            subs.iter().find(|s| s["agent"].as_str().is_some_and(|a| a.starts_with(letter))).and_then(|s| s["commit"].as_u64())
+        };
+        let (a_commit, d_commit) = (commit_of("A").ok_or_else(|| eyre!("no commit of A in the run"))?, commit_of("D").ok_or_else(|| eyre!("no commit of D"))?);
+        let mut vc = self.s["verdict_consumer"].clone();
+        if !vc.is_object() || vc.get("skipped").is_some() {
+            vc = json!({});
+        }
+        vc["contract"] = json!(guard);
+        vc["owner"] = json!(owner);
+        vc["watched_program"] = json!(pid);
+        let (root, acme, guard_ctx) = (self.root_ctx(), self.ctx_of("acme"), self.ctx_at(&guard, "guard"));
+        let wasm = deployable(&self.a.root, "antibody_verdict_guard", "contracts/verdict-guard/target/wasm32-unknown-unknown/release/antibody_verdict_guard.wasm")?;
+        let keep = |s: &mut Value, vc: &Value| -> Result<()> {
+            s["verdict_consumer"] = vc.clone();
+            std::fs::write(self.a.work.join("live.json"), serde_json::to_vec_pretty(s)?)?;
+            Ok(())
+        };
+        let mut s = self.s.clone();
+        // The account: its code stake (the size-optimized wasm), its record and key, the treasury, and the
+        // gas its deploy sets aside (10x the gas price for the init's 100 Tgas, refunded after) and its lock
+        // burns. A locked contract's stake never comes back.
+        if vc.get("create").is_none() {
+            let bytes = std::fs::metadata(&wasm)?.len() as u128;
+            let amount = bytes * 10u128.pow(19) + 3 * MILLI + GUARD_TREASURY + 120 * MILLI;
+            let near = format!("{}.{:024}", amount / ONE_NEAR, amount % ONE_NEAR);
+            println!("verdict guard: {guard}, {bytes} B of code, {near} NEAR from {HQ}");
+            let r = cmd::admin_create_account(&root, &guard, &near, None, Some(&self.a.keys.join(format!("{guard}.json"))))?;
+            vc["create"] = json!({"tx": r["tx"]["tx"], "amount_yocto": amount.to_string(), "code_bytes": bytes});
+            keep(&mut s, &vc)?;
+        }
+        if vc.get("deploy").is_none() {
+            let init = json!({"owner": owner, "antibody": self.dep.antibody, "program_id": pid}).to_string();
+            let r = cmd::admin_deploy(&guard_ctx, &wasm, Some("new".into()), Some(init))?;
+            vc["deploy"] = json!({"tx": r["tx"]["tx"], "bytes": r["bytes"], "sha256": r["sha256"]});
+            keep(&mut s, &vc)?;
+        }
+        let pay_out = |ctx: &Ctx| cmd::admin_call(ctx, &guard, "transfer", &json!({"to": HQ, "amount": (10 * MILLI).to_string()}).to_string(), 1, 30);
+        if vc.get("transfer_before").is_none() {
+            let r = pay_out(&acme)?;
+            vc["transfer_before"] = json!(true);
+            vc["transfer_before_tx"] = r["tx"]["tx"].clone();
+            keep(&mut s, &vc)?;
+        }
+        // A refusal: D's commit breaks the same Critical key, but as a duplicate it is not a first finding.
+        if vc.get("refusal").is_none() {
+            let r = cmd::admin_call(&root, &guard, "report", &json!({"commit_id": d_commit}).to_string(), 0, 150)?;
+            let state = self.near.view(&guard, "get_state", json!({}))?;
+            let d_state = root.commit(d_commit)?["state"].clone();
+            vc["refusal"] = json!({"commit": d_commit, "agent": "D", "commit_state": d_state, "returned": r["result"], "frozen_after": state["frozen"],
+                                   "tx": r["tx"]["tx"], "ok": r["result"] == json!(false) && state["frozen"].is_null()});
+            keep(&mut s, &vc)?;
+        }
+        if vc.get("report_tx").is_none() {
+            let r = cmd::admin_call(&root, &guard, "report", &json!({"commit_id": a_commit}).to_string(), 0, 150)?;
+            vc["report_tx"] = r["tx"]["tx"].clone();
+            vc["report_returned"] = r["result"].clone();
+            vc["reported_by"] = json!(HQ);
+            keep(&mut s, &vc)?;
+        }
+        vc["frozen"] = self.near.view(&guard, "get_state", json!({}))?["frozen"].clone();
+        if vc.get("transfer_after_refused").is_none() {
+            let refused = pay_out(&acme).err().map(|e| e.to_string()).unwrap_or_default();
+            vc["transfer_after_refused"] = json!(refused.contains("frozen"));
+            vc["transfer_after_error"] = json!(refused.chars().take(300).collect::<String>());
+            keep(&mut s, &vc)?;
+        }
+        // Locked: nobody can deploy to it or sign for it with full access again.
+        if vc.get("lock").is_none() {
+            vc["lock"] = cmd::admin_lock(&guard_ctx, &guard)?;
+            keep(&mut s, &vc)?;
+        }
+        let account = self.near.account(&guard)?.unwrap_or_default();
+        let full_access = self.near.access_keys(&guard)?.iter().filter(|k| k["access_key"]["permission"] == json!("FullAccess")).count();
+        vc["code_hash"] = account["code_hash"].clone();
+        vc["locked"] = json!(full_access == 0);
+        vc["treasury_left_yocto"] = account["amount"].clone();
+        let ok = vc["transfer_before"] == json!(true)
+            && vc["refusal"]["ok"] == json!(true)
+            && vc["frozen"]["commit_id"] == json!(a_commit)
+            && vc["transfer_after_refused"] == json!(true)
+            && vc["locked"] == json!(true);
+        vc["ok"] = json!(ok);
+        vc["at_unix"] = json!(unix());
+        keep(&mut s, &vc)?;
+        self.s = s;
+        println!("verdict guard {guard}: transfer before {}, D refused {}, frozen by commit {} (slot {}), transfer after refused {}, locked {}",
+                 vc["transfer_before"], vc["refusal"]["ok"], vc["frozen"]["commit_id"], vc["frozen"]["slot"], vc["transfer_after_refused"], vc["locked"]);
+        Ok(ok)
     }
 
     /// The indexer (FastNear's tx API: every transaction touching near-antibody or near-guardian), the T1
@@ -1557,6 +1662,20 @@ pub fn run(a: LiveArgs) -> Result<Value> {
             return Err(eyre!("--redo-practice runs once the story has run up to the practice stage"));
         }
         l.redo_practice()?;
+    }
+    if l.a.verdict_consumer {
+        if !l.done("results") {
+            return Err(eyre!("--verdict-consumer runs once the story has run: it reports the run's commits"));
+        }
+        step("live: verdict consumer (the verdict guard on testnet)");
+        let ok = l.verdict_consumer()?;
+        let results = l.a.work.join("results.json");
+        std::fs::write(&results, serde_json::to_vec_pretty(&l.s)?)?;
+        if !ok {
+            return Err(eyre!("the verdict guard did not act as expected (see verdict_consumer in {})", results.display()));
+        }
+        println!("verdict consumer: ok — results: {}", results.display());
+        return Ok(l.s.clone());
     }
     let services_from = STAGES.iter().position(|s| *s == "program").unwrap_or(0);
     for (i, stage) in STAGES.iter().enumerate() {

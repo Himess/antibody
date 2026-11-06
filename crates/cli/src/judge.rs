@@ -88,6 +88,9 @@ pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
     if let Some(p) = &ctx.dep.practice {
         contracts.push(contract(ctx, "practice vending", &p.vending)?);
     }
+    if let Some(g) = &ctx.dep.verdict_guard {
+        contracts.push(contract(ctx, "verdict guard", g)?);
+    }
     let defaults = ctx.view("get_defaults", json!({}))?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     Ok(json!({"recorded_at": now, "network": ctx.near.network, "git_commit": git_commit,
@@ -114,6 +117,11 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
         signed = permits(ctx, g)?;
         guardian = json!({"config": ctx.near.view(g, "get_config", json!({}))?, "pending_permits": ctx.near.view(g, "pending_permits", json!({}))?});
     }
+    let mut verdict_guard = Value::Null;
+    if let Some(v) = &ctx.dep.verdict_guard {
+        contracts.push(contract(ctx, "verdict guard", v)?);
+        verdict_guard = ctx.near.view(v, "get_state", json!({}))?;
+    }
     let ids: Vec<u32> = match only {
         Some(i) => vec![i],
         None => {
@@ -124,7 +132,7 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
     let programs = ids.into_iter().map(|i| program(ctx, i, &signed)).collect::<Result<Vec<_>>>()?;
     Ok(json!({"network": ctx.near.network, "note": "view calls only: no account and no key",
               "contracts": contracts, "defaults": ctx.view("get_defaults", json!({}))?, "images": ctx.view("get_images", json!({}))?,
-              "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "programs": programs}))
+              "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "verdict_guard": verdict_guard, "programs": programs}))
 }
 
 /// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
