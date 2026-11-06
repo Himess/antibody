@@ -218,8 +218,23 @@ pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Resul
         )
     };
     let vending = vending.or_else(|| dep.map(|p| p.vending.clone())).ok_or_else(none)?;
-    let program = program.or_else(|| dep.map(|p| p.program)).ok_or_else(none)?;
+    // The vending contract's own program first: its owner can point it at a new practice program (for
+    // instance after a worker image rotation, docs/runbooks/worker-images.md), and a vended account may
+    // commit to that program only.
+    let program = program.or_else(|| vending_program(&ctx.near, &vending).ok()).or_else(|| dep.map(|p| p.program)).ok_or_else(none)?;
     Ok((vending, program))
+}
+
+/// The practice program a vending contract vends for (`get_config`, Borsh: owner, antibody and token
+/// account ids, then the program id).
+pub fn vending_program(near: &crate::near::Near, vending: &str) -> Result<u32> {
+    let b = near.view_raw(vending, "get_config", b"")?;
+    let mut i = 0usize;
+    for _ in 0..3 {
+        let n = u32::from_le_bytes(b.get(i..i + 4).ok_or_else(|| eyre!("get_config: truncated"))?.try_into()?) as usize;
+        i += 4 + n;
+    }
+    Ok(u32::from_le_bytes(b.get(i..i + 4).ok_or_else(|| eyre!("get_config: truncated"))?.try_into()?))
 }
 
 /// The whole try-it: vend a practice account, prove its vault with the tutorial proof (commit, sealed

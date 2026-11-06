@@ -77,7 +77,9 @@ impl Prover {
 
     /// Practice runs the indexer saw requested (run id → the requesting transaction), since `since`.
     fn practice_runs(&self) -> Vec<(u64, String)> {
-        let Some(pp) = self.ctx.dep.practice.as_ref().map(|p| p.program as u64) else { return vec![] };
+        let Some(pr) = self.ctx.dep.practice.as_ref() else { return vec![] };
+        // The vending contract's current program (its owner may point it at a new one).
+        let pp = antibody_cli::practice::vending_program(&self.ctx.near, &pr.vending).unwrap_or(pr.program) as u64;
         let mut out = BTreeMap::new();
         for e in read_events(&self.state_dir.join("events.jsonl"), 0, usize::MAX) {
             if e["event"] != "run_requested" || e["data"]["program_id"].as_u64() != Some(pp) || e["data"]["mode"] != json!("verify") {
