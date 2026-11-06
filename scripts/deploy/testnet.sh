@@ -160,7 +160,7 @@ deploy() {
 
   echo "== 5. OutLayer's approved worker images (the owner's sync is paid from near-antibody's balance)"
   if [ "$(near_view "bounty.$HQ" get_images '{}' | python3 -c 'import sys,json; print(len(json.load(sys.stdin)[0]))')" = 0 ]; then
-    ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method sync_images --args '{}' --gas-tgas 60
+    ab --key-file "$KEYS/$HQ.json" admin call --contract "bounty.$HQ" --method sync_images --args '{}' --gas-tgas 300
   fi
 
   echo "== 6. The deployments file"

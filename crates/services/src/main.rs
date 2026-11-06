@@ -99,6 +99,14 @@ enum Cmd {
         t1_account: Option<String>,
         #[arg(long)]
         t1_key_file: Option<PathBuf>,
+        /// The T1 relayer's DCAP collateral: OutLayer's on-chain copies, fresh Intel PCS collateral, or
+        /// both (auto: the copies while they verify, Intel PCS once they expire)
+        #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
+        t1_collateral: String,
+        /// The T1 relayer gives up on a run after this many failed relays, 10 s apart: enough to ride out
+        /// a rate-limited RPC or an attestation OutLayer publishes late (a practice try waits 300 s)
+        #[arg(long, default_value_t = 60)]
+        t1_max_attempts: u32,
     },
     /// The keeper bot: allocate, pay, pause tickets, debts, re-runs and pending permits on every open
     /// program (or --program), every --interval-ms. Pays gas only
@@ -131,6 +139,9 @@ enum Cmd {
         interval_ms: u64,
         #[arg(long, default_value_t = 5)]
         max_attempts: u32,
+        /// DCAP collateral: OutLayer's on-chain copies, fresh Intel PCS collateral, or both (auto)
+        #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
+        collateral: String,
         #[arg(long)]
         once: bool,
     },
@@ -374,13 +385,13 @@ fn main() -> Result<()> {
             }
             r.run(*interval_ms)
         }
-        Cmd::T1 { account, key_file, api, mock_outlayer, interval_ms, max_attempts, once } => {
+        Cmd::T1 { account, key_file, api, mock_outlayer, interval_ms, max_attempts, collateral, once } => {
             let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(account.clone()), key_file.clone(), None)?;
             let source = match mock_outlayer {
                 Some(o) => t1::Source::Mock { outlayer: o.clone() },
                 None => t1::Source::OutLayer { api: api.clone() },
             };
-            let r = t1::T1Relayer { ctx, source, state_dir: state_dir(&cli), max_attempts: *max_attempts };
+            let r = t1::T1Relayer { ctx, source, state_dir: state_dir(&cli), max_attempts: *max_attempts, collateral: collateral.clone() };
             if *once {
                 println!("{}", serde_json::to_string_pretty(&r.tick()?)?);
                 Ok(())
@@ -412,7 +423,7 @@ fn main() -> Result<()> {
                 k.run(*interval_ms)
             }
         }
-        Cmd::All { listen, chains: c, source, keeper_account, keeper_key_file, t1_account, t1_key_file } => {
+        Cmd::All { listen, chains: c, source, keeper_account, keeper_key_file, t1_account, t1_key_file, t1_collateral, t1_max_attempts } => {
             let dep = load_dep(&cli)?;
             let ix = indexer(&cli, &dep, source, 0)?;
             std::thread::spawn(move || ix.run(5000));
@@ -437,7 +448,13 @@ fn main() -> Result<()> {
             }
             if let Some(acct) = t1_account {
                 let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), t1_key_file.clone(), None)?;
-                let r = t1::T1Relayer { ctx, source: t1::Source::OutLayer { api: antibody_cli::tee::DEFAULT_API.into() }, state_dir: state_dir(&cli), max_attempts: 5 };
+                let r = t1::T1Relayer {
+                    ctx,
+                    source: t1::Source::OutLayer { api: antibody_cli::tee::DEFAULT_API.into() },
+                    state_dir: state_dir(&cli),
+                    max_attempts: *t1_max_attempts,
+                    collateral: t1_collateral.clone(),
+                };
                 std::thread::spawn(move || loop {
                     if let Err(e) = r.tick() {
                         eprintln!("t1 relayer: {e:#}");

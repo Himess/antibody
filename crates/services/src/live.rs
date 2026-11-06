@@ -359,7 +359,13 @@ impl Live {
             source: crate::indexer::Source::FastNear { base: FASTNEAR_TX.into() },
             state_dir: dir.clone(),
         };
-        let t1 = T1Relayer { ctx: self.ctx_of("relayer"), source: Source::OutLayer { api: antibody_cli::tee::DEFAULT_API.into() }, state_dir: dir.clone(), max_attempts: 60 };
+        let t1 = T1Relayer {
+            ctx: self.ctx_of("relayer"),
+            source: Source::OutLayer { api: antibody_cli::tee::DEFAULT_API.into() },
+            state_dir: dir.clone(),
+            max_attempts: 60,
+            collateral: "auto".into(),
+        };
         let relayer = Relayer {
             near: self.near.clone(),
             guardian,

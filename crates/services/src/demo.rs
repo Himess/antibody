@@ -766,7 +766,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         let (stop, ctx, state_dir) = (stop.clone(), ctx_of("relayer"), a.work.join("services"));
         let outlayer = acct("outlayer");
         handles.push(std::thread::spawn(move || {
-            let r = T1Relayer { ctx, source: Source::Mock { outlayer }, state_dir, max_attempts: 5 };
+            let r = T1Relayer { ctx, source: Source::Mock { outlayer }, state_dir, max_attempts: 5, collateral: "auto".into() };
             while !stop.load(Ordering::Relaxed) {
                 if let Err(e) = r.tick() {
                     eprintln!("t1 relayer: {e:#}");

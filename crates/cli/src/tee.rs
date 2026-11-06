@@ -278,6 +278,30 @@ pub fn outlayer_collaterals(near: &Near) -> Result<Vec<Vec<u8>>> {
     Ok(out)
 }
 
+/// Until when OutLayer's on-chain collaterals verify quotes: for each, its FMSPC and the earlier of its
+/// TCB info's and QE identity's `nextUpdate` (UTC, as Intel signed them). After that, `auto` falls back
+/// to fresh Intel PCS collateral.
+pub fn outlayer_collateral_windows(near: &Near) -> Result<Vec<Value>> {
+    let v = near.view(OUTLAYER_WORKER, "get_collaterals", json!({}))?;
+    let mut out = Vec::new();
+    for c in v.as_array().into_iter().flatten() {
+        let c: Value = match c.as_str() {
+            Some(s) => serde_json::from_str(s)?,
+            None => c.clone(),
+        };
+        let field = |k: &str, f: &str| -> Option<String> { serde_json::from_str::<Value>(c[k].as_str()?).ok()?[f].as_str().map(String::from) };
+        let (tcb, qe) = (field("tcb_info", "nextUpdate"), field("qe_identity", "nextUpdate"));
+        // Same format ("YYYY-MM-DDTHH:MM:SSZ"): the earlier one sorts first.
+        let until = match (&tcb, &qe) {
+            (Some(a), Some(b)) => Some(a.min(b).clone()),
+            (a, b) => a.clone().or_else(|| b.clone()),
+        };
+        let fmspc = c["fmspc"].as_str().map(String::from).or_else(|| field("tcb_info", "fmspc"));
+        out.push(json!({"fmspc": fmspc, "tcb_info_next_update": tcb, "qe_identity_next_update": qe, "valid_until": until}));
+    }
+    Ok(out)
+}
+
 /// The OutLayer request id of a near-antibody verification, from the transaction that requested it.
 pub fn request_id_from_tx(ctx: &Ctx, tx: &str, signer: &str) -> Result<u64> {
     let out = ctx.near.call("EXPERIMENTAL_tx_status", json!({"tx_hash": tx, "sender_account_id": signer, "wait_until": "FINAL"}))?;
@@ -361,19 +385,72 @@ fn relay(ctx: &Ctx, run_id: u64, attestation: Value, quote: &[u8], collateral: &
               "tx": ctx.near.explorer_tx(out["transaction"]["hash"].as_str().unwrap_or_default())}))
 }
 
+/// Whether near-antibody accepts a quote's worker image for `program` now, as `confirm_tee` decides: the
+/// program's snapshot, or a later image of its pinned registry once the image delay has passed, minus
+/// vetoes. On `Err((when, why))` a relay would only be rejected and burn its gas; `when` is the time
+/// (unix seconds) the image counts from, if it is listed.
+pub fn image_counts(ctx: &Ctx, program: u64, pins: &Value, quote: &[u8]) -> Result<std::result::Result<(), (Option<u64>, String)>> {
+    let q = parse_quote(quote)?;
+    let m = json!({"mrtd": q.mrtd, "rtmr0": q.rtmr[0], "rtmr1": q.rtmr[1], "rtmr2": q.rtmr[2], "rtmr3": q.rtmr[3]});
+    let images = ctx.view("get_images", json!({}))?;
+    if images[1].as_array().into_iter().flatten().any(|v| *v == m) {
+        return Ok(Err((None, format!("the worker image is vetoed at near-antibody (program {program})"))));
+    }
+    let (known, delay) = (pins["images_known"].as_u64().unwrap_or(0), pins["image_delay_secs"].as_u64().unwrap_or(0));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let mut from: Option<u64> = None;
+    for (i, k) in images[0].as_array().into_iter().flatten().enumerate() {
+        if k["m"] != m {
+            continue;
+        }
+        if (i as u64) < known {
+            return Ok(Ok(()));
+        }
+        if k["registry"] == pins["image_registry"] {
+            let t = k["added_at"].as_u64().unwrap_or(u64::MAX).saturating_add(delay);
+            if t <= now {
+                return Ok(Ok(()));
+            }
+            from = Some(from.map_or(t, |f| f.min(t)));
+        }
+    }
+    Ok(Err(match from {
+        Some(t) => (Some(t), format!("the worker image counts for program {program} only from unix {t} (near-antibody's image delay)")),
+        None => (None, format!("the worker image is not listed for program {program} at near-antibody (`sync_images`, then the image delay)")),
+    }))
+}
+
+/// A relay's outcome: relayed (confirmed or rejected on chain), or not sent because near-antibody would
+/// not accept the worker image yet.
+pub enum Relay {
+    Sent(Value),
+    Wait { until: Option<u64>, why: String },
+}
+
 /// Relays OutLayer's TDX quote for run `run_id` (OutLayer request `request_id`) to near-antibody.
 pub fn confirm(ctx: &Ctx, api: &str, run_id: u64, request_id: u64, source: &str) -> Result<Value> {
+    match confirm_or_wait(ctx, api, run_id, request_id, source)? {
+        Relay::Sent(v) => Ok(v),
+        Relay::Wait { why, .. } => Err(eyre!("not relayed: {why}")),
+    }
+}
+
+/// [`confirm`], unless near-antibody would reject the quote's worker image for now: then nothing is sent.
+pub fn confirm_or_wait(ctx: &Ctx, api: &str, run_id: u64, request_id: u64, source: &str) -> Result<Relay> {
     let r = ctx.view("get_run", json!({"run_id": run_id}))?;
     let program = r["program"].as_u64().ok_or_else(|| eyre!("run {run_id} does not exist"))?;
     let pins = ctx.view("get_pins", json!({"program_id": program}))?;
     let verifier = pins["dcap_verifier"].as_str().ok_or_else(|| eyre!("program {program} has no pinned DCAP verifier"))?.to_string();
     let a = fetch_attestation(api, request_id)?;
     let quote = base64::engine::general_purpose::STANDARD.decode(a["tdx_quote"].as_str().unwrap_or_default())?;
+    if let Err((until, why)) = image_counts(ctx, program, &pins, &quote)? {
+        return Ok(Relay::Wait { until, why });
+    }
     let (collateral, collateral_from, _) = choose_collateral(&ctx.near, &verifier, &quote, source)?;
     let mut v = relay(ctx, run_id, attestation_args(&a), &quote, &collateral)?;
     v["request_id"] = request_id.into();
     v["collateral"] = collateral_from.into();
-    Ok(v)
+    Ok(Relay::Sent(v))
 }
 
 /// Sandbox only: relays the MOCK attestation that `mock-outlayer` recorded for the run (its MOCK quote
