@@ -1,0 +1,36 @@
+name: zk (T2 feasibility, run by hand)
+
+# The SP1 guest built in SP1's own docker image (the reproducible path), its ELF's sha256 and program
+# vkey, and the disclosed testnet runs re-run in SP1's executor (docs/zk-feasibility.md). Run by hand: it
+# is not part of `ci` and nothing deployed depends on it.
+on:
+  workflow_dispatch:
+
+jobs:
+  guest:
+    name: SP1 6.10.0 guest (docker build), vkey, executor parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: SP1 6.10.0 (cargo prove and its toolchain)
+        run: |
+          mkdir -p ~/.sp1/bin
+          curl -sSfL https://raw.githubusercontent.com/succinctlabs/sp1/v6.10.0/sp1up/sp1up -o ~/.sp1/bin/sp1up
+          chmod +x ~/.sp1/bin/sp1up
+          ~/.sp1/bin/sp1up --version v6.10.0
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+      - name: the guest, in SP1's docker image
+        working-directory: crates/zk/guest
+        run: cargo prove build --docker --tag v6.10.0 --workspace-directory ../../.. --locked
+      - name: ELF sha256 and program vkey
+        run: |
+          ELF=$(ls crates/zk/guest/target/elf-compilation/docker/*/release/antibody-zk-guest)
+          sha256sum "$ELF"
+          cargo prove vkey --elf "$ELF"
+      - name: the disclosed runs in SP1's executor (receipts against the TEE's)
+        run: |
+          ELF=$(ls crates/zk/guest/target/elf-compilation/docker/*/release/antibody-zk-guest)
+          cargo run --release --locked --manifest-path crates/zk/host/Cargo.toml -- "$ELF" fixtures/zk/a fixtures/zk/d fixtures/zk/c fixtures/zk/practice

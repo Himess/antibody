@@ -1,0 +1,36 @@
+[package]
+name = "antibody-zk-guest"
+description = "SP1 program: re-runs a disclosed verification run (antibody-zk-core) and commits its public values"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+antibody-zk-core = { path = "../core" }
+sp1-zkvm = "=6.10.0"
+# keccak256 through `sha3`, so SP1's patched sha3 (its keccak precompile) serves it, as in rsp.
+alloy-primitives = { version = "1.5.6", default-features = false, features = ["sha3-keccak"] }
+
+# Its own workspace: the guest builds for SP1's RISC-V target with SP1's patched crypto crates, which
+# must never reach the verifier the programs pin (the root workspace).
+[workspace]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+panic = "abort"
+
+[patch.crates-io]
+# The root workspace's patches: the verifier behaves here exactly as in the TEE.
+kzg-rs = { path = "../../../third_party/patches/kzg-rs-0.2.9" }
+bitvec = { path = "../../../third_party/patches/bitvec-1.0.1" }
+revm-bytecode = { path = "../../../third_party/patches/revm-bytecode-10.0.0" }
+# SP1's accelerated crypto (same outputs, fewer cycles), the tags rsp 5afe72e uses with SP1 6.10.0.
+sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha2-0.10.9-sp1-6.10.0", package = "sha2" }
+substrate-bn = { git = "https://github.com/sp1-patches/bn", tag = "patch-0.6.0-sp1-6.10.0-substrate-bn" }
+sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", tag = "patch-sha3-0.11.0-sp1-6.0.0" }
+k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.10.0" }
+p256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-p256-13.2-sp1-6.10.0" }
