@@ -16,6 +16,7 @@ path = "src/main.rs"
 antibody-rules = { path = "../rules" }
 antibody-verifier = { path = "../verifier" }
 antibody-witness = { path = "../witness" }
+antibody-zk-core = { path = "../zk/core" }
 alloy-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -636,6 +636,13 @@ enum Cmd {
         #[command(subcommand)]
         cmd: TeeCmd,
     },
+    /// T2 (docs/zk.md): a validity proof of a disclosed verdict. The run's verifier re-runs in SP1 on the
+    /// exact request near-antibody sent the TEE, and near-t2 checks the proof against near-antibody's
+    /// records. It claims no privacy (the proof it re-runs is disclosed); payouts do not depend on it
+    Zk {
+        #[command(subcommand)]
+        cmd: ZkCmd,
+    },
     /// MCP server on stdio for AI agents; every path a tool takes stays inside the workspace
     Mcp {
         /// Default: the working directory
@@ -723,6 +730,59 @@ enum InvariantsCmd {
         work: PathBuf,
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ZkCmd {
+    /// Gather a run's inputs from NEAR and FastFS (each checked against the chain's hashes), re-run it
+    /// natively against the TEE's receipt, then prove it with antibody-zk-prove (SP1 6.10.0, Groth16)
+    Prove {
+        #[arg(long)]
+        run: u64,
+        /// The blob's content key (hex). Default: your own commit record, or a practice try's public key
+        #[arg(long)]
+        key: Option<String>,
+        /// The transaction that requested the run (a reveal or a retry). Default: your records, or --api
+        #[arg(long)]
+        tx: Option<String>,
+        /// An Antibody API that indexed the run's transaction (/v1/commits/{id})
+        #[arg(long)]
+        api: Option<String>,
+        /// The case directory (default: <state>/zk/<run>)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// network (SP1's prover network: NETWORK_PRIVATE_KEY or --requester-key), cuda (a local NVIDIA
+        /// GPU), or none (gather and re-run natively only)
+        #[arg(long, default_value = "network", value_parser = ["network", "cuda", "none"])]
+        mode: String,
+        /// The guest ELF: the docker build the contract pins (checked by sha256)
+        #[arg(long, default_value = antibody_cli::zk::ELF_PATH)]
+        elf: PathBuf,
+        /// The prover binary (crates/zk/prove)
+        #[arg(long, default_value = "antibody-zk-prove")]
+        prover: PathBuf,
+        /// The prover network requester's key file (default: $NETWORK_PRIVATE_KEY, else .secrets/sp1-requester.key)
+        #[arg(long)]
+        requester_key: Option<PathBuf>,
+    },
+    /// Send a run's proof to near-t2 (anyone may; 0.02 NEAR prepays the record, the rest is refunded)
+    Submit {
+        #[arg(long)]
+        run: u64,
+        /// The case directory (default: <state>/zk/<run>)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// near-t2's account (default: the deployment's)
+        #[arg(long)]
+        contract: Option<String>,
+    },
+    /// A run's T2 record and near-t2's pins (view calls only)
+    Status {
+        #[arg(long)]
+        run: u64,
+        #[arg(long)]
+        contract: Option<String>,
     },
 }
 
@@ -979,6 +1039,33 @@ fn run(cli: Cli) -> Result<Value> {
                     antibody_cli::tee::confirm(&c, api, *run, id, collateral)
                 }
                 TeeCmd::ConfirmMock { run, mock_outlayer } => antibody_cli::tee::confirm_mock(&c, mock_outlayer, *run),
+            }
+        }
+        Cmd::Zk { ref cmd } => {
+            let c = mk()?;
+            match cmd {
+                ZkCmd::Prove { run, key, tx, api, out, mode, elf, prover, requester_key } => {
+                    let dir = out.clone().unwrap_or_else(|| antibody_cli::zk::case_dir(&c, *run));
+                    let from = match (tx, api) {
+                        (Some(t), _) => antibody_cli::zk::TxFrom::Given(t.clone()),
+                        (None, Some(a)) => antibody_cli::zk::TxFrom::Api(a.clone()),
+                        (None, None) => antibody_cli::zk::TxFrom::Local,
+                    };
+                    let mut r = antibody_cli::zk::gather(&c, *run, key.as_deref(), &from, &dir)?;
+                    if mode != "none" {
+                        if r["receipt_equals_the_tees"] != json!(true) {
+                            eprintln!("note: the native re-run's receipt differs from the TEE's: a proof would record a contradiction");
+                        }
+                        r["proof"] = antibody_cli::zk::prove(&dir, elf, prover, mode, requester_key.as_deref())?;
+                    }
+                    Ok(r)
+                }
+                ZkCmd::Submit { run, dir, contract } => {
+                    let t2 = antibody_cli::zk::contract(&c, contract.as_deref())?;
+                    let dir = dir.clone().unwrap_or_else(|| antibody_cli::zk::case_dir(&c, *run));
+                    antibody_cli::zk::submit(&c, &t2, *run, &dir)
+                }
+                ZkCmd::Status { run, contract } => antibody_cli::zk::status(&c, &antibody_cli::zk::contract(&c, contract.as_deref())?, *run),
             }
         }
         Cmd::Mcp { ref workspace } => {

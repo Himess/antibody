@@ -826,7 +826,10 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
         Some(r) => std::fs::read(r)?,
         None => Vec::new(),
     };
-    let s = blob::seal(&pk, &key, &signer.account_id, envelope, report)?;
+    // The practice program's proof is a public tutorial: its content key is public too (docs/zk.md), so
+    // T2 can prove any try without being handed a key.
+    let public_key = (ctx.dep.practice.as_ref().map(|p| p.program) == Some(program)).then(|| blob::practice_content_key(&key, &signer.account_id));
+    let s = blob::seal_with(&pk, &key, &signer.account_id, envelope, report, public_key)?;
     let blob_sha = sha256(&s.blob);
     let cm = hex::encode(commitment(&key, round, &signer.account_id, &blob_sha));
     let terms = meta(ctx, program)?["terms_sha256"].clone();
@@ -879,8 +882,10 @@ pub fn reveal(ctx: &Ctx, program: u32, commit_id: u64, wait: bool) -> Result<Val
     }
     let out = ctx.near.function_call(&signer, ctx.hunter_calls(), "reveal", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS, 0)?;
     let s = ensure_ok(ctx, &out, "reveal")?;
-    // Retries of an inline blob pass it again: keep the argument with the record.
+    // Retries of an inline blob pass it again: keep the argument with the record. The transaction holds
+    // the exact request near-antibody sent the TEE (`antibody zk prove` reads it).
     rec["blob_arg"] = arg;
+    rec["reveal_tx"] = s["tx"].clone();
     write_json(&path, &rec)?;
     let mut res = json!({"commit_id": commit_id, "run_id": run_of(&s)?, "upload": up, "tx": s});
     if wait {

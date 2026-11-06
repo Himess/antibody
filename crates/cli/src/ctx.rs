@@ -39,6 +39,10 @@ pub struct Deployments {
     /// verified Critical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict_guard: Option<String>,
+    /// T2 (docs/zk.md): near-t2, which checks validity proofs of disclosed verdicts and compares them with
+    /// near-antibody's records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub t2: Option<String>,
     /// The versioned record of what is deployed (`antibody admin record-deployment`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release: Option<serde_json::Value>,

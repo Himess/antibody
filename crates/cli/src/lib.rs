@@ -12,3 +12,4 @@ pub mod near;
 pub mod practice;
 pub mod strength;
 pub mod tee;
+pub mod zk;

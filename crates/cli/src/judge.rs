@@ -1,8 +1,8 @@
 //! `antibody judge`: what anyone can check with view calls only, with no account and no key. For each
 //! contract: its code hash and whether it is locked (no full-access key). The verifier, image, DCAP and
-//! light-client pins. For each program: its anchor, its verdicts and how many are T1-confirmed, its
-//! payouts, and the pause and release permits near-guardian signed for it. Accounts come with explorer
-//! links.
+//! light-client pins. For each program: its anchor, its verdicts and how many are T1-confirmed or carry a
+//! T2 validity proof (near-t2), its payouts, and the pause and release permits near-guardian signed for
+//! it. Accounts come with explorer links.
 
 use std::collections::BTreeMap;
 
@@ -35,22 +35,31 @@ fn permits(ctx: &Ctx, guardian: &str) -> Result<Vec<Value>> {
     }
 }
 
-fn program(ctx: &Ctx, id: u32, signed: &[Value]) -> Result<Value> {
+fn program(ctx: &Ctx, id: u32, signed: &[Value], t2: &BTreeMap<u64, Value>) -> Result<Value> {
     let p = ctx.program(id)?;
     let meta = cmd::meta(ctx, id)?;
     let record = ctx.view("program_record", json!({"program_id": id}))?;
     let audit = ctx.view("audit", json!({"program_id": id}))?;
-    let (mut runs, mut t1) = (0u32, 0u32);
+    let (mut runs, mut t1, mut t2_confirmed, mut t2_contradicted) = (0u32, 0u32, 0u32, 0u32);
     let mut states: BTreeMap<String, u32> = BTreeMap::new();
     let mut payouts = Vec::new();
+    let mut tiers = Vec::new();
     for c in cmd::list_commits(ctx, id)? {
         let st = cmd::state_label(&c["state"]);
         *states.entry(st.clone()).or_default() += 1;
         if let Some(r) = c["run"].as_u64() {
             runs += 1;
-            if cmd::run_view(&cmd::run(ctx, r)?)["tier"] == json!("T1") {
+            let run = cmd::run(ctx, r)?;
+            if cmd::run_view(&run)["tier"] == json!("T1") {
                 t1 += 1;
             }
+            let proof = t2.get(&r);
+            match proof.map(|x| x["outcome"].as_str().unwrap_or_default()) {
+                Some("confirmed") => t2_confirmed += 1,
+                Some("contradicts") => t2_contradicted += 1,
+                _ => {}
+            }
+            tiers.push(json!({"commit": c["id"], "run": r, "tier": crate::zk::tier(&run, proof), "tee_tier": cmd::run_view(&run)["tier"]}));
         }
         if st == "Done:Paid" {
             let to = c["beneficiary"].as_str().unwrap_or_default();
@@ -71,7 +80,8 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value]) -> Result<Value> {
         "program_id": id, "name": meta["name"], "project": p["project"], "phase": p["phase"], "round": p["round"], "program_key": key,
         "anchor": {"chain_id": meta["chain_id"], "block": meta["anchor_block"], "hash": meta["anchor_hash"], "status": record["anchor"]},
         "terms_sha256": meta["terms_sha256"], "pins": ctx.view("get_pins", json!({"program_id": id}))?,
-        "verdicts": {"runs": runs, "t1_confirmed": t1}, "commits": states, "payouts": payouts,
+        "verdicts": {"runs": runs, "t1_confirmed": t1, "t2_confirmed": t2_confirmed, "t2_contradicted": t2_contradicted, "tiers": tiers},
+        "commits": states, "payouts": payouts,
         "pauses": pauses, "releases": mine.len() - pauses, "permits": mine, "rule_strength": strength,
         "record": record, "audit_ok": audit["ok"], "link": ctx.near.explorer_account(p["project"].as_str().unwrap_or_default()),
     }))
@@ -90,6 +100,9 @@ pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
     }
     if let Some(g) = &ctx.dep.verdict_guard {
         contracts.push(contract(ctx, "verdict guard", g)?);
+    }
+    if let Some(t) = &ctx.dep.t2 {
+        contracts.push(contract(ctx, "T2 (near-t2)", t)?);
     }
     let defaults = ctx.view("get_defaults", json!({}))?;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
@@ -122,6 +135,16 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
         contracts.push(contract(ctx, "verdict guard", v)?);
         verdict_guard = ctx.near.view(v, "get_state", json!({}))?;
     }
+    // T2: validity proofs of disclosed verdicts, checked by near-t2 against near-antibody's records.
+    let (mut t2, mut t2_records) = (Value::Null, BTreeMap::new());
+    if let Some(t) = &ctx.dep.t2 {
+        contracts.push(contract(ctx, "T2 (near-t2)", t)?);
+        if ctx.near.account(t)?.is_some() {
+            t2_records = crate::zk::records(ctx, t)?;
+            t2 = json!({"pins": ctx.near.view(t, "get_pins", json!({}))?, "stats": ctx.near.view(t, "get_stats", json!({}))?,
+                        "note": "a validity proof of a disclosed verdict: no privacy is claimed, and payouts do not depend on it"});
+        }
+    }
     let ids: Vec<u32> = match only {
         Some(i) => vec![i],
         None => {
@@ -129,10 +152,10 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
             (0..n).collect()
         }
     };
-    let programs = ids.into_iter().map(|i| program(ctx, i, &signed)).collect::<Result<Vec<_>>>()?;
+    let programs = ids.into_iter().map(|i| program(ctx, i, &signed, &t2_records)).collect::<Result<Vec<_>>>()?;
     Ok(json!({"network": ctx.near.network, "note": "view calls only: no account and no key",
               "contracts": contracts, "defaults": ctx.view("get_defaults", json!({}))?, "images": ctx.view("get_images", json!({}))?,
-              "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "verdict_guard": verdict_guard, "programs": programs}))
+              "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "verdict_guard": verdict_guard, "t2": t2, "programs": programs}))
 }
 
 /// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
@@ -146,11 +169,18 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
     out.push(format!("{} programs", programs.len()));
     for p in &programs {
         out.push(format!(
-            "  program {} ({}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} payouts, {} pause and {} release permits, audit ok: {}",
+            "  program {} ({}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} with a T2 proof, {} payouts, {} pause and {} release permits, audit ok: {}",
             p["program_id"], p["name"].as_str().unwrap_or(""), p["phase"].as_str().unwrap_or("?"), p["anchor"]["status"].as_str().unwrap_or("?"),
-            p["verdicts"]["t1_confirmed"], p["verdicts"]["runs"], p["payouts"].as_array().map(|x| x.len()).unwrap_or(0), p["pauses"], p["releases"],
-            p["audit_ok"]
+            p["verdicts"]["t1_confirmed"], p["verdicts"]["runs"], p["verdicts"]["t2_confirmed"], p["payouts"].as_array().map(|x| x.len()).unwrap_or(0),
+            p["pauses"], p["releases"], p["audit_ok"]
         ));
+        let tiers: Vec<String> = p["verdicts"]["tiers"].as_array().into_iter().flatten().map(|t| format!("run {} {}", t["run"], t["tier"].as_str().unwrap_or("-"))).collect();
+        if !tiers.is_empty() {
+            out.push(format!("    tiers: {}", tiers.join(", ")));
+        }
+        if p["verdicts"]["t2_contradicted"].as_u64().unwrap_or(0) > 0 {
+            out.push(format!("    T2 contradicted {} verdict(s): near-t2 recorded another receipt for the same input", p["verdicts"]["t2_contradicted"]));
+        }
         if let Some(s) = p["rule_strength"]["statement"].as_str() {
             out.push(format!("    rule strength: {s} (it measures the rules, not the code's security)"));
         }

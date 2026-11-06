@@ -647,6 +647,7 @@ dependencies = [
  "antibody-rules",
  "antibody-verifier",
  "antibody-witness",
+ "antibody-zk-core",
  "base64 0.22.1",
  "bs58",
  "clap",

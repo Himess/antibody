@@ -28,10 +28,26 @@ pub fn random32() -> Result<[u8; 32]> {
     random::<32>()
 }
 
-/// Seals a witness envelope (+ optional report) to the program's verifier key.
+/// Seals a witness envelope (+ optional report) to the program's verifier key, under a fresh random
+/// content key.
 pub fn seal(pubkey_hex: &str, program_key: &str, hunter: &str, envelope: Vec<u8>, report: Vec<u8>) -> Result<Sealed> {
+    seal_with(pubkey_hex, program_key, hunter, envelope, report, None)
+}
+
+/// A practice try's content key: public by construction (docs/zk.md). The practice program's proof is a
+/// published tutorial, so its key hides nothing, and anyone, such as the T2 prover service, can open the
+/// try and prove its verdict without being handed a key.
+pub fn practice_content_key(program_key: &str, hunter: &str) -> [u8; 32] {
+    sha256(format!("antibody/practice/public-content-key/v1|{program_key}|{hunter}").as_bytes())
+}
+
+/// [`seal`] with a given content key (the ephemeral key and the nonces stay random).
+pub fn seal_with(pubkey_hex: &str, program_key: &str, hunter: &str, envelope: Vec<u8>, report: Vec<u8>, content_key: Option<[u8; 32]>) -> Result<Sealed> {
     let pk_v: [u8; 32] = hex::decode(pubkey_hex)?.try_into().map_err(|_| eyre!("verifier pubkey must be 32 bytes"))?;
-    let k = random::<32>()?;
+    let k = match content_key {
+        Some(k) => k,
+        None => random::<32>()?,
+    };
     let w = sealed::wrap_v(&k, &pk_v, program_key, random::<32>()?, random::<12>()?);
     let payload = sealed::SealedPayload { program_key: program_key.into(), hunter: hunter.into(), envelope, report };
     let blob = sealed::seal(&k, &payload, &w, random::<12>()?);

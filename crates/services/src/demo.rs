@@ -705,6 +705,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
         eth_rpc: None,
         practice: None,
         verdict_guard: None,
+        t2: None,
         release: None,
     };
     let dep_file = a.work.join("deployments.json");
