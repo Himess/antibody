@@ -106,7 +106,7 @@ jobs:
         with:
           cache-on-failure: true
       - name: unit and integration tests (verifier, TEE mode on the fixture, CLI, services)
-        run: cargo test --release -p antibody-verifier -p antibody-cli -p antibody-services
+        run: cargo test --release -p antibody-verifier -p antibody-cli -p antibody-services -p antibody-zk-core
       - name: build (native)
         run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
       - name: build (wasm32-wasip2)
@@ -152,6 +152,13 @@ jobs:
         working-directory: contracts/verdict-guard
         run: |
           cargo test --lib
+          cargo build --release --target wasm32-unknown-unknown
+      - name: SP1 Groth16 on NEAR's alt_bn128 host functions (a T2 spike, not deployed)
+        working-directory: contracts/sp1-groth16-spike
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/contracts/verdict-guard/target
+        run: |
+          cargo test --lib -- --nocapture
           cargo build --release --target wasm32-unknown-unknown
       - name: near-antibody (the rule core's NEAR adapter) + tUSD + sandbox mocks
         working-directory: contracts/near-antibody
