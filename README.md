@@ -111,9 +111,10 @@ a hundred-thousandth of the sandbox's tUSD amounts. What a mainnet program would
 
 Tiers: **T0** (OutLayer delivers the TEE's output), **T1** (its quote verified on NEAR). Instant payouts
 need T1. Above the cap, a payout also needs an independent second run that agrees, and waits its
-challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) is **not yet**: the
-feasibility study is [docs/zk-feasibility.md](docs/zk-feasibility.md), and no payout depends on it. Full
-table: [docs/trust.md](docs/trust.md).
+challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) is **not yet** on
+testnet. The contract (near-t2), its tests and the sandbox run are in place
+([docs/zk.md](docs/zk.md)); its testnet deployment waits for the first proofs. It claims no privacy, and
+no payout depends on it. Full table: [docs/trust.md](docs/trust.md).
 
 ## The properties
 
@@ -266,11 +267,14 @@ are not done yet.
   - MIT: revm 38, axum, tokio, bincode;
   - BSD-3-Clause: ed25519-dalek, x25519-dalek;
   - Apache-2.0 with LLVM exception: wasmtime 28.
-  - The T2 feasibility study only (`crates/zk/guest`, `crates/zk/host`; nothing deployed depends on it),
-    MIT or Apache-2.0: SP1 6.10.0's `sp1-zkvm` and `sp1-core-executor`, and sp1-patches' `sha2`, `sha3`,
-    `k256`, `p256` and `substrate-bn` (the versions rsp uses). `contracts/sp1-groth16-spike` uses no SP1
-    crate: its tests read SP1's published Groth16 verifying keys and fixture proof.
-  - Tools: Foundry, Quint and Apalache, Kani, near-sandbox, SP1's `cargo prove` 6.10.0.
+  - T2 (`crates/zk/*`; no payout depends on it), MIT or Apache-2.0: SP1 6.10.0's `sp1-zkvm`,
+    `sp1-core-executor` and `sp1-sdk` (the prover client, `crates/zk/prove`), and sp1-patches' `sha2`,
+    `sha3`, `k256`, `p256` and `substrate-bn` (the versions rsp uses).
+    - `contracts/near-t2` uses no SP1 crate. Its Groth16 check is written for NEAR's alt_bn128 host
+      functions, and its tests read SP1's published verifying keys and fixture proof.
+    - `substrate-bn` (MIT or Apache-2.0) also runs the sandbox's MOCK T2 prover.
+  - Tools: Foundry, Quint and Apalache, Kani, near-sandbox, SP1's `cargo prove` 6.10.0; proofs come from
+    SP1's prover network.
 - **Patches:** `third_party/patches/` holds two small build fixes (for `kzg-rs` and `near-vm-runner`).
 
 ## Tracks
@@ -299,10 +303,13 @@ bonds are never revenue: they go to the program's escrow.
 
    Sealed proofs never appear in public logs.
 2. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.
-3. T2: validity proofs of disclosed verdicts, verified on NEAR; later zk by default above a cap. The
-   feasibility study (G0) is done ([docs/zk-feasibility.md](docs/zk-feasibility.md)): the verifier runs
-   in SP1 6.10.0 and reproduces the TEE's receipts in about 30 million cycles, and a Groth16 check costs
-   about 34 Tgas on NEAR. Next: a real proof (G1), a NEAR verifier contract (G2), the CLI (G3).
+3. T2: validity proofs of disclosed verdicts, verified on NEAR; later zk by default above a cap.
+   - Done: the feasibility study ([docs/zk-feasibility.md](docs/zk-feasibility.md)). The verifier runs
+     in SP1 6.10.0 and reproduces the TEE's receipts in about 30 million cycles.
+   - Done ([docs/zk.md](docs/zk.md)): near-t2, which checks a Groth16 proof in about 34 Tgas and
+     compares it with near-antibody's records; `antibody zk prove|submit|status`; the API; a prover
+     service for every practice try.
+   - Next: the four testnet runs proven on SP1's prover network, and near-t2 on testnet.
 4. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
 5. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
 6. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.

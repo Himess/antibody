@@ -1,7 +1,9 @@
 # T2 feasibility (G0): a validity proof of a disclosed verdict
 
-**Status: G0, a feasibility study.** T2 is not live. The locked deployment does not use it, no payout
-depends on it, and the README and JUDGES.md list T2 as "not yet" until G2 passes.
+**Status: G0, a feasibility study** (2026-11-06). G1 to G3 (the proofs, near-t2, the tools) are in
+[zk.md](zk.md). The spike below became `contracts/near-t2`. The locked deployment does not use T2, no
+payout depends on it, and the README and JUDGES.md list T2 as "not yet" until near-t2 holds the first
+proofs on testnet.
 
 What T2 would be: once a verdict's proof is disclosed, anyone can re-run the verifier on it. T2 makes
 that re-run a validity proof that a NEAR contract checks. It claims no privacy. The proof is about a

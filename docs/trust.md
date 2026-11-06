@@ -9,7 +9,7 @@ sent; "How mainnet works" (docs/mainnet.md, `/v1/mainnet`) makes view calls only
 | **State at the anchor** | Nothing: Merkle-Patricia proofs, verified inside the verifier against the anchor's state root, every trie node's kind validated (SA-3) | `antibody check` re-runs any proof locally |
 | **EVM semantics** | That revm 38 and reth 2.2, under the program's committed `evm_spec`, match the committed rules | Native and wasm runs are byte-identical; the receipt hash is reproducible |
 | **The verifier build** | Nothing beyond the source: a program pins the wasm's sha256 | `make verifier-wasm` (or `Dockerfile.verifier`) rebuilds it reproducibly and prints the hash to compare with the program's `wasm_hash` |
-| **Who runs the verifier** | **T0:** OutLayer's operator delivers the TEE worker's output. **T1:** the run's Intel TDX quote, verified on NEAR (below) | `antibody tee check --request-id <id>`, for any run; after disclosure, recompute every verdict |
+| **Who runs the verifier** | **T0:** OutLayer's operator delivers the TEE worker's output. **T1:** the run's Intel TDX quote, verified on NEAR (below). **T2** (a disclosed verdict): SP1's proof system, for a Groth16 proof that near-t2 checks against near-antibody's records (below) | `antibody tee check --request-id <id>`, for any run; after disclosure, recompute every verdict, or `antibody zk status --run <id>` |
 | **The verifier key (sealed proofs)** | OutLayer's keystore, which derives the program's key for the pinned wasm called by near-antibody | The verifier never outputs the seed; the program's sealing key counts only once its activation run is T1-confirmed |
 | **Confidentiality of proofs** | The TEE and the keystore until disclosure; the project reads only Violations it pays for | Disclosure publishes every content key: check nothing leaked earlier |
 | **Settlement** | NEAR consensus and near-antibody's code, pinned per program | `antibody judge`: code hashes and locked status; a live program's pins never change (property 12) |
@@ -61,11 +61,38 @@ binds.
   `/v1/status` warns while an image is pending. On 2026-11-06 OutLayer approved four new images: two were
   listed by hand and two by the keeper, half an hour later. They count for programs 5–7 from 2026-11-08
   13:15:22 and 13:47:47 UTC. While a worker runs an image that does not count yet, its runs stay T0.
+  - A practice try is then still paid, after the 60 s challenge window.
+  - A practice program created after new images are listed counts them at once. The runbook
+    ([runbooks/worker-images.md](runbooks/worker-images.md)) moves the practice vending contract to such a
+    program, through its owner's `set_terms`.
 - **Availability.** A run whose quote cannot be had stays T0: its payout waits the window, and a re-run
   may be asked for.
+
+## T2: validity proofs of disclosed verdicts
+
+Once a verdict's proof is disclosed, its re-run can be a Groth16 proof (SP1 6.10.0) that near-t2 checks on
+NEAR ([zk.md](zk.md)). near-t2 then compares the proof's public values with near-antibody's records:
+- the request hash (the TEE's exact input);
+- the commit's blob, the base, the manifest and the anchor;
+- the round, the verifier, the receipt, the verdict's kind and the keys' slots.
+
+What equal means: the verifier, re-run on exactly the TEE's input, gave the TEE's receipt (`t2_confirmed`).
+The same input with another receipt is a recorded contradiction (`t2_contradicts`).
+
+What you trust:
+- SP1's proof system;
+- that the guest mirrors the TEE's `verify` path (four testnet runs reproduce, byte for byte);
+- SP1 6.10.0's Groth16 key, which near-t2 has built in and `scripts/zk/sp1_groth16_vk.py` checks against
+  the key SP1 ships.
+
+What it does not do:
+- It claims no privacy: the proof re-runs a disclosed proof.
+- Payouts in the locked deployment do not depend on it.
 
 ## What is mock
 
 - **The sandbox demo:** MOCK OutLayer, DCAP and MPC contracts, resolved by the real verifier with a TEST
-  seed and a TEST secp256k1 key.
+  seed and a TEST secp256k1 key. Its near-t2 takes proofs under a TEST Groth16 key that anyone can make
+  proofs for (`fixtures/zk/t2-test-key.json`), from a MOCK prover. The MOCK worker lies once on purpose,
+  and near-t2 records the contradiction.
 - **Test keys in fixtures:** the fingerprint tags in `fixtures/acme-local/expected.json` use a TEST key.

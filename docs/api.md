@@ -58,6 +58,16 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
   contract's NEAR credit at near-antibody below 0.1 NEAR. Vending is also rate-limited per hour by the
   contract itself, and the key's allowance caps what calls to `vend` can burn.
 
+More alerts:
+- an operating account (the keeper, the T1 relayer, the T2 prover) has less NEAR liquid than its float
+  (`--keeper-float`, `--relayer-float`, `--prover-float`): a warning, and critical below a quarter of it;
+- the T2 prover: its PROVE balance is low (it pauses), its budget is reached, a proof failed, or near-t2
+  recorded a contradiction (critical).
+
+**A second NEAR RPC.** `$NEAR_RPC_EXTRA` (comma-separated URLs, a keyed one included) is tried in turn
+when the primary RPC fails or rate-limits. `$NEAR_RPC_API_KEY` goes to FastNear hosts as a bearer token.
+Neither is ever printed.
+
 ## Events
 
 near-antibody's events (standard `antibody`): `program_created`, `program_escrowed`, `anchor_checked`,

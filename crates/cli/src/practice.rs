@@ -271,7 +271,22 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
         let submitted = cmd::submit(&practice, program, &bundle, None, None, true)?;
         let commit = submitted["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {submitted}"))?;
         let run = submitted["reveal"]["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {submitted}"))?;
-        let t1 = wait_t1(&practice, run, 300)?;
+        // T1 normally arrives in seconds. When it cannot (a worker image the program does not count yet,
+        // docs/runbooks/worker-images.md), the verdict stays T0 and its payout waits the challenge window.
+        let t1 = match wait_t1(&practice, run, 300) {
+            Ok(v) => v,
+            Err(e) if e.to_string().contains("not T1-confirmed") => {
+                let window = practice.program(program)?["params"]["windows"]["challenge"].as_u64().unwrap_or(60);
+                let v = cmd::run_view(&cmd::run(&practice, run)?);
+                let answered = v["answered_at"].as_u64().unwrap_or(0);
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                std::thread::sleep(std::time::Duration::from_secs((answered + window + 5).saturating_sub(now)));
+                let mut v = v;
+                v["note"] = json!(format!("no T1 within 300 s: the verdict stays T0 and was paid after the {window} s challenge window"));
+                v
+            }
+            Err(e) => return Err(e),
+        };
         let settled = settle(&practice, program, commit)?;
         Ok((submitted, commit, run, t1, settled))
     })();

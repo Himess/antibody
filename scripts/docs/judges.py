@@ -165,6 +165,9 @@ def judges(d):
         if vg.get("contract") and not any(c.get("role") == "verdict guard" for c in j.get("contracts", [])):
             # Deployed after the run's judge view: today's `judge` lists it too.
             locked += f", verdict guard `{vg['contract']}` locked: {str(vg.get('locked')).lower()}"
+        t2 = r.get("t2") or {}
+        if t2.get("contract") and t2.get("ok") and not any(c.get("role") == "T2 (near-t2)" for c in j.get("contracts", [])):
+            locked += f", T2 (near-t2) `{t2['contract']}` locked: {str(t2.get('locked')).lower()}"
         audit_c = (r.get("audit", {}).get("contract") or {}).get("ok")
         out += [f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; {len(progs)} programs."]
         ours = r.get("prebuild", {}).get("programs", {})
@@ -255,6 +258,27 @@ def judges(d):
                      f"locked: `{str(vc.get('locked')).lower()}`, code `{str(vc.get('code_hash'))[:8]}…`")
             txs = f"D's report {d.tx(ref.get('tx'))}, A's report {d.tx(vc.get('report_tx'))}, lock {d.tx(((vc.get('lock') or {}).get('tx') or {}).get('tx'))}"
         out += [f"| {n} | {what} | `{d.cli('view --contract ' + str(vc.get('contract')) + ' --method get_state')}` | {seen} | {txs} |"]
+    t2 = r.get("t2") or {}
+    if t2.get("ok") and t2.get("submissions"):
+        # Testnet: near-t2 with the four disclosed runs' proofs from SP1's prover network.
+        n += 1
+        subs = t2["submissions"]
+        runs = ", ".join(str(x.get("run_id")) for x in subs)
+        outcomes = ", ".join(f"run {x.get('run_id')} `{(x.get('record') or {}).get('outcome')}`" for x in subs)
+        pins = t2.get("pins") or {}
+        out += [f"| {n} | T2: each disclosed run's verdict, re-run in SP1 on the TEE's exact input, is a Groth16 proof that near-t2 checks on NEAR against near-antibody's records "
+                f"({t2.get('contract')}, locked; a validity proof of a disclosed verdict: no privacy claimed, no payout depends on it) | "
+                f"`{d.cli('zk status --run ' + str(subs[0].get('run_id')))}` (and runs {runs}) | {outcomes}; a tampered proof refused: `{str((t2.get('refusal') or {}).get('refused')).lower()}`; "
+                f"SP1 6.10.0's key built in: `{str((pins.get('groth16') or {}).get('is_sp1_v6_10_0')).lower()}`, program vkey `{str(pins.get('program_vkey'))[:10]}…` | "
+                + ", ".join(f"run {x.get('run_id')} {d.tx(x.get('tx'))}" for x in subs) + " |"]
+    elif (t2.get("near_t2") or {}).get("submissions") and t2.get("ok"):
+        # The sandbox: MOCK prover, TEST key, a lying MOCK TEE.
+        n += 1
+        nt = t2["near_t2"]
+        sub = nt["submissions"]
+        out += [f"| {n} | T2 in the sandbox: practice runs re-run natively, proven under a TEST key (MOCK prover) and checked by near-t2; the MOCK worker lied once and near-t2 caught it | "
+                f"`{d.cli('zk status --run ' + str(sub[0].get('run_id')))}` | honest run {sub[0].get('run_id')} `{sub[0]['record'].get('outcome')}`; "
+                f"lying TEE's run {sub[-1].get('run_id')} `{sub[-1]['record'].get('outcome')}` ({', '.join(sub[-1]['record'].get('differ') or [])} differ); a tampered proof refused: `{str(nt.get('tampered_refused')).lower()}` | - |"]
     pr = r.get("project_read", {})
     if pr:
         n += 1
@@ -323,7 +347,11 @@ def judges(d):
         if (r.get("verdict_consumer") or {}).get("skipped"):
             out += ["- The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget."]
         out += ["- One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
-    out += ["- T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet: docs/zk-feasibility.md is the feasibility study, and no payout depends on it.",
+    if (r.get("t2") or {}).get("ok") and d.net != "sandbox":
+        out += ["- T2 is a validity proof of a disclosed verdict (docs/zk.md): it claims no privacy, and no payout in the locked deployment depends on it. It covers the four disclosed runs and the practice tries the prover service proves."]
+    else:
+        out += ["- T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet on testnet: near-t2 and the sandbox run are in place (docs/zk.md), and no payout depends on it."]
+    out += [
             "- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
             "- A mutation score, where shown, measures a rule set's strength, not the code's security.", ""]
     return "\n".join(out)
