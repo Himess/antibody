@@ -1,0 +1,22 @@
+{
+  "network": "testnet",
+  "program": 5,
+  "commit_id": 15,
+  "run_id": 35,
+  "mode": "verify",
+  "hunter": "agent-c.antibody.testnet",
+  "reveal_tx": "9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN",
+  "request_sha256": "6c2bcfd74c9a559532c72ca4ab86ec422c7aea800cc1f85b43a032e209b4d4c4",
+  "blob_sha256": "598272a3d1616a306140711305c227f5231357551d6fe0aac598fa29c31c8dce",
+  "base_sha256": "200cc7e636e7bd4fe9056cd2d4707d1eccadc3f656d4e9e3d61e68c9ffaba621",
+  "tee": {
+    "tier": "T1",
+    "kind": "NoViolation",
+    "keys": [],
+    "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+    "output_sha256": "5d97c7d852a6fbcbccd32b6c43ac948a245194fad8550581b2412c230431f967"
+  },
+  "commit_state": {
+    "Done": "Forfeited"
+  }
+}

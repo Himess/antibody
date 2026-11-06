@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/verifier", "crates/witness", "crates/runner", "crates/cli", "crates/services", "crates/rules"]
-exclude = ["third_party", "contracts"]
+members = ["crates/verifier", "crates/witness", "crates/runner", "crates/cli", "crates/services", "crates/rules", "crates/zk/core"]
+exclude = ["third_party", "contracts", "crates/zk/guest", "crates/zk/host"]
 resolver = "2"
 
 [workspace.package]

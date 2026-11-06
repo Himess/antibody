@@ -791,6 +791,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "antibody-zk-core"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "antibody-verifier",
+ "hex",
+ "serde_json",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"

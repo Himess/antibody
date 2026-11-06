@@ -1,0 +1,15 @@
+[package]
+name = "antibody-zk-core"
+description = "A disclosed verdict, re-run: the verifier core on the exact input the TEE received, opened with the disclosed content key, and the public values a validity proof of it commits"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+antibody-verifier = { path = "../../verifier" }
+alloy-primitives.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

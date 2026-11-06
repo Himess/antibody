@@ -1,0 +1,27 @@
+{
+  "network": "testnet",
+  "program": 5,
+  "commit_id": 16,
+  "run_id": 36,
+  "mode": "verify",
+  "hunter": "agent-d.antibody.testnet",
+  "reveal_tx": "46YmqNddvWgw55MBn5JcGXVGZ4cHkyzsojig6tLFxJhZ",
+  "request_sha256": "83e954f00a028710a15249ca2a13982fae06007f1489fe8ad1d83a1a5d305592",
+  "blob_sha256": "d896c7f7e273186f68d4ac96141111036df1a48abb637680d41e9de55ced6e34",
+  "base_sha256": "200cc7e636e7bd4fe9056cd2d4707d1eccadc3f656d4e9e3d61e68c9ffaba621",
+  "tee": {
+    "tier": "T1",
+    "kind": "Violation",
+    "keys": [
+      {
+        "slot": 0,
+        "tag": "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199"
+      }
+    ],
+    "receipt_sha256": "fa62fbea3e9ea80fc38a8c5411b7041948e26add0c98efe501eafeec318d7c98",
+    "output_sha256": "6fbc1aa2dd3810437149a1743cf8878fc0fb8c8050ef2ea8b69142cdd9cd328e"
+  },
+  "commit_state": {
+    "Done": "DuplicateConfirmed"
+  }
+}

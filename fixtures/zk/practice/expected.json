@@ -1,0 +1,33 @@
+{
+  "network": "testnet",
+  "program": 6,
+  "commit_id": 20,
+  "run_id": 53,
+  "mode": "verify",
+  "hunter": "judge-1-p6.practice.antibody.testnet",
+  "reveal_tx": "7KduoN6WrLrkPKK6hc1NAWKMmeJqfac9MBt5oi7Ma2DH",
+  "request_sha256": "b4b3647b4c0124bd471618664aef8e82fcc793e8a597f07d7de5423722a99d84",
+  "blob_sha256": "7216606875ff80d62a1991554d17ab1512fa4a86fd0220d0570bb4ae4f9d215b",
+  "base_sha256": "bed565c109e123ddc1b7bce134e15bd8ad95a1bed94d3f6fd2a631e05ab0ed39",
+  "tee": {
+    "tier": "T1",
+    "kind": "Violation",
+    "keys": [
+      {
+        "slot": 0,
+        "tag": "cc52c19a12305290fa0b15741d08f4ec325bacf4242cdef37f4b153e13c33e51"
+      }
+    ],
+    "receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+    "output_sha256": "84581c93368722399fe480c2101fdead2f42d390920ee54c4357365bf3b51831"
+  },
+  "commit_state": {
+    "Done": {
+      "Paid": {
+        "amount": "1000000000000000000000",
+        "instant": true,
+        "at": 1793809271
+      }
+    }
+  }
+}
