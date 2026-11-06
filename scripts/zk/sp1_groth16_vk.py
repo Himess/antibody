@@ -1,5 +1,5 @@
 """Writes SP1's Groth16 verifying keys in the encoding NEAR's alt_bn128 host functions take, for
-contracts/sp1-groth16-spike (docs/zk-feasibility.md).
+contracts/near-t2 (docs/zk.md).
 
 NEAR reads field elements little-endian, and a G2 point as (x.c0, x.c1, y.c0, y.c1); SP1, gnark and
 the EVM write them big-endian, and G2 as (x.c1, x.c0, y.c1, y.c0). The keys come from SP1's published

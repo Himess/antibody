@@ -1,0 +1,189 @@
+{
+ "id": 5,
+ "key": "bounty.antibody.testnet/5",
+ "project": "acme.antibody.testnet",
+ "manifest_sha256": "be42d0c87d995331f0b3f9f912cc3aad8537eedc56adc39bc088c2dcaf079518",
+ "params": {
+  "critical": "100000000000000000000000",
+  "high": "30000000000000000000000",
+  "medium": "10000000000000000000000",
+  "low": "0",
+  "impact_bps": 0,
+  "impact_cap": "0",
+  "decimals": 24,
+  "instant_cap": "100000000000000000000000",
+  "instant_budget": "150000000000000000000000",
+  "instant_window": 3600,
+  "protocol_fee_bps": 0,
+  "release_fee": "0",
+  "bond": "1000000000000000000000",
+  "challenge_bond": "5000000000000000000000",
+  "windows": {
+   "reveal": 600,
+   "challenge": 60,
+   "resolve": 300,
+   "infra_grace": 600,
+   "run_timeout": 240,
+   "round_min": 120,
+   "rerun_window": 600,
+   "disclosure_max_delay": 600,
+   "deadline": 1796397753,
+   "exit_grace": 60
+  },
+  "slots": [
+   {
+    "slot": 0,
+    "severity": "critical",
+    "budget": "400000000000000000000000"
+   },
+   {
+    "slot": 1,
+    "severity": "high",
+    "budget": "400000000000000000000000"
+   },
+   {
+    "slot": 2,
+    "severity": "medium",
+    "budget": "400000000000000000000000"
+   },
+   {
+    "slot": 3,
+    "severity": "medium",
+    "budget": "400000000000000000000000"
+   }
+  ],
+  "unevaluable": "refund",
+  "gap": {
+   "threshold_usd_micro": "100000000",
+   "claim_amount": "10000000000000000000000"
+  },
+  "known_max_count": 4,
+  "known_max_share_bps": 5000,
+  "pause_slots": [
+   0
+  ],
+  "pause_min_impact_usd_micro": "0",
+  "run_deposit": "30000000000000000000000"
+ },
+ "phase": "Open",
+ "anchor": "LightClient",
+ "created_at": 1793806734,
+ "opened_at": 1793806870,
+ "activation_run": 31,
+ "sealing_pk": "3ec2215a7331f2bba02408458c8bbbcdefecde7d1c2a8e45e4b928fcb9686b25",
+ "key_epoch": "5d1bfbf188b5763e",
+ "known": [
+  {
+   "run": 32,
+   "tags": [
+    "45b2dc90a6a1182df8596d4205f3d0e69771aa87dcd0fb7e9d9e1e5505f6d8c5"
+   ],
+   "slots": [
+    2
+   ],
+   "severity": "medium",
+   "impact_usd_micro": "0",
+   "fixed": false
+  }
+ ],
+ "known_runs": [
+  32
+ ],
+ "ledger": {
+  "deposits": "400000000000000000000000",
+  "forfeits": "1000000000000000000000",
+  "challenge_bonds": "0",
+  "available": "161000000000000000000000",
+  "reserved": "0",
+  "paid": "240000000000000000000000",
+  "fees": "0",
+  "returned": "0"
+ },
+ "instant": {
+  "index": 498279,
+  "spent": "100000000000000000000000"
+ },
+ "commits": 7,
+ "cursor": 7,
+ "debtors": [],
+ "round": 2,
+ "round_started_at": 1793809156,
+ "round_manifests": [
+  "d38c239590cc529c73d58de483823ecb3a4ecf2586261e5e673b4f2d2f18fc07",
+  "56eb8e1efb58561a81db55686939b8bbe90707b883220ebdd87df917404aedb5"
+ ],
+ "proposal": null,
+ "rounds": [
+  {
+   "round": 1,
+   "manifest_sha256": "d38c239590cc529c73d58de483823ecb3a4ecf2586261e5e673b4f2d2f18fc07",
+   "opened_at": 1793808327,
+   "released": [
+    "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199"
+   ],
+   "carried": [
+    "ae7e21c8af1b96023b13ae1daff4bcd1076b5b282e4f6ce6fb91e6fdae5f6de4",
+    "a74dddb61406f343a53af7298ef64be2f9334763dfcd23f17ca3b85547e53b8c"
+   ],
+   "promoted": [
+    19
+   ],
+   "release_gate": false
+  },
+  {
+   "round": 2,
+   "manifest_sha256": "56eb8e1efb58561a81db55686939b8bbe90707b883220ebdd87df917404aedb5",
+   "opened_at": 1793809156,
+   "released": [
+    "ae7e21c8af1b96023b13ae1daff4bcd1076b5b282e4f6ce6fb91e6fdae5f6de4",
+    "a74dddb61406f343a53af7298ef64be2f9334763dfcd23f17ca3b85547e53b8c"
+   ],
+   "carried": [],
+   "promoted": [],
+   "release_gate": true
+  }
+ ],
+ "ticket_rounds": [
+  0
+ ],
+ "release_permits": 1,
+ "claimed": [
+  [
+   0,
+   "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199",
+   1793806969,
+   true
+  ],
+  [
+   0,
+   "ae7e21c8af1b96023b13ae1daff4bcd1076b5b282e4f6ce6fb91e6fdae5f6de4",
+   1793807523,
+   true
+  ],
+  [
+   0,
+   "a74dddb61406f343a53af7298ef64be2f9334763dfcd23f17ca3b85547e53b8c",
+   1793807523,
+   true
+  ]
+ ],
+ "fixed_tags": [
+  [
+   1,
+   "ae7e21c8af1b96023b13ae1daff4bcd1076b5b282e4f6ce6fb91e6fdae5f6de4"
+  ],
+  [
+   1,
+   "a74dddb61406f343a53af7298ef64be2f9334763dfcd23f17ca3b85547e53b8c"
+  ]
+ ],
+ "disclosed": [],
+ "first_claim_at": 1793806969,
+ "paid_first_hour": "240000000000000000000000",
+ "defaulted": "0",
+ "dup_reserved": [],
+ "gap_reserved": [],
+ "owed": [],
+ "close_cursor": 0,
+ "opening": null
+}

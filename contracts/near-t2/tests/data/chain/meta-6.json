@@ -1,0 +1,129 @@
+{
+ "name": "Practice program \u2014 a tutorial (testnet)",
+ "description": "TUTORIAL TARGET: 24 vaults with one textbook bug (sweep has no access check), published with its proof (docs/practice.md).",
+ "manifest_url": "near-tx:DTXZYpH5Lp51qtCdYkJgPLjBucHmM7zeuPhxqXhtAcJd:antibody.testnet",
+ "terms_sha256": "2a714747a7fe11e7c534424ec7c9f9b2baca7cb04928aa3aa3b69c32aeffae67",
+ "project_pk": "7771e4e223f2e4a3f6f9f7190fa927e3c27e22a7102767c0260243305c18fb40",
+ "chain_id": 11155111,
+ "anchor_block": 12063269,
+ "anchor_hash": "16662a318858fe75ac73c5ffc61dd184b0069ce90148470fff821b16d373f2c2",
+ "targets": [
+  [
+   "factory",
+   "0x3811928b0cf5326adcd7d1937e645835d130a3d3"
+  ],
+  [
+   "vault-0",
+   "0xa7b45e6d1e7d9f488e219e273836d17f9489654e"
+  ],
+  [
+   "vault-1",
+   "0x90c1b2271452a26b58b612467f0b25f102d6c811"
+  ],
+  [
+   "vault-2",
+   "0x43689b969e15fe77db867266edc2e028f3c6a6cd"
+  ],
+  [
+   "vault-3",
+   "0xce0e5e7be89913778ee2250f6e51da4e1bbeedd5"
+  ],
+  [
+   "vault-4",
+   "0x185d4f6a747091760f39adbe66a3a414ce8fe56a"
+  ],
+  [
+   "vault-5",
+   "0x3c93d9efa9322b7e61f1203eeb02ae6f105dc1c1"
+  ],
+  [
+   "vault-6",
+   "0xec83ccd28e904b9773aea89d66d06cd614a491a9"
+  ],
+  [
+   "vault-7",
+   "0xc321c95007818fd00f74b8ac2099a00267ecebd9"
+  ],
+  [
+   "vault-8",
+   "0x48f155b18bd0fdce9e73c018dbec32fbf5e2bf76"
+  ],
+  [
+   "vault-9",
+   "0x5ed35bd3e2586aa3ea288b9dd72e5093496e5b94"
+  ],
+  [
+   "vault-10",
+   "0x8aecbf2766de14405a1ff69978cac08b8c61a8b6"
+  ],
+  [
+   "vault-11",
+   "0x3fdcf28f87c8d5214517f3775bd588f79416340a"
+  ],
+  [
+   "vault-12",
+   "0xc7eb957ea47c1bfef6260465d5d9018532423594"
+  ],
+  [
+   "vault-13",
+   "0xb37f3f2cae77ddce3e3d55fc04ba2ba373885684"
+  ],
+  [
+   "vault-14",
+   "0xfe8c0d8fed4d283d3d5c5d36bb75141da8fc2071"
+  ],
+  [
+   "vault-15",
+   "0x012849ff2ab346fef70a86f2923b45d5c0cc9ea6"
+  ],
+  [
+   "vault-16",
+   "0x51e660357de82b8fb6e33af6cca7f24ad04a90b7"
+  ],
+  [
+   "vault-17",
+   "0xe0f9e4abcd980c94a86f4ceec61d73b3adef8669"
+  ],
+  [
+   "vault-18",
+   "0xa828ec08588df5b71c5a027bac2bbb68ddc844b9"
+  ],
+  [
+   "vault-19",
+   "0x83cb21ef40d1b7f7eb895818513163180ed19ae4"
+  ],
+  [
+   "vault-20",
+   "0x27bce7d176b7103fc76b37a2f44706cb7f9b3a7c"
+  ],
+  [
+   "vault-21",
+   "0x198b8abf4fb07d9fb7074012e5227b5106ee652f"
+  ],
+  [
+   "vault-22",
+   "0x40c8ae46d71df902c8e7f3e5681ab67a4fed2f72"
+  ],
+  [
+   "vault-23",
+   "0x6712ab453c36edaac5d19cb147dd68c67608734a"
+  ]
+ ],
+ "slots": [
+  [
+   0,
+   "vault_keeps_its_ether",
+   "low"
+  ]
+ ],
+ "base": {
+  "location": "near-tx:Hzdxw2Ai4xCwEmMgfL3ktdvkNTMG5Ym6yC644wzYLZmq:antibody.testnet",
+  "sha256": "bed565c109e123ddc1b7bce134e15bd8ad95a1bed94d3f6fd2a631e05ab0ed39"
+ },
+ "round_manifests": [],
+ "round_bases": [],
+ "proposal_base": null,
+ "proposal_manifest": null,
+ "round_releases": [],
+ "proposal_releases": []
+}

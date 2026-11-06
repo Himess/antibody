@@ -22,6 +22,7 @@ contracts:
 	cd contracts/practice-account && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/practice-vending && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/verdict-guard && cargo build --release --target wasm32-unknown-unknown
+	cd contracts/near-t2 && cargo build --release --target wasm32-unknown-unknown
 	cd contracts/evm && forge build
 
 verifier:
@@ -42,6 +43,7 @@ contract-tests:
 	cd contracts/near-guardian && cargo test --lib
 	cd contracts/practice-vending && cargo test --lib
 	cd contracts/verdict-guard && cargo test --lib
+	cd contracts/near-t2 && cargo test --lib
 	cargo test --release -p antibody-verifier -p antibody-cli
 
 sandbox:

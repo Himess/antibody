@@ -1,0 +1,30 @@
+{
+ "id": 20,
+ "program": 6,
+ "index": 0,
+ "round": 0,
+ "hunter": "judge-1-p6.practice.antibody.testnet",
+ "beneficiary": "practice.antibody.testnet",
+ "commitment": "ee701fa8ad8c6b34599aca522bce098330d4bbb106a7dc0490b188f8dce7aa0d",
+ "blob_sha256": "7216606875ff80d62a1991554d17ab1512fa4a86fd0220d0570bb4ae4f9d215b",
+ "bond": "100000000000000000000",
+ "committed_at": 1793809238,
+ "state": {
+  "Done": {
+   "Paid": {
+    "amount": "1000000000000000000000",
+    "instant": true,
+    "at": 1793809271
+   }
+  }
+ },
+ "run": 53,
+ "retry_until": 1793809840,
+ "attempts": 1,
+ "second": null,
+ "second_agrees": false,
+ "challenge": null,
+ "rerun": null,
+ "ticket": false,
+ "wrapped": null
+}

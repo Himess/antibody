@@ -57,6 +57,13 @@ fn each_disclosed_run_reproduces_the_tees_receipt() {
         let pv = decode_public_values(&r.public_values()).unwrap();
         assert_eq!((pv.receipt_sha256, pv.run_id, pv.kind), (r.receipt_sha256, r.run_id, kind_byte(r.receipt.kind)));
         assert_eq!(pv.broken.len(), r.receipt.broken.len());
+        // The proof in fixtures/zk commits exactly these bytes (written once with ZK_WRITE_PUBLIC_VALUES=1).
+        let file = dir(case).join("public_values.bin");
+        if std::env::var("ZK_WRITE_PUBLIC_VALUES").is_ok() {
+            std::fs::write(&file, r.public_values()).unwrap();
+        }
+        let committed = std::fs::read(&file).unwrap_or_else(|_| panic!("{case}: no public_values.bin"));
+        assert_eq!(committed, r.public_values(), "{case}: the public values the proof commits");
     }
 }
 

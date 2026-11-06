@@ -24,13 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "antibody-sp1-groth16-spike"
-version = "0.1.0"
-dependencies = [
- "near-sdk",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1023,6 +1016,15 @@ name = "near-sys"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b99e9ce0020190ea152f70d1849e54fc8fc123738e7447800ad818c78f5167cc"
+
+[[package]]
+name = "near-t2"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "near-sdk",
+ "serde_json",
+]
 
 [[package]]
 name = "near-time"

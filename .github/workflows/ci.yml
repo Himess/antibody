@@ -153,8 +153,8 @@ jobs:
         run: |
           cargo test --lib
           cargo build --release --target wasm32-unknown-unknown
-      - name: SP1 Groth16 on NEAR's alt_bn128 host functions (a T2 spike, not deployed)
-        working-directory: contracts/sp1-groth16-spike
+      - name: near-t2 (T2, validity proofs of disclosed verdicts; SP1 6.10.0 Groth16 on NEAR's alt_bn128 host functions)
+        working-directory: contracts/near-t2
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/contracts/verdict-guard/target
         run: |

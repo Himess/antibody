@@ -1,0 +1,111 @@
+{
+ "id": 6,
+ "key": "bounty.antibody.testnet/6",
+ "project": "antibody.testnet",
+ "manifest_sha256": "e275b02e2cb1d88f47b51c2a93ea71a0ae8ba43851d3d6b262bfb690aca5b347",
+ "params": {
+  "critical": "0",
+  "high": "0",
+  "medium": "0",
+  "low": "1000000000000000000000",
+  "impact_bps": 0,
+  "impact_cap": "0",
+  "decimals": 24,
+  "instant_cap": "1000000000000000000000",
+  "instant_budget": "24000000000000000000000",
+  "instant_window": 3600,
+  "protocol_fee_bps": 0,
+  "release_fee": "0",
+  "bond": "100000000000000000000",
+  "challenge_bond": "1000000000000000000000",
+  "windows": {
+   "reveal": 600,
+   "challenge": 60,
+   "resolve": 300,
+   "infra_grace": 600,
+   "run_timeout": 240,
+   "round_min": 120,
+   "rerun_window": 600,
+   "disclosure_max_delay": 600,
+   "deadline": 1796397753,
+   "exit_grace": 60
+  },
+  "slots": [
+   {
+    "slot": 0,
+    "severity": "low",
+    "budget": "30000000000000000000000"
+   }
+  ],
+  "unevaluable": "refund",
+  "gap": null,
+  "known_max_count": 0,
+  "known_max_share_bps": 0,
+  "pause_slots": [],
+  "pause_min_impact_usd_micro": "0",
+  "run_deposit": "30000000000000000000000"
+ },
+ "phase": "Open",
+ "anchor": "LightClient",
+ "created_at": 1793809189,
+ "opened_at": 1793809222,
+ "activation_run": 52,
+ "sealing_pk": "ea66fa087c57c5b32066c97a9791b0c1d5cfa2e96db22ea33cc693d0a91b764f",
+ "key_epoch": "99f638f36f6700c5",
+ "known": [],
+ "known_runs": [],
+ "ledger": {
+  "deposits": "30000000000000000000000",
+  "forfeits": "0",
+  "challenge_bonds": "0",
+  "available": "27000000000000000000000",
+  "reserved": "0",
+  "paid": "3000000000000000000000",
+  "fees": "0",
+  "returned": "0"
+ },
+ "instant": {
+  "index": 498280,
+  "spent": "2000000000000000000000"
+ },
+ "commits": 3,
+ "cursor": 3,
+ "debtors": [],
+ "round": 0,
+ "round_started_at": 1793809222,
+ "round_manifests": [],
+ "proposal": null,
+ "rounds": [],
+ "ticket_rounds": [],
+ "release_permits": 0,
+ "claimed": [
+  [
+   0,
+   "cc52c19a12305290fa0b15741d08f4ec325bacf4242cdef37f4b153e13c33e51",
+   1793809269,
+   true
+  ],
+  [
+   0,
+   "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1",
+   1793809313,
+   true
+  ],
+  [
+   0,
+   "9990e991d8bcee767113d2bfb18a2100da8db6f5f1be40db08339fb7ce91453c",
+   1793970491,
+   true
+  ]
+ ],
+ "fixed_tags": [],
+ "disclosed": [],
+ "first_claim_at": 1793809269,
+ "paid_first_hour": "2000000000000000000000",
+ "defaulted": "0",
+ "dup_reserved": [],
+ "gap_reserved": [],
+ "owed": [],
+ "close_cursor": 0,
+ "opening": null
+}

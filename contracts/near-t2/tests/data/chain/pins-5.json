@@ -1,0 +1,21 @@
+{
+ "verifier": {
+  "wasm_url": "https://github.com/Himess/antibody/releases/download/verifier-ccc27f0ca60c/antibody-verify.wasm",
+  "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
+  "max_instructions": 5000000000,
+  "max_memory_mb": 512,
+  "max_execution_seconds": 60,
+  "deposit": "20000000000000000000000"
+ },
+ "outlayer": "outlayer.testnet",
+ "dcap_verifier": "tee-verifier-2026-07-22.testnet",
+ "accepted_tcb": [
+  "UpToDate"
+ ],
+ "images_known": 111,
+ "image_delay_secs": 172800,
+ "image_registry": "worker.outlayer.testnet",
+ "light_client": "client-eth2.sepolia.testnet",
+ "light_client_chain_id": 11155111,
+ "guardian": "guardian.antibody.testnet"
+}

@@ -1,11 +1,11 @@
 [package]
-name = "antibody-sp1-groth16-spike"
+name = "near-t2"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
 publish = false
-description = "Spike (not deployed): an SP1 Groth16 proof verified on NEAR with the alt_bn128 host functions (docs/zk-feasibility.md)"
+description = "T2: validity proofs of disclosed verdicts. An SP1 6.10.0 Groth16 proof checked with NEAR's alt_bn128 host functions, then compared with near-antibody's records of the run (docs/zk.md)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

@@ -1,0 +1,36 @@
+{
+ "id": 33,
+ "program": 5,
+ "commit": 13,
+ "mode": "verify",
+ "round": 0,
+ "request_sha256": "c348b67ec9a15c29e066fa0d3933944be77336a394dce17b70d95554480afd86",
+ "signer": "agent-a.antibody.testnet",
+ "payer": "agent-a.antibody.testnet",
+ "started_at": 1793806937,
+ "outcome": {
+  "Answered": {
+   "output_sha256": "c0c46c1444c520cd9ce18c915309cbd070868f6386c3643b1bf8b42d43ee2c7f",
+   "facts": {
+    "kind": "Violation",
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199"
+     }
+    ],
+    "impact_usd_micro": "462931853867",
+    "protected_harm_usd_micro": "0",
+    "receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee",
+    "reason": null,
+    "extra": {
+     "WrapD": {
+      "wrap_d": "eaf95f64efb4fc0ce8841dd1acca5bacec824280ee5fde7e85256b6dfa5bf69c736292a3799cafc6b51fc2df27bea6b856c34d515219a2fc81418efe"
+     }
+    }
+   },
+   "at": 1793806949,
+   "tier": "T1"
+  }
+ }
+}

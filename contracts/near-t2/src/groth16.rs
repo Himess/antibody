@@ -1,5 +1,5 @@
-//! Spike, not deployed (docs/zk-feasibility.md): verifies an SP1 Groth16 proof on NEAR with the
-//! alt_bn128 host functions, as a NEAR contract that checks validity proofs of disclosed verdicts would.
+//! An SP1 6.x Groth16 proof, verified with NEAR's alt_bn128 host functions (written for this contract; it
+//! uses no SP1 crate). It began as the G0 spike (docs/zk-feasibility.md).
 //!
 //! SP1 6.x proof bytes: the verifier selector (the first 4 bytes of sha256 of the Groth16 key), then
 //! three 32-byte words (exit code, vk root, proof nonce), then gnark's proof (A in G1, B in G2, C in G1,
@@ -11,11 +11,11 @@
 //! NEAR's host functions read field elements little-endian and a G2 point as (x.c0, x.c1, y.c0, y.c1):
 //! the proof is converted here, the keys once (`vk.rs`, scripts/zk/sp1_groth16_vk.py).
 
-use near_sdk::{env, json_types::Base64VecU8, near};
+use near_sdk::{env, near};
 
-pub mod vk;
-
-/// An SP1 Groth16 verifying key in NEAR's encoding (G1: 64 bytes, G2: 128 bytes, little-endian).
+/// A Groth16 verifying key in NEAR's encoding (G1: 64 bytes, G2: 128 bytes, little-endian).
+#[near(serializers = [borsh])]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Sp1Groth16Vk {
     pub selector: [u8; 4],
     /// Big-endian, as SP1 writes it into the proof.
@@ -26,6 +26,70 @@ pub struct Sp1Groth16Vk {
     pub delta_neg: [u8; 128],
     /// IC₀ (the constant) and one point per public input.
     pub ic: [[u8; 64]; 6],
+}
+
+/// The same key as JSON, every field lowercase hex (NEAR's encoding; the selector and vk root as SP1 writes
+/// them). Only the sandbox passes one: the testnet deployment uses SP1 6.10.0's key built in (`vk.rs`).
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Groth16KeyJson {
+    pub selector: String,
+    pub vk_root: String,
+    pub alpha: String,
+    pub beta_neg: String,
+    pub gamma_neg: String,
+    pub delta_neg: String,
+    pub ic: Vec<String>,
+}
+
+pub fn hex(b: &[u8]) -> String {
+    const D: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(2 * b.len());
+    for x in b {
+        s.push(D[(x >> 4) as usize] as char);
+        s.push(D[(x & 15) as usize] as char);
+    }
+    s
+}
+
+pub fn unhex<const N: usize>(s: &str) -> Result<[u8; N], &'static str> {
+    let s = s.trim_start_matches("0x").as_bytes();
+    if s.len() != 2 * N {
+        return Err("a hex field has the wrong length");
+    }
+    let v = |c: u8| match c {
+        b'0'..=b'9' => Ok(c - b'0'),
+        b'a'..=b'f' => Ok(c - b'a' + 10),
+        b'A'..=b'F' => Ok(c - b'A' + 10),
+        _ => Err("not hex"),
+    };
+    let mut out = [0u8; N];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = (v(s[2 * i])? << 4) | v(s[2 * i + 1])?;
+    }
+    Ok(out)
+}
+
+impl TryFrom<&Groth16KeyJson> for Sp1Groth16Vk {
+    type Error = &'static str;
+    fn try_from(j: &Groth16KeyJson) -> Result<Self, Self::Error> {
+        if j.ic.len() != 6 {
+            return Err("an SP1 Groth16 key has 6 IC points (5 public inputs)");
+        }
+        let mut ic = [[0u8; 64]; 6];
+        for (o, s) in ic.iter_mut().zip(&j.ic) {
+            *o = unhex(s)?;
+        }
+        Ok(Self {
+            selector: unhex(&j.selector)?,
+            vk_root: unhex(&j.vk_root)?,
+            alpha: unhex(&j.alpha)?,
+            beta_neg: unhex(&j.beta_neg)?,
+            gamma_neg: unhex(&j.gamma_neg)?,
+            delta_neg: unhex(&j.delta_neg)?,
+            ic,
+        })
+    }
 }
 
 /// BN254's scalar field order r, big-endian: a public input must be below it.
@@ -105,40 +169,12 @@ pub fn verify(vk: &Sp1Groth16Vk, program_vkey: &[u8; 32], public_values: &[u8], 
     Ok(env::alt_bn128_pairing_check(&pairs))
 }
 
-fn vkey32(s: &str) -> [u8; 32] {
-    let s = s.trim_start_matches("0x");
-    let mut out = [0u8; 32];
-    if s.len() != 64 {
-        env::panic_str("the program vkey is 32 bytes, 0x-hex");
-    }
-    for (i, o) in out.iter_mut().enumerate() {
-        *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap_or_else(|_| env::panic_str("the program vkey is 0x-hex"));
-    }
-    out
-}
-
-#[near(contract_state)]
-#[derive(Default)]
-pub struct Spike {}
-
-#[near]
-impl Spike {
-    /// Verifies a proof against SP1 6.10.0's Groth16 key (the version crates/zk/guest pins).
-    pub fn verify_sp1_6_10(&self, program_vkey: String, public_values: Base64VecU8, proof: Base64VecU8) -> bool {
-        verify(&vk::SP1_V6_10_0, &vkey32(&program_vkey), &public_values.0, &proof.0).unwrap_or_else(|e| env::panic_str(e))
-    }
-
-    /// Verifies a proof against SP1 v6.0.0's Groth16 key (SP1's published fixture proof).
-    pub fn verify_sp1_6_0(&self, program_vkey: String, public_values: Base64VecU8, proof: Base64VecU8) -> bool {
-        verify(&vk::SP1_V6_0_0, &vkey32(&program_vkey), &public_values.0, &proof.0).unwrap_or_else(|e| env::panic_str(e))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env, Gas};
 
     use super::*;
+    use crate::vk;
 
     struct Fixture {
         vkey: [u8; 32],
@@ -149,7 +185,7 @@ mod tests {
     /// SP1's published v6.0.0 Groth16 fixture (sp1-project-template, contracts/src/fixtures).
     fn fixture() -> Fixture {
         let f: serde_json::Value = serde_json::from_str(include_str!("../tests/data/sp1-v6.0.0-groth16-fixture.json")).unwrap();
-        let h = |k: &str| hex::decode(f[k].as_str().unwrap().trim_start_matches("0x")).unwrap();
+        let h = |k: &str| ::hex::decode(f[k].as_str().unwrap().trim_start_matches("0x")).unwrap();
         Fixture { vkey: h("vkey").try_into().unwrap(), public_values: h("publicValues"), proof: h("proof") }
     }
 
@@ -204,16 +240,21 @@ mod tests {
         assert_eq!(env::sha256_array(shipped)[..4], vk::SP1_V6_10_0.selector);
     }
 
-    // near-sdk declares the yield/resume host functions; Windows links the test binary against these
-    // symbols anyway (never called).
-    #[cfg(windows)]
-    #[no_mangle]
-    pub extern "C" fn promise_yield_create(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) -> u64 {
-        unreachable!()
-    }
-    #[cfg(windows)]
-    #[no_mangle]
-    pub extern "C" fn promise_yield_resume(_: u64, _: u64, _: u64, _: u64) -> u32 {
-        unreachable!()
+    #[test]
+    fn a_key_round_trips_through_json() {
+        let k = &vk::SP1_V6_10_0;
+        let j = Groth16KeyJson {
+            selector: hex(&k.selector),
+            vk_root: hex(&k.vk_root),
+            alpha: hex(&k.alpha),
+            beta_neg: hex(&k.beta_neg),
+            gamma_neg: hex(&k.gamma_neg),
+            delta_neg: hex(&k.delta_neg),
+            ic: k.ic.iter().map(|p| hex(p)).collect(),
+        };
+        assert_eq!(Sp1Groth16Vk::try_from(&j).as_ref(), Ok(k));
+        let mut short = j.clone();
+        short.ic.pop();
+        assert!(Sp1Groth16Vk::try_from(&short).is_err());
     }
 }

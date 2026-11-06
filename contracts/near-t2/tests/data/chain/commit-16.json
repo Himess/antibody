@@ -1,0 +1,24 @@
+{
+ "id": 16,
+ "program": 5,
+ "index": 3,
+ "round": 0,
+ "hunter": "agent-d.antibody.testnet",
+ "beneficiary": "agent-d.antibody.testnet",
+ "commitment": "db4f274321d4b5164e08e04ead22203892ffe419e3279fc8060962bf06d8c77f",
+ "blob_sha256": "d896c7f7e273186f68d4ac96141111036df1a48abb637680d41e9de55ced6e34",
+ "bond": "1000000000000000000000",
+ "committed_at": 1793807296,
+ "state": {
+  "Done": "DuplicateConfirmed"
+ },
+ "run": 36,
+ "retry_until": 1793807902,
+ "attempts": 1,
+ "second": null,
+ "second_agrees": false,
+ "challenge": null,
+ "rerun": 44,
+ "ticket": false,
+ "wrapped": null
+}

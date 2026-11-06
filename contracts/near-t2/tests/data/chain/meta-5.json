@@ -1,0 +1,113 @@
+{
+ "name": "Acme Lend v1 \u2014 pre-launch (testnet)",
+ "description": "Fictional lending protocol with planted bugs (DELIBERATELY VULNERABLE TEST FIXTURE).",
+ "manifest_url": "https://test.fastfs.io/acme.antibody.testnet/bounty.antibody.testnet/antibody/manifests/be42d0c87d995331f0b3f9f912cc3aad8537eedc56adc39bc088c2dcaf079518.json",
+ "terms_sha256": "3a9c40175b7ae46a342566111ba65ca4a420c8ff2289eb7b08c8759b5125a34d",
+ "project_pk": "f75254dad110cfdf85795d2f743ebd25c77c7567fd42aa1cb7b388a2068c2217",
+ "chain_id": 11155111,
+ "anchor_block": 12063269,
+ "anchor_hash": "16662a318858fe75ac73c5ffc61dd184b0069ce90148470fff821b16d373f2c2",
+ "targets": [
+  [
+   "AcmeGuard",
+   "0x0a1811b3a36287727abc7065aacc8fc4547b2f98"
+  ],
+  [
+   "acUSD",
+   "0xf4e8d84a44d5d901b322d82e60b1a6cdc7620955"
+  ],
+  [
+   "acETH",
+   "0x4edd629802596011ab8d76d996ef35b419961c76"
+  ],
+  [
+   "AcmePool",
+   "0x0053fefbaab1d98b3cc6765f435dbb6f8682f245"
+  ],
+  [
+   "AcmeLend",
+   "0xca1fafbcfc14d665d76045a018b215987f39f8a7"
+  ],
+  [
+   "AcmeLendImpl",
+   "0x4c348e8758deea78df03d0c0b20c58d1148edc2c"
+  ],
+  [
+   "AcmeVault",
+   "0x0433ceb84db807402de6642929ebf1450381cc46"
+  ],
+  [
+   "AcmeVaultImpl",
+   "0x0fd4fe9da00079c3f3a94be994482ab8eb8c44fa"
+  ],
+  [
+   "AcmeTreasury",
+   "0x25d16d1c0c5b86b88adae16e5a526a5526dc0c97"
+  ]
+ ],
+ "slots": [
+  [
+   0,
+   "solvency",
+   "critical"
+  ],
+  [
+   1,
+   "fees_to_treasury",
+   "high"
+  ],
+  [
+   2,
+   "share_price",
+   "medium"
+  ]
+ ],
+ "base": {
+  "location": "near-tx:2KJNqGZ2J3wMLt2PePNauvZXmC5fgme6b2T6qcTViZiQ:acme.antibody.testnet",
+  "sha256": "200cc7e636e7bd4fe9056cd2d4707d1eccadc3f656d4e9e3d61e68c9ffaba621"
+ },
+ "round_manifests": [
+  {
+   "location": "near-tx:9cjFNqM8VhD6V1q3zUebnKoTqswKhnPmXSTjifyegkUC:acme.antibody.testnet",
+   "sha256": "d38c239590cc529c73d58de483823ecb3a4ecf2586261e5e673b4f2d2f18fc07"
+  },
+  {
+   "location": "near-tx:4AMgLXSgtbriDifGtobMHPaYJYL6NxQowdQwAs24Fum1:acme.antibody.testnet",
+   "sha256": "56eb8e1efb58561a81db55686939b8bbe90707b883220ebdd87df917404aedb5"
+  }
+ ],
+ "round_bases": [
+  {
+   "location": "near-tx:8TbrEQZ8Sq4ghQZ7ATVCABLBWpT9hKY7cKmiacqgJr19:acme.antibody.testnet",
+   "sha256": "0500288487e5448db51a97610607c1f4e10e6b926b5d46fc0e5e78dea68ae012"
+  },
+  {
+   "location": "near-tx:3CyT57gng5kwdNJkpVSCPePeAxsa6VAgLPd47kqq1GHZ:acme.antibody.testnet",
+   "sha256": "610a5886b340d05492358a2670fd50cc9d4236d8b04dc47a96f39f0b3c218526"
+  }
+ ],
+ "proposal_base": null,
+ "proposal_manifest": null,
+ "round_releases": [
+  [
+   {
+    "proxy": "0xCa1FAFbCFC14d665d76045A018B215987f39f8A7",
+    "code_hash": "0x3919a37dd5b5dee0f49d0942b655bfe440e9d78d1a43dfe17ce7af8a6446dbe4",
+    "implementation": "0x1E021a909Ee25b75fBcd0cE09229A0462a40F915"
+   }
+  ],
+  [
+   {
+    "proxy": "0xCa1FAFbCFC14d665d76045A018B215987f39f8A7",
+    "code_hash": "0x7deb43a5fd8a6aac5aee95c158e0e552f6e866407b3f4c62442b39c6c6092adb",
+    "implementation": "0x74E75477Af2d649FFe8037a37014dD8c7bd217a9"
+   },
+   {
+    "proxy": "0x0433CEB84dB807402DE6642929EbF1450381CC46",
+    "code_hash": "0x8281ee18b7bd2f40337fe01767721ae85dcd4f0a2b1d8b331732baf81180ec4e",
+    "implementation": "0x32e8cd1D58736310340d5103dEd748e3d8f434d0"
+   }
+  ]
+ ],
+ "proposal_releases": []
+}

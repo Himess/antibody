@@ -9,6 +9,10 @@ description = "Generated proof data and public test fixtures"
 paths = [
   # Binary state-proof witnesses (Merkle nodes, hashes): high entropy by construction, no secrets.
   '''fixtures/.*\.witness\.bin$''',
-  # SP1's published Groth16 verifying key and fixture proof (public program vkey hashes and proofs).
-  '''contracts/sp1-groth16-spike/tests/data/.*''',
+  # SP1's published Groth16 verifying key and fixture proof, near-antibody's public testnet records
+  # (public program vkey hashes, proofs and hashes).
+  '''contracts/near-t2/tests/data/.*''',
+  # T2 fixtures: the TEST Groth16 key, and the proofs of disclosed runs with their network request ids.
+  '''fixtures/zk/t2-test-key\.json$''',
+  '''fixtures/zk/[^/]+/proof\.json$''',
 ]

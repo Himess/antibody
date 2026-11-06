@@ -1,0 +1,30 @@
+{
+ "id": 13,
+ "program": 5,
+ "index": 0,
+ "round": 0,
+ "hunter": "agent-a.antibody.testnet",
+ "beneficiary": "agent-a.antibody.testnet",
+ "commitment": "cfe8bad3da0deeba6fdd66b8a4c3ec55c70c4911d3760d2b39162e48f2c99d59",
+ "blob_sha256": "0669dce319052f3db3a4b1377040a3c4842b528998ec3e1f92a1cab3e1ce6ef2",
+ "bond": "1000000000000000000000",
+ "committed_at": 1793806931,
+ "state": {
+  "Done": {
+   "Paid": {
+    "amount": "100000000000000000000000",
+    "instant": true,
+    "at": 1793807002
+   }
+  }
+ },
+ "run": 33,
+ "retry_until": 1793807537,
+ "attempts": 1,
+ "second": null,
+ "second_agrees": false,
+ "challenge": null,
+ "rerun": 48,
+ "ticket": true,
+ "wrapped": 40
+}

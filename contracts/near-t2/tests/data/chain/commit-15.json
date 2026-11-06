@@ -1,0 +1,24 @@
+{
+ "id": 15,
+ "program": 5,
+ "index": 2,
+ "round": 0,
+ "hunter": "agent-c.antibody.testnet",
+ "beneficiary": "agent-c.antibody.testnet",
+ "commitment": "38d6ed382cc123d79e8278e973223f9645447dbe0d1a7529133f525d1e5716ae",
+ "blob_sha256": "598272a3d1616a306140711305c227f5231357551d6fe0aac598fa29c31c8dce",
+ "bond": "1000000000000000000000",
+ "committed_at": 1793807269,
+ "state": {
+  "Done": "Forfeited"
+ },
+ "run": 35,
+ "retry_until": 1793807876,
+ "attempts": 1,
+ "second": null,
+ "second_agrees": false,
+ "challenge": null,
+ "rerun": null,
+ "ticket": false,
+ "wrapped": null
+}
