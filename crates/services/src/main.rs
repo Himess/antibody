@@ -19,6 +19,7 @@ mod keeper;
 mod live;
 mod mocks;
 mod notifier;
+mod prover;
 mod relayer;
 mod status;
 mod t1;
@@ -108,6 +109,33 @@ enum Cmd {
         /// a rate-limited RPC or an attestation OutLayer publishes late (a practice try waits 300 s)
         #[arg(long, default_value_t = 60)]
         t1_max_attempts: u32,
+        /// Run the T2 prover service (docs/zk.md) as this account: each practice try's verdict, proven on
+        /// SP1's prover network and submitted to near-t2
+        #[arg(long)]
+        t2_prover_account: Option<String>,
+        #[arg(long)]
+        t2_prover_key_file: Option<PathBuf>,
+        /// antibody-zk-prove (crates/zk/prove)
+        #[arg(long, default_value = "antibody-zk-prove")]
+        t2_prover_bin: PathBuf,
+        /// The requester's key file for SP1's prover network (never printed)
+        #[arg(long, default_value = ".secrets/sp1-requester.key")]
+        t2_requester_key: PathBuf,
+        #[arg(long, default_value_t = 6)]
+        t2_max_per_hour: u32,
+        #[arg(long, default_value_t = 40)]
+        t2_max_per_day: u32,
+        /// Pause proving and alert below this PROVE balance
+        #[arg(long, default_value_t = 2.0)]
+        t2_min_prove: f64,
+        /// NEAR each operating account keeps liquid for gas (alerts below it): the keeper, the T1 relayer,
+        /// the T2 prover
+        #[arg(long, default_value_t = 0.3)]
+        keeper_float: f64,
+        #[arg(long, default_value_t = 0.5)]
+        relayer_float: f64,
+        #[arg(long, default_value_t = 0.3)]
+        prover_float: f64,
     },
     /// The keeper bot: allocate, pay, pause tickets, debts, re-runs and pending permits on every open
     /// program (or --program), every --interval-ms. Pays gas only
@@ -438,8 +466,38 @@ fn main() -> Result<()> {
                 k.run(*interval_ms)
             }
         }
-        Cmd::All { listen, chains: c, source, keeper_account, keeper_key_file, t1_account, t1_key_file, t1_collateral, t1_max_attempts } => {
+        Cmd::All {
+            listen, chains: c, source, keeper_account, keeper_key_file, t1_account, t1_key_file, t1_collateral, t1_max_attempts,
+            t2_prover_account, t2_prover_key_file, t2_prover_bin, t2_requester_key, t2_max_per_hour, t2_max_per_day, t2_min_prove,
+            keeper_float, relayer_float, prover_float,
+        } => {
             let dep = load_dep(&cli)?;
+            // The floats /v1/status checks.
+            let mut floats = vec![];
+            for (role, acct, min) in [("keeper", keeper_account, keeper_float), ("t1-relayer", t1_account, relayer_float), ("t2-prover", t2_prover_account, prover_float)] {
+                if let Some(a) = acct {
+                    floats.push(serde_json::json!({"role": role, "account": a, "min_near": min}));
+                }
+            }
+            std::fs::create_dir_all(state_dir(&cli))?;
+            std::fs::write(state_dir(&cli).join("floats.json"), serde_json::to_vec_pretty(&floats)?)?;
+            if let (Some(acct), Some(t2)) = (t2_prover_account, dep.t2.clone()) {
+                let root = repo_root().unwrap_or_else(|| PathBuf::from("."));
+                let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), t2_prover_key_file.clone(), None)?;
+                let p = prover::Prover {
+                    ctx,
+                    t2,
+                    bin: t2_prover_bin.clone(),
+                    elf: root.join(antibody_cli::zk::ELF_PATH),
+                    key_file: root.join(t2_requester_key),
+                    state_dir: state_dir(&cli),
+                    max_per_hour: *t2_max_per_hour,
+                    max_per_day: *t2_max_per_day,
+                    since: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+                    min_balance: *t2_min_prove,
+                };
+                std::thread::spawn(move || p.run(20_000));
+            }
             let ix = indexer(&cli, &dep, source, 0)?;
             std::thread::spawn(move || ix.run(5000));
             if let Some(g) = dep.guardian.clone() {

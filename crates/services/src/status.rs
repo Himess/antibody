@@ -145,6 +145,35 @@ pub fn compute(near: &Near, dep: &Deployments, state_dir: &Path, t: &Thresholds)
     }
     components.insert("programs".into(), json!(programs));
 
+    // The operating accounts' floats (`floats.json`, written by `antibody-services all`): the NEAR each
+    // keeps liquid for its gas. Below the float: warn; below a quarter of it: critical.
+    let floats = read_json(&state_dir.join("floats.json"));
+    let mut float_rows = vec![];
+    for f in floats.as_array().into_iter().flatten() {
+        let (role, account, min) = (f["role"].as_str().unwrap_or("?"), f["account"].as_str().unwrap_or_default(), f["min_near"].as_f64().unwrap_or(0.0));
+        let Ok(Some(acc)) = near.account(account) else { continue };
+        let liquid = (yocto(&acc["amount"]) - acc["storage_usage"].as_f64().unwrap_or(0.0) * 1e19) / ONE_NEAR;
+        if liquid < min / 4.0 {
+            alert("critical", "floats", format!("float-{role}"), format!("{role} ({account}) has {liquid:.3} NEAR liquid, under a quarter of its {min} NEAR float: top it up"));
+        } else if liquid < min {
+            alert("warn", "floats", format!("float-{role}"), format!("{role} ({account}) has {liquid:.3} NEAR liquid, under its {min} NEAR float"));
+        }
+        float_rows.push(json!({"role": role, "account": account, "liquid_near": liquid, "float_near": min}));
+    }
+    if !float_rows.is_empty() {
+        components.insert("floats".into(), json!(float_rows));
+    }
+
+    // The T2 prover service (`prover.json`).
+    let prover = read_json(&state_dir.join("prover.json"));
+    if prover.is_object() {
+        let (found, component) = crate::prover::status(&prover);
+        for (level, key, message) in found {
+            alert(level, "t2-prover", key, message);
+        }
+        components.insert("t2_prover".into(), component);
+    }
+
     // The practice vending contract (faucet-drain protection).
     if let Some(pr) = &dep.practice {
         let acc = near.account(&pr.vending)?;
