@@ -5271,7 +5271,62 @@
     }
   ],
   "verdict_consumer": {
-    "skipped": "not deployed on testnet (its code stake did not fit the lean budget); the sandbox run shows it"
+    "at_unix": 1793972396,
+    "code_hash": "7Wotb7nnbSnZnC8Dbx6iSCB785Dojai2HoVq7AqCbsdh",
+    "contract": "guard.antibody.testnet",
+    "create": {
+      "amount_yocto": "1556290000000000000000000",
+      "code_bytes": 148329,
+      "tx": "3watWgiHJUeXhmmRP4umyLgEBpgPcwJZ5ymfeEZrfdiK"
+    },
+    "deploy": {
+      "bytes": 148329,
+      "sha256": "60c8fbac0a331d4e07ae557f7d10d2f228d3f8fbdff9aa1ae599928927811798",
+      "tx": "8kTp7HtbpSiroHeh96436gW9JVgMnxi74WouGstMsgth"
+    },
+    "frozen": {
+      "at_ns": 1793972389027300441,
+      "commit_id": 13,
+      "reported_by": "antibody.testnet",
+      "run_id": 33,
+      "slot": 0
+    },
+    "lock": {
+      "account": "guard.antibody.testnet",
+      "code_hash": "7Wotb7nnbSnZnC8Dbx6iSCB785Dojai2HoVq7AqCbsdh",
+      "deleted_keys": 1,
+      "locked": true,
+      "tx": {
+        "events": [],
+        "explorer": "https://testnet.nearblocks.io/txns/EAHLthsR4SasEsxnUSG48PsVzfTH2zBzrQj1bx25RB4p",
+        "failures": [],
+        "tx": "EAHLthsR4SasEsxnUSG48PsVzfTH2zBzrQj1bx25RB4p"
+      }
+    },
+    "locked": true,
+    "ok": true,
+    "owner": "acme.antibody.testnet",
+    "refusal": {
+      "agent": "D",
+      "commit": 16,
+      "commit_state": {
+        "Done": "DuplicateConfirmed"
+      },
+      "frozen_after": null,
+      "ok": true,
+      "returned": false,
+      "tx": "C63y1vnEr2ri8nsbYjg8sjoNUU1F3e2wj6PsWjtggPac"
+    },
+    "report_returned": true,
+    "report_tx": "EgbrSvLD7Rfx8kxHEvsJHNDWx4U6usg7YznT29cu4psX",
+    "reported_by": "antibody.testnet",
+    "transfer_after_error": "transfer failed: {\"ActionError\":{\"index\":0,\"kind\":{\"FunctionCallError\":{\"ExecutionError\":\"Smart contract panicked: frozen: a Critical was verified for the watched program\"}}}} (https://testnet.nearblocks.io/txns/79wqNDoQ7iLjVPkNKFCgTGGjkxDMSEu8j8BZwsC4MqsG)",
+    "transfer_after_refused": true,
+    "transfer_before": true,
+    "transfer_before_tx": "DpX3C6ajzA6JMxXzqG5Ew13aNDSppMDrrxKVoUtFPC1b",
+    "treasury_left_yocto": "1603564988389424400000001",
+    "watched_program": 5,
+    "note": "added on 2026-11-06 by `antibody-services live --verdict-consumer` on the same run (the guard reads its commits: A's 13 and D's 16)"
   },
   "withdrawal": {
     "account": "agent-b.antibody.testnet",

@@ -34,6 +34,25 @@ program. A transfer goes through; then the keeper reports agent A's commit (a T1
 solvency); the guard freezes on slot 0, and the next transfer is refused. `results.json` records it under
 `verdict_consumer`.
 
+## On testnet
+
+`guard.antibody.testnet` is the same guard on the locked deployment, owned by `acme.antibody.testnet` and
+watching program 5 (`antibody-services live --verdict-consumer`, after the story ran). The owner's first
+transfer went through. Then D's commit 16 was reported: it breaks the same Critical key as A, but as a
+duplicate it is not a first finding, so `report` returned `false` and nothing froze. A's commit 13 (T1,
+Critical, light-client anchor) froze it on slot 0, and the next transfer was refused. Then its full-access
+key was deleted: the guard is locked (code `7Wotb7nn…`, in `deployments/near-testnet.json`). The steps and
+their transactions are under `verdict_consumer` in `docs/results/testnet-2026-11-04.json`.
+
+```
+antibody view --contract guard.antibody.testnet --method get_state
+```
+
+The wasm is built with Rust 1.85.0 (`cargo build --release --target wasm32-unknown-unknown` in
+`contracts/verdict-guard`) and `wasm-opt -Oz` (binaryen 133): sha256
+`60c8fbac0a331d4e07ae557f7d10d2f228d3f8fbdff9aa1ae599928927811798`, NEAR code hash
+`7Wotb7nnbSnZnC8Dbx6iSCB785Dojai2HoVq7AqCbsdh`.
+
 ## Other uses
 
 The same reads fit any NEAR app that depends on a protocol Antibody watches: a lending market that stops

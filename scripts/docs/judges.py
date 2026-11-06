@@ -161,6 +161,10 @@ def judges(d):
     out += ["```", d.cli("judge"), "```", ""]
     if j:
         locked = ", ".join(f"{c['role']} `{c['account']}` locked: {str(c.get('locked')).lower()}" for c in j.get("contracts", []))
+        vg = r.get("verdict_consumer") or {}
+        if vg.get("contract") and not any(c.get("role") == "verdict guard" for c in j.get("contracts", [])):
+            # Deployed after the run's judge view: today's `judge` lists it too.
+            locked += f", verdict guard `{vg['contract']}` locked: {str(vg.get('locked')).lower()}"
         audit_c = (r.get("audit", {}).get("contract") or {}).get("ok")
         out += [f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; {len(progs)} programs."]
         ours = r.get("prebuild", {}).get("programs", {})
@@ -240,9 +244,17 @@ def judges(d):
     if vc and not vc.get("skipped"):
         n += 1
         fr = vc.get("frozen") or {}
-        out += [f"| {n} | A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical | "
-                f"`{d.cli('view --contract ' + str(vc.get('contract')) + ' --method get_state')}` | `frozen`: commit {fr.get('commit_id')}, slot {fr.get('slot')}; "
-                f"the run's next transfer was refused: `{str(vc.get('transfer_after_refused')).lower()}` (`python3 scripts/docs/recorded.py verdict_consumer.transfer_after_refused`) | report {d.tx(vc.get('report_tx'))} |"]
+        ref = vc.get("refusal") or {}
+        what = "A NEAR app acts on a verdict: a DAO treasury freezes on the program's verified Critical"
+        seen = (f"`frozen`: commit {fr.get('commit_id')}, slot {fr.get('slot')}; "
+                f"the run's next transfer was refused: `{str(vc.get('transfer_after_refused')).lower()}` (`python3 scripts/docs/recorded.py verdict_consumer.transfer_after_refused`)")
+        txs = f"report {d.tx(vc.get('report_tx'))}"
+        if ref:
+            what += f", and a duplicate does not freeze it ({vc.get('contract')}: the Acme project owns it, its account is locked)"
+            seen += (f"; D's duplicate (commit {ref.get('commit')}) was reported first and returned `{str(ref.get('returned')).lower()}`; "
+                     f"locked: `{str(vc.get('locked')).lower()}`, code `{str(vc.get('code_hash'))[:8]}…`")
+            txs = f"D's report {d.tx(ref.get('tx'))}, A's report {d.tx(vc.get('report_tx'))}, lock {d.tx(((vc.get('lock') or {}).get('tx') or {}).get('tx'))}"
+        out += [f"| {n} | {what} | `{d.cli('view --contract ' + str(vc.get('contract')) + ' --method get_state')}` | {seen} | {txs} |"]
     pr = r.get("project_read", {})
     if pr:
         n += 1
@@ -308,8 +320,9 @@ def judges(d):
     if d.net == "sandbox":
         out += ["- The quotes in the sandbox are MOCK DCAP quotes; the T1 checks on them are the real code. The testnet run uses real OutLayer TEE workers."]
     else:
-        out += ["- The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget.",
-                "- One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
+        if (r.get("verdict_consumer") or {}).get("skipped"):
+            out += ["- The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget."]
+        out += ["- One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
     out += ["- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
             "- A mutation score, where shown, measures a rule set's strength, not the code's security.", ""]
     return "\n".join(out)

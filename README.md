@@ -85,6 +85,7 @@ every outcome of the story:
 | near-antibody | `bounty.antibody.testnet` | locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
 | near-guardian | `guardian.antibody.testnet` | locked (code `4SdG5PK9…`) |
 | Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 6, its fork-mode twin program 7 |
+| Verdict guard | `guard.antibody.testnet` | locked (code `7Wotb7nn…`): a DAO treasury the Acme project owns, watching program 5. It froze on A's T1-confirmed Critical (commit 13), not on D's duplicate (commit 16), and refused the next transfer ([JUDGES.md](JUDGES.md), row 15) |
 | Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |
 | OutLayer, light client, MPC | `outlayer.testnet`, `client-eth2.sepolia.testnet`, `v1.signer-prod.testnet` | existing |
 | Acme Lend, adapters | Sepolia and Base Sepolia, at the same CREATE2 addresses | deployed (program 5; addresses in the results file) |
