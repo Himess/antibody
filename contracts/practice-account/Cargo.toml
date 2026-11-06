@@ -3,7 +3,7 @@ name = "antibody-practice-account"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "A practice account's own contract: it passes the practice key's calls on to near-antibody, and closes the account, its NEAR back to the vending contract that created it"
 
 [lib]

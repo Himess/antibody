@@ -3,7 +3,7 @@ name = "antibody-practice-vending"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "Antibody practice accounts: a sub-account with a key scoped to near-antibody, registered as an agent of this contract, and assigned its own tutorial vault"
 
 [lib]

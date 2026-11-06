@@ -3,7 +3,7 @@ name = "near-antibody"
 version = "2.0.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "Antibody settlement contract v2: the NEAR adapter of the rule core (antibody-rules)"
 
 [lib]

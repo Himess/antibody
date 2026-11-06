@@ -3,7 +3,7 @@ name = "antibody-mock-lc"
 version = "0.5.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "MOCK of NEAR's Ethereum light client for the offline sandbox demo only (never deployed to testnet)"
 
 [lib]

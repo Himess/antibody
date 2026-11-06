@@ -3,7 +3,7 @@ name = "antibody-tusd"
 version = "0.4.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "tUSD: a NEP-141 testnet token with no value, used for Antibody escrow, bonds and payouts"
 
 [lib]
