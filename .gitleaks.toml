@@ -12,6 +12,8 @@ paths = [
   # SP1's published Groth16 verifying key and fixture proof, near-antibody's public testnet records
   # (public program vkey hashes, proofs and hashes).
   '''contracts/near-t2/tests/data/.*''',
+  # The same files under their G0 spike path (history: CI scans every commit).
+  '''contracts/sp1-groth16-spike/tests/data/.*''',
   # T2 fixtures: the TEST Groth16 key, and the proofs of disclosed runs with their network request ids.
   '''fixtures/zk/t2-test-key\.json$''',
   '''fixtures/zk/[^/]+/proof\.json$''',
