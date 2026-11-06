@@ -83,12 +83,15 @@ Publishing the key discloses the proof. For A, the project gets the same key thr
 
 ## Parity: the TEE's receipt, reproduced
 
-| Run | What | TEE receipt (sha256, on chain) | Native re-run | SP1 executor | Cycles |
+| Run | What | TEE receipt (sha256, on chain) | Native re-run | SP1 executor | Cycles (docker ELF) |
 |---|---|---|---|---|---|
-| 33 (commit 13, A) | Violation, Critical (slot 0), paid | `0ea67c6a…` | equal | equal | 29,358,655 |
-| 36 (commit 16, D) | Violation, a duplicate, not paid | `fa62fbea…` | equal | equal | 28,581,768 |
-| 35 (commit 15, C) | NoViolation, bond forfeited | `0326cfc9…` | equal | equal | 25,841,295 |
-| 53 (commit 20, practice) | Violation, Low (slot 0), the tutorial proof | `e51759c6…` | equal | equal | 33,865,365 |
+| 33 (commit 13, A) | Violation, Critical (slot 0), paid | `0ea67c6a…` | equal | equal | 29,358,505 |
+| 36 (commit 16, D) | Violation, a duplicate, not paid | `fa62fbea…` | equal | equal | 28,581,912 |
+| 35 (commit 15, C) | NoViolation, bond forfeited | `0326cfc9…` | equal | equal | 25,841,727 |
+| 53 (commit 20, practice) | Violation, Low (slot 0), the tutorial proof | `e51759c6…` | equal | equal | 33,865,585 |
+
+Both ELFs reproduce every receipt: the docker build's on GitHub, and a local build on the VPS. The local
+build's cycle counts differ by up to 432 cycles, because its ELF embeds other paths.
 
 How each column was checked:
 - **Native re-run:** `cargo test -p antibody-zk-core`, run in CI.
@@ -105,13 +108,18 @@ generator. The receipts show that the output does not depend on it.
 
 ## The program's identity
 
-| | Value |
-|---|---|
-| ELF (local build, VPS) | 5,239,072 bytes, sha256 `dfeb2b9ef534d4f7ffb0b98ac3c8cba2ce1451c8fd9cfc41cc8e350d7861d8c9` |
-| Program vkey (`cargo prove vkey`) | `0x000765e6238eedeea6bb4e7218798dbc4a6bf55a5322ffd6cae277f77219a5ae` (2 min 42 s on the VPS) |
-| Reproducible build | `cargo prove build --docker --tag v6.10.0 --workspace-directory ../../.. --locked` in `crates/zk/guest`. The `zk` workflow (run by hand) builds it on GitHub's machines and prints the ELF hash and the vkey |
+| | ELF sha256 | Program vkey (`cargo prove vkey`) |
+|---|---|---|
+| **Docker build** (`cargo prove build --docker --tag v6.10.0 --workspace-directory ../../.. --locked`, the `zk` workflow on GitHub) | `7fea93b80cc71db7ccd2315acc9b85c583fd3164bc95c6e6b68b6119d1c39702` | **`0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203`** |
+| Local build on the VPS (`cargo prove build`) | `dfeb2b9ef534d4f7ffb0b98ac3c8cba2ce1451c8fd9cfc41cc8e350d7861d8c9` | `0x000765e6238eedeea6bb4e7218798dbc4a6bf55a5322ffd6cae277f77219a5ae` |
 
-A NEAR contract pins the vkey from the docker build, which anyone can reproduce. The guest's
+**The local build is not reproducible across machines.** Its ELF embeds the build's absolute paths, and
+so does its vkey. The docker build runs at a fixed path in SP1's own image, so it is the one a NEAR
+contract pins.
+
+Two docker builds on two fresh GitHub machines gave the same ELF and the same vkey (`zk` runs
+42233167302 and 42234906992), and both reproduced the four receipts. The `zk` workflow (run by hand)
+rebuilds it and prints both values. The vkey takes about 2–3 minutes on 4 cores and 7 GB. The guest's
 `Cargo.lock` is committed.
 
 ## Proving: cycles to time and cost
