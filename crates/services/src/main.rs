@@ -192,6 +192,10 @@ enum Cmd {
         /// acting on the run's verdicts, lock it, and add the steps to the results
         #[arg(long)]
         verdict_consumer: bool,
+        /// After the story: deploy near-t2 (T2), submit the four disclosed runs' proofs from
+        /// fixtures/zk, show a tampered proof refused, lock it, and add the steps to the results
+        #[arg(long)]
+        t2: bool,
         /// The EVM deployer's key file (default .secrets/sepolia_deployer.json): a new deployer deploys
         /// the fixtures at new addresses
         #[arg(long)]
@@ -306,7 +310,7 @@ fn main() -> Result<()> {
             })?;
             Ok(())
         }
-        Cmd::Live { work_dir, until, redo_practice, verdict_consumer, evm_key } => {
+        Cmd::Live { work_dir, until, redo_practice, verdict_consumer, t2, evm_key } => {
             let root = repo_root().ok_or_else(|| eyre!("run it from inside the repository"))?;
             let dotenv = antibody_cli::ctx::load_dotenv(&root.join(".env"));
             let var = |k: &str| -> Result<String> {
@@ -331,6 +335,7 @@ fn main() -> Result<()> {
                 until: until.clone(),
                 redo_practice: *redo_practice,
                 verdict_consumer: *verdict_consumer,
+                t2: *t2,
                 root,
             })?;
             Ok(())

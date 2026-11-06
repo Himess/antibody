@@ -106,6 +106,8 @@ pub struct LiveArgs {
     pub redo_practice: bool,
     /// After the story: the verdict guard on testnet (`Live::verdict_consumer`).
     pub verdict_consumer: bool,
+    /// After the story: near-t2 on testnet with the four disclosed runs' proofs (`Live::t2`).
+    pub t2: bool,
 }
 
 /// A contract's wasm to deploy: the size-optimized copy in target/deploy (scripts/deploy/testnet.sh makes
@@ -443,6 +445,110 @@ impl Live {
         self.s = s;
         println!("verdict guard {guard}: transfer before {}, D refused {}, frozen by commit {} (slot {}), transfer after refused {}, locked {}",
                  vc["transfer_before"], vc["refusal"]["ok"], vc["frozen"]["commit_id"], vc["frozen"]["slot"], vc["transfer_after_refused"], vc["locked"]);
+        Ok(ok)
+    }
+
+    /// T2 on testnet (docs/zk.md): near-t2 on its own account (SP1 6.10.0's Groth16 key built in, the
+    /// docker build's program vkey, near-antibody, the verifier programs pin), the four disclosed runs'
+    /// proofs (fixtures/zk/<case>/proof.bin, from SP1's prover network) checked with the free view and
+    /// submitted, one tampered proof refused, then the account locked. Each step lands under `t2`; a
+    /// rerun resumes after the last one done.
+    fn t2(&mut self) -> Result<bool> {
+        use base64::Engine as _;
+        let zk = Self::acct("zk");
+        let cases = [("a", 33u64), ("d", 36), ("c", 35), ("practice", 53)];
+        let fixtures = self.a.root.join("fixtures/zk");
+        let read = |case: &str, f: &str| std::fs::read(fixtures.join(case).join(f)).map_err(|e| eyre!("fixtures/zk/{case}/{f}: {e} (prove it first: docs/zk.md)"));
+        let mut t2 = self.s["t2"].clone();
+        if !t2.is_object() {
+            t2 = json!({});
+        }
+        t2["contract"] = json!(zk);
+        let (root, zk_ctx) = (self.root_ctx(), self.ctx_at(&zk, "zk"));
+        let wasm = deployable(&self.a.root, "near_t2", "contracts/near-t2/target/wasm32-unknown-unknown/release/near_t2.wasm")?;
+        let keep = |s: &mut Value, t2: &Value| -> Result<()> {
+            s["t2"] = t2.clone();
+            std::fs::write(self.a.work.join("live.json"), serde_json::to_vec_pretty(s)?)?;
+            Ok(())
+        };
+        let mut s = self.s.clone();
+        // The verifier the guest re-runs: the version string its receipts name, and the wasm programs pin.
+        let pv_a = read("a", "public_values.bin")?;
+        let verifier = antibody_zk_core::decode_public_values(&pv_a).map_err(|e| eyre!("{e}"))?.verifier;
+        let verifier_wasm = root.view("get_pins", json!({"program_id": self.pid("acme")}))?["verifier"]["wasm_hash"].as_str().unwrap_or_default().to_string();
+        // The account: its code stake, its state and the four records, and the gas its deploy sets aside
+        // (10x the gas price for the init's 100 Tgas, refunded after) and its lock burns.
+        if t2.get("create").is_none() {
+            let bytes = std::fs::metadata(&wasm)?.len() as u128;
+            let amount = bytes * 10u128.pow(19) + 30 * MILLI + 120 * MILLI;
+            let near = format!("{}.{:024}", amount / ONE_NEAR, amount % ONE_NEAR);
+            println!("near-t2: {zk}, {bytes} B of code, {near} NEAR from {HQ}");
+            let r = cmd::admin_create_account(&root, &zk, &near, None, Some(&self.a.keys.join(format!("{zk}.json"))))?;
+            t2["create"] = json!({"tx": r["tx"]["tx"], "amount_yocto": amount.to_string(), "code_bytes": bytes});
+            keep(&mut s, &t2)?;
+        }
+        if t2.get("deploy").is_none() {
+            let init = json!({"antibody": self.dep.antibody, "program_vkey": crate::zk::PROGRAM_VKEY, "verifier": verifier, "verifier_wasm": verifier_wasm}).to_string();
+            let r = cmd::admin_deploy(&zk_ctx, &wasm, Some("new".into()), Some(init))?;
+            t2["deploy"] = json!({"tx": r["tx"]["tx"], "bytes": r["bytes"], "sha256": r["sha256"]});
+            keep(&mut s, &t2)?;
+        }
+        t2["pins"] = self.near.view(&zk, "get_pins", json!({}))?;
+        let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+        let submit = |run: u64, pv: &[u8], proof: &[u8]| -> Result<Value> {
+            let args = json!({"run_id": run.to_string(), "public_values": b64(pv), "proof": b64(proof)});
+            let out = self.near.function_call(&root.signer()?, &zk, "submit", args, antibody_cli::zk::SUBMIT_TGAS, antibody_cli::zk::RECORD_DEPOSIT)?;
+            cmd::ensure_ok(&root, &out, "submit")
+        };
+        // One refusal first: A's proof with one byte of its A point changed.
+        if t2.get("refusal").is_none() {
+            let (pv, mut proof) = (read("a", "public_values.bin")?, read("a", "proof.bin")?);
+            proof[100 + 63] ^= 1;
+            let refused = submit(33, &pv, &proof).err().map(|e| e.to_string()).unwrap_or_default();
+            t2["refusal"] = json!({"what": "run 33's proof with one byte of its A point changed", "refused": !refused.is_empty(),
+                                   "error": refused.chars().take(300).collect::<String>(), "record_after": self.near.view(&zk, "get_record", json!({"run_id": "33"}))?});
+            keep(&mut s, &t2)?;
+        }
+        let mut subs = t2["submissions"].as_array().cloned().unwrap_or_default();
+        for (case, run) in cases {
+            if subs.iter().any(|x| x["run_id"] == json!(run)) {
+                continue;
+            }
+            let (pv, proof) = (read(case, "public_values.bin")?, read(case, "proof.bin")?);
+            let verifies = self.near.view(&zk, "verify_proof", json!({"public_values": b64(&pv), "proof": b64(&proof)}))?;
+            let r = submit(run, &pv, &proof)?;
+            // Views read a final block, a moment behind the transaction just executed.
+            let t0 = Instant::now();
+            let record = loop {
+                let rec = self.near.view(&zk, "get_record", json!({"run_id": run.to_string()}))?;
+                if !rec.is_null() || t0.elapsed().as_secs() > 60 {
+                    break rec;
+                }
+                std::thread::sleep(Duration::from_secs(2));
+            };
+            let proof_json: Value = std::fs::read(fixtures.join(case).join("proof.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            subs.push(json!({"case": case, "run_id": run, "verify_proof_view": verifies, "tx": r["tx"], "explorer": r["explorer"],
+                             "events": r["events"], "record": record, "network_request": proof_json["request_id"]}));
+            t2["submissions"] = Value::Array(subs.clone());
+            keep(&mut s, &t2)?;
+        }
+        if t2.get("lock").is_none() {
+            t2["lock"] = cmd::admin_lock(&zk_ctx, &zk)?;
+            keep(&mut s, &t2)?;
+        }
+        let account = self.near.account(&zk)?.unwrap_or_default();
+        let full_access = self.near.access_keys(&zk)?.iter().filter(|k| k["access_key"]["permission"] == json!("FullAccess")).count();
+        t2["code_hash"] = account["code_hash"].clone();
+        t2["locked"] = json!(full_access == 0);
+        t2["stats"] = self.near.view(&zk, "get_stats", json!({}))?;
+        let confirmed = subs.iter().filter(|x| x["record"]["outcome"] == json!("confirmed")).count();
+        let ok = confirmed == cases.len() && t2["refusal"]["refused"] == json!(true) && t2["locked"] == json!(true)
+            && t2["pins"]["groth16"]["is_sp1_v6_10_0"] == json!(true) && t2["pins"]["program_vkey"] == json!(crate::zk::PROGRAM_VKEY);
+        t2["ok"] = json!(ok);
+        t2["at_unix"] = json!(unix());
+        keep(&mut s, &t2)?;
+        self.s = s;
+        println!("near-t2 {zk}: {confirmed} of {} runs T2-confirmed, tampered proof refused {}, locked {}", cases.len(), t2["refusal"]["refused"], t2["locked"]);
         Ok(ok)
     }
 
@@ -1662,6 +1768,20 @@ pub fn run(a: LiveArgs) -> Result<Value> {
             return Err(eyre!("--redo-practice runs once the story has run up to the practice stage"));
         }
         l.redo_practice()?;
+    }
+    if l.a.t2 {
+        if !l.done("results") {
+            return Err(eyre!("--t2 runs once the story has run"));
+        }
+        step("live: T2 (near-t2 on testnet, the four disclosed runs' proofs)");
+        let ok = l.t2()?;
+        let results = l.a.work.join("results.json");
+        std::fs::write(&results, serde_json::to_vec_pretty(&l.s)?)?;
+        if !ok {
+            return Err(eyre!("near-t2 did not act as expected (see t2 in {})", results.display()));
+        }
+        println!("T2: ok, results: {}", results.display());
+        return Ok(l.s.clone());
     }
     if l.a.verdict_consumer {
         if !l.done("results") {
