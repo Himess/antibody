@@ -13,8 +13,14 @@ pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 
 #[derive(Clone)]
 pub struct Near {
+    /// The primary RPC (the one shown; it never carries a key).
     pub rpc: String,
     pub network: String,
+    /// Further RPCs, tried in turn when one fails or rate-limits (`$NEAR_RPC_EXTRA`, comma-separated:
+    /// for instance a keyed FastNear URL or another provider). Never printed: they may carry keys.
+    extra: Vec<String>,
+    /// `$NEAR_RPC_API_KEY`: sent as a bearer token to FastNear hosts. Never printed.
+    bearer: Option<String>,
     client: reqwest::blocking::Client,
     /// Last nonce used per (account, public key), shared by clones: back-to-back and concurrent
     /// transactions from one key must not reuse a nonce read from a lagging view.
@@ -185,9 +191,18 @@ impl Near {
             "mainnet" => "https://rpc.mainnet.fastnear.com".into(),
             _ => "https://rpc.testnet.fastnear.com".into(),
         });
+        // A second RPC (and a key) for the regular endpoint; archival lookups stay archival.
+        let extra = if rpc.contains("archival") {
+            vec![]
+        } else {
+            std::env::var("NEAR_RPC_EXTRA").unwrap_or_default().split(',').map(str::trim).filter(|u| !u.is_empty() && *u != rpc).map(String::from).collect()
+        };
+        let bearer = std::env::var("NEAR_RPC_API_KEY").ok().filter(|k| !k.trim().is_empty()).map(|k| k.trim().to_string());
         Self {
             rpc,
             network: network.into(),
+            extra,
+            bearer,
             client: reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(90))
                 .user_agent("antibody-cli/0.4")
@@ -197,10 +212,31 @@ impl Near {
         }
     }
 
+    /// The RPC for an attempt: the primary, then each extra one in turn.
+    fn endpoint(&self, attempt: usize) -> &str {
+        match attempt % (1 + self.extra.len()) {
+            0 => &self.rpc,
+            i => &self.extra[i - 1],
+        }
+    }
+
+    fn post(&self, url: &str, body: &Value) -> reqwest::Result<Value> {
+        let mut req = self.client.post(url).json(body);
+        if let (Some(k), true) = (&self.bearer, url.contains("fastnear")) {
+            req = req.bearer_auth(k);
+        }
+        req.send().and_then(|r| r.json::<Value>())
+    }
+
+    /// How many RPCs this client tries (the primary and `$NEAR_RPC_EXTRA`'s).
+    pub fn endpoints(&self) -> usize {
+        1 + self.extra.len()
+    }
+
     /// One attempt, no retry: for queries whose error is an answer (a height with no block).
     pub fn call_once(&self, method: &str, params: Value) -> Result<Value> {
         let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
-        let v = self.client.post(&self.rpc).json(&body).send().and_then(|r| r.json::<Value>()).map_err(|e| eyre!("{method}: {e}"))?;
+        let v = self.post(&self.rpc, &body).map_err(|e| eyre!("{method}: {e}"))?;
         match v.get("error") {
             Some(e) => Err(eyre!("{method}: {e}")),
             None => Ok(v["result"].clone()),
@@ -211,7 +247,8 @@ impl Near {
         let mut last = eyre!("no attempt");
         for attempt in 0..7 {
             let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
-            match self.client.post(&self.rpc).json(&body).send().and_then(|r| r.json::<Value>()) {
+            // A failed or rate-limited attempt goes to the next RPC (one RPC: the same, after a pause).
+            match self.post(self.endpoint(attempt as usize), &body) {
                 Ok(v) => {
                     if let Some(e) = v.get("error") {
                         let s = e.to_string();
@@ -220,7 +257,9 @@ impl Near {
                         let limited = s.contains("Too Many Requests") || s.contains("-429") || s.contains("Rate limit");
                         if s.contains("TIMEOUT_ERROR") || limited || s.contains("UNKNOWN_BLOCK") {
                             last = eyre!("{method}: {s}");
-                            std::thread::sleep(std::time::Duration::from_millis(if limited { 2_000 } else { 800 } * (attempt + 1)));
+                            // With another RPC to turn to, a short pause; with one, back off.
+                            let ms = if self.endpoints() > 1 { 250 } else if limited { 2_000 * (attempt + 1) } else { 800 * (attempt + 1) };
+                            std::thread::sleep(std::time::Duration::from_millis(ms));
                             continue;
                         }
                         return Err(eyre!("{method}: {}", s));
