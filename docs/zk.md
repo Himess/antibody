@@ -87,6 +87,12 @@ proofs, the contract, the tools.
 **Views:** `get_pins`, `get_record(run_id)`, `list_records`, `get_stats`, and `verify_proof(public_values,
 proof)`. The last checks a proof against the pinned keys only, for free.
 
+**The wasm deployed on testnet.**
+- Built with Rust 1.85.0 on Linux: `cargo build --release --target wasm32-unknown-unknown` in
+  `contracts/near-t2`.
+- Then `wasm-opt -Oz` (binaryen 133): 224,694 bytes, sha256 `21e0d69653f3…c99c`.
+- Its storage stake, about 2.25 NEAR, is most of what the account costs.
+
 ### Why a contradiction cannot be faked
 
 A contradiction needs a valid proof whose request hash equals the TEE's but whose receipt does not.
