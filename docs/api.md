@@ -28,7 +28,7 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | The network, the contract ids, the version and the endpoints |
-| `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), and the alerts |
+| `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), the T1 relayer (its collateral source, when OutLayer's on-chain DCAP collateral expires, the runs it could not confirm), OutLayer's worker images against near-antibody's list (unlisted ones, and listed ones still inside the image delay), and the alerts |
 | `GET /v1/stats` | Contract totals, and commit-to-verdict and commit-to-payout latencies (p50, p95) from the event log |
 | `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
 | `GET /v1/programs/{id}` | The program, its rules (each slot's severity and payout, the payout table, bond and instant terms, escrow coverage, the sealed known-issue count, the anchor and its check), its meta, its record (bait metrics), its audit, its commits and its events |

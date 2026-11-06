@@ -35,8 +35,10 @@ paths:
       description: |
         Each service's last progress (from its state file), permits not yet confirmed on their chain, each
         program's escrow against its largest payout, and the practice faucet: the vending contract's
-        balance, the public vend key's remaining allowance and its credit at near-antibody. `ok` is false
-        while a critical alert stands.
+        balance, the public vend key's remaining allowance and its credit at near-antibody. The T1 relayer:
+        its collateral source, when OutLayer's on-chain DCAP collateral expires, and an alert for each run
+        it could not confirm (critical once it gave up). OutLayer's worker images: unlisted ones (critical)
+        and listed ones still inside the image delay (warn). `ok` is false while a critical alert stands.
       responses:
         "200":
           description: Status and alerts
@@ -54,7 +56,7 @@ paths:
                     items:
                       type: object
                       properties:
-                        level: {type: string, enum: [warn, critical]}
+                        level: {type: string, enum: [info, warn, critical]}
                         component: {type: string}
                         key: {type: string, description: stable per alert, for deduplication}
                         message: {type: string}

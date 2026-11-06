@@ -1,0 +1,106 @@
+{
+  "what": "T1 after OutLayer's on-chain DCAP collateral expires: the expiry, and agent A's run checked against fresh Intel PCS collateral",
+  "network": "testnet",
+  "checked_at": "2026-11-06T12:50:44Z",
+  "outlayer_collateral": {
+    "source": "worker.outlayer.testnet.get_collaterals",
+    "block_height": 276492906,
+    "windows": [
+      {
+        "fmspc": "20a06f000000",
+        "tcb_info_next_update": "2026-07-07T06:11:19Z",
+        "qe_identity_next_update": "2026-07-07T05:26:03Z",
+        "pck_crl_next_update": "2026-07-07T05:22:16Z",
+        "root_ca_crl_next_update": "2027-02-26T13:04:00Z"
+      },
+      {
+        "fmspc": "B0C06F000000",
+        "tcb_info_next_update": "2026-11-08T00:29:39Z",
+        "qe_identity_next_update": "2026-11-07T23:46:20Z",
+        "pck_crl_next_update": "2026-11-08T00:28:56Z",
+        "root_ca_crl_next_update": "2027-02-26T13:04:00Z"
+      }
+    ],
+    "workers_fmspc": "B0C06F000000",
+    "expires_first": "2026-11-07T23:46:20Z (QE identity; PCK CRL 2026-11-08T00:28:56Z, TCB info 2026-11-08T00:29:39Z)"
+  },
+  "run": {
+    "program": 5,
+    "commit": 13,
+    "run_id": 33,
+    "outlayer_request_id": 8839,
+    "receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee"
+  },
+  "programs_accept_tcb": {
+    "5": [
+      "UpToDate"
+    ],
+    "6": [
+      "UpToDate"
+    ],
+    "7": [
+      "UpToDate"
+    ]
+  },
+  "commands": [
+    "antibody --network testnet tee check --request-id 8839 --collateral pcs",
+    "antibody --network testnet tee check --request-id 8839 --collateral outlayer"
+  ],
+  "check_intel_pcs": {
+    "caller": "agent-a.antibody.testnet",
+    "dcap": {
+      "collateral": "intel-pcs",
+      "status": "UpToDate",
+      "verified": true
+    },
+    "input_hash": "c348b67ec9a15c29e066fa0d3933944be77336a394dce17b70d95554480afd86",
+    "measurements": {
+      "mrtd": "7fe60787222bd394cb516abca2435f22f035ab2cc9c0a4b4b3b148e46297f3d931a237b72f359052c6e657d8c1409173",
+      "outlayer_approved_index": 109,
+      "rtmr3": "f6c4087e601b4300cce4b612e3eb0cbea7641b3417e8a8f2f3db175bd8457a8df67ee06e756806f59da89f476527d372"
+    },
+    "output_hash": "c0c46c1444c520cd9ce18c915309cbd070868f6386c3643b1bf8b42d43ee2c7f",
+    "report_data_binds_task": true,
+    "request_id": 8839,
+    "task_hash": "78da128fe6e53b03784a99d1a82946caeca2937250028ec1fd2b48c206ace13e",
+    "task_id": 19340,
+    "tier": "T1-eligible",
+    "verifier": "tee-verifier-2026-07-22.testnet",
+    "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1"
+  },
+  "check_outlayer_collateral": {
+    "caller": "agent-a.antibody.testnet",
+    "dcap": {
+      "collateral": "outlayer-onchain[0]",
+      "status": "UpToDate",
+      "verified": true
+    },
+    "input_hash": "c348b67ec9a15c29e066fa0d3933944be77336a394dce17b70d95554480afd86",
+    "measurements": {
+      "mrtd": "7fe60787222bd394cb516abca2435f22f035ab2cc9c0a4b4b3b148e46297f3d931a237b72f359052c6e657d8c1409173",
+      "outlayer_approved_index": 109,
+      "rtmr3": "f6c4087e601b4300cce4b612e3eb0cbea7641b3417e8a8f2f3db175bd8457a8df67ee06e756806f59da89f476527d372"
+    },
+    "output_hash": "c0c46c1444c520cd9ce18c915309cbd070868f6386c3643b1bf8b42d43ee2c7f",
+    "report_data_binds_task": true,
+    "request_id": 8839,
+    "task_hash": "78da128fe6e53b03784a99d1a82946caeca2937250028ec1fd2b48c206ace13e",
+    "task_id": 19340,
+    "tier": "T1-eligible",
+    "verifier": "tee-verifier-2026-07-22.testnet",
+    "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1"
+  },
+  "relayer": {
+    "collateral": "auto",
+    "note": "the standing T1 relayer runs `antibody-services all --t1-collateral auto` (OutLayer's copies while they verify, fresh Intel PCS collateral after); /v1/status reports its failed relays and the collateral's expiry"
+  },
+  "worker_images": {
+    "found": "a rehearsal practice try on 2026-11-06 (run 57) got no T1: near-antibody rejected its quote, 'worker image not pinned for this program'. OutLayer approved two worker images after programs 5-7 took their snapshot (111 images on 2026-11-03); the run used the newer one (approved index 112).",
+    "sync_images_tx": "H625sn5byiBshSaUTiQZuV6bDFViHqgHsimZqfg6ZLBX",
+    "added": 2,
+    "listed_at": 1793970922,
+    "count_for_programs_5_7_from": "2026-11-08T13:15:22Z (near-antibody's image delay: 172800 s)",
+    "since": "the keeper lists new OutLayer images within 10 minutes (sync_images), the T1 relayer sends nothing until a run's image counts, and /v1/status warns while one is pending"
+  },
+  "all_ok": true
+}

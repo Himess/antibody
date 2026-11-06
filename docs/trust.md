@@ -47,7 +47,19 @@ binds.
 
 **Limits.**
 - **Collateral freshness.** When OutLayer's on-chain collateral expires, the CLI and the T1 relayer fetch
-  fresh collateral from Intel PCS (`--collateral auto` tries OutLayer's copies first).
+  fresh collateral from Intel PCS (`--collateral auto` tries OutLayer's copies first; the services take
+  `--t1-collateral`). On testnet OutLayer's copies for its workers' platform expire on 2026-11-07 at
+  23:46:20 UTC (QE identity; TCB info at 00:29:39 the next day). Agent A's run verified against fresh
+  Intel PCS collateral before that, `Verified` / `UpToDate`, the status programs accept
+  (`docs/results/t1-collateral-2026-11-06.json`). `/v1/status` shows when the copies expire and raises an
+  alert for every T1 relay that fails.
+- **Worker images.** OutLayer adds worker images to its approved list. A program accepts the images it
+  pinned at creation, and later ones from its pinned registry only after the image delay (2 days on
+  testnet), once near-antibody lists them (`sync_images`, permissionless). Until then a run on a new
+  image gets no T1 and its payout waits the window. The keeper lists new images within 10 minutes, the
+  T1 relayer sends nothing for a run whose image does not count yet (it retries when it does), and
+  `/v1/status` warns while an image is pending. On 2026-11-06 two new images were listed; they count for
+  programs 5–7 from 2026-11-08 13:15:22 UTC.
 - **Availability.** A run whose quote cannot be had stays T0: its payout waits the window, and a re-run
   may be asked for.
 
