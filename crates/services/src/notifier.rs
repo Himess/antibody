@@ -1,12 +1,18 @@
 //! Notifier: turns new indexer events into human-readable notices and posts them to webhooks
 //! (Discord/Slack-compatible JSON). Webhook URLs come from the environment and are never printed.
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use eyre::Result;
 use serde_json::{json, Value};
 
 use crate::indexer::read_events;
+
+/// How often the monitoring alerts are read and posted.
+const ALERTS_EVERY_SECS: u64 = 60;
 
 pub struct Notifier {
     pub state_dir: PathBuf,
@@ -81,7 +87,14 @@ impl Notifier {
             sent += 1;
         }
         std::fs::write(&cursor_file, next.to_string())?;
-        sent += self.alerts(&client)?;
+        // The alerts read a dozen views (every program, the practice faucet): once a minute is enough, and
+        // keeps the services under a public RPC's rate limit.
+        static LAST_ALERTS: AtomicU64 = AtomicU64::new(0);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        if now >= LAST_ALERTS.load(Ordering::Relaxed) + ALERTS_EVERY_SECS {
+            LAST_ALERTS.store(now, Ordering::Relaxed);
+            sent += self.alerts(&client)?;
+        }
         Ok(sent)
     }
 
