@@ -323,7 +323,8 @@ def judges(d):
         if (r.get("verdict_consumer") or {}).get("skipped"):
             out += ["- The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget."]
         out += ["- One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
-    out += ["- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
+    out += ["- T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet: docs/zk-feasibility.md is the feasibility study, and no payout depends on it.",
+            "- Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
             "- A mutation score, where shown, measures a rule set's strength, not the code's security.", ""]
     return "\n".join(out)
 

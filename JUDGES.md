@@ -112,6 +112,7 @@ Each transaction behind the table, with the command that shows its status, event
 ## What this does not show
 
 - One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value.
+- T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet: docs/zk-feasibility.md is the feasibility study, and no payout depends on it.
 - Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.
 - A mutation score, where shown, measures a rule set's strength, not the code's security.
 
