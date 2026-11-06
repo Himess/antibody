@@ -28,8 +28,17 @@ jobs:
       - name: ELF sha256 and program vkey
         run: |
           ELF=$(ls crates/zk/guest/target/elf-compilation/docker/*/release/antibody-zk-guest)
-          sha256sum "$ELF"
-          cargo prove vkey --elf "$ELF"
+          sha256sum "$ELF" | tee guest.sha256
+          cargo prove vkey --elf "$ELF" | tee guest.vkey
+          cp "$ELF" antibody-zk-guest.elf
+      - name: the ELF (what `antibody zk prove` sends to the prover; compare its sha256 with fixtures/zk/guest/)
+        uses: actions/upload-artifact@v4
+        with:
+          name: antibody-zk-guest
+          path: |
+            antibody-zk-guest.elf
+            guest.sha256
+            guest.vkey
       - name: the disclosed runs in SP1's executor (receipts against the TEE's)
         run: |
           ELF=$(ls crates/zk/guest/target/elf-compilation/docker/*/release/antibody-zk-guest)
