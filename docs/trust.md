@@ -58,9 +58,13 @@ binds.
   testnet), once near-antibody lists them (`sync_images`, permissionless). Until then a run on a new
   image gets no T1 and its payout waits the window. The keeper lists new images within 10 minutes, the
   T1 relayer sends nothing for a run whose image does not count yet (it retries when it does), and
-  `/v1/status` warns while an image is pending. On 2026-11-06 OutLayer approved four new images: two were
-  listed by hand and two by the keeper, half an hour later. They count for programs 5–7 from 2026-11-08
-  13:15:22 and 13:47:47 UTC. While a worker runs an image that does not count yet, its runs stay T0.
+  `/v1/status` warns while an image is pending. On 2026-11-06 OutLayer approved six new images:
+  - two listed by hand and two by the keeper, half an hour later; they count for programs 5–7 from
+    2026-11-08 13:15:22 and 13:47:47 UTC;
+  - two more that evening, listed at 20:18:16 UTC (by hand: the keeper's 0.298 NEAR could not set aside
+    the 0.301 NEAR its 300 Tgas call needs); they count from 2026-11-08 20:18:16 UTC.
+
+  While a worker runs an image that does not count yet, its runs stay T0.
   - A practice try is then still paid, after the 60 s challenge window.
   - A practice program created after new images are listed counts them at once. The runbook
     ([runbooks/worker-images.md](runbooks/worker-images.md)) moves the practice vending contract to such a

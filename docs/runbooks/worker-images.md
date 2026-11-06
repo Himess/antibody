@@ -1,7 +1,7 @@
 # Runbook: OutLayer rotates its worker images
 
 OutLayer adds worker images (TDX measurements) to its approved list from time to time. On 2026-11-06 it
-added four. This runbook covers what that does to T1, what the locked contracts allow, and the steps.
+added six, in two batches. This runbook covers what that does to T1, what the locked contracts allow, and the steps.
 
 ## What happens
 
