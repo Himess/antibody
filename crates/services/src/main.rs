@@ -22,6 +22,7 @@ mod notifier;
 mod relayer;
 mod status;
 mod t1;
+mod zk;
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -340,6 +341,8 @@ fn main() -> Result<()> {
                 worker: Signer::from_file(key_file)?,
                 seed: mocks::demo_seed(),
                 done: Default::default(),
+                inputs: Default::default(),
+                lie_next: Default::default(),
             };
             loop {
                 if let Err(e) = w.tick() {

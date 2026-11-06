@@ -14,6 +14,7 @@ antibody-cli = { path = "../cli" }
 antibody-verifier = { path = "../verifier" }
 antibody-witness = { path = "../witness" }
 antibody-rules = { path = "../rules" }
+antibody-zk-core = { path = "../zk/core" }
 alloy-primitives.workspace = true
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-eips.workspace = true
@@ -21,6 +22,8 @@ serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 base64 = "0.22"
+# BN254 for the sandbox's MOCK T2 prover (already in the lockfile through revm's precompiles).
+bn = { package = "substrate-bn", version = "0.6" }
 bs58 = "0.5"
 eyre = "0.6.12"
 clap = { version = "4.5", features = ["derive"] }

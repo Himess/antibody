@@ -3,8 +3,14 @@
 //!   the wasm in OutLayer) with a TEST root key, resolves `mock-outlayer` requests, and records a MOCK
 //!   attestation per run with a MOCK quote that only `mock-dcap` accepts (no TDX hardware);
 //! - `MockSigner` plays the Chain Signatures network with one TEST secp256k1 key.
+//!
+//! The sandbox's T2 step (demo.rs) also has the MOCK worker lie once, on purpose: the next verification
+//! of a chosen program gets another verdict than the verifier's. near-t2 must catch it.
 
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, Mutex},
+};
 
 use antibody_cli::near::{Near, Signer};
 use base64::Engine as _;
@@ -84,6 +90,27 @@ pub struct MockWorker {
     pub worker: Signer,
     pub seed: [u8; 32],
     pub done: BTreeSet<u64>,
+    /// Every request's exact input, by run id (the sandbox's T2 step proves some of them).
+    pub inputs: Arc<Mutex<BTreeMap<u64, Vec<u8>>>>,
+    /// Sandbox only: the next verification of this program key gets a forged verdict (a lying TEE).
+    pub lie_next: Arc<Mutex<Option<String>>>,
+}
+
+/// A lying TEE: another verdict for the same input (a Violation reported as NoViolation, anything else
+/// as a Violation of slot 0), with a receipt hash that is not the receipt's.
+pub fn lie(f: &mut tee::FactsOut) {
+    use antibody_verifier::facts::Kind;
+    if f.kind == Kind::Violation {
+        f.kind = Kind::NoViolation;
+        f.keys.clear();
+        f.wrap_d = None;
+    } else {
+        f.kind = Kind::Violation;
+        f.keys = vec![tee::KeyOut { slot: 0, tag: hex::encode(sha256(b"antibody/MOCK-lie/tag")) }];
+    }
+    f.impact_usd_micro.clear();
+    f.protected_harm_usd_micro.clear();
+    f.receipt_sha256 = hex::encode(sha256(format!("antibody/MOCK-lie/{}", f.receipt_sha256).as_bytes()));
 }
 
 impl MockWorker {
@@ -102,7 +129,15 @@ impl MockWorker {
             // MOCK OutLayer: the real verifier, with the TEST root key standing in for OutLayer's host key.
             let mac = antibody_verifier::keys::TestMac(self.seed);
             let env = tee::Env { mac: &mac, fetch: &fetch, predecessor: p["caller"].as_str().map(String::from) };
-            let out = tee::handle(&input, &env);
+            let mut out = tee::handle(&input, &env);
+            self.inputs.lock().map_err(|_| eyre!("inputs lock"))?.insert(out.facts.run_id, input.clone());
+            {
+                let mut lie_next = self.lie_next.lock().map_err(|_| eyre!("lie lock"))?;
+                if out.facts.mode == tee::Mode::Verify && lie_next.as_deref() == Some(out.facts.program_key.as_str()) {
+                    lie(&mut out.facts);
+                    *lie_next = None;
+                }
+            }
             let output = serde_json::to_string(&out.facts)?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
             let (attestation, quote) = mock_attestation(p, &input, output.as_bytes(), now);

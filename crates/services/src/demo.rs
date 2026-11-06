@@ -19,7 +19,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -690,7 +690,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let keys = a.work.join("keys");
     std::fs::create_dir_all(&keys)?;
     std::fs::write(keys.join("test.near.json"), serde_json::to_vec(&root.to_file_json())?)?;
-    let names = ["tusd", "bounty", "guardian", "outlayer", "dcap", "mpc", "lc", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f", "agent-g"];
+    let names = ["tusd", "bounty", "guardian", "outlayer", "dcap", "mpc", "lc", "acme", "worker", "keeper", "relayer", "agent-a", "agent-b", "agent-c", "agent-d", "agent-e", "agent-f", "agent-g", "zk"];
     let acct = |n: &str| format!("{n}.test.near");
     let dep = Deployments {
         network: "sandbox".into(),
@@ -750,10 +750,14 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_key = Signer::from_file(&keys.join(format!("{}.json", acct("worker"))))?;
     let mut handles = Vec::new();
+    // The requests the MOCK worker received (T2 proves some), and its one deliberate lie (T2 catches it).
+    let worker_requests: Arc<Mutex<BTreeMap<u64, Vec<u8>>>> = Default::default();
+    let lie_next: Arc<Mutex<Option<String>>> = Default::default();
     {
         let (near, stop, signer, outlayer, seed) = (near.clone(), stop.clone(), worker_key.clone(), acct("outlayer"), demo_seed());
+        let (inputs, lie_next) = (worker_requests.clone(), lie_next.clone());
         handles.push(std::thread::spawn(move || {
-            let mut w = MockWorker { near, outlayer, worker: signer, seed, done: Default::default() };
+            let mut w = MockWorker { near, outlayer, worker: signer, seed, done: Default::default(), inputs, lie_next };
             while !stop.load(Ordering::Relaxed) {
                 if let Err(e) = w.tick() {
                     eprintln!("mock worker: {e:#}");
@@ -1177,6 +1181,43 @@ pub fn run(a: DemoArgs) -> Result<Value> {
                                   "state": cmd::state_label(&fcommit["state"]), "paid_raw": cmd::paid_of(&fcommit).to_string(), "keeper": fkeeper,
                                   "txs": {"commit": fr["commit"]["tx"]["tx"], "reveal": fr["reveal"]["tx"]["tx"]}, "ok": fork_ok, "seconds": t.elapsed().as_secs_f64()});
 
+    step("T2 in the sandbox: practice runs re-run natively on the exact requests, proven under a TEST key (MOCK prover) and checked by near-t2; a lying MOCK TEE is contradicted");
+    let t = Instant::now();
+    // The MOCK worker lies about the next practice verification: another verdict for the same input.
+    *lie_next.lock().map_err(|_| eyre!("lie lock"))? = Some(format!("{}/{ppid}", acct("bounty")));
+    let liar = practice::try_it(&judge, &acct("practice"), ppid, "liar")?;
+    let record_of = |name: &str, commit: &Value| -> PathBuf {
+        a.work.join("state/judges/practice").join(name).join("state/submissions").join(format!("{ppid}-{}.json", commit.as_u64().unwrap_or_default()))
+    };
+    let (ann_record, liar_record) = (record_of("ann", &tries[0]["commit_id"]), record_of("liar", &liar["commit_id"]));
+    let rpc = near.rpc.clone();
+    let fetch = move |loc: &str| crate::mocks::fetch_with(&rpc, loc).map_err(|e| eyre!("{loc}: {e}"));
+    // near-t2 on its own account, which also submits (the keeper's key signs in the background).
+    let t2 = crate::zk::sandbox(
+        &ctx_of("zk"),
+        &ctx_of("zk"),
+        &a.root.join("contracts/near-t2/target/wasm32-unknown-unknown/release/near_t2.wasm"),
+        &a.root.join("fixtures/zk/t2-test-key.json"),
+        &verifier_hash,
+        &[
+            crate::zk::Case { label: "honest", run_id: tries[0]["run_id"].as_u64().unwrap_or_default(), record: &ann_record },
+            crate::zk::Case { label: "lying TEE", run_id: liar["run_id"].as_u64().unwrap_or_default(), record: &liar_record },
+        ],
+        &worker_requests,
+        &fetch,
+    )?;
+    let outcome = |i: usize| t2["submissions"][i]["record"]["outcome"].as_str().unwrap_or("-").to_string();
+    let t2_ok = outcome(0) == "confirmed"
+        && outcome(1) == "contradicts"
+        && t2["submissions"][1]["record"]["differ"] == json!(["receipt", "kind", "slots"])
+        && t2["tampered_refused"] == json!(true)
+        && liar["verdict"]["kind"] == json!("NoViolation");
+    println!("T2: honest try {} ({}), the lying TEE's try {} ({} vs the proof's {}), a tampered proof refused: {}; ok: {t2_ok}",
+             tries[0]["run_id"], outcome(0), liar["run_id"], liar["verdict"]["kind"].as_str().unwrap_or("-"),
+             t2["submissions"][1]["record"]["kind"].as_str().unwrap_or("-"), t2["tampered_refused"]);
+    results["t2"] = json!({"near_t2": t2, "liar_try": {"run_id": liar["run_id"], "commit_id": liar["commit_id"], "verdict": liar["verdict"], "state": liar["state"]},
+                           "ok": t2_ok, "seconds": t.elapsed().as_secs_f64()});
+
     // The deployments file names the practice program, so `antibody try --name <you>` needs nothing else.
     let mut served = dep.clone();
     served.practice = Some(antibody_cli::ctx::PracticeDeployment { vending: acct("practice"), program: ppid });
@@ -1209,6 +1250,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
     ok &= results["practice"]["ok"] == json!(true);
     ok &= results["fork_mode"]["ok"] == json!(true);
     ok &= results["verdict_consumer"]["ok"] == json!(true);
+    ok &= results["t2"]["ok"] == json!(true);
     ok &= results["project_read"]["ok"] == json!(true);
     println!("{:<8} {:>6} {:<12} {:<5} {:<34} {:<15} {:>10} {:>8}", "agent", "commit", "verdict", "tier", "keys (slot: tag)", "state", "paid tUSD", "seconds");
     let mut pays = BTreeMap::new();

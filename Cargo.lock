@@ -697,6 +697,7 @@ dependencies = [
  "antibody-rules",
  "antibody-verifier",
  "antibody-witness",
+ "antibody-zk-core",
  "axum",
  "base64 0.22.1",
  "bs58",
@@ -708,6 +709,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "substrate-bn",
  "tokio",
 ]
 
