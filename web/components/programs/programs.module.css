@@ -1,0 +1,495 @@
+/* The programs directory and the program page. Tokens only (globals.css); mobile first. */
+
+/* ---------------------------------------------------------------- on this page */
+
+.toc {
+  padding-top: 12px;
+  padding-bottom: clamp(20px, 3vw, 28px);
+}
+
+.toc ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* ---------------------------------------------------------------- a table whose rows become cards on phones */
+
+.cell {
+  min-width: 0;
+}
+
+@media (max-width: 719.98px) {
+  div.cardsWrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  table.rtable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  table.rtable,
+  table.rtable tbody,
+  table.rtable tr,
+  table.rtable td {
+    display: block;
+    width: 100%;
+  }
+
+  table.rtable tr {
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 6px 14px;
+  }
+
+  table.rtable tr + tr {
+    margin-top: 10px;
+  }
+
+  table.rtable td,
+  table.rtable tr:last-child td {
+    display: grid;
+    grid-template-columns: 5.75rem minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  table.rtable tr td:last-child {
+    border-bottom: 0;
+  }
+
+  table.rtable td::before {
+    content: attr(data-label);
+    padding-top: 2px;
+    color: var(--ink-3);
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  table.rtable tr td.lead,
+  table.rtable tr:last-child td.lead {
+    display: block;
+    padding-top: 10px;
+  }
+
+  table.rtable tr td.lead::before {
+    content: none;
+  }
+
+  /* Long accounts and hashes wrap inside a card rather than push past it. */
+  table.rtable td span {
+    white-space: normal;
+  }
+
+  table.rtable td .cell {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Key-value lists stack (the name above its value) on narrow phones. */
+@media (max-width: 559.98px) {
+  dl.kvStack {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+  }
+
+  dl.kvStack dd + dt {
+    margin-top: 10px;
+  }
+}
+
+/* ---------------------------------------------------------------- directory */
+
+.progLink {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.progLink:hover .progName {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+}
+
+.progId {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.progName {
+  font-weight: 600;
+}
+
+.sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.stack6 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- escrow coverage */
+
+.coverage {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  max-width: 320px;
+}
+
+.bar {
+  position: relative;
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--ok);
+  border-radius: 999px;
+}
+
+.fillLow {
+  background: var(--warn);
+}
+
+.tick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink-2);
+}
+
+.scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-3);
+  font-size: var(--fs-2xs);
+  font-family: var(--font-mono);
+}
+
+/* ---------------------------------------------------------------- facts */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 0;
+}
+
+.stats dt {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.stats dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats dd small {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+.cardTitle {
+  font-size: var(--fs-md);
+}
+
+.full {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.inlineIcon {
+  display: inline;
+  vertical-align: -1px;
+}
+
+.says {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.list {
+  margin: 0;
+  padding-left: 1.15em;
+  display: grid;
+  gap: 6px;
+}
+
+.plain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.plain > li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.plain > li > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.plain > li > :not(svg) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Keys in words: the rule and its tag, then who proved it. */
+.tagList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tagList li {
+  display: grid;
+  gap: 2px;
+}
+
+/* ---------------------------------------------------------------- targets */
+
+.details summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  padding: 6px 0;
+}
+
+.details[open] summary {
+  margin-bottom: 10px;
+}
+
+.targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px 20px;
+  font-size: var(--fs-sm);
+}
+
+@media (min-width: 720px) {
+  .targets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.targets li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------- the ledger's equation */
+
+.eq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.term {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--bg-sunk);
+  min-width: 108px;
+}
+
+.termTotal {
+  background: var(--bg-elev);
+  border-color: var(--line-strong);
+}
+
+.termLabel {
+  color: var(--ink-3);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.termValue {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.op {
+  align-self: center;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  padding: 0 2px;
+}
+
+/* ---------------------------------------------------------------- rounds and chains */
+
+.roundHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.split {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 28px;
+  }
+}
+
+.subhead {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+  letter-spacing: 0;
+}
+
+.keyRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+/* ---------------------------------------------------------------- the anchor check (browser) */
+
+.check {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.checkHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.what {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+.raw {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.compare {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.compare div {
+  display: grid;
+  gap: 2px;
+}
+
+.compare dt {
+  color: var(--ink-3);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.compare dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}

@@ -1,0 +1,219 @@
+/* A vertical timeline: the offset from the commit's block, a rail, the step, its transaction. On wide
+   screens the transaction gets its own column; on phones it sits under the step. */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step {
+  --dot: var(--ink-3);
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.4rem 16px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 10px 0;
+}
+
+.ok {
+  --dot: var(--ok);
+}
+.accent {
+  --dot: var(--accent);
+}
+.t1 {
+  --dot: var(--t1);
+}
+.warn {
+  --dot: var(--warn);
+}
+.neutral {
+  --dot: var(--ink-3);
+}
+
+.time {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-align: right;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.time time {
+  cursor: help;
+}
+
+.waiting {
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.rail {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.rail::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: calc(50% - 1px);
+  border-left: 2px solid var(--line);
+}
+
+.list > li:first-child .rail::before {
+  top: 10px;
+}
+
+.list > li:last-child .rail::before {
+  bottom: auto;
+  height: 20px;
+}
+
+.dot {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--dot);
+  background: var(--bg-elev);
+  flex: none;
+}
+
+.main .dot {
+  background: var(--dot);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 16%, transparent);
+}
+
+.minor .dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+}
+
+.pending .dot {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--bg-elev);
+}
+
+.body {
+  grid-column: 3;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.title {
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.minor .title {
+  font-size: var(--fs-sm);
+  font-weight: 540;
+  color: var(--ink-2);
+}
+
+.pending .title {
+  font-weight: 540;
+  color: var(--ink-2);
+}
+
+.detail {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  max-width: 72ch;
+}
+
+.minor .detail,
+.pending .detail {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.tx {
+  grid-column: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .step {
+    grid-template-columns: 5.2rem 16px minmax(0, 1fr) minmax(190px, max-content);
+  }
+  .tx {
+    grid-column: 4;
+    grid-row: 1;
+    flex-direction: column;
+    align-items: flex-end;
+    align-self: start;
+    padding-top: 1px;
+  }
+}
+
+.permits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+}
+
+.permit {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+
+/* A long pause between two steps (hours or days), on the rail. */
+.gap {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.4rem 16px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 2px 0;
+}
+
+.gap::before {
+  content: "";
+  grid-column: 2;
+  justify-self: center;
+  width: 0;
+  height: 22px;
+  border-left: 2px dashed var(--line-strong);
+}
+
+.gapText {
+  grid-column: 3;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@media (min-width: 900px) {
+  .gap {
+    grid-template-columns: 5.2rem 16px minmax(0, 1fr);
+  }
+}
