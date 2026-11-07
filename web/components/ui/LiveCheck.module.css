@@ -1,0 +1,40 @@
+.check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.what {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+.result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.raw {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+  white-space: pre;
+}

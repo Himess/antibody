@@ -1708,7 +1708,7 @@ impl Live {
         // The API on the indexer's events, each endpoint once.
         let dir = self.services_dir();
         let indexed = crate::indexer::read_events(&dir.join("events.jsonl"), 0, usize::MAX).len();
-        let api = crate::api::Api { near: self.near.clone(), dep: served.clone(), state_dir: dir.clone() };
+        let api = crate::api::Api::new(self.near.clone(), served.clone(), dir.clone(), None, Default::default(), std::path::PathBuf::from("docs/results"));
         let rt = tokio::runtime::Runtime::new()?;
         let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
         let addr = listener.local_addr()?;

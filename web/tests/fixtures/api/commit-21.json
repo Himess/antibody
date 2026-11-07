@@ -1,0 +1,217 @@
+{
+ "commit": {
+  "attempts": 1,
+  "beneficiary": "practice.antibody.testnet",
+  "blob_sha256": "039ceec766f3b892755df0faa89cace5290f3f34eea2f37fa348b5fa56a96449",
+  "bond": "100000000000000000000",
+  "challenge": null,
+  "commitment": "f71afb7c09c89920a7bfff65e19ae2e8568365438c60474ceab9e352d4f0cfbe",
+  "committed_at": 1793809286,
+  "hunter": "judge-2-p6.practice.antibody.testnet",
+  "id": 21,
+  "index": 1,
+  "program": 6,
+  "rerun": null,
+  "retry_until": 1793809888,
+  "round": 0,
+  "run": 54,
+  "second": null,
+  "second_agrees": false,
+  "state": {
+   "Done": {
+    "Paid": {
+     "amount": "1000000000000000000000",
+     "at": 1793809316,
+     "instant": true
+    }
+   }
+  },
+  "ticket": false,
+  "wrapped": null
+ },
+ "events": [
+  {
+   "block_height": 276218843,
+   "block_ts_ns": 1793809286683102794,
+   "data": {
+    "commit_id": 21,
+    "hunter": "judge-2-p6.practice.antibody.testnet",
+    "index": 1,
+    "program_id": 6,
+    "round": 0
+   },
+   "event": "commit",
+   "explorer": "https://testnet.nearblocks.io/txns/CvmTX5T5tqbtEbvzsv4MWzyyUvCnFRKWtSY19oewng1V",
+   "network": "testnet",
+   "receipt": "7dcXN19c7vDLBuo5U18Nfy72RTLzgyt4ba8VtuxsNoan",
+   "seq": 338,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "CvmTX5T5tqbtEbvzsv4MWzyyUvCnFRKWtSY19oewng1V"
+  },
+  {
+   "block_height": 276218846,
+   "block_ts_ns": 1793809288231729431,
+   "data": {
+    "commit_id": 21,
+    "mode": "verify",
+    "payer": "practice.antibody.testnet",
+    "program_id": 6,
+    "request_sha256": "0acc781dab66c97c564838b05d3cd13929fd6942023234c6c54497931849ca7b",
+    "run_id": 54
+   },
+   "event": "run_requested",
+   "explorer": "https://testnet.nearblocks.io/txns/6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG",
+   "network": "testnet",
+   "receipt": "EhWqa31TFgfX97MPjCy12tCCsztXHLZ4F8Zb1vSUsbdR",
+   "seq": 339,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG"
+  },
+  {
+   "block_height": 276218846,
+   "block_ts_ns": 1793809288231729431,
+   "data": {
+    "commit_id": 21,
+    "run_id": 54
+   },
+   "event": "reveal",
+   "explorer": "https://testnet.nearblocks.io/txns/6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG",
+   "network": "testnet",
+   "receipt": "EhWqa31TFgfX97MPjCy12tCCsztXHLZ4F8Zb1vSUsbdR",
+   "seq": 340,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG"
+  },
+  {
+   "block_height": 276218871,
+   "block_ts_ns": 1793809302262295845,
+   "data": {
+    "commit_id": 21,
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1"
+     }
+    ],
+    "kind": "Violation",
+    "mode": "verify",
+    "receipt_sha256": "b01939e06872f940bdbc496716328aa79a26282e3cb0c87ef75002f724e72382",
+    "run_id": 54,
+    "tier": "T0"
+   },
+   "event": "run_answered",
+   "explorer": "https://testnet.nearblocks.io/txns/6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG",
+   "network": "testnet",
+   "receipt": "FEmCkWoe5jpaPe12dNae8S3HvMxvy1V8eYZjh3WXmozG",
+   "seq": 343,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG"
+  },
+  {
+   "block_height": 276218888,
+   "block_ts_ns": 1793809311419718588,
+   "data": {
+    "commit_id": 21,
+    "mode": "verify",
+    "run_id": 54
+   },
+   "event": "t1_confirmed",
+   "explorer": "https://testnet.nearblocks.io/txns/GL121EMJuJxkD5ZwMzQmqXdGDwd3gAWNbpqNVdT9HWkR",
+   "network": "testnet",
+   "receipt": "7qmECS6VT1ZFGgfTzrtPu8MgoCLgDvcGHK7VnYKBfauY",
+   "seq": 345,
+   "signer": "relayer.antibody.testnet",
+   "standard": "antibody",
+   "tx": "GL121EMJuJxkD5ZwMzQmqXdGDwd3gAWNbpqNVdT9HWkR"
+  },
+  {
+   "block_height": 276218892,
+   "block_ts_ns": 1793809313819630690,
+   "data": {
+    "amount": "1000000000000000000000",
+    "commit_id": 21,
+    "debt": "0",
+    "keys": [
+     "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1"
+    ],
+    "reserved": "1000000000000000000000"
+   },
+   "event": "holder",
+   "explorer": "https://testnet.nearblocks.io/txns/9qSUr8ovRsaCg7EtnvN2y9pN5pFuBjeBPoVQAVy5Ax8L",
+   "network": "testnet",
+   "receipt": "DQqUqbLN3eDMsb5WY2qHrddt4HBP6YrGdNfLjYNcms4N",
+   "seq": 346,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "9qSUr8ovRsaCg7EtnvN2y9pN5pFuBjeBPoVQAVy5Ax8L"
+  },
+  {
+   "block_height": 276218896,
+   "block_ts_ns": 1793809316259425708,
+   "data": {
+    "amount": "1000000000000000000000",
+    "beneficiary": "practice.antibody.testnet",
+    "commit_id": 21,
+    "fee": "0",
+    "instant": true,
+    "program_id": 6
+   },
+   "event": "paid",
+   "explorer": "https://testnet.nearblocks.io/txns/6ienbsLuHNPKmfCuD4aPBLnWqfWFY32nqnwWEpPscn8E",
+   "network": "testnet",
+   "receipt": "CPUcE5gRqFzMiTQMXLDXscE9yaPp4LsVeajGfmNk1nKp",
+   "seq": 347,
+   "signer": "judge-2-p6.practice.antibody.testnet",
+   "standard": "antibody",
+   "tx": "6ienbsLuHNPKmfCuD4aPBLnWqfWFY32nqnwWEpPscn8E"
+  }
+ ],
+ "proof_card": {
+  "check": [
+   "antibody status --commit 21",
+   "antibody tee check --request-id <the run's OutLayer request>",
+   "outlayer-verify tx 6CqW7dK4Fhzoni3U91BrKrxqR5qBggStQKWYfMKRUovG"
+  ],
+  "facts": {
+   "impact_usd_micro": "0",
+   "keys": [
+    {
+     "slot": 0,
+     "tag": "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1"
+    }
+   ],
+   "kind": "Violation",
+   "tier": "T1"
+  },
+  "receipt_sha256": "b01939e06872f940bdbc496716328aa79a26282e3cb0c87ef75002f724e72382",
+  "sealed_until_disclosure": true
+ },
+ "row": {
+  "beneficiary": "practice.antibody.testnet",
+  "commit_id": 21,
+  "committed_at": 1793809286,
+  "hunter": "judge-2-p6.practice.antibody.testnet",
+  "index": 1,
+  "paid_raw": "1000000000000000000000",
+  "program_id": 6,
+  "round": 0,
+  "run_id": 54,
+  "sealed": true,
+  "state": "Done:Paid",
+  "verdict": {
+   "keys": [
+    {
+     "slot": 0,
+     "tag": "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1"
+    }
+   ],
+   "kind": "Violation",
+   "t2": null,
+   "tier": "T1"
+  }
+ }
+}

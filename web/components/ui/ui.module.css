@@ -1,0 +1,203 @@
+.copy {
+  /* Its visually hidden live region is positioned: keep it inside the button, so it never widens a
+     scrolling table or a phone's page. */
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  flex: none;
+}
+.copy:hover {
+  color: var(--ink);
+  background: var(--bg-sunk);
+}
+
+.hash {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.hashText {
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+/* A full value (a hash shown whole, a long account) wraps anywhere rather than overflow a phone. */
+.wrap .hashText {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.wrap {
+  display: inline;
+}
+.hashLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  gap: 4px;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 1px dotted var(--line-strong);
+}
+.hashLink:hover {
+  color: var(--accent-ink);
+  border-bottom-color: currentColor;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  font-weight: 560;
+  line-height: 1.6;
+  white-space: nowrap;
+  background: var(--bg-sunk);
+  color: var(--ink-2);
+}
+.pillSm {
+  padding: 0 7px 0 6px;
+  font-size: var(--fs-2xs);
+}
+.tone-ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+}
+.tone-bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+  border-color: color-mix(in srgb, var(--bad) 25%, transparent);
+}
+.tone-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 25%, transparent);
+}
+.tone-info,
+.tone-t1 {
+  color: var(--t1);
+  background: var(--t1-soft);
+  border-color: color-mix(in srgb, var(--t1) 25%, transparent);
+}
+.tone-t2 {
+  color: var(--t2);
+  background: var(--t2-soft);
+  border-color: color-mix(in srgb, var(--t2) 25%, transparent);
+}
+.tone-pending {
+  color: var(--ink-2);
+  background: var(--bg-sunk);
+  border-style: dashed;
+}
+.tone-accent {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.tone-neutral {
+  color: var(--ink-2);
+}
+
+.command {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 10px 8px 10px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.command pre {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+.prompt {
+  color: var(--ink-3);
+  user-select: none;
+}
+
+.state {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: var(--r-lg);
+  border: 1px dashed var(--line-strong);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.stateError {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--bad) 35%, var(--line));
+  background: var(--bad-soft);
+  color: var(--ink);
+}
+
+.stamp {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 2px solid currentColor;
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+}
+.stampKind {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+.stampMeta {
+  font-size: var(--fs-2xs);
+  opacity: 0.9;
+}
+
+.sealedCard {
+  display: grid;
+  gap: 10px;
+}
+.sealedBadge {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.sealedBadge span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}

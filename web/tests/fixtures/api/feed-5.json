@@ -1,0 +1,163 @@
+{
+ "program_id": 5,
+ "submissions": [
+  {
+   "beneficiary": "agent-a.antibody.testnet",
+   "commit_id": 13,
+   "committed_at": 1793806931,
+   "hunter": "agent-a.antibody.testnet",
+   "index": 0,
+   "paid_raw": "100000000000000000000000",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 33,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-b.antibody.testnet",
+   "commit_id": 14,
+   "committed_at": 1793807209,
+   "hunter": "agent-b.antibody.testnet",
+   "index": 1,
+   "paid_raw": "30000000000000000000000",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 34,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 1,
+      "tag": "ae7e21c8af1b96023b13ae1daff4bcd1076b5b282e4f6ce6fb91e6fdae5f6de4"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-c.antibody.testnet",
+   "commit_id": 15,
+   "committed_at": 1793807269,
+   "hunter": "agent-c.antibody.testnet",
+   "index": 2,
+   "paid_raw": "0",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 35,
+   "sealed": true,
+   "state": "Done:Forfeited",
+   "verdict": {
+    "keys": [],
+    "kind": "NoViolation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-d.antibody.testnet",
+   "commit_id": 16,
+   "committed_at": 1793807296,
+   "hunter": "agent-d.antibody.testnet",
+   "index": 3,
+   "paid_raw": "0",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 36,
+   "sealed": true,
+   "state": "Done:DuplicateConfirmed",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "325703227266ea4d3828142c490819fbc957bef5065a5ce0daeb03ee75242199"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-e.antibody.testnet",
+   "commit_id": 17,
+   "committed_at": 1793807320,
+   "hunter": "agent-e.antibody.testnet",
+   "index": 4,
+   "paid_raw": "0",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 37,
+   "sealed": true,
+   "state": "Done:Known",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 2,
+      "tag": "45b2dc90a6a1182df8596d4205f3d0e69771aa87dcd0fb7e9d9e1e5505f6d8c5"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-f.antibody.testnet",
+   "commit_id": 18,
+   "committed_at": 1793807343,
+   "hunter": "agent-f.antibody.testnet",
+   "index": 5,
+   "paid_raw": "100000000000000000000000",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 38,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "a74dddb61406f343a53af7298ef64be2f9334763dfcd23f17ca3b85547e53b8c"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-g.antibody.testnet",
+   "commit_id": 19,
+   "committed_at": 1793807371,
+   "hunter": "agent-g.antibody.testnet",
+   "index": 6,
+   "paid_raw": "10000000000000000000000",
+   "program_id": 5,
+   "round": 0,
+   "run_id": 39,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [],
+    "kind": "NoViolation",
+    "t2": null,
+    "tier": "T1"
+   }
+  }
+ ]
+}

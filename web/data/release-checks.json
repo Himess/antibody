@@ -1,0 +1,129 @@
+{
+  "results_file": "docs/results/testnet-2026-11-04.json",
+  "extract": "release",
+  "program_id": 5,
+  "program_key": "bounty.antibody.testnet/5",
+  "eip1967_implementation_slot": "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc",
+  "note": "An exact copy of the results file's release object (recorded on 2026-11-04): the release permits the relayer submitted after round 2, and the checks that followed on Sepolia (11155111) and Base Sepolia (84532): each proxy's EIP-1967 implementation slot names the final fix, and B's exploit reverts.",
+  "release": {
+    "checks": [
+      {
+        "address": "0xCa1FAFbCFC14d665d76045A018B215987f39f8A7",
+        "chain_id": 11155111,
+        "expected": "0x74E75477Af2d649FFe8037a37014dD8c7bd217a9",
+        "implementation": "0x74e75477af2d649ffe8037a37014dd8c7bd217a9",
+        "ok": true,
+        "proxy": "AcmeLend",
+        "rpc": "https://ethereum-sepolia-rpc.publicnode.com"
+      },
+      {
+        "address": "0x0433CEB84dB807402DE6642929EbF1450381CC46",
+        "chain_id": 11155111,
+        "expected": "0x32e8cd1D58736310340d5103dEd748e3d8f434d0",
+        "implementation": "0x32e8cd1d58736310340d5103ded748e3d8f434d0",
+        "ok": true,
+        "proxy": "AcmeVault",
+        "rpc": "https://ethereum-sepolia-rpc.publicnode.com"
+      },
+      {
+        "b_exploit_reverts": true,
+        "chain_id": 11155111
+      },
+      {
+        "address": "0xCa1FAFbCFC14d665d76045A018B215987f39f8A7",
+        "chain_id": 84532,
+        "expected": "0x74E75477Af2d649FFe8037a37014dD8c7bd217a9",
+        "implementation": "0x74e75477af2d649ffe8037a37014dd8c7bd217a9",
+        "ok": true,
+        "proxy": "AcmeLend",
+        "rpc": "https://base-sepolia-rpc.publicnode.com"
+      },
+      {
+        "address": "0x0433CEB84dB807402DE6642929EbF1450381CC46",
+        "chain_id": 84532,
+        "expected": "0x32e8cd1D58736310340d5103dEd748e3d8f434d0",
+        "implementation": "0x32e8cd1d58736310340d5103ded748e3d8f434d0",
+        "ok": true,
+        "proxy": "AcmeVault",
+        "rpc": "https://base-sepolia-rpc.publicnode.com"
+      },
+      {
+        "b_exploit_reverts": true,
+        "chain_id": 84532
+      }
+    ],
+    "ok": true,
+    "permits": [
+      {
+        "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+        "block": "0x33ea282",
+        "chain_id": 84532,
+        "confirmed_ms": 1793809168923,
+        "explorer": "https://sepolia.basescan.org/tx/0xcf27959a606ed1e3ee3df495fc5f63538e5f2c2ef51412c5e703743e5cf9825c",
+        "first_seen_ms": 1793809164667,
+        "gas_used": "0x173c0",
+        "kind": "release",
+        "permit_id": 10,
+        "program_key": "bounty.antibody.testnet/5",
+        "round": 2,
+        "sent_ms": 1793809164966,
+        "signed_ns": 1793809161473156729,
+        "status": "confirmed",
+        "tx_hash": "0xcf27959a606ed1e3ee3df495fc5f63538e5f2c2ef51412c5e703743e5cf9825c"
+      },
+      {
+        "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+        "block": "0x33ea2bb",
+        "chain_id": 84532,
+        "confirmed_ms": 1793809180088,
+        "explorer": "https://sepolia.basescan.org/tx/0x90a98dec6d9dcc3e386e0e895ed6b5b9a4dde852f5d64d859d91ceea54409697",
+        "first_seen_ms": 1793809176128,
+        "gas_used": "0x173c0",
+        "kind": "release",
+        "permit_id": 11,
+        "program_key": "bounty.antibody.testnet/5",
+        "round": 2,
+        "sent_ms": 1793809176389,
+        "signed_ns": 1793809171436790607,
+        "status": "confirmed",
+        "tx_hash": "0x90a98dec6d9dcc3e386e0e895ed6b5b9a4dde852f5d64d859d91ceea54409697"
+      },
+      {
+        "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+        "block": "0xb81349",
+        "chain_id": 11155111,
+        "confirmed_ms": 1793809179942,
+        "explorer": "https://sepolia.etherscan.io/tx/0x57c042aa8cf4ed8ec2f8606757ef4e3ff2204ec0dc15d0d89ec50be7007153cf",
+        "first_seen_ms": 1793809164136,
+        "gas_used": "0x42b24",
+        "kind": "release",
+        "permit_id": 8,
+        "program_key": "bounty.antibody.testnet/5",
+        "round": 2,
+        "sent_ms": 1793809164417,
+        "signed_ns": 1793809161473156729,
+        "status": "confirmed",
+        "tx_hash": "0x57c042aa8cf4ed8ec2f8606757ef4e3ff2204ec0dc15d0d89ec50be7007153cf"
+      },
+      {
+        "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+        "block": "0xb81349",
+        "chain_id": 11155111,
+        "confirmed_ms": 1793809179998,
+        "explorer": "https://sepolia.etherscan.io/tx/0xca9f8fd32af0b4b43cc000d4aeb0e9f56c6a848dbd63f9049b3967f142fab32b",
+        "first_seen_ms": 1793809164454,
+        "gas_used": "0x42b24",
+        "kind": "release",
+        "last_error": "eth_sendRawTransaction: {\"code\":-32000,\"message\":\"replacement transaction underpriced\"}",
+        "permit_id": 9,
+        "program_key": "bounty.antibody.testnet/5",
+        "round": 2,
+        "sent_ms": 1793809168828,
+        "signed_ns": 1793809161473156729,
+        "status": "confirmed",
+        "tx_hash": "0xca9f8fd32af0b4b43cc000d4aeb0e9f56c6a848dbd63f9049b3967f142fab32b"
+      }
+    ],
+    "seconds": 0.222412778
+  }
+}

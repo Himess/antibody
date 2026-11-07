@@ -1,0 +1,14 @@
+{
+ "account": "agent-a.antibody.testnet",
+ "agent": {
+  "agent": "agent-a.antibody.testnet",
+  "registered": false
+ },
+ "credit": {
+  "agent": null,
+  "committed": true,
+  "near": "23070000000000000000000",
+  "tokens": "302000000000000000000000"
+ },
+ "token_balance_raw": "1000000000000000000000"
+}

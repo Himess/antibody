@@ -49,6 +49,21 @@ impl Default for Thresholds {
 }
 
 pub fn compute(near: &Near, dep: &Deployments, state_dir: &Path, t: &Thresholds) -> Result<Value> {
+    compute_with(near, dep, state_dir, t, &Default::default(), &Default::default())
+}
+
+/// [`compute`], where a permit the relayer has not confirmed counts as pending only if it is not carried
+/// out already: a recorded run relayed it (`recorded`, from the results files), or its adapter's `used`
+/// view says it was applied (`chains`: EVM RPCs by chain id). A relayer that starts from a new state file
+/// meets earlier runs' permits that are long applied.
+pub fn compute_with(
+    near: &Near,
+    dep: &Deployments,
+    state_dir: &Path,
+    t: &Thresholds,
+    chains: &std::collections::BTreeMap<u64, String>,
+    recorded: &std::collections::BTreeMap<(String, u64), Value>,
+) -> Result<Value> {
     let mut alerts = Vec::new();
     let mut alert = |level: &str, component: &str, key: String, message: String| {
         alerts.push(json!({"level": level, "component": component, "key": key, "message": message}));
@@ -66,11 +81,34 @@ pub fn compute(near: &Near, dep: &Deployments, state_dir: &Path, t: &Thresholds)
         }
     }
     let relayer = read_json(&state_dir.join("relayer.json"));
-    let pending: Vec<Value> = relayer.as_object().into_iter().flatten().filter(|(_, v)| v["status"] != json!("confirmed")).map(|(k, v)| json!({"permit": k, "status": v["status"], "chain_id": v["chain_id"]})).collect();
+    // The permits' bodies (their replay keys), read once if a check needs them.
+    let bodies: Value = if chains.is_empty() { Value::Null } else { dep.guardian.as_ref().and_then(|g| near.view(g, "list_permits", json!({"from": 0, "limit": 100})).ok()).unwrap_or(Value::Null) };
+    let mut applied = Vec::new();
+    let mut pending = Vec::new();
+    for (k, v) in relayer.as_object().into_iter().flatten().filter(|(_, v)| v["status"] != json!("confirmed")) {
+        let id = v["permit_id"].as_u64();
+        let rec = id.and_then(|i| recorded.get(&(v["program_key"].as_str().unwrap_or_default().to_string(), i)));
+        let permit = bodies.as_array().and_then(|b| b.iter().find(|p| p["id"].as_u64() == id && p["chain_id"] == v["chain_id"])).cloned();
+        let state = match (rec, permit) {
+            (Some(r), _) => Some(json!({"permit": k, "chain_id": v["chain_id"], "status": "confirmed", "tx": r["tx_hash"], "source": r["results_file"]})),
+            (None, Some(p)) => {
+                let st = crate::web::permit_state(v, None, &p, chains);
+                (st["status"] == "applied").then(|| json!({"permit": k, "chain_id": v["chain_id"], "status": "applied", "source": st["source"]}))
+            }
+            _ => None,
+        };
+        match state {
+            Some(s) => applied.push(s),
+            None => pending.push(json!({"permit": k, "status": v["status"], "chain_id": v["chain_id"]})),
+        }
+    }
     if !pending.is_empty() {
         alert("warn", "relayer", "relayer-pending".into(), format!("{} permit(s) not yet confirmed on their chain", pending.len()));
     }
     components.insert("permits_pending".into(), json!(pending));
+    if !applied.is_empty() {
+        components.insert("permits_applied".into(), json!(applied));
+    }
     let keeper = read_json(&state_dir.join("keeper.json"));
     for p in keeper["programs"].as_array().into_iter().flatten().filter(|p| p.get("error").is_some()) {
         alert("warn", "keeper", format!("keeper-error-{}", p["program"]), format!("keeper pass on program {} failed: {}", p["program"], p["error"].as_str().unwrap_or_default()));

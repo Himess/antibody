@@ -1,0 +1,46 @@
+{
+ "actors": [
+  {
+   "account": "client-eth2.sepolia.testnet",
+   "actor": "the light client",
+   "check": "the program's anchor check (`antibody judge`: anchor status light-client) against any RPC's block hash",
+   "trusted_for": "the anchor block's hash"
+  },
+  {
+   "account": "outlayer.testnet",
+   "actor": "the TEE (OutLayer worker)",
+   "check": "T1: the run's TDX quote is verified on NEAR (`antibody tee check --request-id <id>`); the verifier's wasm hash is pinned per program",
+   "trusted_for": "running the pinned verifier on the sealed proof"
+  },
+  {
+   "account": null,
+   "actor": "the verifier",
+   "check": "native and wasm builds agree byte for byte; `antibody check` re-runs any proof locally; after disclosure every verdict can be recomputed",
+   "trusted_for": "nothing beyond its pinned build"
+  },
+  {
+   "account": "guardian.antibody.testnet",
+   "actor": "the MPC network",
+   "check": "each permit's EIP-712 digest is recomputed by AntibodyAdapter on chain; `antibody judge` lists every permit",
+   "trusted_for": "signing pause and release permits near-guardian builds"
+  },
+  {
+   "account": "bounty.antibody.testnet",
+   "actor": "near-antibody's owner",
+   "check": "a live program's pins never change (property 12); `antibody judge` shows whether the contract is locked",
+   "trusted_for": "the defaults of new programs only"
+  },
+  {
+   "account": null,
+   "actor": "the project",
+   "check": "the manifest hash is committed; known issues are sealed before open; a fix is released only after every paid proof re-runs clean",
+   "trusted_for": "its manifest, its escrow and its fixes"
+  },
+  {
+   "account": null,
+   "actor": "relayers, keeper, indexer, API",
+   "check": "every value they show is re-derivable from NEAR views",
+   "trusted_for": "nothing (permissionless calls, derived data)"
+  }
+ ]
+}

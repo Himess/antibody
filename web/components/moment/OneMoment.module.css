@@ -1,0 +1,596 @@
+.root {
+  --lane-label: 118px;
+  --lane-h: 100px;
+  --lane-near: var(--ink);
+  --lane-base: #1f5fd1;
+  --lane-sepolia: #0d7a72;
+  display: grid;
+  gap: 18px;
+}
+
+:global(:root[data-theme="dark"]) .root {
+  --lane-base: #74a7ff;
+  --lane-sepolia: #4fd1c5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .root {
+    --lane-base: #74a7ff;
+    --lane-sepolia: #4fd1c5;
+  }
+}
+
+.near {
+  --lane: var(--lane-near);
+}
+.base {
+  --lane: var(--lane-base);
+}
+.sepolia {
+  --lane: var(--lane-sepolia);
+}
+
+/* ------------------------------------------------------------ readout */
+
+.readout {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px 28px;
+  flex-wrap: wrap;
+}
+
+.clock {
+  display: grid;
+  gap: 2px;
+}
+
+.clockLabel {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.clockValue {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: clamp(2.5rem, 1.6rem + 3.4vw, 4rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  min-width: 5.2ch;
+}
+
+.unit {
+  font-size: 0.45em;
+  color: var(--ink-3);
+  letter-spacing: 0;
+}
+
+.now {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-bottom: 6px;
+  min-height: 2.6em;
+}
+
+.nowBy {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  flex-basis: 100%;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--lane) 40%, var(--line));
+  color: var(--lane);
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lane);
+}
+
+/* ------------------------------------------------------------ chart (wide screens) */
+
+.chart {
+  display: none;
+  position: relative;
+  padding-top: 26px;
+}
+
+@media (min-width: 760px) {
+  .chart {
+    display: block;
+  }
+}
+
+.axis {
+  position: absolute;
+  top: 0;
+  left: var(--lane-label);
+  right: 0;
+  height: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tick {
+  position: absolute;
+  bottom: 4px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.lanes {
+  position: relative;
+}
+
+.wires {
+  position: absolute;
+  top: 0;
+  left: var(--lane-label);
+  width: calc(100% - var(--lane-label));
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wire {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+
+.wireGoing {
+  stroke: var(--accent);
+  opacity: 0.55;
+}
+
+.wireLit {
+  stroke: var(--accent);
+  stroke-dasharray: none;
+  stroke-width: 2;
+}
+
+.lane {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--lane-label) 1fr;
+  align-items: center;
+  height: var(--lane-h);
+  border-bottom: 1px dashed var(--line);
+}
+
+.lane:last-child {
+  border-bottom: 0;
+}
+
+.laneName {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--lane);
+  padding-right: 12px;
+}
+
+.track {
+  position: relative;
+  height: 100%;
+}
+
+.rail {
+  position: absolute;
+  top: 50%;
+  height: 0;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.railFill {
+  position: absolute;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: var(--lane);
+  border-radius: 2px;
+}
+
+.node {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  text-decoration: none;
+  color: var(--ink);
+  z-index: 2;
+}
+
+.dot {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--lane);
+  background: var(--bg-elev);
+  transition:
+    background 0.25s var(--ease),
+    transform 0.25s var(--ease),
+    box-shadow 0.25s var(--ease);
+}
+
+.minor .dot {
+  left: -5px;
+  top: -5px;
+  width: 10px;
+  height: 10px;
+}
+
+.done .dot {
+  background: var(--lane);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lane) 18%, transparent);
+}
+
+.base.lane .done .dot,
+.sepolia.lane .done .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+a.node:hover .dot,
+a.node:focus-visible .dot {
+  transform: scale(1.2);
+}
+
+a.node:focus-visible {
+  outline: none;
+}
+
+a.node:focus-visible .nodeText {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.nodeText {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  white-space: nowrap;
+  opacity: 0.45;
+  transition: opacity 0.25s var(--ease);
+}
+
+.done .nodeText {
+  opacity: 1;
+}
+
+.aboveText {
+  bottom: 14px;
+}
+
+.belowText {
+  top: 14px;
+}
+
+.nodeTime {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.nodeLabel {
+  font-size: var(--fs-2xs);
+  color: var(--ink-2);
+  line-height: 1.3;
+}
+
+.minor .nodeTime {
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+
+.minor .nodeLabel {
+  color: var(--ink-3);
+}
+
+a.node:hover .nodeLabel {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+.playhead {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 0;
+  border-left: 1.5px solid var(--accent);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------ controls */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.speed {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.speed :global(.btn) {
+  min-height: 28px;
+  border: 0;
+}
+
+.on {
+  background: var(--ink) !important;
+  color: var(--bg) !important;
+}
+
+.scrub {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+}
+
+.scrub input {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 32px;
+}
+
+/* ------------------------------------------------------------ step list: the vertical timeline on phones */
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  grid-template-areas: "time body tx";
+  align-items: center;
+  gap: 4px 12px;
+  padding: 10px 0 10px 18px;
+  border-bottom: 1px solid var(--line);
+  opacity: 0.5;
+  transition: opacity 0.25s var(--ease);
+}
+
+.item::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+
+.item::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: var(--bg-elev);
+}
+
+.itemDone {
+  opacity: 1;
+}
+
+.itemDone::before {
+  border-left-color: var(--accent);
+}
+
+.itemDone::after {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.itemMinor .itemLabel {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.itemTime {
+  grid-area: time;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.itemBody {
+  grid-area: body;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.itemLabel {
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.itemTx {
+  grid-area: tx;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line-strong);
+}
+
+.itemTx:hover {
+  color: var(--accent-ink);
+}
+
+@media (min-width: 760px) {
+  .compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 28px;
+    border-top: 0;
+  }
+  .compact .item {
+    opacity: 1;
+  }
+  .compact .item::before,
+  .compact .item::after {
+    display: none;
+  }
+  .compact .item {
+    padding-left: 0;
+  }
+}
+
+/* ------------------------------------------------------------ presentation mode (1080p, 16:9) */
+
+.present {
+  /* The presentation stage is always dark. */
+  --lane-base: #74a7ff;
+  --lane-sepolia: #4fd1c5;
+  --lane-label: clamp(120px, 12vw, 220px);
+  --lane-h: clamp(64px, 10.5vh, 140px);
+  gap: clamp(10px, 2.2vh, 32px);
+}
+
+/* On stage the keyboard drives it (Space, R, arrows): no controls in the frame. */
+.present .controls {
+  display: none;
+}
+
+.present .clockValue {
+  font-size: clamp(4rem, 9vw, 9rem);
+}
+
+.present .clockLabel {
+  font-size: 1rem;
+}
+
+.present .now {
+  font-size: 1.75rem;
+}
+
+.present .nowBy {
+  font-size: 1.15rem;
+}
+
+.present .chip {
+  font-size: 0.9rem;
+  padding: 4px 12px;
+}
+
+.present .laneName {
+  font-size: 1.25rem;
+}
+
+.present .tick {
+  font-size: 0.95rem;
+}
+
+.present .nodeTime {
+  font-size: 1.45rem;
+}
+
+.present .nodeLabel {
+  font-size: 1rem;
+}
+
+.present .dot {
+  left: -12px;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
+.present .minor .dot {
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+}
+
+.present .aboveText {
+  bottom: 22px;
+}
+
+.present .belowText {
+  top: 22px;
+}
+
+.present .chart {
+  display: block;
+  padding-top: 36px;
+}
+
+.present .axis {
+  height: 28px;
+}
+
+/* Phones: the transaction goes under the step. */
+@media (max-width: 480px) {
+  .item {
+    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-areas:
+      "time body"
+      "time tx";
+    align-items: start;
+  }
+  .itemTx {
+    justify-self: start;
+  }
+}

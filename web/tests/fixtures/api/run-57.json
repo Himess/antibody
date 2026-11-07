@@ -1,0 +1,58 @@
+{
+ "raw": {
+  "commit": 23,
+  "id": 57,
+  "mode": "verify",
+  "outcome": {
+   "Answered": {
+    "at": 1793970222,
+    "facts": {
+     "extra": {
+      "WrapD": {
+       "wrap_d": "353f18dce295f1125222eab5c5ea952a386214595954b03ff2513b0a22714ae8103be271dfdba593ac95d83e2287205885d07c0d7c8c317d4aee78d5"
+      }
+     },
+     "impact_usd_micro": "0",
+     "keys": [
+      {
+       "slot": 0,
+       "tag": "9990e991d8bcee767113d2bfb18a2100da8db6f5f1be40db08339fb7ce91453c"
+      }
+     ],
+     "kind": "Violation",
+     "protected_harm_usd_micro": "0",
+     "reason": null,
+     "receipt_sha256": "4b07c8f7a21da617246c877d2f2e64661ea00c01ad89fbc7e83a72ed29202530"
+    },
+    "output_sha256": "909d8c7bc1abaaae1791228783a96fb0f99ebd88bb36c6ca1471f3b5092babd8",
+    "tier": "T0"
+   }
+  },
+  "payer": "practice.antibody.testnet",
+  "program": 6,
+  "request_sha256": "0c5980f43a8b1335bd60aead70dd51fd98d58e3b170291295494853d2754cc6f",
+  "round": 0,
+  "signer": "pcs-rehearsal.practice.antibody.testnet",
+  "started_at": 1793970207
+ },
+ "run": {
+  "answered_at": 1793970222,
+  "commit_id": 23,
+  "impact_usd_micro": "0",
+  "keys": [
+   {
+    "slot": 0,
+    "tag": "9990e991d8bcee767113d2bfb18a2100da8db6f5f1be40db08339fb7ce91453c"
+   }
+  ],
+  "kind": "Violation",
+  "mode": "verify",
+  "protected_harm_usd_micro": "0",
+  "reason": null,
+  "receipt_sha256": "4b07c8f7a21da617246c877d2f2e64661ea00c01ad89fbc7e83a72ed29202530",
+  "run_id": 57,
+  "tier": "T0"
+ },
+ "t2": null,
+ "tier": "T0"
+}

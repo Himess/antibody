@@ -1,0 +1,611 @@
+{
+ "audit": {
+  "accounted": "401000000000000000000000",
+  "available": "161000000000000000000000",
+  "debt": "0",
+  "defaulted": "0",
+  "fees": "0",
+  "funded": "401000000000000000000000",
+  "ok": true,
+  "paid": "240000000000000000000000",
+  "program_id": 0,
+  "reservations": "0",
+  "reserved": "0",
+  "returned": "0"
+ },
+ "commits": [
+  {
+   "beneficiary": "agent-a.antibody.testnet",
+   "commit_id": 0,
+   "committed_at": 1793706050,
+   "hunter": "agent-a.antibody.testnet",
+   "index": 0,
+   "paid_raw": "100000000000000000000000",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 2,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "9ac582e28c538f32e1984574532bbea620b6b3f91451a7fc50bd2bd6baecead3"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-b.antibody.testnet",
+   "commit_id": 1,
+   "committed_at": 1793706776,
+   "hunter": "agent-b.antibody.testnet",
+   "index": 1,
+   "paid_raw": "30000000000000000000000",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 3,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 1,
+      "tag": "3b0c57ff33fe1681486184acd1e25a54878be9db2ad534ad0714059c3a812d15"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-c.antibody.testnet",
+   "commit_id": 2,
+   "committed_at": 1793706804,
+   "hunter": "agent-c.antibody.testnet",
+   "index": 2,
+   "paid_raw": "0",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 4,
+   "sealed": true,
+   "state": "Done:Forfeited",
+   "verdict": {
+    "keys": [],
+    "kind": "NoViolation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-d.antibody.testnet",
+   "commit_id": 3,
+   "committed_at": 1793706828,
+   "hunter": "agent-d.antibody.testnet",
+   "index": 3,
+   "paid_raw": "0",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 5,
+   "sealed": true,
+   "state": "Done:DuplicateConfirmed",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "9ac582e28c538f32e1984574532bbea620b6b3f91451a7fc50bd2bd6baecead3"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-e.antibody.testnet",
+   "commit_id": 4,
+   "committed_at": 1793706933,
+   "hunter": "agent-e.antibody.testnet",
+   "index": 4,
+   "paid_raw": "0",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 6,
+   "sealed": true,
+   "state": "Done:Known",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 2,
+      "tag": "f12c3fea8908fbc13fce4b32e53f466e8338650150cfee0b98f80ba21234bd09"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-f.antibody.testnet",
+   "commit_id": 5,
+   "committed_at": 1793706973,
+   "hunter": "agent-f.antibody.testnet",
+   "index": 5,
+   "paid_raw": "100000000000000000000000",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 7,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "1d6a021f0a150b7c1992ead1843b8f9bfeb62743e1d2a9da4e940840d922eec1"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "agent-g.antibody.testnet",
+   "commit_id": 6,
+   "committed_at": 1793706998,
+   "hunter": "agent-g.antibody.testnet",
+   "index": 6,
+   "paid_raw": "10000000000000000000000",
+   "program_id": 0,
+   "round": 0,
+   "run_id": 8,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [],
+    "kind": "NoViolation",
+    "t2": null,
+    "tier": "T1"
+   }
+  }
+ ],
+ "events": [
+  {
+   "block_height": 276044084,
+   "block_ts_ns": 1793706083044668063,
+   "data": {
+    "guardian": "guardian.antibody.testnet",
+    "method": "issue_pause",
+    "program_id": 0,
+    "round": 0,
+    "ticket": 0
+   },
+   "event": "permit_requested",
+   "explorer": "https://testnet.nearblocks.io/txns/7MhK7sBfX5vXE6WNeJAs9WsNt8G8GFqirio57q4MzF9b",
+   "network": "testnet",
+   "receipt": "8BfZooEMjxjiSEDGMnbPCoXAS5d9sQYdbJVZx53oMzYU",
+   "seq": 1,
+   "signer": "keeper.antibody.testnet",
+   "standard": "antibody",
+   "tx": "7MhK7sBfX5vXE6WNeJAs9WsNt8G8GFqirio57q4MzF9b"
+  },
+  {
+   "block_height": 276044084,
+   "block_ts_ns": 1793706083044668063,
+   "data": {
+    "program_id": 0,
+    "round": 0,
+    "ticket": 0
+   },
+   "event": "pause_ticket",
+   "explorer": "https://testnet.nearblocks.io/txns/7MhK7sBfX5vXE6WNeJAs9WsNt8G8GFqirio57q4MzF9b",
+   "network": "testnet",
+   "receipt": "8BfZooEMjxjiSEDGMnbPCoXAS5d9sQYdbJVZx53oMzYU",
+   "seq": 2,
+   "signer": "keeper.antibody.testnet",
+   "standard": "antibody",
+   "tx": "7MhK7sBfX5vXE6WNeJAs9WsNt8G8GFqirio57q4MzF9b"
+  },
+  {
+   "block_height": 276049211,
+   "block_ts_ns": 1793709097376978177,
+   "data": {
+    "carried": 0,
+    "program_id": 0,
+    "promoted": 0,
+    "release_gate": true,
+    "released": 2,
+    "round": 2
+   },
+   "event": "round_opened",
+   "explorer": "https://testnet.nearblocks.io/txns/CjkHAk73Qi3tgX725frep1oJYTsJAvhuWj7qfBieh7To",
+   "network": "testnet",
+   "receipt": "HyT4SRcKbBY4EKVbsZVCs4t6xRPzx63FWiU4SrWLaZUy",
+   "seq": 5,
+   "signer": "keeper.antibody.testnet",
+   "standard": "antibody",
+   "tx": "CjkHAk73Qi3tgX725frep1oJYTsJAvhuWj7qfBieh7To"
+  },
+  {
+   "block_height": 276049211,
+   "block_ts_ns": 1793709097376978177,
+   "data": {
+    "guardian": "guardian.antibody.testnet",
+    "method": "issue_release",
+    "program_id": 0,
+    "round": 2,
+    "ticket": null
+   },
+   "event": "permit_requested",
+   "explorer": "https://testnet.nearblocks.io/txns/CjkHAk73Qi3tgX725frep1oJYTsJAvhuWj7qfBieh7To",
+   "network": "testnet",
+   "receipt": "HyT4SRcKbBY4EKVbsZVCs4t6xRPzx63FWiU4SrWLaZUy",
+   "seq": 6,
+   "signer": "keeper.antibody.testnet",
+   "standard": "antibody",
+   "tx": "CjkHAk73Qi3tgX725frep1oJYTsJAvhuWj7qfBieh7To"
+  }
+ ],
+ "meta": {
+  "anchor_block": 12054848,
+  "anchor_hash": "e2d79111003fc0d38855a1fa08b0aa68bc2e912485bb99f5c548cc365777f09f",
+  "base": {
+   "location": "near-tx:DZG3vpe7GwsvtRkqDuWcT6NLmnFEMmjFZnwyggzw5P3P:acme.antibody.testnet",
+   "sha256": "dca9c106963ba63c5622d90bb2e9704532709cb42e0b7e9cb8110c373ab37276"
+  },
+  "chain_id": 11155111,
+  "description": "Fictional lending protocol with planted bugs (DELIBERATELY VULNERABLE TEST FIXTURE).",
+  "manifest_url": "near-tx:C1XPcQhqF5g71ULCyoPLnn78Esi1oovHD2AeAZQLZhXQ:acme.antibody.testnet",
+  "name": "Acme Lend v1 — pre-launch (testnet)",
+  "project_pk": "f75254dad110cfdf85795d2f743ebd25c77c7567fd42aa1cb7b388a2068c2217",
+  "proposal_base": null,
+  "proposal_manifest": null,
+  "proposal_releases": [],
+  "round_bases": [
+   {
+    "location": "near-tx:7SqwPrrWAG2HqusB8aRXL2d4eR7YZ3msh2ckBV1Xz2ai:acme.antibody.testnet",
+    "sha256": "9ed0e6f6f562a186dc7314391056cd0a9ef7b731da1eee8da301be913904d490"
+   },
+   {
+    "location": "near-tx:XBNBWNaZs9z1RzK4XA7SbRq5YFyvH9QzdpuZK553dx9:acme.antibody.testnet",
+    "sha256": "1301e429ac4e0913aba4be14a6e567ca44f7d16efd6a2d2cb838fcd9b52aa3ba"
+   }
+  ],
+  "round_manifests": [
+   {
+    "location": "near-tx:4Atwxc9UTkMxwBis7BpXock38w6qjMqaKnE48n9ErWF4:acme.antibody.testnet",
+    "sha256": "43c459a575b58ffd69607cfa596ab6ff3dd47dcfc60098e242365a5fe3992f72"
+   },
+   {
+    "location": "near-tx:GjFbxE7ktfw3Cj88etH3KoHa3Y7F55eaYBa3j9ErBviG:acme.antibody.testnet",
+    "sha256": "7ad89d2bb71da1dc2edc74e288097dbf8c842e224cf6013f7a74928e5fc3528f"
+   }
+  ],
+  "round_releases": [
+   [
+    {
+     "code_hash": "0x04b7275694a091ad881e81be0800eebf9c0bbee0e7a3a3db5862e14299bfc24d",
+     "implementation": "0x3d87Db4fc46a2E92D791041B07Aba773722D557E",
+     "proxy": "0x16453A8a36b41e834727a28A0Dd226c7dEc48EDD"
+    }
+   ],
+   [
+    {
+     "code_hash": "0x44b595058b596ccaeca1f9c03a5d3910b6407350017df209d2fcece096734228",
+     "implementation": "0xc824CF503187011AB2Dde3b4c3c5e534016EEA0C",
+     "proxy": "0x16453A8a36b41e834727a28A0Dd226c7dEc48EDD"
+    },
+    {
+     "code_hash": "0x401fd0b18f7ac9052ca15d0fbbbc3019a553b1a55f194f259f7229d7c7360c76",
+     "implementation": "0xdBFf5ff86cd5750f427da5b6B71e312EA1bef886",
+     "proxy": "0x986965BDFaC410b8802E5781A99280cCeB5254BC"
+    }
+   ]
+  ],
+  "slots": [
+   [
+    0,
+    "solvency",
+    "critical"
+   ],
+   [
+    1,
+    "fees_to_treasury",
+    "high"
+   ],
+   [
+    2,
+    "share_price",
+    "medium"
+   ]
+  ],
+  "targets": [
+   [
+    "AcmeGuard",
+    "0x6ebccaacdb57684e6250a7d6ea923349ae799993"
+   ],
+   [
+    "acUSD",
+    "0x37de1f93f0b2ea5cee8b7ab30cb0dd1ca525dc0c"
+   ],
+   [
+    "acETH",
+    "0xf3db40c099236d1664809bbc998ff69de1a56b07"
+   ],
+   [
+    "AcmePool",
+    "0x163d537a278f5bcb4bbc24821e29e345f6abfbb7"
+   ],
+   [
+    "AcmeLend",
+    "0x16453a8a36b41e834727a28a0dd226c7dec48edd"
+   ],
+   [
+    "AcmeLendImpl",
+    "0xdad1ea392c0667d23b1f6396962d2f3c12c83caf"
+   ],
+   [
+    "AcmeVault",
+    "0x986965bdfac410b8802e5781a99280cceb5254bc"
+   ],
+   [
+    "AcmeVaultImpl",
+    "0x7c6d61cc66f6a3d9b32112f32a226a00ad19a444"
+   ],
+   [
+    "AcmeTreasury",
+    "0x30ff3d51df89438baf1fcccff22b328fe3f1cebf"
+   ]
+  ],
+  "terms_sha256": "3a9c40175b7ae46a342566111ba65ca4a420c8ff2289eb7b08c8759b5125a34d"
+ },
+ "program": {
+  "activation_run": 0,
+  "anchor": "LightClient",
+  "claimed": [
+   [
+    0,
+    "9ac582e28c538f32e1984574532bbea620b6b3f91451a7fc50bd2bd6baecead3",
+    1793706079,
+    true
+   ],
+   [
+    0,
+    "3b0c57ff33fe1681486184acd1e25a54878be9db2ad534ad0714059c3a812d15",
+    1793707112,
+    true
+   ],
+   [
+    0,
+    "1d6a021f0a150b7c1992ead1843b8f9bfeb62743e1d2a9da4e940840d922eec1",
+    1793707112,
+    true
+   ]
+  ],
+  "close_cursor": 0,
+  "commits": 7,
+  "created_at": 1793704855,
+  "cursor": 7,
+  "debtors": [],
+  "defaulted": "0",
+  "disclosed": [],
+  "dup_reserved": [],
+  "first_claim_at": 1793706079,
+  "fixed_tags": [
+   [
+    1,
+    "3b0c57ff33fe1681486184acd1e25a54878be9db2ad534ad0714059c3a812d15"
+   ],
+   [
+    1,
+    "1d6a021f0a150b7c1992ead1843b8f9bfeb62743e1d2a9da4e940840d922eec1"
+   ]
+  ],
+  "gap_reserved": [],
+  "id": 0,
+  "instant": {
+   "index": 498251,
+   "spent": "100000000000000000000000"
+  },
+  "key": "bounty.antibody.testnet/0",
+  "key_epoch": "35db772609657af9",
+  "known": [
+   {
+    "fixed": false,
+    "impact_usd_micro": "0",
+    "run": 1,
+    "severity": "medium",
+    "slots": [
+     2
+    ],
+    "tags": [
+     "f12c3fea8908fbc13fce4b32e53f466e8338650150cfee0b98f80ba21234bd09"
+    ]
+   }
+  ],
+  "known_runs": [
+   1
+  ],
+  "ledger": {
+   "available": "161000000000000000000000",
+   "challenge_bonds": "0",
+   "deposits": "400000000000000000000000",
+   "fees": "0",
+   "forfeits": "1000000000000000000000",
+   "paid": "240000000000000000000000",
+   "reserved": "0",
+   "returned": "0"
+  },
+  "manifest_sha256": "23772bf7a7ca45f45b2cf5a568a4d89d617f9799b9a10297ccb73551d5c189d0",
+  "opened_at": 1793705458,
+  "opening": null,
+  "owed": [],
+  "paid_first_hour": "240000000000000000000000",
+  "params": {
+   "bond": "1000000000000000000000",
+   "challenge_bond": "5000000000000000000000",
+   "critical": "100000000000000000000000",
+   "decimals": 24,
+   "gap": {
+    "claim_amount": "10000000000000000000000",
+    "threshold_usd_micro": "100000000"
+   },
+   "high": "30000000000000000000000",
+   "impact_bps": 0,
+   "impact_cap": "0",
+   "instant_budget": "150000000000000000000000",
+   "instant_cap": "100000000000000000000000",
+   "instant_window": 3600,
+   "known_max_count": 4,
+   "known_max_share_bps": 5000,
+   "low": "0",
+   "medium": "10000000000000000000000",
+   "pause_min_impact_usd_micro": "0",
+   "pause_slots": [
+    0
+   ],
+   "protocol_fee_bps": 0,
+   "release_fee": "0",
+   "run_deposit": "30000000000000000000000",
+   "slots": [
+    {
+     "budget": "400000000000000000000000",
+     "severity": "critical",
+     "slot": 0
+    },
+    {
+     "budget": "400000000000000000000000",
+     "severity": "high",
+     "slot": 1
+    },
+    {
+     "budget": "400000000000000000000000",
+     "severity": "medium",
+     "slot": 2
+    },
+    {
+     "budget": "400000000000000000000000",
+     "severity": "medium",
+     "slot": 3
+    }
+   ],
+   "unevaluable": "refund",
+   "windows": {
+    "challenge": 60,
+    "deadline": 1796295687,
+    "disclosure_max_delay": 600,
+    "exit_grace": 60,
+    "infra_grace": 600,
+    "rerun_window": 600,
+    "resolve": 300,
+    "reveal": 600,
+    "round_min": 120,
+    "run_timeout": 240
+   }
+  },
+  "phase": "Open",
+  "project": "acme.antibody.testnet",
+  "proposal": null,
+  "release_permits": 1,
+  "round": 2,
+  "round_manifests": [
+   "43c459a575b58ffd69607cfa596ab6ff3dd47dcfc60098e242365a5fe3992f72",
+   "7ad89d2bb71da1dc2edc74e288097dbf8c842e224cf6013f7a74928e5fc3528f"
+  ],
+  "round_started_at": 1793709097,
+  "rounds": [
+   {
+    "carried": [
+     "3b0c57ff33fe1681486184acd1e25a54878be9db2ad534ad0714059c3a812d15",
+     "1d6a021f0a150b7c1992ead1843b8f9bfeb62743e1d2a9da4e940840d922eec1"
+    ],
+    "manifest_sha256": "43c459a575b58ffd69607cfa596ab6ff3dd47dcfc60098e242365a5fe3992f72",
+    "opened_at": 1793707805,
+    "promoted": [
+     6
+    ],
+    "release_gate": false,
+    "released": [
+     "9ac582e28c538f32e1984574532bbea620b6b3f91451a7fc50bd2bd6baecead3"
+    ],
+    "round": 1
+   },
+   {
+    "carried": [],
+    "manifest_sha256": "7ad89d2bb71da1dc2edc74e288097dbf8c842e224cf6013f7a74928e5fc3528f",
+    "opened_at": 1793709097,
+    "promoted": [],
+    "release_gate": true,
+    "released": [
+     "3b0c57ff33fe1681486184acd1e25a54878be9db2ad534ad0714059c3a812d15",
+     "1d6a021f0a150b7c1992ead1843b8f9bfeb62743e1d2a9da4e940840d922eec1"
+    ],
+    "round": 2
+   }
+  ],
+  "sealing_pk": "a00b0ee7682b6e6359cc14cfdf8bc8557f0750f3a3491af7408705341a1f332f",
+  "ticket_rounds": [
+   0
+  ]
+ },
+ "record": {
+  "anchor": "light-client",
+  "at_stake": "161000000000000000000000",
+  "defaulted": "0",
+  "paid_findings": 4,
+  "phase": "Open",
+  "program_id": 0,
+  "release_permits": 1,
+  "rounds": 2,
+  "share_claimed_first_hour_bps": 6000,
+  "survived_secs": 327324,
+  "time_to_first_claim_secs": 621,
+  "verified_attempts": 7
+ },
+ "rules": {
+  "anchor": {
+   "block": 12054848,
+   "chain_id": 11155111,
+   "check": "light-client",
+   "hash": "e2d79111003fc0d38855a1fa08b0aa68bc2e912485bb99f5c548cc365777f09f"
+  },
+  "bond_raw": "1000000000000000000000",
+  "escrow_coverage": 1.61,
+  "instant": {
+   "budget_raw": "150000000000000000000000",
+   "cap_raw": "100000000000000000000000",
+   "window_secs": 3600
+  },
+  "known_issues_sealed": 1,
+  "payouts_raw": {
+   "critical": "100000000000000000000000",
+   "high": "30000000000000000000000",
+   "low": "0",
+   "medium": "10000000000000000000000"
+  },
+  "slots": [
+   {
+    "bit": 0,
+    "name": "solvency",
+    "payout_raw": "100000000000000000000000",
+    "severity": "critical"
+   },
+   {
+    "bit": 1,
+    "name": "fees_to_treasury",
+    "payout_raw": "30000000000000000000000",
+    "severity": "high"
+   },
+   {
+    "bit": 2,
+    "name": "share_price",
+    "payout_raw": "10000000000000000000000",
+    "severity": "medium"
+   }
+  ]
+ }
+}

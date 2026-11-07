@@ -30,3 +30,8 @@ x25519-dalek = { version = "2", default-features = false, features = ["static_se
 bs58 = "0.5"
 base64 = "0.22"
 getrandom = "0.2"
+
+[dev-dependencies]
+# tests/web_vectors.rs reads the practice base's anchor header (both are already in the lockfile)
+alloy-consensus.workspace = true
+alloy-rlp.workspace = true

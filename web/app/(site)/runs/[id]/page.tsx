@@ -1,0 +1,231 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import {
+  DEFAULT_ANTIBODY,
+  findT2,
+  kindWords,
+  numOf,
+  parseId,
+  runEvent,
+  runOutcome,
+  slotName,
+  sortedEvents,
+  strOf,
+  unknownId,
+  type Answered,
+} from "@/components/commit/model";
+import { RawRun, RunFacts } from "@/components/commit/RunFacts";
+import { Tiers, type Bound } from "@/components/commit/Tiers";
+import { KindBadge, TierBadge } from "@/components/ui/Badges";
+import { PageHead, Section } from "@/components/ui/PageHead";
+import { Pill } from "@/components/ui/Pill";
+import { ErrorState } from "@/components/ui/States";
+import { api, t2NotYet, type ProgramDetail } from "@/lib/api";
+
+type Props = { params: Promise<{ id: string }> };
+
+const crumbs = (id: number, program: number | null, commit: number | null) => [
+  { href: "/programs", label: "Programs" },
+  ...(program !== null ? [{ href: `/programs/${program}`, label: `Program ${program}` }] : []),
+  ...(commit !== null ? [{ href: `/commits/${commit}`, label: `Commit ${commit}` }] : []),
+  { href: `/runs/${id}`, label: `Run ${id}` },
+];
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const id = parseId((await params).id);
+  if (id === null) return { title: "Run not found" };
+  const r = await api.run(id);
+  if (!r.ok) return { title: `Run ${id}` };
+  const o = runOutcome(r.data.raw?.outcome);
+  const mode = strOf(r.data.raw?.mode) ?? strOf(r.data.run?.mode) ?? "run";
+  const kind = o.status === "answered" ? kindWords(o.a.kind) : o.status === "failed" ? "Failed" : "In flight";
+  const tier = strOf(r.data.tier) ?? strOf(r.data.run?.tier);
+  const title = `Run ${id} · ${mode} · ${kind}${tier ? ` · ${tier}` : ""}`;
+  const description = `A verification run on NEAR testnet: mode ${mode}, ${kind}${tier ? `, tier ${tier}` : ""}, program ${r.data.raw?.program ?? "—"}${r.data.raw?.commit !== null && r.data.raw?.commit !== undefined ? `, commit ${r.data.raw.commit}` : ""}.`;
+  return {
+    title,
+    description,
+    openGraph: { type: "website", siteName: "Antibody", title, description },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
+
+function lede(x: { id: number; mode: string | null; a: Answered | null; failed: string | null; commit: number | null; program: number | null; round: number | null; p: ProgramDetail | null }) {
+  const slots = x.a?.keys.map((k) => slotName(x.p, k.slot)).join(" and ") ?? "";
+  const verdict = x.failed ? `failed (${x.failed})` : x.a ? `${kindWords(x.a.kind)}${slots ? ` of ${slots}` : ""}` : "in flight";
+  const c = x.commit !== null ? `commit ${x.commit}'s` : "a";
+  switch (x.mode) {
+    case "verify":
+      return `The TEE's verification of ${c} sealed proof: ${verdict}.`;
+    case "second":
+      return `A second, independent run of ${c} proof: ${verdict}.`;
+    case "rerun":
+      return `A re-run of ${c} proof at round ${x.round ?? "—"}'s code and rules: ${
+        x.a?.kind === "NoViolation" ? "it breaks nothing, so the fix stops it" : x.a?.kind === "Violation" ? `it still breaks ${slots || "a rule"}` : verdict
+      }.`;
+    case "release_wrap":
+      return `The release wrap for ${x.commit !== null ? `commit ${x.commit}` : "a paid finding"}: after payment, the proof's content key wrapped to the project's own key, so the project reads exactly what it paid for.`;
+    case "activate":
+      return `Program ${x.program ?? "—"}'s activation: the TEE derived the program's keys and output its sealing public key.`;
+    case "check_round":
+      return `The check of round ${x.round ?? "—"}'s proposed fix for program ${x.program ?? "—"}: ${verdict}.`;
+    case "disclose":
+      return `A disclosure run for program ${x.program ?? "—"}.`;
+    default:
+      return `Run ${x.id} of program ${x.program ?? "—"}: ${verdict}.`;
+  }
+}
+
+export default async function RunPage({ params }: Props) {
+  const id = parseId((await params).id);
+  if (id === null) notFound();
+
+  const [rr, health, t2] = await Promise.all([api.run(id), api.health(), api.t2()]);
+  if (!rr.ok) {
+    if (unknownId(rr)) notFound();
+    return (
+      <>
+        <PageHead crumbs={crumbs(id, null, null)} eyebrow="Verification run" title={`Run ${id}`} />
+        <div className="page">
+          <ErrorState what={`run ${id}`} error={rr.error} />
+        </div>
+      </>
+    );
+  }
+
+  const d = rr.data;
+  const raw = d.raw;
+  const programId = numOf(raw?.program);
+  const commitId = numOf(raw?.commit) ?? numOf(d.run?.commit_id);
+  const [pr, cr] = await Promise.all([
+    programId !== null ? api.program(programId) : Promise.resolve(null),
+    commitId !== null ? api.commit(commitId) : Promise.resolve(null),
+  ]);
+  const program = pr && pr.ok ? pr.data : null;
+  const commit = cr && cr.ok ? cr.data : null;
+  const commitEvents = commit ? sortedEvents(commit.events) : [];
+  const programEvents = program ? sortedEvents(program.events) : [];
+  const requested = runEvent(commitEvents, "run_requested", id) ?? runEvent(programEvents, "run_requested", id);
+  const answered = runEvent(commitEvents, "run_answered", id);
+  const t1Ev = runEvent(commitEvents, "t1_confirmed", id);
+
+  const o = runOutcome(raw?.outcome);
+  const a = o.status === "answered" ? o.a : null;
+  const failed = o.status === "failed" ? o.reason : null;
+  const mode = strOf(raw?.mode) ?? strOf(d.run?.mode);
+  const round = numOf(raw?.round);
+  const teeTier = a?.tier ?? strOf(d.run?.tier);
+  const t2find = findT2(id, d.t2, t2, t2NotYet(t2));
+  const t2Confirmed = t2find.record?.outcome === "confirmed";
+  const tierShown = t2Confirmed ? "T2" : teeTier;
+  const contract = (health.ok && strOf(health.data.contracts?.antibody)) || DEFAULT_ANTIBODY;
+  const wasmSha = health.ok ? (strOf(health.data.contracts?.release?.verifier?.wasm_hash) ?? null) : null;
+  const requestSha = strOf(raw?.request_sha256);
+
+  const r0 = round ?? 0;
+  const bound: Bound = {
+    requestSha,
+    runId: id,
+    round,
+    commitId,
+    blobSha: commit?.commit?.blob_sha256 ?? null,
+    baseSha:
+      r0 === 0 ? (program?.meta?.base?.sha256 ?? null) : (strOf((program?.meta?.round_bases as { sha256?: string }[] | undefined)?.[r0 - 1]?.sha256) ?? null),
+    manifestSha: r0 === 0 ? (program?.program?.manifest_sha256 ?? null) : (program?.program?.rounds?.find((x) => x.round === r0)?.manifest_sha256 ?? null),
+    anchor: program?.rules?.anchor
+      ? { chainId: numOf(program.rules.anchor.chain_id), block: numOf(program.rules.anchor.block), hash: strOf(program.rules.anchor.hash) }
+      : null,
+    programKey: strOf(program?.program?.key),
+  };
+
+  const t2Note = t2Confirmed ? (
+    <Pill tone="t2" size="sm">
+      T2 confirmed
+    </Pill>
+  ) : t2find.record ? (
+    <Pill tone="bad" size="sm">
+      T2 contradicts
+    </Pill>
+  ) : t2find.notYet ? (
+    <Pill tone="pending" size="sm">
+      T2: not yet on testnet
+    </Pill>
+  ) : null;
+
+  const verdictModes = mode === "verify" || mode === "second" || mode === "rerun" || mode === "check_round";
+
+  return (
+    <>
+      <PageHead
+        crumbs={crumbs(id, programId, commitId)}
+        eyebrow={`Verification run · ${mode ?? "unknown mode"}${programId !== null ? ` · program ${programId}` : ""}`}
+        title={`Run ${id}`}
+        lede={lede({ id, mode, a, failed, commit: commitId, program: programId, round, p: program })}
+      >
+        {failed ? (
+          <Pill tone="warn">failed</Pill>
+        ) : a ? (
+          verdictModes ? (
+            <KindBadge kind={a.kind} />
+          ) : (
+            <Pill tone="ok">answered</Pill>
+          )
+        ) : (
+          <Pill tone="pending">in flight</Pill>
+        )}
+        <TierBadge tier={tierShown} />
+        {mode ? <span className="tag">{mode}</span> : null}
+      </PageHead>
+
+      {pr && !pr.ok ? (
+        <div className="page" style={{ marginBottom: 16 }}>
+          <ErrorState what={`program ${programId}`} error={pr.error}>
+            <span className="small">Slot names come from the program; the run&apos;s own record below stands without it.</span>
+          </ErrorState>
+        </div>
+      ) : null}
+
+      <Section id="facts" title="What the TEE answered" lede="The run as near-antibody records it: every hash below is checkable against NEAR.">
+        <RunFacts
+          mode={mode}
+          a={a}
+          failed={failed}
+          tier={tierShown}
+          t2Note={t2Note}
+          requestSha={requestSha}
+          startedAt={numOf(raw?.started_at)}
+          commitId={commitId}
+          programId={programId}
+          round={round}
+          payer={strOf(raw?.payer)}
+          signer={strOf(raw?.signer)}
+          program={program}
+          requested={requested}
+          answered={answered}
+        />
+      </Section>
+
+      <Section id="tiers" title="Who vouches for it" lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them.">
+        <Tiers
+          runId={id}
+          tier={teeTier}
+          kind={a?.kind ?? null}
+          receipt={a?.receipt ?? null}
+          failed={failed}
+          answered={answered}
+          t1={t1Ev}
+          requested={requested}
+          signer={strOf(requested?.signer) ?? strOf(raw?.signer)}
+          contract={contract}
+          wasmSha={wasmSha}
+          t2={t2find}
+          bound={bound}
+        />
+      </Section>
+
+      <Section id="raw" title="The raw record" lede="Exactly what the API read from near-antibody's get_run view, for your own tools.">
+        <RawRun id={id} raw={raw} />
+      </Section>
+    </>
+  );
+}

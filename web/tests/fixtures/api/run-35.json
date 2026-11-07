@@ -1,0 +1,44 @@
+{
+ "raw": {
+  "commit": 15,
+  "id": 35,
+  "mode": "verify",
+  "outcome": {
+   "Answered": {
+    "at": 1793807289,
+    "facts": {
+     "extra": "None",
+     "impact_usd_micro": "33480361",
+     "keys": [],
+     "kind": "NoViolation",
+     "protected_harm_usd_micro": "0",
+     "reason": null,
+     "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d"
+    },
+    "output_sha256": "5d97c7d852a6fbcbccd32b6c43ac948a245194fad8550581b2412c230431f967",
+    "tier": "T1"
+   }
+  },
+  "payer": "agent-c.antibody.testnet",
+  "program": 5,
+  "request_sha256": "6c2bcfd74c9a559532c72ca4ab86ec422c7aea800cc1f85b43a032e209b4d4c4",
+  "round": 0,
+  "signer": "agent-c.antibody.testnet",
+  "started_at": 1793807276
+ },
+ "run": {
+  "answered_at": 1793807289,
+  "commit_id": 15,
+  "impact_usd_micro": "33480361",
+  "keys": [],
+  "kind": "NoViolation",
+  "mode": "verify",
+  "protected_harm_usd_micro": "0",
+  "reason": null,
+  "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+  "run_id": 35,
+  "tier": "T1"
+ },
+ "t2": null,
+ "tier": "T1"
+}

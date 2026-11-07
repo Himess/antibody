@@ -3,7 +3,13 @@
 //! the judge view. `/v1/mainnet` explains how mainnet works, with a live read-only check of NEAR
 //! mainnet's Ethereum light client (view calls only).
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use antibody_cli::{
     cmd,
@@ -11,21 +17,42 @@ use antibody_cli::{
     near::Near,
 };
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderValue, StatusCode},
+    extract::{ConnectInfo, Path, Query, Request, State},
+    http::{header, HeaderValue, Method, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
 
-use crate::indexer::{metrics, read_events};
+use crate::{
+    indexer::{metrics, read_events},
+    web,
+};
 
 #[derive(Clone)]
 pub struct Api {
     pub near: Near,
     pub dep: Deployments,
     pub state_dir: PathBuf,
+    /// The deployments file, read again for near-t2 while it names none (a later deployment lights the
+    /// T2 views up with no restart).
+    pub deployments_file: Option<PathBuf>,
+    /// EVM RPCs by chain id, for the adapters' `used` view (whether a permit was applied on its chain).
+    pub chains: BTreeMap<u64, String>,
+    /// The results files (`docs/results/`): the one moment's runs and the relays they recorded.
+    pub results_dir: PathBuf,
+    pub web: Arc<WebState>,
+}
+
+/// The public API's own state: a short cache, the rate limit and the pilot form.
+pub struct WebState {
+    pub cache: Arc<web::Cache>,
+    pub limiter: web::Limiter,
+    pub streams: web::Limiter,
+    pub interest: web::Interest,
+    t2: Mutex<(Option<Instant>, Option<String>)>,
 }
 
 type Shared = Arc<Api>;
@@ -51,12 +78,45 @@ pub const ENDPOINTS: &[&str] = &[
     "/v1/stream",
     "/v1/mainnet",
     "/v1/t2",
+    "/v1/moments",
+    "/v1/interest",
 ];
 
 impl Api {
+    pub fn new(near: Near, dep: Deployments, state_dir: PathBuf, deployments_file: Option<PathBuf>, chains: BTreeMap<u64, String>, results_dir: PathBuf) -> Self {
+        let web = Arc::new(WebState {
+            cache: Arc::new(web::Cache::default()),
+            // About two requests a second from one client, in bursts of 120; at most 8 live streams opened
+            // a minute.
+            limiter: web::Limiter::new(120.0, 2.0),
+            streams: web::Limiter::new(8.0, 8.0 / 60.0),
+            interest: web::Interest::from_env(&state_dir),
+            t2: Mutex::new((None, None)),
+        });
+        Self { near, dep, state_dir, deployments_file, chains, results_dir, web }
+    }
+
+    /// near-t2's account: the deployment's, else the deployments file's as it reads now (at most once a
+    /// minute), so a near-t2 recorded after the API started shows with no restart.
+    fn t2_account(&self) -> Option<String> {
+        if self.dep.t2.is_some() {
+            return self.dep.t2.clone();
+        }
+        let path = self.deployments_file.as_ref()?;
+        let mut g = self.web.t2.lock().ok()?;
+        if g.0.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
+            return g.1.clone();
+        }
+        let fresh = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Deployments>(&t).ok()).and_then(|d| d.t2);
+        *g = (Some(Instant::now()), fresh.clone());
+        fresh
+    }
+
     /// A read-only CLI context: no account, no key.
     fn ctx(&self) -> Ctx {
-        Ctx { near: self.near.clone(), dep: self.dep.clone(), account: None, key_file: None, eth_rpc: None, state_dir: self.state_dir.join("api"), via: None }
+        let mut dep = self.dep.clone();
+        dep.t2 = self.t2_account();
+        Ctx { near: self.near.clone(), dep, account: None, key_file: None, eth_rpc: None, state_dir: self.state_dir.join("api"), via: None }
     }
 }
 
@@ -64,11 +124,13 @@ fn err(code: StatusCode, msg: impl ToString) -> Response {
     (code, Json(json!({"error": msg.to_string()}))).into_response()
 }
 
-async fn blocking<F: FnOnce() -> eyre::Result<Value> + Send + 'static>(f: F) -> Response {
-    match tokio::task::spawn_blocking(f).await {
-        Ok(Ok(v)) => Json(v).into_response(),
-        Ok(Err(e)) => err(StatusCode::BAD_GATEWAY, format!("{e:#}")),
-        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+/// A blocking computation (view calls) behind the short cache: a fresh answer for `ttl` seconds, a stale
+/// one for `stale` more while a single refresh runs (docs/api.md: the views read many contracts, and RPCs
+/// rate-limit).
+async fn cached<F: FnOnce() -> eyre::Result<Value> + Send + 'static>(a: &Api, key: String, ttl: u64, stale: u64, f: F) -> Response {
+    match a.web.cache.get(&key, Duration::from_secs(ttl), Duration::from_secs(stale), f).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => err(StatusCode::BAD_GATEWAY, e),
     }
 }
 
@@ -113,20 +175,66 @@ async fn health(State(a): State<Shared>) -> Response {
 }
 
 async fn status(State(a): State<Shared>) -> Response {
-    blocking(move || crate::status::compute(&a.near, &a.dep, &a.state_dir, &crate::status::Thresholds::default())).await
-}
-
-async fn stats(State(a): State<Shared>) -> Response {
-    blocking(move || {
-        let stats = a.near.view(&a.dep.antibody, "get_stats", json!({}))?;
-        let events = read_events(&a.state_dir.join("events.jsonl"), 0, usize::MAX);
-        Ok(json!({"contract": a.dep.antibody, "stats": stats, "latency": metrics(&events)}))
+    let b = a.clone();
+    cached(&a, "status".into(), 15, 900, move || {
+        let recorded = web::recorded_relays(&b.results_dir);
+        crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
     })
     .await
 }
 
+async fn stats(State(a): State<Shared>) -> Response {
+    let b = a.clone();
+    cached(&a, "stats".into(), 10, 900, move || {
+        let stats = b.near.view(&b.dep.antibody, "get_stats", json!({}))?;
+        let events = read_events(&b.state_dir.join("events.jsonl"), 0, usize::MAX);
+        Ok(json!({"contract": b.dep.antibody, "stats": stats, "latency": metrics(&events), "verdict_latency": crate::indexer::answer_metrics(&events)}))
+    })
+    .await
+}
+
+/// The one moment's runs (docs/results/): the recorded runs, and scheduled drills once a later backend adds
+/// them, newest first; each step with its seconds from the commit's NEAR block and its transaction.
+async fn moments(State(a): State<Shared>) -> Response {
+    let b = a.clone();
+    cached(&a, "moments".into(), 60, 600, move || {
+        let events = read_events(&b.state_dir.join("events.jsonl"), 0, usize::MAX);
+        let near = b.near.clone();
+        Ok(web::moments(&b.results_dir, &events, &|t| near.explorer_tx(t)))
+    })
+    .await
+}
+
+/// The pilot and early-access form (`POST /v1/interest`): checked, kept in a private file on this host and
+/// announced through the notifier's webhooks. A filled honeypot is answered as accepted and kept nowhere.
+async fn interest(State(a): State<Shared>, axum::Extension(web::ClientIp(ip)): axum::Extension<web::ClientIp>, body: axum::body::Bytes) -> Response {
+    if body.len() > 8 * 1024 {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "at most 8 KB");
+    }
+    if !a.web.interest.per_ip.allow(ip, 1.0) || !a.web.interest.global.allow(std::net::IpAddr::from([0, 0, 0, 0]), 1.0) {
+        return err(StatusCode::TOO_MANY_REQUESTS, "too many requests: try again in an hour");
+    }
+    let v: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return err(StatusCode::BAD_REQUEST, "a JSON object"),
+    };
+    match web::validate_interest(&v) {
+        Err(e) => err(StatusCode::UNPROCESSABLE_ENTITY, e),
+        Ok(None) => Json(json!({"ok": true})).into_response(),
+        Ok(Some(rec)) => match a.web.interest.store(&rec) {
+            Ok(id) => Json(json!({"ok": true, "id": id})).into_response(),
+            Err(e) => {
+                eprintln!("interest: {e:#}");
+                err(StatusCode::INTERNAL_SERVER_ERROR, "not stored: try again later")
+            }
+        },
+    }
+}
+
 async fn programs(State(a): State<Shared>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, "programs".into(), 10, 900, move || {
         let n = a.near.view(&a.dep.antibody, "get_stats", json!({}))?["next_program"].as_u64().unwrap_or(0);
         let mut out = Vec::new();
         for id in 0..n {
@@ -141,7 +249,9 @@ async fn programs(State(a): State<Shared>) -> Response {
 }
 
 async fn program(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("program:{id}"), 10, 900, move || {
         let ctx = a.ctx();
         let p = ctx.program(id)?;
         let commits: Vec<Value> = cmd::list_commits(&ctx, id)?.iter().map(|c| commit_row(&ctx, c)).collect();
@@ -179,7 +289,9 @@ fn rules(p: &Value, meta: &Value, record: &Value) -> Value {
 /// The reflex and release panel: per chain, whether the program's targets are live, paused or
 /// released, with each permit and its transaction there.
 async fn reflex(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("reflex:{id}"), 30, 1800, move || {
         let ctx = a.ctx();
         let p = ctx.program(id)?;
         let key = p["key"].clone();
@@ -187,6 +299,9 @@ async fn reflex(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
         let guard = a.near.view(&g, "get_program", json!({"program_key": key, "project": p["project"]}))?;
         let permits = a.near.view(&g, "list_permits", json!({"from": 0, "limit": 100}))?;
         let relayed = read_json(a.state_dir.join("relayer.json"));
+        // A permit's state: this relayer's record, else the relay a recorded run made, else the adapter's
+        // own `used` view (a permit carried out by any relayer).
+        let recorded = web::recorded_relays(&a.results_dir);
         let mut chains = Vec::new();
         for c in guard["chains"].as_array().into_iter().flatten() {
             let mine: Vec<Value> = permits
@@ -196,10 +311,13 @@ async fn reflex(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
                 .filter(|x| x["program_key"] == key && x["chain_id"] == c["chain_id"])
                 .map(|x| {
                     let r = relayed.as_object().and_then(|m| m.values().find(|v| v["permit_id"] == x["id"] && v["chain_id"] == c["chain_id"])).cloned().unwrap_or(Value::Null);
-                    json!({"permit_id": x["id"], "round": x["round"], "body": x["body"], "status": r["status"], "tx": r["tx_hash"], "explorer": r["explorer"]})
+                    let rec = x["id"].as_u64().and_then(|i| recorded.get(&(key.as_str().unwrap_or_default().to_string(), i)));
+                    let st = web::permit_state(&r, rec, x, &a.chains);
+                    json!({"permit_id": x["id"], "round": x["round"], "body": x["body"], "status": st["status"], "tx": st["tx"], "explorer": st["explorer"],
+                           "source": st["source"], "signed_ns": x["signed_ns"], "deadline": x["deadline"], "digest": x["digest"]})
                 })
                 .collect();
-            let confirmed = |kind: &str| mine.iter().any(|m| m["body"].get(kind).is_some() && m["status"] == json!("confirmed"));
+            let confirmed = |kind: &str| mine.iter().any(|m| m["body"].get(kind).is_some() && (m["status"] == json!("confirmed") || m["status"] == json!("applied")));
             let state = if confirmed("Release") { "released" } else if confirmed("Pause") { "paused" } else { "live" };
             chains.push(json!({"chain_id": c["chain_id"], "adapter": c["adapter"], "proxies": c["proxies"], "state": state, "permits": mine}));
         }
@@ -231,7 +349,9 @@ async fn trust(State(a): State<Shared>) -> Response {
 
 /// The try-it panel: the practice program, its faucet's health and the steps.
 async fn practice(State(a): State<Shared>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, "practice".into(), 10, 900, move || {
         let pr = a.dep.practice.clone().ok_or_else(|| eyre::eyre!("this deployment names no practice program"))?;
         let balance = a.near.account(&pr.vending)?.map(|x| x["amount"].clone()).unwrap_or(Value::Null);
         Ok(json!({"vending": pr.vending, "program_id": pr.program, "vending_balance_yocto": balance,
@@ -248,6 +368,8 @@ async fn practice(State(a): State<Shared>) -> Response {
 #[derive(serde::Deserialize)]
 struct StreamQ {
     after: Option<u64>,
+    /// As for `/v1/events`.
+    scope: Option<String>,
 }
 
 /// The live timeline as server-sent events: every new indexer event, in order, as JSON.
@@ -255,13 +377,16 @@ async fn stream(State(a): State<Shared>, Query(q): Query<StreamQ>) -> axum::resp
     use axum::response::sse::{Event, KeepAlive, Sse};
     let path = a.state_dir.join("events.jsonl");
     let start = q.after.unwrap_or(0);
-    let s = futures_util::stream::unfold((path, start), |(path, after)| async move {
+    let scope = q.scope.clone();
+    let s = futures_util::stream::unfold((path, start, scope), |(path, after, scope)| async move {
         loop {
             let next = read_events(&path, after, 100);
             if !next.is_empty() {
                 let last = next.last().and_then(|e| e["seq"].as_u64()).unwrap_or(after);
-                let events: Vec<Result<Event, std::convert::Infallible>> = next.iter().map(|e| Ok(Event::default().event("antibody").data(e.to_string()))).collect();
-                return Some((futures_util::stream::iter(events), (path, last + 1)));
+                let events: Vec<Result<Event, std::convert::Infallible>> =
+                    next.iter().filter(|e| in_scope(e, scope.as_deref())).map(|e| Ok(Event::default().event("antibody").data(e.to_string()))).collect();
+                // Only others' events this time: an empty batch, and the cursor moves on.
+                return Some((futures_util::stream::iter(events), (path, last + 1, scope)));
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
@@ -271,7 +396,9 @@ async fn stream(State(a): State<Shared>, Query(q): Query<StreamQ>) -> axum::resp
 
 /// The sealed submissions feed: who committed when, and how it settled. Never the PoC.
 async fn feed(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("feed:{id}"), 5, 300, move || {
         let ctx = a.ctx();
         let rows: Vec<Value> = cmd::list_commits(&ctx, id)?.iter().map(|c| commit_row(&ctx, c)).collect();
         Ok(json!({"program_id": id, "submissions": rows}))
@@ -280,7 +407,9 @@ async fn feed(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
 }
 
 async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("commit:{id}"), 5, 300, move || {
         let ctx = a.ctx();
         let c = ctx.commit(id)?;
         let events = events_for(&a, |e| e["data"]["commit_id"].as_u64() == Some(id));
@@ -304,7 +433,9 @@ async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
 }
 
 async fn run(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("run:{id}"), 3, 300, move || {
         let ctx = a.ctx();
         let r = cmd::run(&ctx, id)?;
         let t2 = t2_record(&ctx, id);
@@ -314,7 +445,14 @@ async fn run(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
 }
 
 async fn account(State(a): State<Shared>, Path(id): Path<String>) -> Response {
-    blocking(move || {
+    // A NEAR account id (2 to 64 of a-z, 0-9, ., - and _): anything else is no account, and stays out of
+    // the cache.
+    if id.len() < 2 || id.len() > 64 || !id.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'-' | b'_')) {
+        return err(StatusCode::BAD_REQUEST, "not a NEAR account id");
+    }
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, format!("account:{id}"), 5, 120, move || {
         Ok(json!({"account": id,
                   "credit": a.near.view(&a.dep.antibody, "get_account", json!({"account_id": id}))?,
                   "agent": a.near.view(&a.dep.antibody, "agent_statement", json!({"agent": id}))?,
@@ -326,7 +464,9 @@ async fn account(State(a): State<Shared>, Path(id): Path<String>) -> Response {
 /// Paid findings and payouts by beneficiary, across programs; valid-but-late (duplicates) and
 /// no-violation counts beside them.
 async fn leaderboard(State(a): State<Shared>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, "leaderboard".into(), 15, 900, move || {
         let ctx = a.ctx();
         let n = ctx.view("get_stats", json!({}))?["next_program"].as_u64().unwrap_or(0) as u32;
         let mut by: BTreeMap<String, (u128, u32, u32, u32)> = BTreeMap::new();
@@ -359,14 +499,31 @@ async fn leaderboard(State(a): State<Shared>) -> Response {
 struct EventsQ {
     after: Option<u64>,
     limit: Option<usize>,
+    /// `antibody`: only Antibody's own events (standards `antibody*`); the indexer also records the other
+    /// events of the transactions it reads (the payout token's, for instance).
+    scope: Option<String>,
+}
+
+/// Whether an event belongs to `scope` (`antibody`: Antibody's own standards; none: every event).
+fn in_scope(e: &Value, scope: Option<&str>) -> bool {
+    match scope {
+        Some("antibody") => e["standard"].as_str().is_some_and(|s| s.starts_with("antibody")),
+        _ => true,
+    }
 }
 
 async fn events(State(a): State<Shared>, Query(q): Query<EventsQ>) -> Response {
-    Json(json!({"events": read_events(&a.state_dir.join("events.jsonl"), q.after.unwrap_or(0), q.limit.unwrap_or(200).min(1000))})).into_response()
+    let limit = q.limit.unwrap_or(200).min(1000);
+    let scope = q.scope.as_deref();
+    let all = read_events(&a.state_dir.join("events.jsonl"), q.after.unwrap_or(0), usize::MAX);
+    let picked: Vec<Value> = all.into_iter().filter(|e| in_scope(e, scope)).take(limit).collect();
+    Json(json!({"events": picked})).into_response()
 }
 
 async fn guardian(State(a): State<Shared>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, "guardian".into(), 15, 900, move || {
         let g = a.dep.guardian.clone().ok_or_else(|| eyre::eyre!("no guardian configured"))?;
         Ok(json!({"guardian": g, "config": a.near.view(&g, "get_config", json!({}))?,
                   "permits": a.near.view(&g, "list_permits", json!({"from": 0, "limit": 100}))?,
@@ -381,9 +538,11 @@ async fn guardian(State(a): State<Shared>) -> Response {
 /// and the prover service's state. A validity proof of a disclosed verdict: no privacy is claimed, and
 /// payouts in the locked deployment do not depend on it.
 async fn t2(State(a): State<Shared>) -> Response {
-    blocking(move || {
+    let b = a.clone();
+    let a = b.clone();
+    cached(&b, "t2".into(), 10, 900, move || {
         let ctx = a.ctx();
-        let t = a.dep.t2.clone().ok_or_else(|| eyre::eyre!("this deployment names no near-t2 contract yet"))?;
+        let t = ctx.dep.t2.clone().ok_or_else(|| eyre::eyre!("this deployment names no near-t2 contract yet"))?;
         let records: Vec<Value> = antibody_cli::zk::records(&ctx, &t)?.into_values().collect();
         Ok(json!({"contract": t, "pins": a.near.view(&t, "get_pins", json!({}))?, "stats": a.near.view(&t, "get_stats", json!({}))?,
                   "records": records, "events": events_for(&a, |e| e["standard"] == "antibody-t2"),
@@ -395,13 +554,15 @@ async fn t2(State(a): State<Shared>) -> Response {
 }
 
 async fn judge(State(a): State<Shared>) -> Response {
-    blocking(move || antibody_cli::judge::judge(&a.ctx(), None)).await
+    // About 90 s of view calls on testnet: computed in the background and served from the cache.
+    let b = a.clone();
+    cached(&a, "judge".into(), 120, 3600, move || antibody_cli::judge::judge(&b.ctx(), None)).await
 }
 
 /// "How mainnet works" (docs/mainnet.md): what a mainnet program changes, and a live read-only check of
 /// NEAR mainnet's Ethereum light client against Ethereum. View calls only: nothing is signed or sent.
-async fn mainnet() -> Response {
-    blocking(move || {
+async fn mainnet(State(a): State<Shared>) -> Response {
+    cached(&a, "mainnet".into(), 300, 3600, move || {
         let check = cmd::mainnet_check(None, None).unwrap_or_else(|e| json!({"error": format!("{e:#}")}));
         Ok(json!({
             "title": "How mainnet works",
@@ -425,6 +586,7 @@ async fn mainnet() -> Response {
 }
 
 pub fn router(api: Api) -> Router {
+    let state = Arc::new(api);
     Router::new()
         .route("/health", get(health))
         .route("/v1/status", get(status))
@@ -445,16 +607,94 @@ pub fn router(api: Api) -> Router {
         .route("/v1/stream", get(stream))
         .route("/v1/mainnet", get(mainnet))
         .route("/v1/t2", get(t2))
-        .layer(axum::middleware::map_response(|mut r: Response| async move {
-            r.headers_mut().insert("access-control-allow-origin", HeaderValue::from_static("*"));
-            r
-        }))
-        .with_state(Arc::new(api))
+        .route("/v1/moments", get(moments))
+        .route("/v1/interest", post(interest).options(|| async { StatusCode::NO_CONTENT }))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), policy))
+        .with_state(state)
+}
+
+/// The public API's HTTP policy (docs/api.md): a rate limit per client, CORS (reads are public, the form
+/// takes requests from the site's origins only), and cache headers.
+async fn policy(State(a): State<Shared>, mut req: Request, next: Next) -> Response {
+    // The peer is known when served with connect info (`serve`); the sandbox demo serves without it.
+    let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0).unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));
+    let ip = web::client_ip(peer, req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()));
+    req.extensions_mut().insert(web::ClientIp(ip));
+    let path = req.uri().path().to_string();
+    let origin = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()).map(String::from);
+    let form = path == "/v1/interest";
+    let site = origin.as_deref().filter(|o| a.web.interest.origins.allows(o)).and_then(|o| HeaderValue::from_str(o).ok());
+    let cors = |mut r: Response| -> Response {
+        let h = r.headers_mut();
+        match (&site, form) {
+            (Some(o), true) => {
+                h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, o.clone());
+                h.insert(header::VARY, HeaderValue::from_static("origin"));
+            }
+            (None, true) => {}
+            (_, false) => {
+                h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+            }
+        }
+        r
+    };
+    if form && req.method() == Method::OPTIONS {
+        if site.is_none() {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        let mut r = cors(StatusCode::NO_CONTENT.into_response());
+        let h = r.headers_mut();
+        h.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("POST, OPTIONS"));
+        h.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("content-type"));
+        h.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("600"));
+        return r;
+    }
+    if form && req.method() == Method::POST && site.is_none() {
+        return err(StatusCode::FORBIDDEN, "this form takes requests from the site only");
+    }
+    let stream = path.starts_with("/v1/stream");
+    let cost = if path == "/v1/judge" { 5.0 } else { 1.0 };
+    if (stream && !a.web.streams.allow(ip, 1.0)) || !a.web.limiter.allow(ip, cost) {
+        let mut r = err(StatusCode::TOO_MANY_REQUESTS, "rate limited: retry in a few seconds");
+        r.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from_static("10"));
+        r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return cors(r);
+    }
+    let mut r = cors(next.run(req).await);
+    let ok = r.status() == StatusCode::OK;
+    let h = r.headers_mut();
+    if stream {
+        // Proxies must pass each event on as it comes.
+        h.insert("x-accel-buffering", HeaderValue::from_static("no"));
+    }
+    if !h.contains_key(header::CACHE_CONTROL) {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static(if ok { web::cache_control(&path) } else { "no-store" }));
+    }
+    r
 }
 
 pub async fn serve(api: Api, listen: &str) -> eyre::Result<()> {
     let listener = tokio::net::TcpListener::bind(listen).await?;
     println!("{}", json!({"api": format!("http://{listen}"), "endpoints": ENDPOINTS}));
-    axum::serve(listener, router(api)).await?;
+    // `antibody judge` takes about 90 s of view calls on testnet, the status a few seconds: fill their caches
+    // in the background now, so no visitor waits for the first computation.
+    let warm = api.clone();
+    tokio::spawn(async move {
+        let b = warm.clone();
+        let _ = warm.web.cache.get("judge", Duration::from_secs(120), Duration::from_secs(3600), move || antibody_cli::judge::judge(&b.ctx(), None)).await;
+    });
+    let warm = api.clone();
+    tokio::spawn(async move {
+        let b = warm.clone();
+        let _ = warm
+            .web
+            .cache
+            .get("status", Duration::from_secs(15), Duration::from_secs(900), move || {
+                let recorded = web::recorded_relays(&b.results_dir);
+                crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
+            })
+            .await;
+    });
+    axum::serve(listener, router(api).into_make_service_with_connect_info::<SocketAddr>()).await?;
     Ok(())
 }

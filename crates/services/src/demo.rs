@@ -1315,7 +1315,7 @@ pub fn run(a: DemoArgs) -> Result<Value> {
             >= head
     })?;
     let indexed = crate::indexer::read_events(&services_dir.join("events.jsonl"), 0, usize::MAX).len();
-    let api = crate::api::Api { near: near.clone(), dep: served.clone(), state_dir: services_dir.clone() };
+    let api = crate::api::Api::new(near.clone(), served.clone(), services_dir.clone(), None, Default::default(), std::path::PathBuf::from("docs/results"));
     let rt = tokio::runtime::Runtime::new()?;
     let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))?;
     let addr = listener.local_addr()?;

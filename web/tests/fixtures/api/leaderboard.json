@@ -1,0 +1,60 @@
+{
+ "leaderboard": [
+  {
+   "account": "agent-a.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 3,
+   "paid_raw": "300000000000000000000000"
+  },
+  {
+   "account": "agent-f.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 2,
+   "paid_raw": "200000000000000000000000"
+  },
+  {
+   "account": "agent-b.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 2,
+   "paid_raw": "60000000000000000000000"
+  },
+  {
+   "account": "agent-g.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 2,
+   "paid_raw": "20000000000000000000000"
+  },
+  {
+   "account": "practice.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 6,
+   "paid_raw": "6000000000000000000000"
+  },
+  {
+   "account": "agent-c.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 2,
+   "paid_findings": 2,
+   "paid_raw": "2000000000000000000000"
+  },
+  {
+   "account": "agent-d.antibody.testnet",
+   "duplicates": 2,
+   "forfeited": 0,
+   "paid_findings": 0,
+   "paid_raw": "0"
+  },
+  {
+   "account": "agent-e.antibody.testnet",
+   "duplicates": 0,
+   "forfeited": 0,
+   "paid_findings": 0,
+   "paid_raw": "0"
+  }
+ ]
+}

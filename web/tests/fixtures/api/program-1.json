@@ -1,0 +1,283 @@
+{
+ "audit": {
+  "accounted": "30000000000000000000000",
+  "available": "30000000000000000000000",
+  "debt": "0",
+  "defaulted": "0",
+  "fees": "0",
+  "funded": "30000000000000000000000",
+  "ok": true,
+  "paid": "0",
+  "program_id": 1,
+  "reservations": "0",
+  "reserved": "0",
+  "returned": "0"
+ },
+ "commits": [],
+ "events": [],
+ "meta": {
+  "anchor_block": 12054848,
+  "anchor_hash": "e2d79111003fc0d38855a1fa08b0aa68bc2e912485bb99f5c548cc365777f09f",
+  "base": {
+   "location": "near-tx:CagvFNMdekiqB4pcWbrLUsFteLLFdUA5BB8PtEy8iPam:antibody.testnet",
+   "sha256": "4e39866d7602af93ee92ad53a961e79fe9c37faff1413869ffe3a947603b86fe"
+  },
+  "chain_id": 11155111,
+  "description": "TUTORIAL TARGET: 24 vaults with one textbook bug (sweep has no access check), published with its proof (docs/practice.md).",
+  "manifest_url": "near-tx:J8F6cDdCLZnsHyaacxfHZBdmNF1Mjkvfi4yAYGGQn99j:antibody.testnet",
+  "name": "Practice program — a tutorial (testnet)",
+  "project_pk": "2b889885480e2a7e088ccc8e57690eacab0b14e652dfefe3ede6168bd22f005f",
+  "proposal_base": null,
+  "proposal_manifest": null,
+  "proposal_releases": [],
+  "round_bases": [],
+  "round_manifests": [],
+  "round_releases": [],
+  "slots": [
+   [
+    0,
+    "vault_keeps_its_ether",
+    "low"
+   ]
+  ],
+  "targets": [
+   [
+    "factory",
+    "0x76e4ca1bdff8b5b2ab5312c1fc81071fda1bc98a"
+   ],
+   [
+    "vault-0",
+    "0x248d6f3fca50950f2e30175fef24b0de78ecd6f3"
+   ],
+   [
+    "vault-1",
+    "0xcc2bc1dc1ed4b7780c822c179bdf097efe7da2ec"
+   ],
+   [
+    "vault-2",
+    "0xa65036fec74240a1c85830ffad6eb11fc376389d"
+   ],
+   [
+    "vault-3",
+    "0x28c56f19714c3828b9a81c490e1f6de7f5d97d21"
+   ],
+   [
+    "vault-4",
+    "0xa3815040911e28b62a7f0e20685a6f528ca78344"
+   ],
+   [
+    "vault-5",
+    "0xb5f962ffe021990e207b016d70b6bd11cdb397c4"
+   ],
+   [
+    "vault-6",
+    "0xa124542ffd075f9bd141351e9ffcc281c9f0d74f"
+   ],
+   [
+    "vault-7",
+    "0x99076c22ac4985d1a29cfddba1a7bbb1c9bd9ac9"
+   ],
+   [
+    "vault-8",
+    "0xaf4b4ca5d89c477bd3fe29b822f7c9f457af96d5"
+   ],
+   [
+    "vault-9",
+    "0x2e07791c6374d2e69bebd292d99e5302e9aba240"
+   ],
+   [
+    "vault-10",
+    "0x43c12aafbd9a8fa935ddf249ac0d199fce774f84"
+   ],
+   [
+    "vault-11",
+    "0xa06e9f4d25384cf783dd468d0c171d99b21ad0d7"
+   ],
+   [
+    "vault-12",
+    "0x11eefcafa11262d16eabb6555e6e4bebe79b70d9"
+   ],
+   [
+    "vault-13",
+    "0x2a4fb8b21267199df22b6fca02695afc6993c73f"
+   ],
+   [
+    "vault-14",
+    "0xb5ae5237dec5a33c413a3dccd6e2c06091f22733"
+   ],
+   [
+    "vault-15",
+    "0xd8e4876baad9f6b1864496629213abb7531d2129"
+   ],
+   [
+    "vault-16",
+    "0x3feb5f7ec42981bfb897c8f70cb15516d39f05c4"
+   ],
+   [
+    "vault-17",
+    "0xe92a8ff9c95f7c00c03f8dffe50865fb26c263f0"
+   ],
+   [
+    "vault-18",
+    "0xeb0a7de5f61ad2a79996eb8098e831efea082e66"
+   ],
+   [
+    "vault-19",
+    "0xd8ade625549e482f49cb29d97d7599c845e87ae8"
+   ],
+   [
+    "vault-20",
+    "0xd4b6909ae4626681d3522b8f9d7174230024a9e8"
+   ],
+   [
+    "vault-21",
+    "0x136b3a519160eaf7a99a8e537912be23533c4171"
+   ],
+   [
+    "vault-22",
+    "0xb5a53f38a38446f021b907e05fc18f08a509d68f"
+   ],
+   [
+    "vault-23",
+    "0x7497e1ce8620c24d6684527b5197f5e75514d505"
+   ]
+  ],
+  "terms_sha256": "2a714747a7fe11e7c534424ec7c9f9b2baca7cb04928aa3aa3b69c32aeffae67"
+ },
+ "program": {
+  "activation_run": 21,
+  "anchor": "LightClient",
+  "claimed": [],
+  "close_cursor": 0,
+  "commits": 0,
+  "created_at": 1793709131,
+  "cursor": 0,
+  "debtors": [],
+  "defaulted": "0",
+  "disclosed": [],
+  "dup_reserved": [],
+  "first_claim_at": null,
+  "fixed_tags": [],
+  "gap_reserved": [],
+  "id": 1,
+  "instant": {
+   "index": 0,
+   "spent": "0"
+  },
+  "key": "bounty.antibody.testnet/1",
+  "key_epoch": "17cd44b8b272a8ce",
+  "known": [],
+  "known_runs": [],
+  "ledger": {
+   "available": "30000000000000000000000",
+   "challenge_bonds": "0",
+   "deposits": "30000000000000000000000",
+   "fees": "0",
+   "forfeits": "0",
+   "paid": "0",
+   "reserved": "0",
+   "returned": "0"
+  },
+  "manifest_sha256": "3905fb2007c91c75862dfd9ef26656ff66f2702bfc0242ff3581456cde8a2a47",
+  "opened_at": 1793709196,
+  "opening": null,
+  "owed": [],
+  "paid_first_hour": "0",
+  "params": {
+   "bond": "100000000000000000000",
+   "challenge_bond": "1000000000000000000000",
+   "critical": "0",
+   "decimals": 24,
+   "gap": null,
+   "high": "0",
+   "impact_bps": 0,
+   "impact_cap": "0",
+   "instant_budget": "24000000000000000000000",
+   "instant_cap": "1000000000000000000000",
+   "instant_window": 3600,
+   "known_max_count": 0,
+   "known_max_share_bps": 0,
+   "low": "1000000000000000000000",
+   "medium": "0",
+   "pause_min_impact_usd_micro": "0",
+   "pause_slots": [],
+   "protocol_fee_bps": 0,
+   "release_fee": "0",
+   "run_deposit": "30000000000000000000000",
+   "slots": [
+    {
+     "budget": "30000000000000000000000",
+     "severity": "low",
+     "slot": 0
+    }
+   ],
+   "unevaluable": "refund",
+   "windows": {
+    "challenge": 60,
+    "deadline": 1796295687,
+    "disclosure_max_delay": 600,
+    "exit_grace": 60,
+    "infra_grace": 600,
+    "rerun_window": 600,
+    "resolve": 300,
+    "reveal": 600,
+    "round_min": 120,
+    "run_timeout": 240
+   }
+  },
+  "phase": "Open",
+  "project": "antibody.testnet",
+  "proposal": null,
+  "release_permits": 0,
+  "round": 0,
+  "round_manifests": [],
+  "round_started_at": 1793709196,
+  "rounds": [],
+  "sealing_pk": "f2bfcefc7746a840b350f950c5cbd072d46be5d4e845f1a9d0afbbe68f31f24f",
+  "ticket_rounds": []
+ },
+ "record": {
+  "anchor": "light-client",
+  "at_stake": "30000000000000000000000",
+  "defaulted": "0",
+  "paid_findings": 0,
+  "phase": "Open",
+  "program_id": 1,
+  "release_permits": 0,
+  "rounds": 0,
+  "share_claimed_first_hour_bps": 0,
+  "survived_secs": 327226,
+  "time_to_first_claim_secs": null,
+  "verified_attempts": 0
+ },
+ "rules": {
+  "anchor": {
+   "block": 12054848,
+   "chain_id": 11155111,
+   "check": "light-client",
+   "hash": "e2d79111003fc0d38855a1fa08b0aa68bc2e912485bb99f5c548cc365777f09f"
+  },
+  "bond_raw": "100000000000000000000",
+  "escrow_coverage": 30.0,
+  "instant": {
+   "budget_raw": "24000000000000000000000",
+   "cap_raw": "1000000000000000000000",
+   "window_secs": 3600
+  },
+  "known_issues_sealed": 0,
+  "payouts_raw": {
+   "critical": "0",
+   "high": "0",
+   "low": "1000000000000000000000",
+   "medium": "0"
+  },
+  "slots": [
+   {
+    "bit": 0,
+    "name": "vault_keeps_its_ether",
+    "payout_raw": "1000000000000000000000",
+    "severity": "low"
+   }
+  ]
+ }
+}

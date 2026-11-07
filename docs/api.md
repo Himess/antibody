@@ -46,6 +46,19 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | `GET /v1/stream?after=` | The live timeline: every new event as a server-sent event (`event: antibody`, the event's JSON as data) |
 | `GET /v1/mainnet` | How mainnet works (docs/mainnet.md), with a live read-only check of NEAR mainnet's Ethereum light client against Ethereum; view calls only, `transactions_sent: 0` |
 | `GET /v1/t2` | T2 (docs/zk.md): near-t2's pins (SP1 6.10.0's Groth16 key, the guest's program vkey, near-antibody, the verifier), its counts, every record (confirmed or contradicted, with the receipts compared), the indexed `t2_*` events and the prover service's state. A validity proof of a disclosed verdict: no privacy is claimed, and payouts in the locked deployment do not depend on it |
+| `GET /v1/moments` | The one moment's runs, from the results files (`docs/results/`): recorded runs (`testnet-YYYY-MM-DD.json`) and scheduled drills (`drill-*.json`), newest first; each step with its seconds from the commit's NEAR block and its transaction (the results file's, else the indexer's event) |
+| `POST /v1/interest` | The pilot and early-access form (the web app's `/pilot`): checked, kept in a private file on the API's host (`$ANTIBODY_INTEREST_FILE`, never served or committed) and announced through `$ANTIBODY_WEBHOOKS`. Only the site's origins (`$ANTIBODY_WEB_ORIGINS`), five an hour per client; a filled honeypot field is answered as accepted and kept nowhere |
+
+`/v1/events` and `/v1/stream` take `scope=antibody` for Antibody's own events only (standards `antibody*`): the
+indexer also records the other events of the transactions it reads, the payout token's among them. `/v1/stats` adds
+`verdict_latency`: from each commit's NEAR block to its verify run's answer (the TEE's verdict).
+
+**Serving it in public.** `antibody-services api --chain <id>=<rpc> --results-dir docs/results` behind a TLS reverse
+proxy (Caddy on our host; the live stream passed on unbuffered). Reads are public (CORS `*`); a token bucket per client
+(the proxy's `X-Forwarded-For`), `cache-control` per route and a short server cache for the views that read many
+contracts (`/v1/judge` takes about 90 s of view calls on testnet and is warmed at start). With `--chain`, a permit the
+relayer has no record of shows as applied when its adapter's `used(key)` view says so, and a recorded run's relay
+(`docs/results/`) gives its transaction.
 
 ## Monitoring
 

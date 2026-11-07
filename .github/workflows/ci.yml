@@ -35,6 +35,42 @@ jobs:
             echo "never-public path is tracked"; exit 1
           fi
 
+  web:
+    name: web app (lint, types, the browser try's crypto against the Rust vectors, build, smoke tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: the try's envelope, seal, commitment and NEAR transactions equal golden/web-vectors.json
+        run: npm test
+      - name: build (against the mock API, the recorded testnet snapshots)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE: http://127.0.0.1:4010
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3100
+      - run: npx playwright install --with-deps chromium
+      - name: every page, light, dark and mobile
+        run: npx playwright test
+      - name: npm audit (runtime dependencies)
+        run: npm audit --omit=dev --audit-level=high
+      - name: report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          if-no-files-found: ignore
+
   formal:
     name: settlement model (Quint, Apalache) and trace replay against the rule core
     runs-on: ubuntu-latest
