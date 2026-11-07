@@ -1,7 +1,8 @@
 [package]
 name = "antibody-cli"
 description = "antibody: create programs, hunt, commit/submit sealed PoCs, verify receipts, MCP server for agents"
-version.workspace = true
+# The CLI is released on its own (v0.5.0); the verifier keeps the workspace version its pinned build has.
+version = "0.5.0"
 edition.workspace = true
 license.workspace = true
 
