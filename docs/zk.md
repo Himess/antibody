@@ -12,7 +12,7 @@ proof's public values with near-antibody's own records of the run.
 **The line it supports.** The verifier gives the same receipt, byte for byte, in three places:
 - natively;
 - in the TEE's wasm, which CI's recorded fixtures compare with native;
-- in the zkVM, for the four disclosed testnet runs (`fixtures/zk`).
+- in the zkVM, for the four testnet runs whose content keys are published (`fixtures/zk`; on chain they are still sealed).
 
 The feasibility study (G0) is [zk-feasibility.md](zk-feasibility.md). This document is G1 to G3: the
 proofs, the contract, the tools.
@@ -31,7 +31,7 @@ proofs, the contract, the tools.
 
 | Piece | What it does |
 |---|---|
-| `crates/zk/core` | The re-run: the TEE's `verify` path on the exact request near-antibody sent, opened with the disclosed content key, and the public values a proof commits (layout v1) |
+| `crates/zk/core` | The re-run: the TEE's `verify` path on the exact request near-antibody sent, opened with its content key (disclosed, or published as for `fixtures/zk`), and the public values a proof commits (layout v1) |
 | `crates/zk/guest` | The SP1 program: it reads the five inputs, re-runs, and commits the public values. A run that would stop before a verdict panics, so it has no proof |
 | `fixtures/zk/guest/antibody-zk-guest.elf` | The guest, built in SP1's docker image. sha256 `7fea93b8…9702`, program vkey `0x00e87aaa…8203`. Three docker builds on fresh machines gave the same bytes (the `zk` workflow) |
 | `crates/zk/prove` | `antibody-zk-prove`: Groth16 proofs on SP1's prover network or a local CUDA machine. It refuses an ELF whose vkey is not the pinned one, verifies each proof locally, and writes `proof.bin`, `public_values.bin` and `proof.json` |
@@ -121,7 +121,7 @@ The prover gets the docker-built ELF and five inputs:
 - the content key.
 
 ```
-antibody zk prove --run 33 --key <the disclosed content key>
+antibody zk prove --run 33 --key <the content key: disclosed, or fixtures/zk/a/content_key.hex>
 ```
 
 1. It finds the transaction that requested the run: `--tx`, your own commit records, or `--api`.

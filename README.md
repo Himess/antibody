@@ -271,6 +271,9 @@ are not done yet.
   project-attested.
 - **TEE trust is tiered, not removed.** T1 needs DCAP collateral; above the cap a second run and a
   window are required.
+- **Worker images.** A worker image OutLayer approves later counts for existing programs only after the
+  image delay (2 days on testnet); until then a run on it gets no T1, and its payout waits the challenge
+  window (docs/runbooks/worker-images.md).
 - **Old anchors.** A proof that reads beyond the pinned base needs an RPC that keeps the anchor's state.
 - **Rule strength is the rules' measure,** and a survivor is not necessarily a bug.
 - **Testnet only.** The payout token, wNEAR on testnet, has no value.

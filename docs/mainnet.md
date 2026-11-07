@@ -16,7 +16,7 @@ checked today, with view calls only: NEAR mainnet's Ethereum light client.
 |---|---|---|
 | The anchor's check | `client-eth2.sepolia.testnet` (one relayer) | `client-eth2.bridge.near`: Ethereum mainnet's finalized chain, from BLS-verified sync-committee updates |
 | Verification | OutLayer on testnet | OutLayer's mainnet workers; their TDX quotes verified on NEAR mainnet |
-| Pauses and releases | Chain Signatures on testnet; adapters on Sepolia and Base Sepolia | Chain Signatures on NEAR mainnet; the program's adapters on Ethereum and other EVM chains |
+| Pauses and releases | The MPC network on testnet; adapters on Sepolia and Base Sepolia | The MPC network on NEAR mainnet; the program's adapters on Ethereum and other EVM chains |
 | Payouts | wNEAR (`wrap.testnet`) | the NEP-141 token the program commits |
 
 **Latency.** A program's anchor must be final on Ethereum (about 13 minutes) and held by the light
