@@ -248,23 +248,37 @@ pub fn permit_used_key(body: &Value, round: u32) -> Option<[u8; 32]> {
     Some(keccak256(abi_tag("release", round, w)).0)
 }
 
-/// Process-wide memory of permits seen applied: a used key stays used.
-static APPLIED: Mutex<Vec<(String, [u8; 32])>> = Mutex::new(Vec::new());
+/// What the adapters answered, per (adapter, key): a used key stays used; an unused one is asked again after
+/// [`UNUSED_TTL`].
+type Seen = HashMap<(String, [u8; 32]), (bool, Instant)>;
+static SEEN: std::sync::LazyLock<Mutex<Seen>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+const UNUSED_TTL: Duration = Duration::from_secs(120);
 
-/// `used(key)` on the permit's adapter: whether the permit was carried out on its chain, by any relayer.
+/// `used(key)` on the permit's adapter: whether the permit was carried out on its chain, by any relayer. One
+/// attempt with a short timeout (a view the API's answer waits for); an error leaves the relayer's state.
 pub fn permit_applied(rpc: &str, adapter: &str, key: [u8; 32]) -> eyre::Result<bool> {
-    let tag = adapter.to_lowercase();
-    if APPLIED.lock().map(|a| a.iter().any(|(ad, k)| *ad == tag && *k == key)).unwrap_or(false) {
-        return Ok(true);
+    let id = (adapter.to_lowercase(), key);
+    if let Some((used, at)) = SEEN.lock().ok().and_then(|m| m.get(&id).copied()) {
+        if used || at.elapsed() < UNUSED_TTL {
+            return Ok(used);
+        }
     }
     let mut data = keccak256(b"used(bytes32)")[..4].to_vec();
     data.extend(key);
-    let r = crate::evm::Evm::new(rpc).read("eth_call", json!([{"to": adapter, "data": format!("0x{}", hex::encode(data))}, "latest"]))?;
-    let used = r.as_str().map(|s| s.trim_start_matches("0x").trim_start_matches('0') == "1").unwrap_or(false);
-    if used {
-        if let Ok(mut a) = APPLIED.lock() {
-            a.push((tag, key));
-        }
+    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(6)).build()?;
+    let v: Value = client
+        .post(rpc)
+        .json(&json!({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [{"to": adapter, "data": format!("0x{}", hex::encode(data))}, "latest"]}))
+        .send()
+        .and_then(|r| r.json())
+        // Without the URL: RPC URLs may carry keys.
+        .map_err(|e| eyre::eyre!("eth_call: {}", e.without_url()))?;
+    if let Some(e) = v.get("error") {
+        return Err(eyre::eyre!("eth_call: {e}"));
+    }
+    let used = v["result"].as_str().map(|s| s.trim_start_matches("0x").trim_start_matches('0') == "1").unwrap_or(false);
+    if let Ok(mut m) = SEEN.lock() {
+        m.insert(id, (used, Instant::now()));
     }
     Ok(used)
 }

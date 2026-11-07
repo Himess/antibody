@@ -176,7 +176,7 @@ async fn health(State(a): State<Shared>) -> Response {
 
 async fn status(State(a): State<Shared>) -> Response {
     let b = a.clone();
-    cached(&a, "status".into(), 15, 60, move || {
+    cached(&a, "status".into(), 15, 900, move || {
         let recorded = web::recorded_relays(&b.results_dir);
         crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
     })
@@ -185,7 +185,7 @@ async fn status(State(a): State<Shared>) -> Response {
 
 async fn stats(State(a): State<Shared>) -> Response {
     let b = a.clone();
-    cached(&a, "stats".into(), 10, 60, move || {
+    cached(&a, "stats".into(), 10, 900, move || {
         let stats = b.near.view(&b.dep.antibody, "get_stats", json!({}))?;
         let events = read_events(&b.state_dir.join("events.jsonl"), 0, usize::MAX);
         Ok(json!({"contract": b.dep.antibody, "stats": stats, "latency": metrics(&events), "verdict_latency": crate::indexer::answer_metrics(&events)}))
@@ -234,7 +234,7 @@ async fn interest(State(a): State<Shared>, axum::Extension(web::ClientIp(ip)): a
 async fn programs(State(a): State<Shared>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, "programs".into(), 10, 60, move || {
+    cached(&b, "programs".into(), 10, 900, move || {
         let n = a.near.view(&a.dep.antibody, "get_stats", json!({}))?["next_program"].as_u64().unwrap_or(0);
         let mut out = Vec::new();
         for id in 0..n {
@@ -251,7 +251,7 @@ async fn programs(State(a): State<Shared>) -> Response {
 async fn program(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("program:{id}"), 10, 60, move || {
+    cached(&b, format!("program:{id}"), 10, 900, move || {
         let ctx = a.ctx();
         let p = ctx.program(id)?;
         let commits: Vec<Value> = cmd::list_commits(&ctx, id)?.iter().map(|c| commit_row(&ctx, c)).collect();
@@ -291,7 +291,7 @@ fn rules(p: &Value, meta: &Value, record: &Value) -> Value {
 async fn reflex(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("reflex:{id}"), 30, 300, move || {
+    cached(&b, format!("reflex:{id}"), 30, 1800, move || {
         let ctx = a.ctx();
         let p = ctx.program(id)?;
         let key = p["key"].clone();
@@ -351,7 +351,7 @@ async fn trust(State(a): State<Shared>) -> Response {
 async fn practice(State(a): State<Shared>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, "practice".into(), 10, 60, move || {
+    cached(&b, "practice".into(), 10, 900, move || {
         let pr = a.dep.practice.clone().ok_or_else(|| eyre::eyre!("this deployment names no practice program"))?;
         let balance = a.near.account(&pr.vending)?.map(|x| x["amount"].clone()).unwrap_or(Value::Null);
         Ok(json!({"vending": pr.vending, "program_id": pr.program, "vending_balance_yocto": balance,
@@ -398,7 +398,7 @@ async fn stream(State(a): State<Shared>, Query(q): Query<StreamQ>) -> axum::resp
 async fn feed(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("feed:{id}"), 5, 30, move || {
+    cached(&b, format!("feed:{id}"), 5, 300, move || {
         let ctx = a.ctx();
         let rows: Vec<Value> = cmd::list_commits(&ctx, id)?.iter().map(|c| commit_row(&ctx, c)).collect();
         Ok(json!({"program_id": id, "submissions": rows}))
@@ -409,7 +409,7 @@ async fn feed(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
 async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("commit:{id}"), 5, 30, move || {
+    cached(&b, format!("commit:{id}"), 5, 300, move || {
         let ctx = a.ctx();
         let c = ctx.commit(id)?;
         let events = events_for(&a, |e| e["data"]["commit_id"].as_u64() == Some(id));
@@ -435,7 +435,7 @@ async fn commit(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
 async fn run(State(a): State<Shared>, Path(id): Path<u64>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("run:{id}"), 3, 30, move || {
+    cached(&b, format!("run:{id}"), 3, 300, move || {
         let ctx = a.ctx();
         let r = cmd::run(&ctx, id)?;
         let t2 = t2_record(&ctx, id);
@@ -452,7 +452,7 @@ async fn account(State(a): State<Shared>, Path(id): Path<String>) -> Response {
     }
     let b = a.clone();
     let a = b.clone();
-    cached(&b, format!("account:{id}"), 5, 30, move || {
+    cached(&b, format!("account:{id}"), 5, 120, move || {
         Ok(json!({"account": id,
                   "credit": a.near.view(&a.dep.antibody, "get_account", json!({"account_id": id}))?,
                   "agent": a.near.view(&a.dep.antibody, "agent_statement", json!({"agent": id}))?,
@@ -466,7 +466,7 @@ async fn account(State(a): State<Shared>, Path(id): Path<String>) -> Response {
 async fn leaderboard(State(a): State<Shared>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, "leaderboard".into(), 15, 120, move || {
+    cached(&b, "leaderboard".into(), 15, 900, move || {
         let ctx = a.ctx();
         let n = ctx.view("get_stats", json!({}))?["next_program"].as_u64().unwrap_or(0) as u32;
         let mut by: BTreeMap<String, (u128, u32, u32, u32)> = BTreeMap::new();
@@ -523,7 +523,7 @@ async fn events(State(a): State<Shared>, Query(q): Query<EventsQ>) -> Response {
 async fn guardian(State(a): State<Shared>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, "guardian".into(), 15, 60, move || {
+    cached(&b, "guardian".into(), 15, 900, move || {
         let g = a.dep.guardian.clone().ok_or_else(|| eyre::eyre!("no guardian configured"))?;
         Ok(json!({"guardian": g, "config": a.near.view(&g, "get_config", json!({}))?,
                   "permits": a.near.view(&g, "list_permits", json!({"from": 0, "limit": 100}))?,
@@ -540,7 +540,7 @@ async fn guardian(State(a): State<Shared>) -> Response {
 async fn t2(State(a): State<Shared>) -> Response {
     let b = a.clone();
     let a = b.clone();
-    cached(&b, "t2".into(), 10, 60, move || {
+    cached(&b, "t2".into(), 10, 900, move || {
         let ctx = a.ctx();
         let t = ctx.dep.t2.clone().ok_or_else(|| eyre::eyre!("this deployment names no near-t2 contract yet"))?;
         let records: Vec<Value> = antibody_cli::zk::records(&ctx, &t)?.into_values().collect();
@@ -676,11 +676,24 @@ async fn policy(State(a): State<Shared>, mut req: Request, next: Next) -> Respon
 pub async fn serve(api: Api, listen: &str) -> eyre::Result<()> {
     let listener = tokio::net::TcpListener::bind(listen).await?;
     println!("{}", json!({"api": format!("http://{listen}"), "endpoints": ENDPOINTS}));
-    // `antibody judge` takes about 90 s of view calls on testnet: fill its cache in the background now.
+    // `antibody judge` takes about 90 s of view calls on testnet, the status a few seconds: fill their caches
+    // in the background now, so no visitor waits for the first computation.
     let warm = api.clone();
     tokio::spawn(async move {
         let b = warm.clone();
         let _ = warm.web.cache.get("judge", Duration::from_secs(120), Duration::from_secs(3600), move || antibody_cli::judge::judge(&b.ctx(), None)).await;
+    });
+    let warm = api.clone();
+    tokio::spawn(async move {
+        let b = warm.clone();
+        let _ = warm
+            .web
+            .cache
+            .get("status", Duration::from_secs(15), Duration::from_secs(900), move || {
+                let recorded = web::recorded_relays(&b.results_dir);
+                crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
+            })
+            .await;
     });
     axum::serve(listener, router(api).into_make_service_with_connect_info::<SocketAddr>()).await?;
     Ok(())

@@ -253,6 +253,74 @@ paths:
                   events: {type: array, items: {type: object}}
                   prover: {type: object}
         "502": {$ref: "#/components/responses/Upstream"}
+  /v1/moments:
+    get:
+      summary: The one moment's runs, from the results files
+      description: >-
+        Recorded runs (docs/results/testnet-YYYY-MM-DD.json) and, once a later backend adds them, scheduled drills
+        (drill-*.json), newest first. Each step carries its seconds from the commit's NEAR block (each chain's own block
+        time) and its transaction: the results file's, else the indexer's event.
+      responses:
+        "200":
+          description: The runs and the id of the latest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  latest: {type: [string, "null"]}
+                  moments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        kind: {type: string, enum: [recorded, drill]}
+                        results_file: {type: string}
+                        program_id: {type: integer}
+                        commit_id: {type: integer}
+                        run_id: {type: [integer, "null"]}
+                        commit: {type: object, properties: {tx: {type: string}, explorer: {type: string}, block_height: {type: integer}, block_ts_ns: {type: integer}}}
+                        steps:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key: {type: string}
+                              label: {type: string}
+                              seconds: {type: number}
+                              chain: {type: string, description: "near, or evm:<chain id>"}
+                              tx: {type: [string, "null"]}
+                              explorer: {type: [string, "null"]}
+  /v1/interest:
+    post:
+      summary: The pilot and early-access form
+      description: >-
+        Accepted only from the site's origins ($ANTIBODY_WEB_ORIGINS), five an hour per client. Stored in a private file on
+        the API's host (never served) and announced through the notifier's webhooks. A filled honeypot field (website) is
+        answered as accepted and kept nowhere.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, name, contact, consent]
+              properties:
+                role: {type: string, enum: [project, hunter, agent, other]}
+                name: {type: string, maxLength: 100}
+                contact: {type: string, minLength: 3, maxLength: 200, description: "email, Telegram or X"}
+                project: {type: string, maxLength: 200}
+                chains: {type: string, maxLength: 200}
+                timeline: {type: string, maxLength: 100}
+                notes: {type: string, maxLength: 2000}
+                consent: {type: boolean, enum: [true]}
+                website: {type: string, description: "honeypot: leave empty"}
+      responses:
+        "200": {description: "Stored (ok, and a reference id)", content: {application/json: {schema: {type: object, properties: {ok: {type: boolean}, id: {type: string}}}}}}
+        "403": {description: Not from the site's origins}
+        "422": {description: A field is invalid (error names it)}
+        "429": {description: Too many requests from this client}
 components:
   parameters:
     ProgramId: {name: id, in: path, required: true, schema: {type: integer}}
