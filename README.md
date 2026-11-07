@@ -4,6 +4,10 @@
 
 > **We don't read reports. We run them.**
 
+**The site: [antibody-three.vercel.app](https://antibody-three.vercel.app).** The one moment, replayed from its
+transactions; every claim with a check your browser runs; and the practice program, tried in your browser with no
+account. It runs from [`web/`](web/) (how to run it locally: [below](#the-web-app)).
+
 **The problem.** Bug bounties judge text: a person reads every report. In January 2026, curl ended its
 bug bounty after a flood of AI-generated reports
 ([The Register](https://www.theregister.com/2026/01/21/curl_ends_bug_bounty/),
@@ -77,6 +81,23 @@ every outcome of the story:
 | Practice | Two judges with no account vend practice accounts and run the tutorial proof; it is sealed against the pinned base alone | Done:Paid |
 | Fork mode | The practice program again, deployed only inside the verifier: nothing of it is on chain | Done:Paid |
 | Audits | Every conservation equation, per program and for the contract | ok |
+
+## The web app
+
+[`web/`](web/) is the site (Next.js, TypeScript). It reads the API (`antibody-services api`, [docs/api.md](docs/api.md))
+and, for the checks and the try, NEAR and the EVM chains directly from your browser: no server sits between your
+browser and a transaction it sends.
+
+```bash
+cd web && npm ci
+node tests/mock-api.mjs &                              # the recorded testnet snapshots: no network needed
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:4010 npm run dev # http://localhost:3000
+```
+
+Against the live testnet API, set `NEXT_PUBLIC_API_BASE` to its URL instead (the site's footer shows it). `npm test`
+checks the browser try's envelope, seal, commitment and NEAR transactions against the Rust code's vectors
+(`golden/web-vectors.json`, written by `crates/cli/tests/web_vectors.rs`); `npx playwright test` renders every page in
+light, dark and mobile.
 
 ## Deployment
 
@@ -336,6 +357,7 @@ bonds are never revenue: they go to the program's escrow.
 | `crates/services` | Indexer, API, keeper, relayers, notifier, monitoring, sandbox mocks, the demo |
 | `contracts/near-antibody`, `near-guardian`, `practice-vending`, `practice-account`, `verdict-guard` | The NEAR contracts |
 | `contracts/evm` | Acme Lend (deliberately vulnerable), its rules, proofs and fixes; the practice vaults; the adapter |
+| `web/` | The site: the one moment, programs, commits, the browser try, judges' checks, trust, status |
 | `formal/` | The Quint model of the settlement rules |
 | `fixtures/`, `golden/` | Recorded witnesses and verdicts; golden vectors |
 
