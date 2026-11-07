@@ -16,6 +16,8 @@ const ALERTS_EVERY_SECS: u64 = 60;
 
 pub struct Notifier {
     pub state_dir: PathBuf,
+    /// The results directory (`docs/results/`): the drill files the status reads.
+    pub results_dir: PathBuf,
     pub webhooks: Vec<String>,
     pub program: Option<u64>,
     /// Where to read the monitoring alerts from (`/v1/status`); none: events only.
@@ -102,7 +104,7 @@ impl Notifier {
     /// cleared.
     fn alerts(&self, client: &reqwest::blocking::Client) -> Result<usize> {
         let Some((near, dep)) = &self.status else { return Ok(0) };
-        let status = crate::status::compute(near, dep, &self.state_dir, &crate::status::Thresholds::default())?;
+        let status = crate::status::compute(near, dep, &self.state_dir, &self.results_dir, &crate::status::Thresholds::default())?;
         let seen_file = self.state_dir.join("notifier.alerts.json");
         let seen: Vec<String> = std::fs::read_to_string(&seen_file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
         let now: Vec<(String, String)> = status["alerts"]

@@ -609,6 +609,52 @@ mod tests {
         assert_eq!((m["program_id"].as_u64(), m["commit_id"].as_u64()), (Some(5), Some(13)));
     }
 
+    /// A sample drill results file (the shape `antibody-services drill` writes): `moments()` parses it into
+    /// a moment with kind "drill", with every step and its transaction.
+    fn sample_drill() -> Value {
+        let permit = |id: u64, chain: u64, tx: &str, block: &str, ex: &str| {
+            json!({"permit_id": id, "chain_id": chain, "kind": "pause", "status": "confirmed", "program_key": "bounty.antibody.testnet/9",
+                   "tx_hash": tx, "explorer": ex, "block": block, "targets_paused": [true], "confirmed_ms": 1_793_900_000_000u64, "signed_ns": 1_793_899_950_000_000_000u64,
+                   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b"})
+        };
+        json!({
+            "network": "testnet", "all_ok": true, "started_unix": 1_793_900_000u64, "finished_unix": 1_793_900_400u64,
+            "program": {"program_id": 9}, "deployment": {"network": "testnet", "near_antibody": "bounty.antibody.testnet"},
+            "submissions": [{"agent": "A (MCP)", "commit": 42, "run": 70, "verdict": "Violation", "tier": "T1", "keys": [{"slot": 0, "tag": "cc52"}],
+                             "state": {"Done": {"Paid": {"amount": "100000000000000000000000", "instant": true}}}, "paid_raw": "100000000000000000000000",
+                             "txs": {"commit": "CommitTxDrill", "reveal": "RevealTxDrill", "pay": "PayTxDrill"}}],
+            "one_moment": {"commit": 42, "paid_raw": "100000000000000000000000", "instant": true, "paused_both": true, "pay_tx": "PayTxDrill",
+                "clock": "from the commit's NEAR block", "verdict_from": "its event's block",
+                "seconds_from_commit": {"verdict": 17.2, "t1": 28.4, "paid": 69.1, "permit_signed_11155111": 60.0, "permit_signed_84532": 60.0, "paused_11155111": 88.0, "paused_84532": 85.0},
+                "permits": {"0": permit(6, 11155111, "0xpauseS", "0xb81300", "https://sepolia.etherscan.io/tx/0xpauseS"),
+                            "1": permit(7, 84532, "0xpauseB", "0x33e8000", "https://sepolia.basescan.org/tx/0xpauseB")}},
+            "drill": {"date": "2026-11-10", "cadence_label": "daily", "steps": {"evm": {"ok": true}, "one-moment": {"ok": true}}},
+        })
+    }
+
+    #[test]
+    fn a_drill_results_file_parses_into_a_drill_moment() {
+        let dir = std::env::temp_dir().join(format!("drill-moments-{}", now_s()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("drill-2026-11-10.json"), serde_json::to_vec(&sample_drill()).unwrap()).unwrap();
+        let ms = moments(&dir, &[], &|t| format!("https://testnet.nearblocks.io/txns/{t}"));
+        let list = ms["moments"].as_array().unwrap();
+        assert_eq!(list.len(), 1);
+        let m = &list[0];
+        assert_eq!((m["id"].as_str(), m["kind"].as_str()), (Some("drill-2026-11-10"), Some("drill")));
+        assert_eq!((m["program_id"].as_u64(), m["commit_id"].as_u64(), m["run_id"].as_u64()), (Some(9), Some(42), Some(70)));
+        assert_eq!(m["via"], "A (MCP)");
+        assert_eq!(m["paused_everywhere"], json!(true));
+        let keys: Vec<&str> = m["steps"].as_array().unwrap().iter().map(|s| s["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["verified", "t1", "permits_signed", "paid", "paused_84532", "paused_11155111"]);
+        let s = |k: &str| m["steps"].as_array().unwrap().iter().find(|s| s["key"] == k).unwrap().clone();
+        assert_eq!(s("paid")["tx"], "PayTxDrill");
+        assert_eq!(s("paused_11155111")["tx"], "0xpauseS");
+        assert_eq!(m["commit"]["tx"], "CommitTxDrill");
+        assert_eq!(ms["latest"], "drill-2026-11-10");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn the_adapters_replay_keys() {
         // abi.encode("pause", uint32 0, uint64 13): offset, round, ticket, length, the string.

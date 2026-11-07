@@ -11,6 +11,17 @@ use serde_json::{json, Value};
 
 use crate::{cmd, ctx::Ctx};
 
+/// How an automated drill names its program (`antibody-services drill`, docs/drill.md): a fresh instance of
+/// the Acme Lend fixture, proven, paused and paid once a day, then closed. The rest of the name is the
+/// drill's date.
+pub const DRILL_PROGRAM_PREFIX: &str = "Acme Lend drill ";
+
+/// Whether a program is an automated drill, by the name the drill gives it. A label only: a program's name
+/// is its project's to choose, and nothing else depends on it.
+pub fn is_drill(name: &str) -> bool {
+    name.strip_prefix(DRILL_PROGRAM_PREFIX).is_some_and(|rest| rest.len() >= 10 && rest.as_bytes()[..4].iter().all(u8::is_ascii_digit))
+}
+
 /// A contract account: its code hash, its full-access keys (none: locked) and its explorer page.
 fn contract(ctx: &Ctx, role: &str, account: &str) -> Result<Value> {
     let a = ctx.near.account(account)?;
@@ -76,8 +87,10 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value], t2: &BTreeMap<u64, Value>) -> R
     let pauses = mine.iter().filter(|x| x["body"].get("Pause").is_some()).count();
     // The current round's rule strength, as its manifest commits it (docs/rule-strength.md).
     let strength = cmd::program_manifest(ctx, id).ok().and_then(|m| serde_json::from_slice::<Value>(&m).ok()).map(|m| m["rule_strength"].clone()).unwrap_or(Value::Null);
+    let drill = meta["name"].as_str().is_some_and(is_drill);
     Ok(json!({
-        "program_id": id, "name": meta["name"], "project": p["project"], "phase": p["phase"], "round": p["round"], "program_key": key,
+        "program_id": id, "name": meta["name"], "kind": if drill { "drill" } else { "program" }, "drill": drill,
+        "project": p["project"], "phase": p["phase"], "round": p["round"], "program_key": key,
         "anchor": {"chain_id": meta["chain_id"], "block": meta["anchor_block"], "hash": meta["anchor_hash"], "status": record["anchor"]},
         "terms_sha256": meta["terms_sha256"], "pins": ctx.view("get_pins", json!({"program_id": id}))?,
         "verdicts": {"runs": runs, "t1_confirmed": t1, "t2_confirmed": t2_confirmed, "t2_contradicted": t2_contradicted, "tiers": tiers},
@@ -169,11 +182,13 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
     }
     out.push(format!("  contract audit ok: {} (every credit, escrow and bond it holds balances)", j["audit_contract"]["ok"]));
     let programs = j["programs"].as_array().cloned().unwrap_or_default();
-    out.push(format!("{} programs", programs.len()));
+    let drills = programs.iter().filter(|p| p["drill"] == json!(true)).count();
+    out.push(if drills > 0 { format!("{} programs ({drills} of them automated drills)", programs.len()) } else { format!("{} programs", programs.len()) });
     for p in &programs {
         out.push(format!(
-            "  program {} ({}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} with a T2 proof, {} payouts, {} pause and {} release permits, audit ok: {}",
-            p["program_id"], p["name"].as_str().unwrap_or(""), p["phase"].as_str().unwrap_or("?"), p["anchor"]["status"].as_str().unwrap_or("?"),
+            "  program {} ({}{}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} with a T2 proof, {} payouts, {} pause and {} release permits, audit ok: {}",
+            p["program_id"], p["name"].as_str().unwrap_or(""), if p["drill"] == json!(true) { ", an automated drill" } else { "" },
+            p["phase"].as_str().unwrap_or("?"), p["anchor"]["status"].as_str().unwrap_or("?"),
             p["verdicts"]["t1_confirmed"], p["verdicts"]["runs"], p["verdicts"]["t2_confirmed"], p["payouts"].as_array().map(|x| x.len()).unwrap_or(0),
             p["pauses"], p["releases"], p["audit_ok"]
         ));
@@ -198,4 +213,26 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
     }
     out.push("The full record, with code hashes, pins and links: add --json".into());
     out.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drills_are_labelled_by_their_name() {
+        assert!(is_drill("Acme Lend drill 2026-11-10"));
+        assert!(is_drill("Acme Lend drill 2026-11-10T1405"));
+        for other in ["Acme Lend v1 — pre-launch (testnet)", "Practice program — a tutorial (testnet)", "Acme Lend drill", "Acme Lend drill soon", "acme lend drill 2026-11-10"] {
+            assert!(!is_drill(other), "{other}");
+        }
+        let j = json!({"network": "testnet", "contracts": [], "audit_contract": {"ok": true}, "programs": [
+            {"program_id": 5, "name": "Acme Lend v1 — pre-launch (testnet)", "drill": false, "phase": "Open", "anchor": {"status": "light-client"}, "verdicts": {}},
+            {"program_id": 9, "name": "Acme Lend drill 2026-11-10", "drill": true, "phase": "Exited", "anchor": {"status": "light-client"}, "verdicts": {}},
+        ]});
+        let s = summary(&j, 24, "wNEAR");
+        assert!(s.contains("2 programs (1 of them automated drills)"), "{s}");
+        assert!(s.contains("program 9 (Acme Lend drill 2026-11-10, an automated drill): phase Exited"), "{s}");
+        assert!(s.contains("program 5 (Acme Lend v1 — pre-launch (testnet)): phase Open"), "{s}");
+    }
 }

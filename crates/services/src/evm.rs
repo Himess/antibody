@@ -100,9 +100,35 @@ impl Evm {
         Ok(r.as_str().map(|s| s.trim_start_matches("0x").trim_start_matches('0') == "1").unwrap_or(false))
     }
 
+    /// An account's balance in wei, one attempt (a monitoring read must not wait out retries).
+    pub fn balance(&self, address: &str) -> Result<u128> {
+        hex_u128(&self.call("eth_getBalance", json!([address, "latest"]))?)
+    }
+
+    /// The node's gas price in wei (`eth_gasPrice`: about the base fee plus a tip).
+    pub fn gas_price(&self) -> Result<u128> {
+        hex_u128(&self.read("eth_gasPrice", json!([]))?)
+    }
+
+    /// Waits for a transaction's receipt (every 3 s, for at most `timeout`); an error if it reverted.
+    pub fn wait_receipt(&self, tx_hash: &str, timeout: std::time::Duration) -> Result<Value> {
+        let t0 = std::time::Instant::now();
+        loop {
+            if let Ok(Some(r)) = self.receipt(tx_hash) {
+                if r["status"] != "0x1" {
+                    return Err(eyre!("transaction {tx_hash} reverted"));
+                }
+                return Ok(r);
+            }
+            if t0.elapsed() > timeout {
+                return Err(eyre!("no receipt for {tx_hash} after {} s", timeout.as_secs()));
+            }
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+    }
 }
 
-fn hex_u128(v: &Value) -> Result<u128> {
+pub fn hex_u128(v: &Value) -> Result<u128> {
     u128::from_str_radix(v.as_str().ok_or_else(|| eyre!("not hex: {v}"))?.trim_start_matches("0x"), 16).map_err(|e| eyre!("{e}"))
 }
 
@@ -124,6 +150,41 @@ impl EvmSigner {
 
     /// Signs and broadcasts an EIP-1559 call; returns the transaction hash.
     pub fn send(&self, evm: &Evm, chain_id: u64, to: Address, data: Vec<u8>, gas_limit: u64) -> Result<String> {
+        self.send_value(evm, chain_id, to, data, gas_limit, 0)
+    }
+
+    /// Sends `value` wei to an account (a plain transfer: 21,000 gas; an OP Stack chain adds its L1 fee).
+    pub fn transfer(&self, evm: &Evm, chain_id: u64, to: Address, value: u128) -> Result<String> {
+        self.send_value(evm, chain_id, to, Vec::new(), 21_000, value)
+    }
+
+    /// The most a transfer can cost at the node's gas price: its 21,000 gas at [`Self::send`]'s fee cap
+    /// (twice the price plus the tip), and `l1_margin` wei for an OP Stack chain's L1 fee.
+    pub fn transfer_reserve(gas_price: u128, l1_margin: u128) -> u128 {
+        21_000 * (gas_price * 2 + gas_price.min(1_000_000_000)) + l1_margin
+    }
+
+    /// A key derived from this one and `label` (`keccak256(tag ‖ key ‖ label ‖ counter)`, the first valid
+    /// scalar): the same label gives the same key, another label an unrelated one. Never written anywhere.
+    pub fn derive(&self, label: &[u8]) -> Result<Self> {
+        let key_bytes = self.key.to_bytes();
+        for i in 0u8..=255 {
+            let h = keccak256([b"antibody/derived-evm-key/v1".as_slice(), &key_bytes[..], label, &[i]].concat());
+            if let Ok(key) = SigningKey::from_slice(h.as_slice()) {
+                let pt = key.verifying_key().to_encoded_point(false);
+                let address = Address::from_slice(&keccak256(&pt.as_bytes()[1..])[12..]);
+                return Ok(Self { key, address });
+            }
+        }
+        Err(eyre!("no valid key derived"))
+    }
+
+    /// The secret as forge's `DEPLOYER_KEY` takes it. For a child process's environment only: never print it.
+    pub fn secret_hex(&self) -> String {
+        format!("0x{}", hex::encode(self.key.to_bytes()))
+    }
+
+    fn send_value(&self, evm: &Evm, chain_id: u64, to: Address, data: Vec<u8>, gas_limit: u64, value: u128) -> Result<String> {
         let nonce = hex_u64(&evm.call("eth_getTransactionCount", json!([self.address, "pending"]))?)?;
         let price = hex_u128(&evm.call("eth_gasPrice", json!([]))?)?;
         let tip = price.min(1_000_000_000);
@@ -134,7 +195,7 @@ impl EvmSigner {
             max_fee_per_gas: price * 2 + tip,
             max_priority_fee_per_gas: tip,
             to: TxKind::Call(to),
-            value: U256::ZERO,
+            value: U256::from(value),
             access_list: Default::default(),
             input: Bytes::from(data),
         };
@@ -148,4 +209,22 @@ impl EvmSigner {
 
 pub fn hex_u64(v: &Value) -> Result<u64> {
     u64::from_str_radix(v.as_str().ok_or_else(|| eyre!("not hex: {v}"))?.trim_start_matches("0x"), 16).map_err(|e| eyre!("{e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_derived_key_is_the_same_for_a_label_and_another_for_the_next() {
+        // anvil's well-known TEST key 0.
+        let main = EvmSigner::from_hex("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80").unwrap();
+        let a = main.derive(b"drill-2026-11-10").unwrap();
+        assert_eq!(a.address, main.derive(b"drill-2026-11-10").unwrap().address);
+        assert_ne!(a.address, main.derive(b"drill-2026-11-11").unwrap().address);
+        assert_ne!(a.address, main.address);
+        // The secret round-trips as forge reads it.
+        assert_eq!(EvmSigner::from_hex(&a.secret_hex()).unwrap().address, a.address);
+        assert_eq!(EvmSigner::transfer_reserve(10, 5), 21_000 * 30 + 5);
+    }
 }
