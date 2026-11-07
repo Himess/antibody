@@ -98,6 +98,9 @@ pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
     if let Some(p) = &ctx.dep.practice {
         contracts.push(contract(ctx, "practice vending", &p.vending)?);
     }
+    if let Some(h) = &ctx.dep.hunt {
+        contracts.push(contract(ctx, "hunt vending", &h.vending)?);
+    }
     if let Some(g) = &ctx.dep.verdict_guard {
         contracts.push(contract(ctx, "verdict guard", g)?);
     }

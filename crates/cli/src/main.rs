@@ -1,7 +1,7 @@
 //! `antibody` — create programs, hunt, commit and submit sealed PoCs, verify receipts, and serve
 //! the same operations to AI agents over MCP. Every command prints JSON with explorer links.
 
-use antibody_cli::{cmd, ctx, mcp};
+use antibody_cli::{cmd, ctx, hunt, mcp};
 
 use std::path::PathBuf;
 
@@ -244,6 +244,52 @@ enum PracticeCmd {
         near: String,
         #[arg(long, default_value = "0")]
         tokens: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum HuntCmd {
+    /// Vend <name>.<vending> for a key made here, print the instance assigned to it, and write a workspace
+    /// for the proof: the program's files, the instance, the rules, the proof format and, for the practice
+    /// program, its sources and a Foundry harness. The account stays open until `hunt submit`
+    Start {
+        /// The account's name: <name>.<vending>, 1 to 32 of a-z, 0-9, - and _
+        #[arg(long)]
+        name: String,
+        /// The vending contract (default: the deployment's hunt vending; the practice program's is
+        /// practice.antibody.testnet)
+        #[arg(long)]
+        vending: Option<String>,
+        /// The workspace (default: hunt-<name>)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Check the proof before anything is spent (its shape, its targets: this account's instance only, its
+    /// sealed size: at most 15 KB), then commit and reveal it through the account, wait for the verdict and
+    /// T1 or the end of the challenge window, settle, and close the account
+    Submit {
+        #[arg(long)]
+        name: String,
+        /// The proof: a bundle file
+        #[arg(long)]
+        poc: PathBuf,
+        /// The vending contract (default: the one `hunt start` recorded for this name, else the
+        /// deployment's hunt vending)
+        #[arg(long)]
+        vending: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// The account's commits, verdicts and payouts (view calls only)
+    Status {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        vending: Option<String>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -555,8 +601,8 @@ enum Cmd {
         program: u32,
     },
     /// The practice program (a tutorial, docs/practice.md): vend a practice account, prove its vault with
-    /// the public tutorial proof, and settle. Needs no account: without --account the public vend key
-    /// calls `vend`
+    /// the public tutorial proof (or your own, --poc), and settle. Needs no account: without --account the
+    /// public vend key calls `vend`
     Try {
         /// The vending contract (default: the deployment's practice program)
         #[arg(long)]
@@ -566,9 +612,20 @@ enum Cmd {
         /// Your practice account's name: <name>.<vending>
         #[arg(long)]
         name: String,
+        /// Your own proof (a bundle file: docs/practice.md, The proof) instead of the tutorial's. It is
+        /// checked before anything is spent: its shape, its targets (the instance the next vend assigns)
+        /// and its sealed size (at most 15 KB)
+        #[arg(long)]
+        poc: Option<PathBuf>,
         /// The full record as JSON (default: a summary with each transaction)
         #[arg(long)]
         json: bool,
+    },
+    /// Bring your own proof, with no NEAR account (docs/practice.md): a vended account, its own instance of
+    /// the program's targets, and your proof
+    Hunt {
+        #[command(subcommand)]
+        cmd: HuntCmd,
     },
     /// The practice program's operator: deploy and fund the vending contract
     Practice {
@@ -910,11 +967,39 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
-        Cmd::Try { ref vending, program, ref name, json } => {
+        Cmd::Try { ref vending, program, ref name, ref poc, json } => {
             let ctx = mk()?;
             let (vending, program) = antibody_cli::practice::target(&ctx, vending.clone(), program)?;
-            let r = antibody_cli::practice::try_it(&ctx, &vending, program, name)?;
-            Ok(if json { r } else { Value::String(antibody_cli::practice::try_summary(&r, ctx.dep.decimals(), ctx.dep.symbol())) })
+            let (d, sym) = (ctx.dep.decimals(), ctx.dep.symbol());
+            match poc {
+                None => {
+                    let r = antibody_cli::practice::try_it(&ctx, &vending, program, name)?;
+                    Ok(if json { r } else { Value::String(antibody_cli::practice::try_summary(&r, d, sym)) })
+                }
+                Some(poc) => {
+                    let r = hunt::try_poc(&ctx, &vending, program, name, poc)?;
+                    Ok(if json { r } else { Value::String(hunt::summary(&r, d, sym)) })
+                }
+            }
+        }
+        Cmd::Hunt { cmd: HuntCmd::Start { ref name, ref vending, ref out, json } } => {
+            let ctx = mk()?;
+            let vending = hunt::default_vending(&ctx.dep, vending.as_deref())?;
+            let out = out.clone().unwrap_or_else(|| PathBuf::from(format!("hunt-{name}")));
+            let r = hunt::start(&ctx, &vending, name, Some(&out))?;
+            Ok(if json { r } else { Value::String(hunt::start_summary(&r)) })
+        }
+        Cmd::Hunt { cmd: HuntCmd::Submit { ref name, ref poc, ref vending, json } } => {
+            let ctx = mk()?;
+            let vending = hunt::account_vending(&ctx, vending.as_deref(), name)?;
+            let r = hunt::submit(&ctx, &vending, name, poc)?;
+            Ok(if json { r } else { Value::String(hunt::summary(&r, ctx.dep.decimals(), ctx.dep.symbol())) })
+        }
+        Cmd::Hunt { cmd: HuntCmd::Status { ref name, ref vending, json } } => {
+            let ctx = mk()?;
+            let vending = hunt::account_vending(&ctx, vending.as_deref(), name)?;
+            let r = hunt::status(&ctx, &vending, name)?;
+            Ok(if json { r } else { Value::String(hunt::status_summary(&r, ctx.dep.decimals(), ctx.dep.symbol())) })
         }
         Cmd::Practice {
             cmd:
@@ -1123,5 +1208,10 @@ mod tests {
     fn cli_parses() {
         Cli::try_parse_from(["antibody", "submit", "--program", "0", "--bundle", "b.json"]).unwrap();
         Cli::try_parse_from(["antibody", "--account", "a.testnet", "program", "create", "--manifest", "m.json", "--escrow", "1", "--project-key", "k.json"]).unwrap();
+        Cli::try_parse_from(["antibody", "try", "--name", "ann", "--poc", "p.json"]).unwrap();
+        Cli::try_parse_from(["antibody", "hunt", "start", "--name", "ann", "--vending", "practice.antibody.testnet", "--out", "ws"]).unwrap();
+        Cli::try_parse_from(["antibody", "hunt", "submit", "--name", "ann", "--poc", "p.json"]).unwrap();
+        Cli::try_parse_from(["antibody", "hunt", "status", "--name", "ann", "--json"]).unwrap();
+        assert!(Cli::try_parse_from(["antibody", "hunt", "submit", "--name", "ann"]).is_err(), "--poc is required");
     }
 }

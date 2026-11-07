@@ -35,6 +35,12 @@ pub struct Deployments {
     /// The practice program (docs/practice.md): `antibody try` needs only a name.
     #[serde(default)]
     pub practice: Option<PracticeDeployment>,
+    /// The hunt (docs/agent-runs.md, "Bring your own agent"): a vending contract like the practice one,
+    /// whose accounts each prove their own instance of its program with their own proof. Its program,
+    /// instances and terms are read from its `get_config`. `antibody hunt` and the MCP hunt tools default
+    /// to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hunt: Option<HuntDeployment>,
     /// A NEAR app consuming verdicts (docs/verdict-guard.md): a treasury that freezes on a program's
     /// verified Critical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,6 +68,11 @@ impl Deployments {
 pub struct PracticeDeployment {
     pub vending: String,
     pub program: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct HuntDeployment {
+    pub vending: String,
 }
 
 /// The testnet deployment, built in: a downloaded binary needs no repository.

@@ -6,7 +6,7 @@ import { Check } from "@/components/build/Check";
 import { DocLink } from "@/components/build/DocLink";
 import { NotYet } from "@/components/build/Labels";
 import { LeaderboardBlock } from "@/components/build/Leaderboard";
-import { DataFrame, McpConfig, McpTools } from "@/components/build/Mcp";
+import { DataFrame, McpConfig, McpConfigNoAccount, McpTools, MCP_TOOLS } from "@/components/build/Mcp";
 import { OnThisPage } from "@/components/build/OnThisPage";
 import { PilotCta } from "@/components/build/PilotCta";
 import { Steps, type Step } from "@/components/build/Steps";
@@ -204,6 +204,49 @@ const verdicts: { verdict: string; outcome: ReactNode; tone: "ok" | "neutral" | 
   },
 ];
 
+/** The three calls of an agent that brings its own proof (crates/cli/src/hunt.rs, AGENTS.md). */
+const byoCalls: { name: string; body: ReactNode }[] = [
+  {
+    name: "hunt_start",
+    body: (
+      <>
+        With a new lowercase <code>name</code>: the account, the instance of the program&apos;s targets it may prove (their
+        addresses), the rules and what each pays, the program&apos;s limits, and a workspace <code>hunt-&lt;name&gt;/</code> with the
+        proof format. For the practice program the workspace also holds its sources and a Foundry harness that runs offline.
+      </>
+    ),
+  },
+  {
+    name: "check_poc",
+    body: <>With the program&apos;s id and the proof&apos;s path: the verifier on your machine, with nothing sent.</>,
+  },
+  {
+    name: "hunt_submit",
+    body: (
+      <>
+        With <code>name</code> and <code>poc</code>, the proof&apos;s path. It seals the proof to the program&apos;s key, commits and
+        reveals it, waits for the verdict and for T1 or the end of the challenge window on NEAR&apos;s clock, settles, and closes the
+        account. One proof per account.
+      </>
+    ),
+  },
+];
+
+/** `hunt_submit`'s result, abridged, with the recorded practice try's values (AGENTS.md shows the same). */
+const BYO_SAMPLE = `{
+ "account": "<name>.practice.antibody.testnet",
+ "program": 6,
+ "instance": 4,
+ "targets": [{"name": "vault-4", "address": "0x185d4f6a747091760f39adbe66a3a414ce8fe56a"}],
+ "verdict": {"kind": "Violation", "keys": [{"slot": 0, "tag": "cc52c19a12…"}]},
+ "payout_path": "T1",
+ "state": "Done:Paid",
+ "paid_raw": "1000000000000000000000",
+ "beneficiary": "practice.antibody.testnet",
+ "closed": true,
+ "links": [{"commit": "…"}, {"reveal": "…"}, {"allocate": "…"}, {"pay": "…"}, {"close": "…"}, {"reclaim": "…"}]
+}`;
+
 export default function AgentsPage() {
   return (
     <>
@@ -235,6 +278,7 @@ export default function AgentsPage() {
           { href: "#cli", label: "The CLI" },
           { href: "#verdicts", label: "Verdicts" },
           { href: "#mcp", label: "MCP" },
+          { href: "#byo", label: "Your own agent" },
           { href: "#containment", label: "Containment" },
           { href: "#agent-runs", label: "Measured runs" },
           { href: "#leaderboard", label: "Leaderboard" },
@@ -333,7 +377,7 @@ export default function AgentsPage() {
         title="Connect an agent over MCP"
         lede={
           <>
-            <code>antibody mcp</code> serves 8 tools over stdio. The agent works through its own account, a sub-account of yours
+            <code>antibody mcp</code> serves {MCP_TOOLS.length} tools over stdio. The agent works through its own account, a sub-account of yours
             whose key may commit, reveal and retry, and cannot withdraw or transfer. See{" "}
             <DocLink path="AGENTS.md">AGENTS.md</DocLink>.
           </>
@@ -380,7 +424,7 @@ export default function AgentsPage() {
           </div>
           <div className={styles.mcpCol}>
             <div className={styles.mcpBlock}>
-              <h3>The 8 tools</h3>
+              <h3>The {MCP_TOOLS.length} tools</h3>
               <McpTools />
             </div>
             <div className={styles.mcpBlock}>
@@ -408,6 +452,87 @@ export default function AgentsPage() {
               </p>
             </div>
           </div>
+        </div>
+      </Section>
+
+      <Section
+        id="byo"
+        eyebrow="No account needed"
+        title="Bring your own agent"
+        lede={
+          <>
+            Your agent writes the proof itself. The server gets it an account from a vending contract and keeps the account&apos;s key;
+            the vending contract pays the bond, the verification run and the storage, and payouts go back to it. See{" "}
+            <DocLink path="AGENTS.md" hash="bring-your-own-agent">
+              AGENTS.md
+            </DocLink>
+            .
+          </>
+        }
+      >
+        <div className={styles.mcpGrid}>
+          <div className={styles.mcpCol}>
+            <div className={styles.mcpBlock}>
+              <h3>One config, no account</h3>
+              <McpConfigNoAccount />
+              <p className="small muted">
+                No <code className="nowrap">--account</code> and no key file: only a workspace directory, which the server never reads
+                or writes outside.
+              </p>
+            </div>
+            <ol className={styles.mcpSteps} role="list">
+              {byoCalls.map((c, i) => (
+                <li key={c.name} className={styles.mcpBlock}>
+                  <div className={styles.mcpHead}>
+                    <span className={styles.stepNo} aria-hidden>
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <h3>
+                      <code>{c.name}</code>
+                    </h3>
+                  </div>
+                  <p className="small muted">{c.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className={styles.mcpCol}>
+            <div className={styles.mcpBlock}>
+              <h3>Refused before anything is spent</h3>
+              <ul className={styles.bullets}>
+                <li>A bundle that does not parse, has no sender or no call, names a sender it does not have, or sets a gas limit over the program&apos;s caps.</li>
+                <li>A call to another account&apos;s instance: each account proves its own instance and is paid for it.</li>
+                <li>A proof over 15 KB sealed: the account&apos;s proof travels inline, and its sealed size is computed before it is sealed.</li>
+              </ul>
+              <p className="small muted">
+                Past these checks the verifier decides. A proof under which every rule holds (<code>NoViolation</code>), or one it cannot
+                run as written (<code>InvalidPoC</code>), loses its bond to the program&apos;s escrow, as any proof does.
+              </p>
+            </div>
+            <div className={styles.mcpBlock}>
+              <h3>What a result looks like</h3>
+              <figure className={styles.frame}>
+                <pre>
+                  <code>{BYO_SAMPLE}</code>
+                </pre>
+                <figcaption>
+                  <code>hunt_submit</code>&apos;s result, abridged, with the recorded practice try&apos;s values (that try sent the tutorial
+                  proof through <code>practice_try</code>). The full result also says what was checked before anything was spent: the
+                  proof&apos;s sealed size and its verdict on your machine.
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+        <div className="callout" style={{ marginTop: 20 }}>
+          <Icon name="info" size={16} />
+          <span>
+            The tools default to the deployment&apos;s hunt vending contract and accept its practice vending contract, and no other.
+            Until a hunt vending contract is deployed, pass <code className="nowrap">&quot;vending&quot;: &quot;practice.antibody.testnet&quot;</code>{" "}
+            to <code>hunt_start</code>: your agent can write the tutorial proof itself, from the workspace&apos;s <code>PROOF.md</code>. From
+            a terminal: <code>antibody hunt start --name &lt;you&gt; --vending practice.antibody.testnet</code>, then{" "}
+            <code>antibody hunt submit --name &lt;you&gt; --poc hunt-&lt;you&gt;/proof.bundle.json</code>.
+          </span>
         </div>
       </Section>
 

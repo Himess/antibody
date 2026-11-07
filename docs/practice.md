@@ -52,6 +52,54 @@ One call, from your sender, to your vault:
 `0x01681a62` is `sweep(address)`, and the argument is `0x…dEaD`. At the anchor the vault loses its ether,
 so `vault_keeps_its_ether` breaks: a Violation keyed to your vault and `sweep`.
 
+## Your own proof
+
+A practice account can also carry a proof you wrote, in the format above:
+
+```
+antibody try --name <you> --poc <file>
+```
+
+Or in two steps, so that you know your vault before you write the proof:
+
+```
+antibody hunt start --name <you> --vending practice.antibody.testnet
+antibody check --program <id> --bundle hunt-<you>/proof.bundle.json
+antibody hunt submit --name <you> --poc hunt-<you>/proof.bundle.json
+antibody hunt status --name <you>
+```
+
+`hunt start` vends `<you>.practice.antibody.testnet` and prints the vault assigned to it: its index, and its
+address in the program's manifest (the factory's `vaultAt(i)`). It writes a workspace, `hunt-<you>/`
+(`--out` picks another): the program's hash-checked files as `antibody pull` writes them,
+`instance.json`, the rule and what it pays, `PROOF.md` (this format, the program's limits, and the
+tutorial proof against your vault), `Practice.sol` and its ABIs, and a Foundry harness that deploys the
+same 24 vaults locally and proves your vault, so `forge test` needs no RPC. The account's key stays in
+`.antibody/practice/<you>/`. `hunt submit` finds the account by its name; `hunt status` shows its commits,
+verdicts and payouts.
+
+Before anything is spent, `hunt submit` refuses (and `try --poc` before it even vends):
+- a bundle that does not parse, has no sender or no call, names a sender it does not have, or sets a gas
+  limit over the program's caps;
+- a call to another account's vault: each account proves its own (`try --poc` checks the vault the next
+  vend assigns, and again after the vend);
+- a proof over 15,360 bytes sealed: a practice account's proof travels inline. Its sealed size is
+  computed before it is sealed.
+
+Past these checks the verifier decides, as for any proof. A proof under which the rule holds is a
+`NoViolation`, one it cannot run as written (two calls, say, where the program allows one) is an
+`InvalidPoC`, and both lose their bond to the program's escrow (here, the vending contract's bond). On the
+practice program every try's content key is public (docs/zk.md), a proof of your own included.
+
+An account `hunt start` opened stays open until `hunt submit` closes it, and anyone may reclaim it an hour
+after its vend. One proof per account. Over MCP, the same three steps are `hunt_start`, `check_poc` and
+`hunt_submit` (AGENTS.md).
+
+The hunt commands default to the deployments file's `hunt` vending contract, once there is one; until
+then they ask for `--vending`. A hunt vending is a vending contract like this one, for its own program:
+its program, instances and terms are read from its `get_config`, and instance `i` is the targets the
+program's manifest names `<name>-<i>`.
+
 ## Practice accounts
 
 `contracts/practice-vending` creates `<name>.practice.<root>.testnet` for a key you hold:
@@ -109,4 +157,6 @@ vending contract, and two judges with no account try it.
   can spend; the operator refills both.
 - A practice account is an agent bound to the practice program: it cannot commit anywhere else. Its
   cap is the practice bond, and its payouts go to the vending contract.
-- The proof is public. The point is the loop (sealing, verification, payment), not the finding.
+- The proof is public. The point is the loop (sealing, verification, payment), not the finding. A proof of
+  your own (`--poc`, `antibody hunt`) goes through the same loop; the practice target has only the
+  tutorial bug.

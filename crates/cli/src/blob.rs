@@ -41,6 +41,16 @@ pub fn practice_content_key(program_key: &str, hunter: &str) -> [u8; 32] {
     sha256(format!("antibody/practice/public-content-key/v1|{program_key}|{hunter}").as_bytes())
 }
 
+/// ChaCha20-Poly1305's tag, after the sealed payload.
+const AEAD_TAG: usize = 16;
+
+/// The size [`seal_with`] gives these parts (docs/crypto-spec.md §4: the magic, the content key's wrap, the
+/// nonce, then the payload encrypted with its tag), known before anything is sealed.
+pub fn sealed_len(program_key: &str, hunter: &str, envelope: usize, report: usize) -> usize {
+    let payload = sealed::PAYLOAD_MAGIC.len() + 2 + program_key.len() + 2 + hunter.len() + 4 + envelope + 4 + report;
+    sealed::MAGIC.len() + sealed::WRAP_V_LEN + 12 + payload + AEAD_TAG
+}
+
 /// [`seal`] with a given content key (the ephemeral key and the nonces stay random).
 pub fn seal_with(pubkey_hex: &str, program_key: &str, hunter: &str, envelope: Vec<u8>, report: Vec<u8>, content_key: Option<[u8; 32]>) -> Result<Sealed> {
     let pk_v: [u8; 32] = hex::decode(pubkey_hex)?.try_into().map_err(|_| eyre!("verifier pubkey must be 32 bytes"))?;
@@ -120,4 +130,19 @@ pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
         return Err(eyre!("GET {url}: HTTP {}", r.status()));
     }
     Ok(r.bytes()?.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The size a vended account's proof is refused at is the size the reveal would send.
+    #[test]
+    fn the_sealed_size_is_known_before_sealing() {
+        let pk = hex::encode(sealed::x25519_public([7; 32]));
+        for (envelope, report) in [(0, 0), (363, 0), (15_000, 64), (40_000, 1)] {
+            let s = seal_with(&pk, "bounty.antibody.testnet/6", "ann.practice.antibody.testnet", vec![5; envelope], vec![6; report], None).unwrap();
+            assert_eq!(s.blob.len(), sealed_len("bounty.antibody.testnet/6", "ann.practice.antibody.testnet", envelope, report), "{envelope} + {report}");
+        }
+    }
 }

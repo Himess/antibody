@@ -80,11 +80,15 @@ pub enum TxFrom {
     Local,
 }
 
-/// Every commit record under the state directory (a hunter's, and a practice try's).
+/// Every commit record under the state directory (a hunter's, a practice try's, and a hunt account's).
 fn local_records(state: &Path) -> Vec<Value> {
     let mut dirs = vec![state.join("submissions")];
     if let Ok(rd) = std::fs::read_dir(state.join("practice")) {
         dirs.extend(rd.flatten().map(|e| e.path().join("state/submissions")));
+    }
+    // `hunt/<vending>/<name>` (crate::hunt::account_dir).
+    for vending in std::fs::read_dir(state.join("hunt")).into_iter().flatten().flatten() {
+        dirs.extend(std::fs::read_dir(vending.path()).into_iter().flatten().flatten().map(|e| e.path().join("state/submissions")));
     }
     dirs.iter()
         .filter_map(|d| std::fs::read_dir(d).ok())

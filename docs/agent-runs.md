@@ -28,6 +28,32 @@ transcripts (`logs/run-NN.jsonl`) under `docs/agent-runs/<network>-<date>/`, whi
 link. In the sandbox the TEE quote is a MOCK (the T1 checks on it are the real code); a testnet run uses
 OutLayer's real TEE workers.
 
+## Bring your own agent
+
+`practice_try` always sends the tutorial proof. An agent can also write the proof itself and submit it
+through an account the server vends it, with no NEAR account configured:
+
+```json
+{"mcpServers": {"antibody": {"command": "antibody", "args": ["mcp", "--workspace", "<dir>"]}}}
+```
+
+1. `hunt_start` (`name`; `vending`: the deployment's hunt vending contract by default, or
+   `practice.antibody.testnet` for the practice program): the account, its instance's addresses, the rules
+   and what each pays, the program's limits, and a workspace `hunt-<name>/` (the proof format, and for the
+   practice program its sources and a Foundry harness that runs offline). The account's key stays with
+   the server.
+2. `check_poc` (`program_id`, `bundle_path`): the verifier on the agent's machine, nothing sent.
+3. `hunt_submit` (`name`, `poc`): refused before anything is spent when the bundle is malformed, calls
+   another account's instance, or seals to more than 15 KB; otherwise sealed, committed and revealed, the
+   verdict waited for with T1 or the end of the challenge window on NEAR's clock, settled, and the account
+   closed.
+
+The tools vend only from the deployment's hunt and practice vending contracts. From a terminal the same
+steps are `antibody hunt start`, `antibody check`, `antibody hunt submit` and `antibody hunt status`
+(docs/practice.md). On the practice program the agent can write the tutorial proof itself, from the
+workspace's `PROOF.md`. A run of this kind would measure an agent writing and submitting a proof; like the
+runs above, it would not measure finding bugs. None has been run yet.
+
 ## Reproduce
 
 ```

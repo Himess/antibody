@@ -114,5 +114,7 @@ your credit within the cap, and its payouts go to you. Then:
 ```
 
 Tools: `list_programs`, `get_program`, `fetch_env`, `check_poc`, `commit`, `submit`, `status`,
-`practice_try`. Every result is marked untrusted data, file access is confined to the workspace, and key
-files are refused (AGENTS.md).
+`practice_try`, `hunt_start`, `hunt_submit`. Every result is marked untrusted data, file access is confined
+to the workspace, and key files are refused (AGENTS.md). `hunt_start` and `hunt_submit` need no account:
+the server gets one from a vending contract, for a proof the agent wrote (AGENTS.md, "Bring your own
+agent").
