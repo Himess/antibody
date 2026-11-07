@@ -1,0 +1,265 @@
+.hero {
+  display: grid;
+  gap: 20px;
+  padding-block: clamp(40px, 7vw, 96px) clamp(28px, 4vw, 48px);
+}
+
+.display {
+  font-size: var(--fs-display);
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+  font-weight: 640;
+  font-stretch: 92%;
+  max-width: 14ch;
+}
+
+.accent {
+  color: var(--accent-ink);
+}
+
+.lede {
+  font-size: clamp(1.0625rem, 0.95rem + 0.5vw, 1.25rem);
+  color: var(--ink-2);
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
+.momentWrap {
+  padding-bottom: clamp(40px, 6vw, 80px);
+}
+
+.momentCard {
+  display: grid;
+  gap: 22px;
+  padding: clamp(18px, 3vw, 32px);
+  box-shadow: var(--shadow);
+}
+
+.momentFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding-top: 4px;
+}
+
+.momentFoot p {
+  max-width: 70ch;
+}
+
+.split {
+  display: grid;
+  gap: 28px;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 56px;
+  }
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  counter-reset: none;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 16px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+
+.steps li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.steps h3 {
+  font-size: var(--fs-md);
+  margin-bottom: 6px;
+}
+
+.steps p {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  max-width: 62ch;
+}
+
+.stepNo {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--fs-lg);
+  color: var(--accent-ink);
+  line-height: 1.3;
+}
+
+.tiers :global(.card) {
+  --gap: 10px;
+}
+
+.tiers h3 {
+  font-size: var(--fs-md);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+@media (min-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stats > div {
+  background: var(--bg-elev);
+  padding: 18px 20px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.stats dt {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.audience {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.h2 {
+  font-size: var(--fs-2xl);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.contrast {
+  display: grid;
+  gap: 16px;
+  /* The proof card is inverted in either theme: its tokens come from these, resolved here. */
+  --inv-fg: var(--bg);
+  --inv-bg: var(--ink);
+  --inv-mid: color-mix(in srgb, var(--bg) 72%, var(--ink));
+  --inv-line: color-mix(in srgb, var(--bg) 22%, var(--ink));
+}
+
+@media (min-width: 860px) {
+  .contrast {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.reportCard,
+.proofCard {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.proofCard {
+  --ink: var(--inv-fg);
+  --ink-2: var(--inv-mid);
+  --ink-3: var(--inv-mid);
+  --bg: var(--inv-bg);
+  --bg-elev: var(--inv-bg);
+  --bg-sunk: var(--inv-bg);
+  --line: var(--inv-line);
+  --line-strong: var(--inv-line);
+  --sealed-a: color-mix(in srgb, var(--inv-fg) 16%, var(--inv-bg));
+  --sealed-b: color-mix(in srgb, var(--inv-fg) 7%, var(--inv-bg));
+  --accent-ink: var(--accent);
+  background: var(--inv-bg);
+  color: var(--inv-fg);
+  border-color: var(--inv-bg);
+}
+
+.proofCard a {
+  color: inherit;
+}
+
+.cardBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}
+
+.micro {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.proofCard .micro {
+  color: var(--inv-mid);
+}
+
+.report {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+}
+
+.report mark {
+  background: var(--bad-soft);
+  color: var(--bad);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.verdictRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--inv-mid);
+}
+
+.proofCard :global(.sealed-text) {
+  opacity: 0.6;
+}
+
+.stats dd + dd {
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
