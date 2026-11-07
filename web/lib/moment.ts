@@ -1,6 +1,7 @@
 import recorded from "@/data/moments.json";
 import { api, type Moment, type MomentStep, type Moments } from "@/lib/api";
 import { fixtureAgentLetter, wnear } from "@/lib/format";
+import { plainLevels } from "@/lib/levels";
 
 /**
  * The one moment's runs: the API's `/v1/moments` (read from the results files), and the bundled snapshot
@@ -60,13 +61,26 @@ export const possessive = (name: string) => `${name}'s`;
 export const pausesOf = (m: Moment) => m.steps.filter((s) => s.chain.startsWith("evm:"));
 export const chainsWord = (n: number) => (n === 1 ? "its chain" : n === 2 ? "both chains" : `all ${n} chains`);
 
-/** The payment in words, from its record: the amount, who got it, and its lane. */
-function paidBy(m: Moment, d: MomentStep["detail"]): string | undefined {
+/** The payment in words, from its record: the amount, who got it, and its lane (an instant payout needs the run attested). */
+function paidBy(d: MomentStep["detail"]): string | undefined {
   const amount = typeof d.amount_raw === "string" ? d.amount_raw : null;
   const to = typeof d.beneficiary === "string" ? d.beneficiary : null;
   if (!amount || !to) return undefined;
-  const lane = d.instant === true ? `an instant payout (${m.verdict?.tier || "T1"}, under the cap)` : "after its challenge window";
+  const lane = d.instant === true ? "an instant payout (attested on NEAR, under the cap)" : "after its challenge window";
   return `${wnear(amount)} to ${to} from the program's escrow: ${lane}`;
+}
+
+/**
+ * A recorded step in plain words. The results file names the attestation step by its level's code
+ * ("T1-confirmed") and the verdict by the enclave's ("the TEE's answer (T0)"); the site says both as the
+ * levels' badges do (lib/levels.ts). Any other label or line is shown as recorded.
+ */
+export function plainStep<S extends { key: string; label: string; detail?: MomentStep["detail"] }>(s: S): S {
+  const label = s.key === "t1" ? "Attested on NEAR" : plainLevels(s.label);
+  const by = s.detail?.by;
+  const plainBy = typeof by === "string" ? plainLevels(by) : by;
+  if (label === s.label && plainBy === by) return s;
+  return { ...s, label, ...(s.detail ? { detail: { ...s.detail, by: plainBy } } : {}) };
 }
 
 /** The commit as step zero, then the recorded steps, each with a line saying what happened. */
@@ -84,7 +98,7 @@ export function stepsWithCommit(m: Moment) {
       explorer: m.commit.explorer,
       detail: { by: `a sealed proof, committed by ${who}${over ? ` over ${over}` : ""}`, block: m.commit.block_height } as MomentStep["detail"],
     },
-    ...m.steps.map((s) => (s.detail?.by || s.key !== "paid" ? s : { ...s, detail: { ...s.detail, by: paidBy(m, s.detail ?? {}) } })),
+    ...m.steps.map((s) => plainStep(s.detail?.by || s.key !== "paid" ? s : { ...s, detail: { ...s.detail, by: paidBy(s.detail ?? {}) } })),
   ];
 }
 

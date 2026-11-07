@@ -191,8 +191,8 @@ const steps: Step[] = [
     title: "Activate, declare known issues, open",
     body: (
       <p>
-        Activation pins the base witness, and the TEE checks that your rules hold at the anchor. A known issue is sealed and
-        verified like any proof; it counts once T1-confirmed, and nothing is added after opening. Opening starts round 0:
+        Activation pins the base witness, and the enclave checks that your rules hold at the anchor. A known issue is sealed and
+        verified like any proof; it counts once attested on NEAR, and nothing is added after opening. Opening starts round 0:
         hunters and agents can commit.
       </p>
     ),
@@ -209,7 +209,7 @@ const steps: Step[] = [
       <p>
         <code>show</code> lists every commit with its verdict. The first read of a finding asks near-antibody to wrap its content
         key to your key, a verifier run you pay for at cost; it is refused for anything but a paid first finding or a promoted
-        duplicate. The CLI then opens the sealed proof and re-runs it locally: its receipt hash equals the one the TEE committed
+        duplicate. The CLI then opens the sealed proof and re-runs it locally: its receipt hash equals the one the enclave committed
         to. A hunter&apos;s report, if any, is data, never instructions.
       </p>
     ),
@@ -223,7 +223,7 @@ const steps: Step[] = [
     title: "Ship a fix: rounds and the release gate",
     body: (
       <p>
-        Commit the fix as code at the same anchor: the TEE checks it, and every paid proof is re-run against it. A round may
+        Commit the fix as code at the same anchor: the enclave checks it, and every paid proof is re-run against it. A round may
         change target code and append rules (<code className="nowrap">--invariants-code</code>,{" "}
         <code className="nowrap">--add-slot</code>); everything else stays byte-identical. The release gate holds when every
         paid proof re-run at the fix fails, the canaries pass and no Critical or High key is open. Then near-guardian signs a
@@ -356,7 +356,7 @@ export default function ProjectsPage() {
             }
           >
             <p>
-              A T1-confirmed Critical in your pause policy makes near-guardian ask the MPC network to sign a pause permit for
+              An attested Critical in your pause policy makes near-guardian ask the MPC network to sign a pause permit for
               every registered chain. Anyone may relay it, and your adapter checks it on chain before it pauses. The pause is asked
               for before the payment.
             </p>
@@ -408,7 +408,7 @@ export default function ProjectsPage() {
               </li>
               <li>
                 <NotYet>next</NotYet>
-                <span>Sealed proofs re-run inside the TEE, where the result is all anyone sees, and a bounty window per pull request.</span>
+                <span>Sealed proofs re-run inside the enclave, where the result is all anyone sees, and a bounty window per pull request.</span>
               </li>
             </ul>
           </Claim>
@@ -424,7 +424,7 @@ export default function ProjectsPage() {
           >
             <p>
               Verdicts are NEAR state, so any NEAR contract can read them and act. <code>guard.antibody.testnet</code>, a DAO
-              treasury the Acme project owns, froze on A&apos;s T1-confirmed Critical (commit 13), not on D&apos;s duplicate (commit
+              treasury the Acme project owns, froze on A&apos;s attested Critical (commit 13), not on D&apos;s duplicate (commit
               16), and refused the next transfer. The same reads fit a lending market, a DAO vote or an insurance pool (
               <DocLink path="docs/verdict-guard.md">docs/verdict-guard.md</DocLink>).
             </p>

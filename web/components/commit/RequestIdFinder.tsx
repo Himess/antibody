@@ -50,7 +50,7 @@ const PLACEHOLDER = "<the run's OutLayer request>";
 
 /**
  * Finds the OutLayer request behind a run in the transaction that requested it (as `antibody tee confirm
- * --tx` does), so the T1 commands below carry the real id. The browser reads the transaction from a NEAR
+ * --tx` does), so the attestation commands below carry the real id. The browser reads the transaction from a NEAR
  * archival RPC and checks the request against near-antibody's record of the run. A request id already
  * recorded in a results file (`known`) fills the commands from the start.
  */
@@ -170,7 +170,7 @@ export function RequestIdFinder({
           </div>
         ) : null}
       </div>
-      <Command label="T1 check">{`antibody tee check --request-id ${id}`}</Command>
+      <Command label="Attestation check">{`antibody tee check --request-id ${id}`}</Command>
       {requestId !== null ? <Command label="OutLayer's own check">{`outlayer-verify job ${requestId} --network ${config.network}`}</Command> : null}
       {known && !f ? (
         <p className="xsmall muted">

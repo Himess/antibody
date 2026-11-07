@@ -1,10 +1,10 @@
 export const NAV = [
-  { href: "/moment", label: "The one moment" },
+  { href: "/moment", label: "The moment" },
   { href: "/programs", label: "Programs" },
   { href: "/try", label: "Try it" },
   { href: "/judges", label: "For judges" },
   { href: "/trust", label: "Trust" },
-  { href: "/agents", label: "Hunters and agents" },
+  { href: "/agents", label: "Agents" },
   { href: "/projects", label: "Projects" },
 ] as const;
 

@@ -5,7 +5,7 @@ import styles from "./try.module.css";
 const ROLE: Record<HostRole, string> = {
   rpc: "NEAR RPC: the views, and the transactions this tab signed",
   archival: "NEAR archival RPC: the program's pinned base witness, an old transaction",
-  api: "our API: the live event stream (verdict and T1 as they are indexed), and the run's T2 record once near-t2 is on testnet",
+  api: "our API: the live event stream (the verdict and its attestation, as they are indexed), and the run's zero-knowledge proof record once near-t2 is on testnet",
 };
 
 /** Before a try, what each host will carry: nothing is signed yet. */
@@ -35,8 +35,8 @@ export function BrowserLedger({ s, hosts, streamEvents, idle = false }: { s: Try
           only signatures are.
         </li>
         <li>
-          <strong>Done elsewhere, as for every run:</strong> OutLayer&apos;s TEE answers the reveal, and our T1 relayer submits the run&apos;s TDX quote, which near-antibody
-          verifies on chain.
+          <strong>Done elsewhere, as for every run:</strong> OutLayer&apos;s enclave answers the reveal, and our attestation relayer submits the run&apos;s TDX quote,
+          which near-antibody verifies on chain.
         </li>
       </ul>
       <div className="stack" style={{ ["--gap" as string]: "8px" }}>

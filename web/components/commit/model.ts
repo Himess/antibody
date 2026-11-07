@@ -216,10 +216,33 @@ export function topSeverity(p: ProgramDetail | null | undefined, keys: VerdictKe
   return best;
 }
 
-/** "slot 0 (solvency)". */
+/** "slot 0 (solvency)": the technical name, for keys, tags and checks. */
 export function slotName(p: ProgramDetail | null | undefined, slot: number): string {
   const i = slotInfo(p, slot);
   return i.name ? `slot ${slot} (${i.name})` : `slot ${slot}`;
+}
+
+/** A rule's name in words ("fees to treasury"), else "rule 1": for stamps and short labels. */
+export function ruleLabel(p: ProgramDetail | null | undefined, slot: number): string {
+  const i = slotInfo(p, slot);
+  return i.name ? i.name.replace(/_/g, " ") : `rule ${slot}`;
+}
+
+/** Rules in prose: "the solvency rule", "the solvency rule and the “share price” rule", "rule 3" (a name of several words is quoted). */
+export function rulesText(p: ProgramDetail | null | undefined, slots: number[]): string {
+  const names = [...new Set(slots)].map((s) => {
+    if (!slotInfo(p, s).name) return ruleLabel(p, s);
+    const label = ruleLabel(p, s);
+    return `the ${label.includes(" ") ? `“${label}”` : label} rule`;
+  });
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** A verdict in prose, lower case: "violation of the solvency rule", "no violation", "invalid proof". */
+export function verdictWords(kind: string | null | undefined, rules: string): string {
+  if (kind === "Violation") return `violation of ${rules || "a rule"}`;
+  const w = kindWords(kind);
+  return w.charAt(0).toLowerCase() + w.slice(1);
 }
 
 /** Keys from any source, dropping malformed entries. */
@@ -352,14 +375,14 @@ export function stateExpect(label: string, raw: unknown): Expect | undefined {
 // ------------------------------------------------------------------ runs
 
 export const MODE_WORDS: Record<string, string> = {
-  activate: "Activation: the TEE derived the program's keys and output its sealing public key.",
-  verify: "Verification: the TEE judged a sealed submission.",
+  activate: "Activation: the enclave derived the program's keys and output its sealing public key.",
+  verify: "Verification: the enclave judged a sealed submission.",
   second: "A second, independent run of the same proof: above the instant cap, a payout needs one that agrees.",
   rerun: "A re-run of a paid proof, a duplicate or a gap claim at a newer round's code and rules.",
-  check_round: "A round check: the TEE checked a proposed fix before its re-runs.",
+  check_round: "A round check: the enclave checked a proposed fix before its re-runs.",
   distinct: "A distinctness run (switched off in this deployment).",
   release_wrap: "A release wrap: after payment, the proof's content key wrapped to the project's own key.",
-  disclose: "A disclosure run: the TEE released the disclosure keys of qualifying tags.",
+  disclose: "A disclosure run: the enclave released the disclosure keys of qualifying tags.",
 };
 
 /** A mode in plain words, for eyebrows and titles: "release wrap", not `release_wrap`. */
@@ -573,7 +596,7 @@ export const RECORDED: Record<
     program: 5,
     hunter: "agent-a.antibody.testnet",
     rows: [1, 8, 15, 16],
-    text: "Our fixture agent A, a scripted MCP client, submitted a sealed proof over MCP: verified in the TEE, T1-confirmed and paid in seconds under the cap. Its verdict paused the fixture on both chains, the verdict guard froze on it, and the project read the proof through its release wrap.",
+    text: "Our fixture agent A, a scripted MCP client, submitted a sealed proof over MCP: verified in the enclave, attested on NEAR and paid in seconds under the cap. Its verdict paused the fixture on both chains, the verdict guard froze on it, and the project read the proof through its release wrap.",
   },
   14: {
     program: 5,

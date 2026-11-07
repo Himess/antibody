@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { RUN_BINDING } from "@/components/checks/trust-data";
 import { TierBadge } from "@/components/ui/Badges";
 import { Command } from "@/components/ui/Command";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { Hash } from "@/components/ui/Hash";
 import { LiveCheck } from "@/components/ui/LiveCheck";
 import { Pill } from "@/components/ui/Pill";
@@ -28,12 +29,12 @@ const aMode = (mode: string | null) => {
   return `${/^[aeiou]/i.test(n) ? "An" : "A"} ${n}`;
 };
 
-/** What T1 adds for each kind of run (spec §6: structural facts need T1; §11.4: a confirmed wrap stands). */
+/** What attestation (T1) adds for each kind of run (spec §6: structural facts need it; §11.4: an attested wrap stands). */
 function t1Adds(mode: string | null): string {
-  if (!mode || mode === "verify" || mode === "second") return "Instant payouts need T1.";
-  if (mode === "release_wrap") return "A T1-confirmed wrap stands; a wrap no quote confirmed may be requested again.";
+  if (!mode || mode === "verify" || mode === "second") return "Instant payouts need it.";
+  if (mode === "release_wrap") return "An attested wrap stands; a wrap no quote attested may be requested again.";
   if (mode === "rerun" || mode === "activate" || mode === "check_round" || mode === "disclose")
-    return `${aMode(mode)}'s result counts only once its run is T1-confirmed.`;
+    return `${aMode(mode)}'s result counts only once its run is attested on NEAR.`;
   return "";
 }
 
@@ -52,7 +53,7 @@ export interface Bound {
 
 export interface TierInput {
   runId: number | null;
-  /** The TEE tier near-antibody records (T0 or T1). */
+  /** The level near-antibody records for the run (T0, the enclave's result, or T1, attested). */
   tier: string | null;
   kind: string | null;
   receipt: string | null;
@@ -69,7 +70,7 @@ export interface TierInput {
   bound: Bound;
   /** The run's mode (verify when omitted): only verify, second and rerun runs are verdicts T2 can prove. */
   mode?: string | null;
-  /** Who can open the proof besides the TEE (a published key makes the run one of T2's four). */
+  /** Who can open the proof besides the enclave (a published key makes the run one of the four the zero-knowledge study proves). */
   keyState?: KeyState;
   /** The commit expired unrevealed: it never had a run, and never will. */
   neverRevealed?: boolean;
@@ -110,8 +111,8 @@ export function Tiers(x: TierInput) {
     return (
       <Empty>
         {x.neverRevealed
-          ? "Never revealed, so never verified: there is no verdict for a tier to vouch for."
-          : "No verification run yet: the tiers apply once the proof is revealed and the TEE answers."}
+          ? "Never revealed, so never verified: there is no verdict to check."
+          : "No verification run yet: the checks apply once the proof is revealed and the enclave answers."}
       </Empty>
     );
   }
@@ -128,7 +129,7 @@ export function Tiers(x: TierInput) {
     <div className={styles.tiers}>
       <Row
         badge={<TierBadge tier="T0" />}
-        title="The TEE's answer"
+        title="What the enclave answered"
         reached={t0}
         state={
           x.failed ? (
@@ -141,7 +142,7 @@ export function Tiers(x: TierInput) {
             </Pill>
           ) : (
             <Pill tone="pending" size="sm">
-              waiting for the TEE
+              waiting for the enclave
             </Pill>
           )
         }
@@ -152,7 +153,9 @@ export function Tiers(x: TierInput) {
                 Delivered in <TxLink hash={x.answered.tx} href={x.answered.explorer} />
               </p>
             ) : null}
-            <Command label="Read the run">{`antibody status --run ${x.runId}`}</Command>
+            <Disclosure>
+              <Command label="Read the run">{`antibody status --run ${x.runId}`}</Command>
+            </Disclosure>
           </>
         }
       >
@@ -163,7 +166,7 @@ export function Tiers(x: TierInput) {
           </p>
         ) : (
           <p className="small muted">
-            {t0 ? "OutLayer's operator delivered the TEE worker's output to near-antibody" : "OutLayer's operator delivers the TEE worker's output to near-antibody"}
+            {t0 ? "OutLayer's operator delivered the enclave's output to near-antibody" : "OutLayer's operator delivers the enclave's output to near-antibody"}
             {verdict || (x.kind && x.kind !== "NoViolation") ? (x.kind ? `: ${kindWords(x.kind)}` : "") : produced ? `: ${produced}` : ""}
             {x.receipt ? (
               <>
@@ -172,7 +175,7 @@ export function Tiers(x: TierInput) {
             ) : null}
             .{" "}
             {verdict
-              ? "On its own, a T0 verdict settles a submission only after its challenge window."
+              ? "On this result alone, a submission is settled only after its challenge window."
               : `${aMode(mode)} judges no proof: its answer is not a verdict.`}
           </p>
         )}
@@ -180,7 +183,7 @@ export function Tiers(x: TierInput) {
 
       <Row
         badge={<TierBadge tier="T1" />}
-        title="The TDX quote, verified on NEAR"
+        title="Its Intel TDX quote, verified on NEAR"
         reached={t1}
         state={
           t1 ? (
@@ -189,7 +192,7 @@ export function Tiers(x: TierInput) {
             </Pill>
           ) : (
             <Pill tone="pending" size="sm">
-              not confirmed
+              not yet
             </Pill>
           )
         }
@@ -197,28 +200,30 @@ export function Tiers(x: TierInput) {
           <>
             {x.t1 ? (
               <p className="small">
-                Confirmed in <TxLink hash={x.t1.tx} href={x.t1.explorer} />
+                Attested in <TxLink hash={x.t1.tx} href={x.t1.explorer} />
               </p>
             ) : null}
-            {x.requested && x.signer ? (
-              <RequestIdFinder tx={x.requested.tx} signer={x.signer} requestSha={requestSha} blobSha={x.bound.blobSha} wasmSha={x.wasmSha} known={known} />
-            ) : (
-              <Command label="T1 check">{"antibody tee check --request-id <the run's OutLayer request>"}</Command>
-            )}
-            {x.requested ? <Command label="OutLayer's own check from the transaction">{`outlayer-verify tx ${x.requested.tx}`}</Command> : null}
-            <LiveCheck
-              check={{ kind: "near-view", contract: x.contract, method: "get_run", args: { run_id: x.runId } }}
-              expect={
-                t1 || x.tier
-                  ? {
-                      path: "outcome.Answered.tier",
-                      equals: t1 ? "T1" : (x.tier ?? "T0"),
-                      says: t1 ? "the run's answer is T1: its quote was verified on NEAR" : `the run's answer is ${x.tier ?? "T0"}`,
-                    }
-                  : undefined
-              }
-              label="Read the run from NEAR"
-            />
+            <Disclosure>
+              {x.requested && x.signer ? (
+                <RequestIdFinder tx={x.requested.tx} signer={x.signer} requestSha={requestSha} blobSha={x.bound.blobSha} wasmSha={x.wasmSha} known={known} />
+              ) : (
+                <Command label="Attestation check">{"antibody tee check --request-id <the run's OutLayer request>"}</Command>
+              )}
+              {x.requested ? <Command label="OutLayer's own check from the transaction">{`outlayer-verify tx ${x.requested.tx}`}</Command> : null}
+              <LiveCheck
+                check={{ kind: "near-view", contract: x.contract, method: "get_run", args: { run_id: x.runId } }}
+                expect={
+                  t1 || x.tier
+                    ? {
+                        path: "outcome.Answered.tier",
+                        equals: t1 ? "T1" : (x.tier ?? "T0"),
+                        says: t1 ? "the run is attested: its quote was verified on NEAR" : "the run's answer is the enclave's result, not attested",
+                      }
+                    : undefined
+                }
+                label="Read the run from NEAR"
+              />
+            </Disclosure>
           </>
         }
       >
@@ -232,15 +237,15 @@ export function Tiers(x: TierInput) {
                 .join(" ")
             : x.answered
               ? verdict
-                ? "Not T1-confirmed: the verdict stands on its T0 answer and its challenge window. The T1 relayer sends each answered run's quote, and anyone may."
-                : ["Not T1-confirmed yet.", t1Adds(mode), "The T1 relayer sends each answered run's quote, and anyone may."].filter(Boolean).join(" ")
-              : "Once the TEE answers, the T1 relayer (or anyone) relays the run's quote to near-antibody, which verifies it on chain."}
+                ? "Not attested on NEAR: the verdict stands on the enclave's result and its challenge window. Our attestation relayer sends each answered run's quote, and anyone may."
+                : ["Not attested on NEAR yet.", t1Adds(mode), "Our attestation relayer sends each answered run's quote, and anyone may."].filter(Boolean).join(" ")
+              : "Once the enclave answers, our attestation relayer (or anyone) relays the run's quote to near-antibody, which verifies it on chain."}
         </p>
       </Row>
 
       <Row
         badge={<TierBadge tier="T2" />}
-        title="A validity proof of a disclosed verdict"
+        title="A zero-knowledge proof of the verdict"
         reached={Boolean(x.t2.record && x.t2.record.outcome === "confirmed")}
         state={verdict || x.t2.record ? <T2State t2={x.t2} /> : <Pill size="sm">no verdict to prove</Pill>}
         checks={verdict || x.t2.record ? <T2Checks x={x} /> : <T2Docs />}
@@ -249,7 +254,8 @@ export function Tiers(x: TierInput) {
           <T2About t2={x.t2} keyState={x.keyState} />
         ) : (
           <p className="small muted">
-            T2 proves a verdict: the verifier&apos;s re-run of a disclosed proof. {aMode(mode)} judges no proof, so it has nothing for T2 to prove.
+            A zero-knowledge proof covers a verdict: the verifier&apos;s re-run of a disclosed proof. {aMode(mode)} judges no proof, so there is
+            nothing to prove.
           </p>
         )}
       </Row>
@@ -261,7 +267,7 @@ function T2Docs() {
   return (
     <p className="xsmall muted">
       <a href={sourceUrl("docs/zk.md")} target="_blank" rel="noreferrer noopener">
-        How T2 works (docs/zk.md)
+        How the zero-knowledge proof works (docs/zk.md)
       </a>
     </p>
   );
@@ -305,8 +311,9 @@ function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
   if (r?.outcome === "confirmed")
     return (
       <p className="small muted">
-        near-t2 verified an SP1 proof that the verifier, re-run on the TEE&apos;s exact input, gives the TEE&apos;s receipt, kind and slots, and compared every
-        bound value with near-antibody&apos;s records. It claims no privacy (anyone can open the proof it re-runs: disclosed, or under a published or public content key), and no payout depends on it.
+        near-t2 verified an SP1 proof that the verifier, re-run on the enclave&apos;s exact input, gives the enclave&apos;s receipt, kind and rules, and
+        compared every bound value with near-antibody&apos;s records. It claims no privacy (anyone can open the proof it re-runs: disclosed, or under a
+        published or public content key), and no payout depends on it.
       </p>
     );
   if (r) {
@@ -321,7 +328,7 @@ function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
   if (t2.notYet)
     return fixture ? (
       <p className="small muted">
-        T2 is not yet on testnet. This run is one of the four whose content key is published (
+        Not yet on testnet. This run is one of the four whose content key is published (
         <a href={sourceUrl(keyFile(fixture))} target="_blank" rel="noreferrer noopener">
           <code>{fixture}</code>
         </a>
@@ -330,15 +337,15 @@ function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
       </p>
     ) : (
       <p className="small muted">
-        T2 is not yet on testnet. Once near-t2 records proofs on testnet, an SP1 proof that the verifier, re-run on this run&apos;s exact input, gives the same receipt is
-        checked on NEAR against near-antibody&apos;s records, after the proof is disclosed. No privacy claim; no payout depends on it.
+        Not yet on testnet. Once near-t2 records proofs on testnet, an SP1 proof that the verifier, re-run on this run&apos;s exact input, gives the same
+        receipt is checked on NEAR against near-antibody&apos;s records, after the proof is disclosed. No privacy claim; no payout depends on it.
       </p>
     );
   if (t2.error) return <ErrorState what="near-t2's records" error={t2.error} partial />;
   return (
     <p className="small muted">
-      near-t2 has no record of this run yet. A T2 proof re-runs a disclosed proof, so it follows disclosure, or a published key; a practice try sealed with
-      the public practice key is proven by the T2 prover service with nothing handed over.
+      near-t2 has no record of this run yet. A zero-knowledge proof re-runs a disclosed proof, so it follows disclosure, or a published key; a practice
+      try sealed with the public practice key is proven by our prover service with nothing handed over.
     </p>
   );
 }
@@ -349,7 +356,9 @@ function T2Checks({ x }: { x: TierInput }) {
   if (!r) {
     return (
       <>
-        <Command label="T2 status">{`antibody zk status --run ${x.runId}`}</Command>
+        <Disclosure>
+          <Command label="Zero-knowledge proof status">{`antibody zk status --run ${x.runId}`}</Command>
+        </Disclosure>
         {docs}
       </>
     );
@@ -406,9 +415,9 @@ function T2Checks({ x }: { x: TierInput }) {
     {
       field: "Receipt sha256",
       value: <Hash value={strOf(r.receipt_sha256)} head={12} label="the proof's receipt sha256" />,
-      check: <Eq v={same(r.receipt_sha256, r.tee_receipt_sha256)} what="the TEE's" />,
+      check: <Eq v={same(r.receipt_sha256, r.tee_receipt_sha256)} what="the enclave's" />,
     },
-    { field: "Kind", value: strOf(r.kind) ?? "—", check: <Eq v={same(r.kind, r.tee_kind)} what="the TEE's" /> },
+    { field: "Kind", value: strOf(r.kind) ?? "—", check: <Eq v={same(r.kind, r.tee_kind)} what="the enclave's" /> },
     {
       field: "Slots (severity)",
       value: slotsOf(r.slots) || "none",
@@ -419,7 +428,7 @@ function T2Checks({ x }: { x: TierInput }) {
               ? JSON.stringify(r.slots.map((s) => (isObj(s) ? numOf(s.slot) : null))) === JSON.stringify(r.tee_slots.map((s) => numOf(s)))
               : null
           }
-          what="the TEE's"
+          what="the enclave's"
         />
       ),
     },
@@ -431,28 +440,30 @@ function T2Checks({ x }: { x: TierInput }) {
           Recorded on NEAR in <TxLink hash={x.t2.event.tx} href={x.t2.event.explorer} />
         </p>
       ) : null}
-      <p className={styles.checksTitle}>What its public values bind</p>
-      <dl className={styles.bound}>
-        {rows.map((row) => (
-          <div key={row.field} className={styles.boundRow}>
-            <dt>{row.field}</dt>
-            <dd>{row.value}</dd>
-            <dd>{row.check}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="xsmall muted">
-        A different request, run, blob, base, manifest, anchor, program, verifier or severity is rejected outright; a different receipt, kind or slots is
-        recorded as a contradiction.
-      </p>
-      <Command label="T2 status">{`antibody zk status --run ${x.runId}`}</Command>
-      {x.t2.contract ? (
-        <LiveCheck
-          check={{ kind: "near-view", contract: x.t2.contract, method: "get_record", args: { run_id: String(x.runId) } }}
-          expect={{ path: "outcome", equals: String(r.outcome), says: `near-t2's record says ${String(r.outcome)}` }}
-          label="Read near-t2's record"
-        />
-      ) : null}
+      <Disclosure>
+        <p className={styles.checksTitle}>What its public values bind</p>
+        <dl className={styles.bound}>
+          {rows.map((row) => (
+            <div key={row.field} className={styles.boundRow}>
+              <dt>{row.field}</dt>
+              <dd>{row.value}</dd>
+              <dd>{row.check}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="xsmall muted">
+          A different request, run, blob, base, manifest, anchor, program, verifier or severity is rejected outright; a different receipt, kind or slots
+          is recorded as a contradiction.
+        </p>
+        <Command label="Zero-knowledge proof status">{`antibody zk status --run ${x.runId}`}</Command>
+        {x.t2.contract ? (
+          <LiveCheck
+            check={{ kind: "near-view", contract: x.t2.contract, method: "get_record", args: { run_id: String(x.runId) } }}
+            expect={{ path: "outcome", equals: String(r.outcome), says: `near-t2's record says ${String(r.outcome)}` }}
+            label="Read near-t2's record"
+          />
+        ) : null}
+      </Disclosure>
       {docs}
     </>
   );

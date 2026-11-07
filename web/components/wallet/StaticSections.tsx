@@ -162,7 +162,7 @@ export function ReadProofs() {
           </Command>
           <p className="small muted">
             <span className="mono">program read</span> asks for the finding&apos;s release wrap the first time (the requester pays), unwraps the content key
-            with the project key, opens the sealed proof and re-runs it locally; the local receipt must equal the TEE&apos;s. In the recorded run the project
+            with the project key, opens the sealed proof and re-runs it locally; the local receipt must equal the enclave&apos;s. In the recorded run the project
             read A&apos;s paid proof this way, and near-antibody refused to wrap D&apos;s duplicate (
             <a href={`${config.repo}/blob/main/JUDGES.md`} target="_blank" rel="noreferrer noopener">
               JUDGES.md, row 16

@@ -122,7 +122,7 @@ export function RulesSection({ d, kind, slots, id }: { d: ProgramDetail; kind: P
                           <span className="mono">{s.name ?? `slot ${s.bit}`}</span>
                           <span className="tag">bit {s.bit}</span>
                           {s.added ? <span className="tag">added by a round</span> : null}
-                          {s.pauses ? <span className="tag">a T1 proof pauses</span> : null}
+                          {s.pauses ? <span className="tag">an attested proof pauses</span> : null}
                         </div>
                         {src ? <p className={styles.says}>{src.says}</p> : null}
                       </Cell>
@@ -152,7 +152,7 @@ export function RulesSection({ d, kind, slots, id }: { d: ProgramDetail; kind: P
             </table>
           </div>
         ) : (
-          <p className="small muted">The API sent no slots for this program.</p>
+          <p className="small muted">The API sent no rules for this program.</p>
         )}
         <p className="small muted">
           The budget caps what one rule pays per round, so many entry points into one root cause cannot drain the escrow. A

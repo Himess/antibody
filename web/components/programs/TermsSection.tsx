@@ -77,7 +77,7 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
                 <details className={styles.termMore}>
                   <summary>When a payout is instant</summary>
                   <p className="xsmall muted">
-                    Paid in seconds when the verdict is T1, within {money(rules?.instant?.budget_raw)} per {duration(rules?.instant?.window_secs)}.
+                    Paid in seconds when the verdict is attested on NEAR, within {money(rules?.instant?.budget_raw)} per {duration(rules?.instant?.window_secs)}.
                     Otherwise a payout waits the challenge window; above the cap it also needs an agreeing second run.
                   </p>
                 </details>
@@ -136,7 +136,7 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
               <dd className="small">
                 {pauseSlots.length ? (
                   <>
-                    A T1 proof of {pauseSlots.map((b) => slots.find((s) => s.bit === b)?.name ?? `slot ${b}`).join(", ")}, on a
+                    An attested proof of {pauseSlots.map((b) => slots.find((s) => s.bit === b)?.name ?? `slot ${b}`).join(", ")}, on a
                     light-client anchor, pauses the protocol on every chain the project registered (one pause ticket per round),
                     {noMinImpact ? " with no minimum impact." : ` from a minimum impact of ${usdMicro(minImpact)}.`}
                   </>

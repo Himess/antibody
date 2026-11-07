@@ -20,12 +20,12 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 
 function Outcome({ outcome }: { outcome: string | null | undefined }) {
   if (outcome === "confirmed") return <Pill tone="t2">confirmed</Pill>;
-  if (outcome === "contradicts") return <Pill tone="bad">contradicts the TEE</Pill>;
+  if (outcome === "contradicts") return <Pill tone="bad">contradicts the enclave</Pill>;
   return <Pill tone="pending">{outcome ?? "unknown"}</Pill>;
 }
 
 /**
- * T2 on NEAR: near-t2's pins and records from `/v1/t2`. Until this deployment names a near-t2 contract the
+ * The zero-knowledge level (T2) on NEAR: near-t2's pins and records from `/v1/t2`. Until this deployment names a near-t2 contract the
  * API answers an error, and the block says "not yet on testnet"; with records, the same code shows them,
  * each checkable with a view call the browser runs.
  */
@@ -42,11 +42,11 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
         <p className="small" style={{ maxWidth: "72ch" }}>
           near-t2 is built and tested: its unit tests check the public values of four testnet runs, whose content keys are published in{" "}
           <code>fixtures/zk</code>, against near-antibody&apos;s testnet records, and the sandbox run confirms an honest run and records a lying
-          MOCK TEE&apos;s contradiction. Its testnet deployment waits for the first proofs from SP1&apos;s prover network. When it holds records, each
+          MOCK enclave&apos;s contradiction. Its testnet deployment waits for the first proofs from SP1&apos;s prover network. When it holds records, each
           appears here with near-t2&apos;s pins and a view call your browser runs.
         </p>
         <p className="small muted" style={{ maxWidth: "72ch" }}>
-          T2 is a validity proof of a disclosed verdict: it claims no privacy, and payouts in the locked deployment do not depend on it.{" "}
+          A zero-knowledge validity proof of a disclosed verdict: it claims no privacy, and payouts in the locked deployment do not depend on it.{" "}
           <a href={sourceUrl(ZK.doc)} target="_blank" rel="noreferrer noopener">
             docs/zk.md
           </a>

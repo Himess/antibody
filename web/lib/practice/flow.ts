@@ -922,7 +922,7 @@ export class TryFlow {
     const id = this.s.commitId;
     const { account } = this.s;
     if (id === undefined) throw new FlowError("other", "no commit to reveal");
-    this.begin("reveal", "Revealing the sealed blob: near-antibody asks OutLayer's TEE to verify it");
+    this.begin("reveal", "Revealing the sealed blob: near-antibody asks OutLayer's enclave to verify it");
     if (resuming) {
       const c = await this.getCommit();
       if (commitStateLabel(c?.state) !== "Committed" && typeof c?.run === "number") {
@@ -956,8 +956,8 @@ export class TryFlow {
     }
     if (early !== undefined) {
       this.set({ runId: early });
-      this.patch("reveal", { detail: `included: run ${early} requested; the RPC answers once the TEE's verdict is in` });
-      this.begin("verdict", "OutLayer's TEE is re-running the proof on the pinned base");
+      this.patch("reveal", { detail: `included: run ${early} requested; the RPC answers once the enclave's verdict is in` });
+      this.begin("verdict", "OutLayer's enclave is re-running the proof on the pinned base");
     }
     let out: TxOutcome;
     try {
@@ -997,7 +997,7 @@ export class TryFlow {
     const tx = txHash(out);
     this.persist({ runId, revealTx: tx });
     this.set({ runId });
-    this.done("reveal", `run ${runId}: the sealed blob is on chain, under the try's public content key, so anyone, T2's prover included, can open it`, { tx, signer: account });
+    this.done("reveal", `run ${runId}: the sealed blob is on chain, under the try's public content key, so anyone, the zero-knowledge prover included, can open it`, { tx, signer: account });
     this.timeStep("reveal", out, "run_requested");
     // The answer may be in the same outcome.
     const answered = eventIn(out, "run_answered");
@@ -1027,7 +1027,7 @@ export class TryFlow {
   /** cmd.rs `wait_verdict` (240 s): the stream's `run_answered`, else `get_run`. */
   private async stepVerdict(): Promise<void> {
     if (this.s.steps.verdict.status === "done") return;
-    if (this.s.steps.verdict.status !== "running") this.begin("verdict", "OutLayer's TEE is re-running the proof on the pinned base");
+    if (this.s.steps.verdict.status !== "running") this.begin("verdict", "OutLayer's enclave is re-running the proof on the pinned base");
     const t0 = this.d.now();
     let lastPoll = -Infinity;
     for (;;) {
@@ -1043,7 +1043,7 @@ export class TryFlow {
         }
       }
       if (this.d.now() - t0 > this.t.verdictSecs * 1000) {
-        this.note("warn", `No verdict within ${this.t.verdictSecs} s: still verifying. The try keeps waiting for it with T1.`);
+        this.note("warn", `No verdict within ${this.t.verdictSecs} s: still verifying. The try keeps waiting for it, and for its attestation.`);
         this.patch("verdict", { detail: `still verifying after ${this.t.verdictSecs} s` });
         return;
       }
@@ -1057,8 +1057,8 @@ export class TryFlow {
     const tier = v.tier ?? "T0";
     this.set({ verdict: v, tier });
     const slots = v.keys.map((k) => k.slot);
-    const words = v.kind === "Violation" ? `Violation of slot ${slots.join(", ") || "?"}` : v.kind === "NoViolation" ? "No violation" : (v.kind ?? "answered");
-    const how = tier === "T1" ? "OutLayer's answer, its TDX quote already verified on NEAR" : "OutLayer's answer (T0 until its TDX quote is verified)";
+    const words = v.kind === "Violation" ? `Violation of rule ${slots.join(", ") || "?"}` : v.kind === "NoViolation" ? "No violation" : (v.kind ?? "answered");
+    const how = tier === "T1" ? "OutLayer's answer, already attested on NEAR" : "OutLayer's enclave result, not yet attested on NEAR";
     this.done("verdict", `${words}: ${how}`, { tx, at, exact: at !== undefined && exact });
   }
 
@@ -1071,7 +1071,7 @@ export class TryFlow {
    */
   private async stepT1(): Promise<void> {
     if (this.s.tier === "T1" && this.s.steps.t1.status === "done") return;
-    this.begin("t1", "Waiting for T1: the run's TDX quote, verified on NEAR");
+    this.begin("t1", "Waiting for attestation: the run's TDX quote, verified on NEAR");
     const t0 = this.d.now();
     const window = await this.challengeWindow();
     let lastPoll = -Infinity;
@@ -1080,7 +1080,7 @@ export class TryFlow {
       if (this.seen.answer && this.s.steps.verdict.status !== "done") this.verdictIn(this.seen.answer.verdict, this.seen.answer.tx, this.seen.answer.at, true);
       if (this.seen.t1 || this.s.tier === "T1") {
         this.set({ tier: "T1", verdict: this.s.verdict ? { ...this.s.verdict, tier: "T1" } : this.s.verdict });
-        this.done("t1", "T1: the TDX quote of the run, verified on NEAR (relayed by our T1 relayer)", {
+        this.done("t1", "Attested: the run's TDX quote, verified on NEAR (relayed by our attestation relayer)", {
           tx: this.seen.t1?.tx,
           at: this.seen.t1?.at ?? this.d.now(),
           exact: this.seen.t1?.at !== undefined,
@@ -1105,7 +1105,7 @@ export class TryFlow {
         }
       }
       if (this.stopRequested) {
-        this.skip("t1", "you stopped following before T1");
+        this.skip("t1", "you stopped following before the attestation");
         return;
       }
       const answered = this.s.verdict?.answeredAt;
@@ -1140,8 +1140,8 @@ export class TryFlow {
     }
     const note =
       known === undefined
-        ? `no T1 in the ${this.t.t1Secs} s this try waits for it: the verdict stays T0 and is paid after the ${window} s challenge window`
-        : `no T1 within the ${window} s challenge window: the verdict stays T0 and is paid after it`;
+        ? `not attested on NEAR in the ${this.t.t1Secs} s this try waits for it: paid after the ${window} s challenge window, without attestation`
+        : `not attested on NEAR within the ${window} s challenge window: paid after it, without attestation`;
     this.set({ t0Note: note, t0PayAfter: payAfter, tier: this.s.tier ?? "T0" });
     this.note("warn", note);
     this.skip("t1", note);
@@ -1238,7 +1238,7 @@ export class TryFlow {
     const amount = str(paid?.data.amount);
     const beneficiary = str(paid?.data.beneficiary);
     this.set({ state: "Done:Paid", paidRaw: amount ?? this.s.paidRaw, beneficiary: beneficiary ?? this.s.beneficiary });
-    this.done("pay", `Done:Paid${beneficiary ? `, to ${beneficiary}` : ""}${paid?.data.instant === true ? ", instantly (T1, under the cap)" : ""}`, { tx: txHash(out), signer: account });
+    this.done("pay", `Paid${beneficiary ? `, to ${beneficiary}` : ""}${paid?.data.instant === true ? ", instantly (attested on NEAR, under the cap)" : ""}`, { tx: txHash(out), signer: account });
     this.timeStep("pay", out, "paid");
   }
 

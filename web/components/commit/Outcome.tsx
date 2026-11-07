@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { StateBadge } from "@/components/ui/Badges";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { Icon } from "@/components/ui/Icon";
 import { LiveCheck } from "@/components/ui/LiveCheck";
 import { Pill } from "@/components/ui/Pill";
@@ -53,7 +54,7 @@ export interface OutcomeInput {
   /** The earlier claim's own record, for a duplicate. */
   earlier: Result<CommitDetail> | null;
   contract: string;
-  /** Who can open this commit's proof besides the TEE (the proof card's state). */
+  /** Who can open this commit's proof besides the enclave (the proof card's state). */
   keyState: KeyState;
   /** A gap claim a round promoted and paid: told by its state and kind, so it holds when its events are not indexed. */
   gap: GapPaid | null;
@@ -161,7 +162,7 @@ function Payout({ x }: { x: OutcomeInput }) {
       figure = amount ? wnear(amount) : "—";
       pill = <Pill tone="ok">{instant ? "paid · instant" : promoted || x.gap ? "paid · promoted" : "paid · after the window"}</Pill>;
       text = instant
-        ? `Paid in seconds: the verdict is T1, at most the instant cap${cap ? ` (${wnear(cap)})` : ""}, within its window's instant budget.`
+        ? `Paid in seconds: the verdict is attested on NEAR, at most the instant cap${cap ? ` (${wnear(cap)})` : ""}, within its window's instant budget.`
         : promoted || x.gap
           ? `Promoted at round ${round ?? "—"} and paid at its original priority.`
           : `Paid once its challenge window${challenge ? ` (${seconds(challenge, 0)})` : ""} passed with no challenge open.`;
@@ -299,7 +300,7 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
       ) : (
         <Empty>The feed shows no key in common between these two commits.</Empty>
       )}
-      <p className="small muted">A tag is a PRF of the rule and the entry point under the program&apos;s key, which only the TEE holds.</p>
+      <p className="small muted">A tag is a keyed hash of the rule and the entry point, under the program&apos;s key, which only the enclave holds.</p>
       <div className={styles.pair}>
         <div className={styles.sealedWrap}>
           <p className="small">
@@ -350,8 +351,7 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
         </div>
       </div>
       {m && x.c.commit.run !== null && x.c.commit.run !== undefined && r.run_id !== null ? (
-        <div className={styles.checks}>
-          <p className={styles.checksTitle}>Check both tags on NEAR</p>
+        <Disclosure summary="Check both tags on NEAR">
           <LiveCheck
             check={{ kind: "near-view", contract: x.contract, method: "get_run", args: { run_id: x.c.commit.run } }}
             expect={{ path: `outcome.Answered.facts.keys.${m.mineIndex}.tag`, equals: m.mine.tag, says: `this commit's run ${x.c.commit.run} records tag ${m.mine.tag.slice(0, 12)}…` }}
@@ -362,7 +362,7 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
             expect={{ path: `outcome.Answered.facts.keys.${m.theirsIndex}.tag`, equals: m.theirs.tag, says: `the earlier claim's run ${r.run_id} records the same tag` }}
             label={`Read run ${r.run_id}`}
           />
-        </div>
+        </Disclosure>
       ) : null}
     </Evidence>
   );
@@ -373,11 +373,11 @@ function slotLabel(p: ProgramDetail | null, slot: number) {
   return `${slotName(p, slot)}${i.severity ? ` · ${i.severity}` : ""}`;
 }
 
-/** A proof whose content key our fixture agent published for the T2 study (docs/zk.md). */
+/** A proof whose content key our fixture agent published for the zero-knowledge study (docs/zk.md). */
 function KeyNote({ fixture }: { fixture: string }) {
   return (
     <p className="xsmall muted">
-      Not disclosed on chain; its content key is published for the T2 study (
+      Not disclosed on chain; its content key is published for the zero-knowledge proof study (
       <a href={sourceUrl(keyFile(fixture))} target="_blank" rel="noreferrer noopener">
         <code>{keyFile(fixture)}</code>
       </a>
@@ -404,7 +404,7 @@ function KnownEvidence({ x }: { x: OutcomeInput }) {
     <Evidence
       eyebrow="A known issue is never paid again"
       title={`${title}: ${km.index + 1} of ${total}, declared sealed before the program opened`}
-      lede={`The project proved it itself, sealed (run ${km.issue.run}${km.issue.severity ? `, ${km.issue.severity}` : ""}), before opening; only the count, the slots, the severities and the impact bounds are public. Its content stays sealed for good: a known issue's run carries no disclosure wrap.`}
+      lede={`The project proved it itself, sealed (run ${km.issue.run}${km.issue.severity ? `, ${km.issue.severity}` : ""}), before opening; only the count, the rules, the severities and the impact bounds are public. Its content stays sealed for good: a known issue's run carries no disclosure wrap.`}
     >
       <TagMatch
         label={`Commit ${x.c.commit.id}'s key against known issue ${km.index + 1}`}
@@ -438,11 +438,13 @@ function KnownEvidence({ x }: { x: OutcomeInput }) {
           )}
         </dd>
       </dl>
-      <LiveCheck
-        check={{ kind: "near-view", contract: x.contract, method: "get_program", args: { program_id: x.c.commit.program } }}
-        expect={{ path: `known.${km.index}.tags.${km.tagIndex}`, equals: km.key.tag, says: `program ${x.c.commit.program}'s known issue ${km.index + 1} carries tag ${km.key.tag.slice(0, 12)}…` }}
-        label="Read the program from NEAR"
-      />
+      <Disclosure>
+        <LiveCheck
+          check={{ kind: "near-view", contract: x.contract, method: "get_program", args: { program_id: x.c.commit.program } }}
+          expect={{ path: `known.${km.index}.tags.${km.tagIndex}`, equals: km.key.tag, says: `program ${x.c.commit.program}'s known issue ${km.index + 1} carries tag ${km.key.tag.slice(0, 12)}…` }}
+          label="Read the program from NEAR"
+        />
+      </Disclosure>
     </Evidence>
   );
 }
@@ -560,14 +562,14 @@ export function Outcome(x: OutcomeInput) {
       {isKnown ? <KnownEvidence x={x} /> : null}
       {isGap ? <GapEvidence x={x} /> : null}
       {expect ? (
-        <div className={`${styles.checks} ${styles.spaced}`}>
+        <Disclosure className={styles.spaced}>
           <LiveCheck
             check={{ kind: "near-view", contract: x.contract, method: "get_commit", args: { commit_id: x.c.commit.id } }}
             expect={expect}
             cli={`antibody status --commit ${x.c.commit.id}`}
             label={x.label === "Done:Paid" ? "Check the payout on NEAR" : "Check the state on NEAR"}
           />
-        </div>
+        </Disclosure>
       ) : null}
     </>
   );

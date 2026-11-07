@@ -102,17 +102,6 @@
   }
 }
 
-.rawLabel {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  background: var(--bg-sunk);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0 5px;
-  white-space: nowrap;
-}
-
 .inline {
   display: inline-flex;
   flex-wrap: wrap;
@@ -568,7 +557,7 @@
   }
   .sib {
     grid-column: 1 / -1;
-    grid-template-columns: minmax(170px, max-content) 13rem 7rem 7.5rem minmax(96px, 1fr);
+    grid-template-columns: minmax(170px, max-content) 13rem 7rem 9rem minmax(96px, 1fr);
     grid-template-columns: subgrid;
     column-gap: 14px;
   }

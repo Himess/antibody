@@ -12,9 +12,9 @@ export const STEP_TEXT: Record<StepId, { title: string; waiting: string }> = {
   base: { title: "Base witness", waiting: "The program's pinned base witness, read from NEAR and checked against its hash." },
   seal: { title: "Seal", waiting: "The tutorial proof against your vault, sealed in this tab (ABSEAL1)." },
   commit: { title: "Commit", waiting: "The commitment and the bond go on chain; the proof stays sealed." },
-  reveal: { title: "Reveal", waiting: "The sealed blob goes on chain; near-antibody asks OutLayer's TEE to verify it." },
-  verdict: { title: "Verdict", waiting: "The TEE re-runs the proof on the pinned base and answers (T0)." },
-  t1: { title: "T1", waiting: "The run's Intel TDX quote, verified on NEAR." },
+  reveal: { title: "Reveal", waiting: "The sealed blob goes on chain; near-antibody asks OutLayer's enclave to verify it." },
+  verdict: { title: "Verdict", waiting: "The enclave re-runs the proof on the pinned base and answers." },
+  t1: { title: "Attested on NEAR", waiting: "The run's Intel TDX quote, verified on NEAR." },
   allocate: { title: "Allocate", waiting: "Claims are allocated in commit order (permissionless)." },
   pay: { title: "Pay", waiting: "The payout goes to the beneficiary (permissionless)." },
   close: { title: "Close", waiting: "Your practice account says its try is done." },
@@ -32,7 +32,7 @@ export const PHASES: { title: string; steps: StepId[] }[] = [
 /** Steps done in this tab, with no transaction: the commit page's smaller dot. */
 const LOCAL: ReadonlySet<StepId> = new Set<StepId>(["name", "key", "program", "base", "seal"]);
 
-/** A done step's dot, in the commit page's colours: the TEE's answer, T1, the payout. */
+/** A done step's dot, in the commit page's colours: the enclave's result, the attestation, the payout. */
 const MARK: Partial<Record<StepId, string>> = { verdict: styles.markAccent, t1: styles.markT1, allocate: styles.markOk, pay: styles.markOk };
 
 const STATE: Record<StepStatus, string> = {

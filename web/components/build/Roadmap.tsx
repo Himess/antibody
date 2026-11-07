@@ -13,7 +13,7 @@ type Item = {
   doc?: { path: string; text: string };
 };
 
-/** README's roadmap, in its order. Pull requests and T2 have parts the README marks done. */
+/** README's roadmap, in its order. Pull requests and the zero-knowledge proofs (T2) have parts the README marks done. */
 const ROADMAP: Item[] = [
   {
     title: "Antibody for pull requests",
@@ -24,7 +24,7 @@ const ROADMAP: Item[] = [
         done: true,
         text: "A prototype: readable proofs (disclosed, published, or opened with the project key), re-run by the local verifier, with antibody immune and a GitHub Action.",
       },
-      { done: false, text: "Sealed proofs re-run inside the TEE, where the result is all anyone sees." },
+      { done: false, text: "Sealed proofs re-run inside the enclave, where the result is all anyone sees." },
       {
         done: false,
         text: "A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical.",
@@ -34,12 +34,12 @@ const ROADMAP: Item[] = [
   },
   { title: "NEAR contracts as a second target VM", detail: "Proofs against NEAR wasm contracts from committed, proven state." },
   {
-    title: "T2: validity proofs of disclosed verdicts, verified on NEAR",
+    title: "Zero-knowledge proofs of disclosed verdicts, verified on NEAR",
     detail: "Later, zk by default above a cap. A validity proof of a disclosed verdict: no privacy claim, and no payout in the locked deployment depends on it.",
     t2: true,
-    doc: { path: "docs/zk.md", text: "How T2 works and what it checks" },
+    doc: { path: "docs/zk.md", text: "How the zero-knowledge proofs work and what they check" },
     parts: [
-      { done: true, text: "The feasibility study: the verifier runs in SP1 6.10.0 and reproduces the TEE's receipts in about 30 million cycles." },
+      { done: true, text: "The feasibility study: the verifier runs in SP1 6.10.0 and reproduces the enclave's receipts in about 30 million cycles." },
       {
         done: true,
         text: "near-t2, which checks a Groth16 proof in about 34 Tgas and compares it with near-antibody's records; antibody zk prove, submit and status; the API; a prover service for every practice try.",
@@ -50,7 +50,7 @@ const ROADMAP: Item[] = [
   { title: "Multi-block proofs with a bounded time warp", detail: "Interest, TWAP and time-dependent bugs." },
   { title: "The next Ethereum execution rules", detail: "An EVM upgrade and fork-switch execution." },
   { title: "L2 state verification", detail: "Through MPC foreign-chain verification or L2 light clients; more chains for pause and release." },
-  { title: "Several independent TEE operators by default", detail: "A strict “no quote, no pay” mode once attestation is reliable." },
+  { title: "Several independent enclave operators by default", detail: "A strict “no quote, no pay” mode once attestation is reliable." },
   { title: "One sub-account per program", detail: "Isolated escrow, keys and signing path." },
   { title: "Payouts in any asset through NEAR Intents", detail: "On mainnet." },
   { title: "Agent capital", detail: "Backer vaults fund bonds for agents with verified records; bond discounts from proof-based reputation." },

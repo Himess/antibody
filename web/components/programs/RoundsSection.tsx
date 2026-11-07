@@ -304,7 +304,7 @@ function RoundCard({ r, index, d, id, rows, slots, antibody }: { r: Round; index
             {checkRun !== null ? (
               <>
                 {" "}
-                · the TEE checked the fix in <Link href={`/runs/${checkRun}`}>run {checkRun}</Link>
+                · the enclave checked the fix in <Link href={`/runs/${checkRun}`}>run {checkRun}</Link>
               </>
             ) : null}
           </dd>
@@ -477,7 +477,7 @@ function ReleaseChecks() {
   );
 }
 
-/** 8. Rounds: how a fix ships. The TEE checks it, the keeper re-runs every paid proof at it, the gate decides. */
+/** 8. Rounds: how a fix ships. The enclave checks it, the keeper re-runs every paid proof at it, the gate decides. */
 export function RoundsSection({ d, id, slots, antibody }: { d: ProgramDetail; id: number; slots: SlotView[]; antibody: string }) {
   const all = d.program?.rounds ?? [];
   const rounds = [...all].sort((a, b) => a.round - b.round);
@@ -488,7 +488,7 @@ export function RoundsSection({ d, id, slots, antibody }: { d: ProgramDetail; id
     <Section
       id="rounds"
       title="Rounds and the release gate"
-      lede="A round ships a fix as code overrides at the same anchor. The TEE checks it, every paid proof is re-run against it, and a release permit is signed only for code that every paid proof fails against."
+      lede="A round ships a fix as code overrides at the same anchor. The enclave checks it, every paid proof is re-run against it, and a release permit is signed only for code that every paid proof fails against."
     >
       <div className="stack">
         {proposal ? (
@@ -498,7 +498,7 @@ export function RoundsSection({ d, id, slots, antibody }: { d: ProgramDetail; id
               A fix is proposed{proposal.round !== null ? ` for round ${proposal.round}` : ""}
               {proposal.check_run !== null ? (
                 <>
-                  ; the TEE checks it in <Link href={`/runs/${proposal.check_run}`}>run {proposal.check_run}</Link>
+                  ; the enclave checks it in <Link href={`/runs/${proposal.check_run}`}>run {proposal.check_run}</Link>
                 </>
               ) : null}
               {proposal.proposed_at ? (
@@ -521,7 +521,7 @@ export function RoundsSection({ d, id, slots, antibody }: { d: ProgramDetail; id
         {id === RELEASE.program_id && rounds.some((r) => r.release_gate) ? <ReleaseChecks /> : null}
         {rounds.length ? (
           <p className="small muted">
-            Each re-run is a TEE run with its own page: its verdict and its T1 check. How rounds work:{" "}
+            Each re-run is an enclave run with its own page: its verdict and its attestation. How rounds work:{" "}
             <a href={sourceUrl("docs/rounds.md")} target="_blank" rel="noreferrer noopener">
               docs/rounds.md <Icon name="external" size={11} className={styles.inlineIcon} />
             </a>

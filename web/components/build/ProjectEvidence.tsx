@@ -65,7 +65,7 @@ export async function GuardCheck() {
   return (
     <Check
       check={{ kind: "near-view", contract: d.guard, method: "get_state" }}
-      expect={{ path: "frozen.commit_id", equals: 13, says: "frozen on commit 13 (A's T1-confirmed Critical), slot 0" }}
+      expect={{ path: "frozen.commit_id", equals: 13, says: "frozen on commit 13 (A's attested Critical, the solvency rule)" }}
       cli={`antibody view --contract ${d.guard} --method get_state`}
     />
   );

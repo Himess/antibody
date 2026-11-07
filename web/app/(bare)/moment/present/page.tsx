@@ -8,7 +8,7 @@ import styles from "./present.module.css";
 
 export const metadata: Metadata = {
   title: "The one moment, presentation mode",
-  description: "The one moment, full screen: A's Critical verified, T1-confirmed, paid, and both chains paused, from the recorded testnet run.",
+  description: "The one moment, full screen: A's Critical verified, attested on NEAR, paid, and both chains paused, from the recorded testnet run.",
   robots: { index: false },
 };
 

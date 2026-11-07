@@ -95,7 +95,7 @@ function ProgramsTable({ rows, caption }: { rows: JudgeProgram[]; caption: strin
             <th scope="col">Program</th>
             <th scope="col">Phase</th>
             <th scope="col">Anchor</th>
-            <th scope="col">T1-confirmed</th>
+            <th scope="col">Attested on NEAR</th>
             <th scope="col">Payouts</th>
             <th scope="col">Pause / release permits</th>
             <th scope="col">Audit</th>
@@ -121,7 +121,7 @@ function ProgramsTable({ rows, caption }: { rows: JudgeProgram[]; caption: strin
               <Cell label="Anchor">
                 <code>{r.anchor ?? "—"}</code>
               </Cell>
-              <Cell label="T1-confirmed" className="num">
+              <Cell label="Attested on NEAR" className="num">
                 {r.t1_confirmed ?? "—"} of {r.runs ?? "—"}
               </Cell>
               <Cell label="Payouts" className="num">
@@ -211,7 +211,7 @@ export default async function JudgesPage() {
             </span>
             <h3>Watch the one moment</h3>
             <p>
-              Our fixture agent A&apos;s Critical, from its commit block: verified at {s1(times.verdict)}, T1-confirmed at {s1(times.t1)}, paid at{" "}
+              Our fixture agent A&apos;s Critical, from its commit block: verified at {s1(times.verdict)}, attested on NEAR at {s1(times.t1)}, paid at{" "}
               {s1(times.paid)}, both chains paused by {s1(times.lastPause)}. Recorded, every step a transaction.
             </p>
             <Link href="/moment" className="btn btn-sm">
@@ -225,7 +225,7 @@ export default async function JudgesPage() {
             <h3>Try it with no account</h3>
             <p>
               The practice program runs the whole loop on testnet: a practice account is vended, the tutorial proof is sealed, committed and
-              verified in the TEE, and the contract pays it. Your try is live.
+              verified in the enclave, and the contract pays it. Your try is live.
             </p>
             <Link href="/try" className="btn btn-sm">
               Try it, no account <Icon name="arrow" size={12} />
@@ -600,7 +600,7 @@ export default async function JudgesPage() {
                 <Icon name="alert" size={14} />
                 <span>
                   <strong>Worker images.</strong> A program accepts a worker image OutLayer approves after its creation only after the image
-                  delay (2 days on testnet), once near-antibody lists it. Until then a run on that image gets no T1, and its payout waits the
+                  delay (2 days on testnet), once near-antibody lists it. Until then a run on that image cannot be attested on NEAR, and its payout waits the
                   challenge window (
                   <a href={sourceUrl("docs/trust.md")} target="_blank" rel="noreferrer noopener">
                     docs/trust.md <ExternalIcon />

@@ -99,7 +99,7 @@ export function Overview({ d, kind, id, antibody }: { d: ProgramDetail; kind: Pr
                     (<Link href={`/runs/${activationRun}`}>run {activationRun}</Link>)
                   </>
                 ) : null}{" "}
-                is T1-confirmed{activated ? <>: <TxLink hash={activated.tx} href={activated.explorer} /></> : "."}
+                is attested on NEAR{activated ? <>: <TxLink hash={activated.tx} href={activated.explorer} /></> : "."}
               </span>
             </dd>
           </dl>

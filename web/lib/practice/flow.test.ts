@@ -820,7 +820,7 @@ describe("the browser try", () => {
     await flow.start("judge-t0");
     const s = flow.snapshot;
     expect(s.error).toBeUndefined();
-    expect(s.t0Note).toBe("no T1 within the 60 s challenge window: the verdict stays T0 and is paid after it");
+    expect(s.t0Note).toBe("not attested on NEAR within the 60 s challenge window: paid after it, without attestation");
     expect(s.steps.t1).toMatchObject({ status: "skipped", detail: s.t0Note });
     expect(s.log.some((l) => l.level === "warn" && l.text === s.t0Note)).toBe(true);
     expect([s.tier, s.state]).toEqual(["T0", "Done:Paid"]);
@@ -838,7 +838,7 @@ describe("the browser try", () => {
     await flow.start("judge-t0b");
     const s = flow.snapshot;
     expect(s.state).toBe("Done:Paid");
-    expect(s.t0Note).toBe("no T1 within the 60 s challenge window: the verdict stays T0 and is paid after it");
+    expect(s.t0Note).toBe("not attested on NEAR within the 60 s challenge window: paid after it, without attestation");
     const answered = (s.verdict?.answeredAt ?? 0) * 1000;
     const allocate = chain.sent.find((t) => t.method === "allocate");
     expect(allocate?.at ?? 0).toBeGreaterThanOrEqual(answered + 65_000);
@@ -856,7 +856,7 @@ describe("the browser try", () => {
     expect(s.error).toBeUndefined();
     expect(s.state).toBe("Done:Paid");
     expect(s.verdict?.answeredAt).toBeUndefined();
-    expect(s.t0Note).toBe("no T1 in the 90 s this try waits for it: the verdict stays T0 and is paid after the 60 s challenge window");
+    expect(s.t0Note).toBe("not attested on NEAR in the 90 s this try waits for it: paid after the 60 s challenge window, without attestation");
     // The chain's own record still holds the answer's time.
     const answered = ((((chain.runs.get(Number(s.runId)) as Json).outcome as Json).Answered as Json).at as number) * 1000;
     const allocates = chain.attempts.filter((t) => t.method === "allocate");

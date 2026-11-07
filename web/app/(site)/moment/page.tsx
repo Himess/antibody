@@ -17,7 +17,7 @@ import styles from "./moment.module.css";
 export const metadata: Metadata = {
   title: "The one moment",
   description:
-    "From A's commit block on NEAR testnet: verified at 18.5 s, T1-confirmed at 29.1 s, paid at 71.0 s, and both chains paused by 90.6 s. Every step links to its transaction.",
+    "From A's commit block on NEAR testnet: verified at 18.5 s, attested on NEAR at 29.1 s, paid at 71.0 s, and both chains paused by 90.6 s. Every step links to its transaction.",
 };
 
 export default async function MomentPage({ searchParams }: { searchParams: Promise<{ run?: string }> }) {
@@ -37,8 +37,8 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
         title="One sealed proof, verified, paid, and the protocol paused on every chain"
         lede={
           <>
-            Recorded on NEAR testnet, Base Sepolia and Sepolia with the real services: OutLayer&apos;s TEE workers, their TDX quotes verified on
-            NEAR, the MPC network and the Ethereum light client.
+            Recorded on NEAR testnet, Base Sepolia and Sepolia with the real services: OutLayer&apos;s enclave workers, their Intel TDX quotes
+            verified on NEAR, the MPC network and the Ethereum light client.
           </>
         }
       >
@@ -156,10 +156,10 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
             />
           </div>
           <div className="card stack">
-            <h3>Its verification run is T1 on NEAR</h3>
+            <h3>Its verification run is attested on NEAR</h3>
             <LiveCheck
               check={{ kind: "near-view", contract: "bounty.antibody.testnet", method: "get_run", args: { run_id: m.run_id ?? 0 } }}
-              expect={{ path: "outcome.Answered.tier", equals: "T1", says: "the run answered, tier T1 (its TDX quote verified on NEAR)" }}
+              expect={{ path: "outcome.Answered.tier", equals: "T1", says: "the run answered and is attested (its TDX quote verified on NEAR)" }}
               cli={`antibody status --run ${m.run_id ?? "<run>"}`}
             />
           </div>

@@ -15,8 +15,8 @@ import {
   programInfo,
   runEvent,
   runOfEvent,
+  rulesText,
   runOutcome,
-  slotName,
   sortedEvents,
   strOf,
   unknownId,
@@ -30,6 +30,7 @@ import { PageHead, Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { ErrorState } from "@/components/ui/States";
 import { api, t2NotYet, type IndexedEvent, type ProgramDetail } from "@/lib/api";
+import { LEVEL, levelOf } from "@/lib/levels";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -64,7 +65,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = parseId((await params).id);
   if (id === null) return { title: "Run not found" };
   const r = await api.run(id);
-  if (!r.ok) return { title: `Run ${id}`, description: `Verification run ${id} on NEAR testnet: what OutLayer's TEE answered, its tier, and every transaction.` };
+  if (!r.ok) return { title: `Run ${id}`, description: `Verification run ${id} on NEAR testnet: what OutLayer's enclave answered, how far it is checked, and every transaction.` };
   const o = runOutcome(r.data.raw?.outcome);
   const mode = strOf(r.data.raw?.mode) ?? strOf(r.data.run?.mode);
   // A run that judges no proof answers with a fixed NoViolation: its title names no verdict.
@@ -77,8 +78,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
           ? kindWords(o.a.kind)
           : null;
   const tier = strOf(r.data.tier) ?? strOf(r.data.run?.tier);
-  const title = `Run ${id} · ${modeName(mode)}${kind ? ` · ${kind}` : ""}${tier ? ` · ${tier}` : ""}`;
-  const description = `A ${modeName(mode)} run on NEAR testnet${kind ? `: ${kind}` : ""}${tier ? `, tier ${tier}` : ""}, program ${r.data.raw?.program ?? "—"}${r.data.raw?.commit !== null && r.data.raw?.commit !== undefined ? `, commit ${r.data.raw.commit}` : ""}.`;
+  const title = `Run ${id} · ${modeName(mode)}${kind ? ` · ${kind}` : ""}${tier ? ` · ${LEVEL[levelOf(tier)].name}` : ""}`;
+  const description = `A ${modeName(mode)} run on NEAR testnet${kind ? `: ${kind}` : ""}${tier ? `, ${LEVEL[levelOf(tier)].prose}` : ""}, program ${r.data.raw?.program ?? "—"}${r.data.raw?.commit !== null && r.data.raw?.commit !== undefined ? `, commit ${r.data.raw.commit}` : ""}.`;
   return {
     title,
     description,
@@ -99,13 +100,13 @@ function lede(x: {
   /** The run is the project's own known-issue declaration (`program.known[].run`). */
   knownIssue: boolean;
 }) {
-  const slots = x.a?.keys.map((k) => slotName(x.p, k.slot)).join(" and ") ?? "";
+  const slots = x.a ? rulesText(x.p, x.a.keys.map((k) => k.slot)) : "";
   const verdict = x.failed ? `failed (${x.failed})` : x.a ? `${kindWords(x.a.kind)}${slots ? ` of ${slots}` : ""}` : "in flight";
   const c = x.commit !== null ? `commit ${x.commit}'s` : "a";
   switch (x.mode) {
     case "verify":
-      if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, verified in the TEE before the program opened: ${verdict}.`;
-      return `The TEE's verification of ${c} sealed proof: ${verdict}.`;
+      if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, verified in the enclave before the program opened: ${verdict}.`;
+      return `The enclave's verification of ${c} sealed proof: ${verdict}.`;
     case "second":
       return `A second, independent run of ${c} proof: ${verdict}.`;
     case "rerun":
@@ -115,7 +116,7 @@ function lede(x: {
     case "release_wrap":
       return `The release wrap for ${x.commit !== null ? `commit ${x.commit}` : "a paid finding"}: after payment, the proof's content key wrapped to the project's own key, so the project reads exactly what it paid for.`;
     case "activate":
-      return `Program ${x.program ?? "—"}'s activation: the TEE derived the program's keys and output its sealing public key.`;
+      return `Program ${x.program ?? "—"}'s activation: the enclave derived the program's keys and output its sealing public key.`;
     case "check_round": {
       const rc = roundCheck(x.a);
       const said = x.failed
@@ -127,10 +128,10 @@ function lede(x: {
           : x.a && x.a.kind !== "NoViolation"
             ? kindWords(x.a.kind)
             : "in flight";
-      return `The TEE's check of round ${x.round ?? "—"}'s proposed fix for program ${x.program ?? "—"}: ${said}.`;
+      return `The enclave's check of round ${x.round ?? "—"}'s proposed fix for program ${x.program ?? "—"}: ${said}.`;
     }
     case "disclose":
-      return `A disclosure run for program ${x.program ?? "—"}: the TEE released the disclosure keys of the tags it was asked for.`;
+      return `A disclosure run for program ${x.program ?? "—"}: the enclave released the disclosure keys of the tags it was asked for.`;
     default:
       return `Run ${x.id} of program ${x.program ?? "—"}: ${verdict}.`;
   }
@@ -226,18 +227,18 @@ export default async function RunPage({ params }: Props) {
 
   const gate = mode === "check_round" ? checkedRound(id, program, programEvents) : null;
 
-  // A known issue's run carries no disclosure wrap: T2, which re-runs a disclosed proof, has no "yet" for it.
+  // A known issue's run carries no disclosure wrap: a zero-knowledge proof, which re-runs a disclosed proof, has no "yet" for it.
   const t2Note = t2Confirmed ? (
-    <Pill tone="t2" size="sm">
-      T2 confirmed
+    <Pill tone="t2" size="sm" title={LEVEL.T2.title}>
+      ZK proof confirmed
     </Pill>
   ) : t2find.record ? (
     <Pill tone="bad" size="sm">
-      T2 contradicts
+      ZK proof contradicts
     </Pill>
   ) : t2find.notYet && verdict && !knownIssue ? (
     <Pill tone="pending" size="sm">
-      T2: not yet on testnet
+      ZK proof: not yet on testnet
     </Pill>
   ) : null;
 
@@ -271,14 +272,14 @@ export default async function RunPage({ params }: Props) {
       {pr && !pr.ok ? (
         <div className="page" style={{ marginBottom: 16 }}>
           <ErrorState what={`program ${programId}`} error={pr.error} partial>
-            <span className="small">Slot names come from the program; the run&apos;s own record below stands without it.</span>
+            <span className="small">Rule names come from the program; the run&apos;s own record below stands without it.</span>
           </ErrorState>
         </div>
       ) : null}
 
       <Section
         id="facts"
-        title="What the TEE answered"
+        title="What the enclave answered"
         lede={
           verdict
             ? "The run as near-antibody records it: every hash below is checkable against NEAR."
@@ -316,8 +317,8 @@ export default async function RunPage({ params }: Props) {
             {near && !near.ok ? (
               <ErrorState partial what="this run's later steps (/v1/events)" error={near.error}>
                 <span className="small">
-                  Only its request is shown: its answer and T1 steps come from the event log, which this page reads again on its next load. The
-                  run&apos;s own record and its tiers stand without them; only the links to those transactions are missing.
+                  Only its request is shown: its answer and attestation steps come from the event log, which this page reads again on its next
+                  load. The run&apos;s own record and its checks stand without them; only the links to those transactions are missing.
                 </span>
               </ErrorState>
             ) : null}
@@ -346,7 +347,11 @@ export default async function RunPage({ params }: Props) {
         </Section>
       ) : null}
 
-      <Section id="tiers" title="Who vouches for it" lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them.">
+      <Section
+        id="tiers"
+        title="How it is checked"
+        lede="Three levels, each a check you can run yourself. The first two decide payouts; the zero-knowledge proof sits beside them."
+      >
         <Tiers
           runId={id}
           tier={teeTier}

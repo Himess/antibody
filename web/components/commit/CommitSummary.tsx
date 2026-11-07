@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { KindBadge, StateBadge, TierBadge } from "@/components/ui/Badges";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
@@ -9,7 +8,7 @@ import { AccountLink } from "@/components/ui/TxLink";
 import { VerdictStamp } from "@/components/ui/Verdict";
 import type { CommitDetail, ProgramDetail, VerdictKey } from "@/lib/api";
 import { wnear } from "@/lib/format";
-import { bondFate, numOf, slotInfo, slotName, stateData, strOf, type ProgramInfo, who } from "./model";
+import { bondFate, numOf, ruleLabel, slotInfo, stateData, strOf, type ProgramInfo, who } from "./model";
 import styles from "./commit.module.css";
 
 /** A gap claim a round promoted and paid: the round, and the re-run that caught it (its run, its round and the slots it broke). */
@@ -29,13 +28,15 @@ export function GapPill({ gap }: { gap: GapPaid }) {
   );
 }
 
-/** The commit at a glance: where it belongs, who sent it, its state and the verdict as a stamp. */
+/**
+ * The commit at a glance: where it belongs, who sent it, its bond and payout, and the verdict as a stamp.
+ * Its state, severity and level are the page header's badges, said once.
+ */
 export function CommitSummary({
   c,
   label,
   kind,
   keys,
-  tier,
   t2Contradicts,
   severity,
   program,
@@ -48,7 +49,6 @@ export function CommitSummary({
   label: string;
   kind: string | null;
   keys: VerdictKey[];
-  tier: string | null;
   t2Contradicts: boolean;
   severity: string | null;
   program: ProgramDetail | null;
@@ -56,7 +56,7 @@ export function CommitSummary({
   moment: boolean;
   /** Set when this commit is a gap claim a round promoted and paid. */
   gap: GapPaid | null;
-  /** The commit expired unrevealed: the TEE never judged it, and never will (no "yet"). */
+  /** The commit expired unrevealed: the enclave never judged it, and never will (no "yet"). */
   neverRevealed: boolean;
 }) {
   const commit = c.commit;
@@ -139,46 +139,6 @@ export function CommitSummary({
               </dd>
             </>
           ) : null}
-          <dt>State</dt>
-          <dd>
-            <span className={styles.inline}>
-              <StateBadge state={label} />
-              {gap ? <GapPill gap={gap} /> : null}
-              {label ? (
-                <code className={styles.rawLabel} title="The contract's own state name">
-                  {label}
-                </code>
-              ) : null}
-            </span>
-          </dd>
-          <dt>Verdict</dt>
-          <dd>
-            <span className={styles.inline}>
-              {neverRevealed ? (
-                <Pill>never judged</Pill>
-              ) : (
-                <>
-                  {kind || label !== "Committed" ? <KindBadge kind={kind} /> : <Pill tone="pending">not revealed yet</Pill>}
-                  <TierBadge tier={tier} />
-                </>
-              )}
-              {t2Contradicts ? (
-                <Pill tone="bad" size="sm">
-                  T2 contradicts
-                </Pill>
-              ) : null}
-            </span>
-            {keys.length ? (
-              <div className="small muted" style={{ marginTop: 4 }}>
-                {keys
-                  .map((k) => {
-                    const s = slotInfo(program, k.slot);
-                    return `${slotName(program, k.slot)}${s.severity ? `, ${s.severity}` : ""}${s.added ? " (added by a round)" : ""}`;
-                  })
-                  .join(" · ")}
-              </div>
-            ) : null}
-          </dd>
           <dt>Committed</dt>
           <dd>
             <Time t={commit.committed_at} />
@@ -208,11 +168,17 @@ export function CommitSummary({
         <div className={styles.stampCol}>
           {kind ? (
             <>
-              <VerdictStamp kind={kind} slots={keys.map((k) => k.slot)} severity={severity ?? undefined} />
+              <VerdictStamp kind={kind} slots={keys.map((k) => k.slot)} rules={keys.map((k) => ruleLabel(program, k.slot))} severity={severity ?? undefined} />
+              {keys.some((k) => slotInfo(program, k.slot).added) ? <span className="xsmall muted">A rule a later round added.</span> : null}
               {receipt ? (
                 <span className={`xsmall muted ${styles.inline}`}>
                   receipt <Hash value={receipt} head={12} label="receipt sha256" />
                 </span>
+              ) : null}
+              {t2Contradicts ? (
+                <Pill tone="bad" size="sm" title="near-t2 recorded a contradiction: the same input re-ran to another result">
+                  A zero-knowledge proof contradicts it
+                </Pill>
               ) : null}
               {gap ? (
                 <p className="xsmall muted">
@@ -224,12 +190,12 @@ export function CommitSummary({
           ) : neverRevealed ? (
             <>
               <Pill>never judged</Pill>
-              <p className="xsmall muted">Never revealed, so the TEE never judged it.</p>
+              <p className="xsmall muted">Never revealed, so the enclave never judged it.</p>
             </>
           ) : (
             <>
-              <Pill tone="pending">no verdict yet</Pill>
-              <p className="xsmall muted">The verdict appears here once the TEE has judged the revealed proof.</p>
+              <Pill tone="pending">{label === "Committed" ? "not revealed yet" : "no verdict yet"}</Pill>
+              <p className="xsmall muted">The verdict appears here once the enclave has judged the revealed proof.</p>
             </>
           )}
         </div>

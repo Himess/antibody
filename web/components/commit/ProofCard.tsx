@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Command } from "@/components/ui/Command";
+import { Disclosure } from "@/components/ui/Disclosure";
 import { Hash } from "@/components/ui/Hash";
 import { LiveCheck } from "@/components/ui/LiveCheck";
 import { TxLink } from "@/components/ui/TxLink";
@@ -15,7 +16,7 @@ type Outcome = "paid" | "duplicate" | "known" | "other";
 /** The verify run as the page read it: answered, still in flight, failed, or not readable (null). */
 type RunStatus = "answered" | "pending" | "failed" | null;
 
-/** Checks that live elsewhere on the commit page: the state under "What it settled", T1 in its tier card. */
+/** Checks that live elsewhere on the commit page: the state under "What it settled", the attestation under "Checks". */
 const ELSEWHERE = [/^antibody status --commit\b/, /^antibody tee check\b/, /^outlayer-verify\b/];
 
 /** When the run's facts are not there, the page says why rather than guess whether a disclosure opens it. */
@@ -45,21 +46,21 @@ function publishedOnChain(outcome: Outcome, wrapD: boolean | null, runId: number
   return "On chain, a disclosure of its tag opens it to everyone.";
 }
 
-/** A proof only the TEE can open: who else may read it, and when. */
+/** A proof only the enclave can open: who else may read it, and when. */
 function sealedAbout(outcome: Outcome, wrapD: boolean | null, runId: number | null, status: RunStatus): string {
-  if (outcome === "known") return `Only the TEE could open it. ${onChain(outcome, wrapD, runId, status)}`;
+  if (outcome === "known") return `Only the enclave could open it. ${onChain(outcome, wrapD, runId, status)}`;
   if (wrapD === false)
-    return "Only the TEE could open it before its verdict. Its run's facts carry no disclosure wrap, so no disclosure key opens it: the proof stays sealed, and the project reads only proofs it paid for.";
+    return "Only the enclave could open it before its verdict. Its run's facts carry no disclosure wrap, so no disclosure key opens it: the proof stays sealed, and the project reads only proofs it paid for.";
   if (wrapD === null) {
     const who =
       outcome === "paid"
-        ? "Only the TEE could open it before its verdict; after payment, the project reads it through its release wrap."
+        ? "Only the enclave could open it before its verdict; after payment, the project reads it through its release wrap."
         : outcome === "duplicate"
-          ? "Only the TEE could open it. A duplicate is never wrapped for the project."
-          : `Only the TEE ${runId === null || status === "pending" ? "can" : "could"} open it before its verdict, and the project reads only proofs it paid for.`;
+          ? "Only the enclave could open it. A duplicate is never wrapped for the project."
+          : `Only the enclave ${runId === null || status === "pending" ? "can" : "could"} open it before its verdict, and the project reads only proofs it paid for.`;
     return `${who} ${notLoaded(runId, status)}`;
   }
-  return `${outcome === "duplicate" ? "Only the TEE could open it." : "Only the TEE could open it before its verdict."} ${onChain(outcome, wrapD, runId, status)}`;
+  return `${outcome === "duplicate" ? "Only the enclave could open it." : "Only the enclave could open it before its verdict."} ${onChain(outcome, wrapD, runId, status)}`;
 }
 
 /**
@@ -91,7 +92,7 @@ export function ProofCard({
   receipt: string | null;
   commitment: string | null;
   blobSha: string | null;
-  /** Who can open it besides the TEE. */
+  /** Who can open it besides the enclave. */
   keys: KeyState;
   /** Whether the verify run's facts carry a disclosure wrap; null when the run has not answered or could not be read. */
   wrapD: boolean | null;
@@ -115,13 +116,13 @@ export function ProofCard({
   const published = keys.kind === "published" ? keys.fixture : null;
   let about: ReactNode;
   if (isOpen) {
-    about = "The verdict can now be recomputed by anyone, and a T2 proof of it made.";
+    about = "The verdict can now be recomputed by anyone, and a zero-knowledge proof of it made.";
   } else if (neverRevealed) {
     about = "Never revealed: no blob was published, so nobody can open it, and no verification run will follow. Only its commitment is on NEAR.";
   } else if (published) {
     about = (
       <>
-        Not disclosed on chain, but its content key is published in the repository for the T2 study (
+        Not disclosed on chain, but its content key is published in the repository for the zero-knowledge proof study (
         <a href={sourceUrl(keyFile(published))} target="_blank" rel="noreferrer noopener">
           <code>{keyFile(published)}</code>
         </a>
@@ -164,12 +165,12 @@ export function ProofCard({
           <dt>Receipt sha256</dt>
           <dd>
             <Hash value={receipt} head={16} label="receipt sha256" />
-            <div className="xsmall muted">The hash of the verifier&apos;s full receipt: any re-run of the same input reproduces it, byte for byte.</div>
+            <div className="xsmall muted">Any re-run of the same input reproduces it, byte for byte.</div>
           </dd>
           <dt>Commitment</dt>
           <dd>
             <Hash value={commitment} head={16} label="commitment" />
-            <div className="xsmall muted">Committed before the reveal: a hash of the program, the round, the hunter and the blob&apos;s sha256, so it cannot be copied.</div>
+            <div className="xsmall muted">Committed before the reveal; it binds the program, the round, the hunter and the blob, so it cannot be copied.</div>
           </dd>
           <dt>Blob sha256</dt>
           <dd>
@@ -209,8 +210,7 @@ export function ProofCard({
         </dl>
       </div>
 
-      <h3 className={styles.subhead}>How to check it</h3>
-      <div className={styles.checks}>
+      <Disclosure className={styles.spaced}>
         {commitment ? (
           <LiveCheck
             check={{ kind: "near-view", contract, method: "get_commit", args: { commit_id: commitId } }}
@@ -226,7 +226,7 @@ export function ProofCard({
             <Command label="Open it and re-run it with the published key, from a clone of the repository">
               {`antibody zk prove --run ${runId} --key "$(cat ${keyFile(published)})"${requested ? ` --tx ${requested.tx}` : ""} --mode none`}
             </Command>
-            <p className="xsmall muted">It reads the run&apos;s request and blob from NEAR, opens the blob and re-runs it natively: the receipt it prints is the TEE&apos;s.</p>
+            <p className="xsmall muted">It reads the run&apos;s request and blob from NEAR, opens the blob and re-runs it natively: the receipt it prints is the enclave&apos;s.</p>
           </>
         ) : null}
         {keys.kind === "practice" && requested && programKey ? (
@@ -239,9 +239,9 @@ export function ProofCard({
         ))}
         <p className="xsmall muted">
           The state and the payout are checked under <a href="#outcome">What it settled</a>; the run&apos;s TDX quote (<code>antibody tee check</code>,{" "}
-          <code>outlayer-verify</code>) under <a href="#tiers">Who vouches</a>.
+          <code>outlayer-verify</code>) under <a href="#tiers">How the verdict is checked</a>.
         </p>
-      </div>
+      </Disclosure>
     </>
   );
 }

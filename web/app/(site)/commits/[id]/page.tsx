@@ -19,12 +19,12 @@ import {
   parseId,
   programInfo,
   promotedIn,
+  rulesText,
   runEvent,
   runOfEvent,
   runOutcome,
   secondsBetween,
   shortState,
-  slotName,
   sortedEvents,
   stateData,
   stateLabelOf,
@@ -40,12 +40,13 @@ import { Siblings } from "@/components/commit/Siblings";
 import { Tiers, type Bound } from "@/components/commit/Tiers";
 import { Timeline, type PausePermit } from "@/components/commit/Timeline";
 import styles from "@/components/commit/commit.module.css";
-import { KindBadge, SeverityBadge, StateBadge, TierBadge } from "@/components/ui/Badges";
+import { SeverityBadge, StateBadge, TierBadge } from "@/components/ui/Badges";
 import { PageHead, Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { ErrorState } from "@/components/ui/States";
 import { api, t2NotYet, type CommitDetail, type IndexedEvent, type ProgramDetail, type VerdictKey } from "@/lib/api";
-import { cap, stateLabel, wnear } from "@/lib/format";
+import { stateLabel, wnear } from "@/lib/format";
+import { LEVEL, levelOf } from "@/lib/levels";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -63,12 +64,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (id === null) return { title: "Commit not found" };
   const r = await api.commit(id);
   // The API may be slow or down: the page still describes itself (search engines and link previews read this).
-  if (!r.ok) return { title: `Commit ${id}`, description: `Commit ${id} on near-antibody, NEAR testnet: its sealed proof, verdict, tier and payout, each step with its transaction.` };
+  if (!r.ok) return { title: `Commit ${id}`, description: `Commit ${id} on near-antibody, NEAR testnet: its sealed proof, verdict, checks and payout, each step with its transaction.` };
   const label = r.data.row?.state || stateLabelOf(r.data.commit?.state);
   const kind = r.data.proof_card?.facts?.kind ?? r.data.row?.verdict?.kind ?? null;
+  const tier = r.data.proof_card?.facts?.tier ?? null;
   const gap = isPaidGap(label, kind);
   const title = `Commit ${id} · ${kindWords(kind)} · ${gap ? "gap claim, paid" : shortState(label)}`;
-  const description = `Program ${r.data.commit?.program ?? "—"}, round ${r.data.commit?.round ?? "—"}: a sealed proof by ${r.data.commit?.hunter ?? "a hunter"} on NEAR testnet. Verdict ${kindWords(kind)}, tier ${r.data.proof_card?.facts?.tier ?? "—"}; state ${label || "—"}${gap ? " (a gap claim a later round promoted)" : ""}. Every step links its transaction.`;
+  const description = `Program ${r.data.commit?.program ?? "—"}, round ${r.data.commit?.round ?? "—"}: a sealed proof by ${r.data.commit?.hunter ?? "a hunter"} on NEAR testnet. Verdict: ${kindWords(kind)}${tier ? `, ${LEVEL[levelOf(tier)].prose}` : ""}; ${gap ? "a gap claim a later round promoted, paid" : label ? stateLabel(label).text : "state unknown"}. Every step links its transaction.`;
   return {
     title,
     description,
@@ -92,7 +94,10 @@ function summary(x: {
 }): string {
   const S = subject(x.c.commit.hunter, x.c.commit.program);
   const d = stateData(x.c.commit.state);
-  const slots = x.keys.map((k) => slotName(x.program, k.slot)).join(" and ");
+  const rules = rulesText(
+    x.program,
+    x.keys.map((k) => k.slot),
+  );
   const sev = topSeverity(x.program, x.keys);
   const paid = x.events.find((e) => e.event === "paid");
   const promoted = x.events.find((e) => e.event === "promoted");
@@ -105,7 +110,7 @@ function summary(x: {
       if (promoted)
         return `${S}'s proof was a duplicate until round ${numOf(evData(promoted).round) ?? "—"}'s fix stopped the earlier claim but not this one: promoted, and paid ${amount}.`;
       const s = secondsBetween(x.baseNs, paid?.block_ts_ns);
-      return `${S}'s sealed proof broke ${sev ? `a ${cap(sev)} rule: ` : ""}${slots || "a rule"}. Verified in the TEE${x.t1 ? ", T1-confirmed" : ""} and paid ${amount}${d?.instant === true ? ", an instant payout (T1, under the cap)" : " after its challenge window"}${s !== null ? `, ${duration(s)} from its commit's block` : ""}.`;
+      return `${S}'s sealed proof broke ${rules || "a rule"}${sev ? ` (${sev})` : ""}. Verified in the enclave${x.t1 ? ", attested on NEAR" : ""} and paid ${amount}${d?.instant === true ? " instantly, under the instant cap" : " after its challenge window"}${s !== null ? `, ${duration(s)} after its commit` : ""}.`;
     }
     case "Duplicate":
     case "Done:DuplicateConfirmed":
@@ -117,11 +122,11 @@ function summary(x: {
     case "Done:Expired":
       return `${S}'s commit was never revealed in time: its bond went to the program's escrow.`;
     case "Holder":
-      return `${S}'s proof broke ${slots || "a rule"}: verified and allocated, awaiting payment.`;
+      return `${S}'s proof broke ${rules || "a rule"}: verified and allocated, awaiting payment.`;
     case "GapClaim":
       return `${S}'s proof broke no rule but harmed a protected account: refunded and recorded as a gap claim.`;
     case "Verifying":
-      return `${S}'s proof is revealed and in the TEE.`;
+      return `${S}'s proof is revealed and in the enclave.`;
     case "Committed":
       return `${S} committed a sealed proof; it is not revealed yet.`;
     default:
@@ -219,9 +224,10 @@ export default async function CommitPage({ params }: Props) {
           round: numOf(evData(gapPromoted).round) ?? promotedIn(program, id),
           rerun: caughtRun,
           rerunRound: numOf(evData(caughtReq).round),
-          slots: cleanKeys(evData(caught).keys)
-            .map((k) => slotName(program, k.slot))
-            .join(", "),
+          slots: rulesText(
+            program,
+            cleanKeys(evData(caught).keys).map((k) => k.slot),
+          ),
         }
       : null;
   const live = !label.startsWith("Done:") && label !== "";
@@ -276,15 +282,8 @@ export default async function CommitPage({ params }: Props) {
       <PageHead crumbs={crumbs(id, programId)} eyebrow={`Commit · program ${programId} · round ${commit.round ?? "—"}`} title={`Commit ${id}`} lede={lede}>
         <StateBadge state={label} />
         {gap ? <GapPill gap={gap} /> : null}
-        {unrevealed ? (
-          <Pill>never judged</Pill>
-        ) : (
-          <>
-            {kind || label !== "Committed" ? <KindBadge kind={kind} /> : null}
-            <TierBadge tier={tierShown} />
-          </>
-        )}
         {severity ? <SeverityBadge severity={severity} /> : null}
+        {unrevealed ? <Pill>never judged</Pill> : kind || label !== "Committed" ? <TierBadge tier={tierShown} /> : null}
         {info.practice ? (
           <Pill tone="info" icon="info">
             practice
@@ -306,7 +305,7 @@ export default async function CommitPage({ params }: Props) {
               <a href="#proof">The proof</a>
             </li>
             <li>
-              <a href="#tiers">Who vouches</a>
+              <a href="#tiers">Checks</a>
             </li>
             <li>
               <a href="#siblings">Other commits</a>
@@ -319,7 +318,6 @@ export default async function CommitPage({ params }: Props) {
           label={label}
           kind={kind}
           keys={keys}
-          tier={tierShown}
           t2Contradicts={t2Contradicts}
           severity={severity}
           program={program}
@@ -331,12 +329,12 @@ export default async function CommitPage({ params }: Props) {
         {!pr.ok ? (
           <div className={`page ${styles.spaced}`}>
             <ErrorState what={`program ${programId}`} error={pr.error} partial>
-              <span className="small">Slot names, the pause ticket and the known issues come from the program; the rest of this page stands without it.</span>
+              <span className="small">Rule names, the pause ticket and the known issues come from the program; the rest of this page stands without it.</span>
             </ErrorState>
           </div>
         ) : null}
 
-        <Section id="outcome" title="What it settled" lede={`The terms program ${programId} committed, applied to this verdict: the bond, the payout, and why.`}>
+        <Section id="outcome" title="What it settled" lede={`Program ${programId}'s committed terms, applied to this verdict.`}>
           <Outcome
             c={c}
             label={label}
@@ -354,11 +352,7 @@ export default async function CommitPage({ params }: Props) {
           />
         </Section>
 
-        <Section
-          id="timeline"
-          title="Timeline"
-          lede="Every step is a NEAR transaction. Times are block times, measured from the commit's block; each step's UTC time is beside its transaction."
-        >
+        <Section id="timeline" title="Timeline" lede="Every step is a NEAR transaction, timed by block from the commit.">
           <Timeline
             commitId={id}
             hunter={commit.hunter}
@@ -385,7 +379,7 @@ export default async function CommitPage({ params }: Props) {
           />
         </Section>
 
-        <Section id="proof" title="The proof" lede="What anyone can see of a sealed proof, who can open it, and how to check each part of it.">
+        <Section id="proof" title="The proof" lede="What anyone can see of the sealed proof, and who can open it.">
           <ProofCard
             commitId={id}
             runId={runId}
@@ -409,13 +403,13 @@ export default async function CommitPage({ params }: Props) {
 
         <Section
           id="tiers"
-          title="Who vouches for the verdict"
-          lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them."
+          title="How the verdict is checked"
+          lede="Three levels, each a check you can run yourself. The first two decide payouts; the zero-knowledge proof sits beside them."
         >
           {rr && !rr.ok ? (
             <div style={{ marginBottom: 16 }}>
               <ErrorState what={`run ${runId}`} error={rr.error} partial>
-                <span className="small">The tiers below use the commit&apos;s own record and events. Reload to retry.</span>
+                <span className="small">The checks below use the commit&apos;s own record and events. Reload to retry.</span>
               </ErrorState>
             </div>
           ) : null}
@@ -438,7 +432,7 @@ export default async function CommitPage({ params }: Props) {
           />
         </Section>
 
-        <Section id="siblings" title={`Other commits in program ${programId}`} lede="The sealed feed: who committed when, the state and the verdict. Never a proof's content.">
+        <Section id="siblings" title={`Other commits in program ${programId}`} lede="Who committed when, the state and the verdict; never a proof's content.">
           <Siblings rows={rows} current={id} programId={programId} error={feedError} />
         </Section>
       </div>

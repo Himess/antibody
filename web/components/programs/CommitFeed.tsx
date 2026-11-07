@@ -18,13 +18,13 @@ function T2Mark({ t2 }: { t2: T2Badge | null | undefined }) {
   if (!t2) return null;
   if (t2.outcome === "confirmed")
     return (
-      <Pill tone="t2" size="sm" title="near-t2 confirmed a validity proof of this disclosed verdict">
-        T2 confirmed
+      <Pill tone="t2" size="sm" title="Level T2: near-t2 confirmed a zero-knowledge validity proof of this disclosed verdict">
+        ZK-proven
       </Pill>
     );
   return (
     <Pill tone="bad" size="sm" title="near-t2 recorded a contradiction: the same input re-ran to another result">
-      T2 {t2.outcome}
+      ZK proof {t2.outcome}
     </Pill>
   );
 }
@@ -142,7 +142,7 @@ export function CommitFeed({
     return e ? { tx: e.tx, explorer: e.explorer } : undefined;
   };
   const withT2 = rows.filter((r) => r.verdict?.t2).length;
-  // As on the landing: near-t2 on testnet with no record yet is still "not yet on testnet", never "0 with a T2 record".
+  // As on the landing: near-t2 on testnet with no record yet is still "not yet on testnet", never "0 with a zero-knowledge proof".
   const t2Records = t2.ok && Array.isArray(t2.data?.records) ? t2.data.records.length : 0;
   const promoted = new Map<number, number>();
   for (const round of d.program?.rounds ?? []) for (const c of round.promoted ?? []) promoted.set(c, round.round);
@@ -159,19 +159,19 @@ export function CommitFeed({
       actions={
         withT2 > 0 ? (
           <Pill tone="t2" size="sm">
-            {withT2} with a T2 record
+            {withT2} with a zero-knowledge proof
           </Pill>
         ) : (t2.ok && t2Records === 0) || t2NotYet(t2) ? (
-          <Pill tone="pending" size="sm" title="T2: a validity proof of a disclosed verdict. No privacy claim; payouts do not depend on it.">
-            T2: not yet on testnet
+          <Pill tone="pending" size="sm" title="Level T2: a zero-knowledge validity proof of a disclosed verdict. No privacy claim; payouts do not depend on it.">
+            Zero-knowledge proofs: not yet on testnet
           </Pill>
         ) : t2.ok ? (
           <Pill tone="pending" size="sm" title="near-t2 is on testnet; none of these commits has a record yet">
-            T2: no record yet
+            Zero-knowledge proofs: none yet
           </Pill>
         ) : (
           <Pill tone="pending" size="sm">
-            T2 status unavailable
+            Zero-knowledge proof status unavailable
           </Pill>
         )
       }

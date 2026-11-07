@@ -2,22 +2,18 @@ import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { MomentHeader } from "@/components/moment/MomentHeader";
 import { PlayLink } from "@/components/moment/PlayLink";
-import { runGroup } from "@/components/programs/helpers";
+import { TierBadge } from "@/components/ui/Badges";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Sealed, VerdictStamp } from "@/components/ui/Verdict";
 import { api, t2NotYet, type Moment } from "@/lib/api";
 import { config, sourceUrl } from "@/lib/config";
-import { amount, provenance, seconds, utc } from "@/lib/format";
+import { provenance, seconds, utc } from "@/lib/format";
 import { committer, getMoments, latestDrill, pausedBy, possessive, recordedMoment, stepOf } from "@/lib/moment";
 import styles from "./home.module.css";
 
-/** "11 to our fixture agents, 6 to practice tries": the parts that are not zero, joined. */
-const parts = (xs: [number, string][]) =>
-  xs
-    .filter(([n]) => n > 0)
-    .map(([n, what]) => `${n} ${what}`)
-    .join(", ");
+/** "our fixture agents and practice tries": the parts, joined in words. */
+const joined = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 export default async function Home() {
   const [{ data: moments, live }, stats, programs, leaders, t2] = await Promise.all([
@@ -30,28 +26,21 @@ export default async function Home() {
   const m = recordedMoment(moments);
   const drill = latestDrill(moments);
   const who = possessive(committer(m).name);
-  const asked = m.steps.find((s) => s.key === "pause_asked");
-  const paidStep = m.steps.find((s) => s.key === "paid");
   const verdict = stats.ok ? stats.data.verdict_latency?.commit_to_answer_s : undefined;
   const paidRows = leaders.ok ? leaders.data.leaderboard : [];
   const payouts = paidRows.reduce((n, r) => n + r.paid_findings, 0);
-  const paidTotal = paidRows.reduce((n, r) => n + BigInt(r.paid_raw || "0"), BigInt(0));
-  // Who was paid, by provenance: our fixture agents (a–g), practice tries (paid to the vending contract), anyone else.
-  const paidTo = (p: ReturnType<typeof provenance>) => paidRows.filter((r) => provenance(r.account) === p).reduce((n, r) => n + r.paid_findings, 0);
-  const paidSplit = parts([
-    [paidTo("fixture-agent"), "to our fixture agents"],
-    [paidTo("practice"), "to practice tries"],
-    [paidTo("ours"), "to our other accounts"],
-    [paidTo("other"), "to other hunters"],
-  ]);
+  // Who was paid, by provenance (our fixture agents a–g, practice tries, anyone else): it bounds what the count means.
+  const paidTo = (p: ReturnType<typeof provenance>) => paidRows.some((r) => provenance(r.account) === p && r.paid_findings > 0);
+  const paidWho = joined(
+    [
+      paidTo("fixture-agent") ? "our fixture agents" : "",
+      paidTo("practice") ? "practice tries" : "",
+      paidTo("ours") ? "our other accounts" : "",
+      paidTo("other") ? "other hunters" : "",
+    ].filter(Boolean),
+  );
   const programList = programs.ok ? programs.data.programs : [];
-  const inGroup = (g: ReturnType<typeof runGroup>) => programList.filter((p) => runGroup(p.program_id) === g).length;
-  const programSplit = parts([
-    [inGroup("this-run"), "in the recorded run"],
-    [inGroup("earlier"), "from earlier runs"],
-    [inGroup("later"), "since"],
-  ]);
-  // T2 shows counts only once near-t2 holds records; until then it is "not yet on testnet" (README, JUDGES.md).
+  // The zero-knowledge level shows counts only once near-t2 holds records; until then it is "not yet on testnet" (README, JUDGES.md).
   const t2List = t2.ok && Array.isArray(t2.data?.records) ? t2.data.records : [];
   const t2Confirmed = t2List.filter((r) => r?.outcome === "confirmed").length;
   const t2Contradicts = t2List.filter((r) => r?.outcome === "contradicts").length;
@@ -66,9 +55,8 @@ export default async function Home() {
           <span className={styles.accent}>We run them.</span>
         </h1>
         <p className={styles.lede}>
-          A project commits its rules as code and an escrow. Anyone, a person or an AI agent, submits a sealed proof. A
-          deterministic verifier re-runs it in a TEE on proven chain state, the contract pays in seconds, and a Critical
-          pauses the protocol on every chain. Only a fix that every paid proof fails against is released.
+          Hunters submit a sealed exploit instead of a report. Antibody re-runs it in secure hardware; if it breaks the project&apos;s rules, NEAR
+          pays the bounty automatically, and a critical bug pauses the protocol on every chain.
         </p>
         <div className="row">
           <PlayLink href="#moment" className="btn btn-primary">
@@ -86,9 +74,7 @@ export default async function Home() {
           <OneMoment moment={m} variant="hero" />
           <div className={styles.momentFoot}>
             <p className="small muted">
-              {asked && paidStep && asked.seconds_exact < paidStep.seconds_exact ? "The pause is asked for before the payment. " : ""}
-              Seconds run from {who} commit block: NEAR steps at their blocks, each pause when the relayer got its chain&apos;s
-              receipt. This run is recorded, not live: your own try is the live one.
+              Recorded, not live: seconds from {who} commit block, each pause when the relayer got its chain&apos;s receipt.
             </p>
             {drill ? <DrillLine drill={drill} /> : null}
             <div className="row">
@@ -108,8 +94,8 @@ export default async function Home() {
           <p className="eyebrow">The problem</p>
           <h2 id="problem" className={styles.h2}>Bounties judge text, and text is free to produce</h2>
           <p className="muted">
-            When a report costs nothing to write, a person reading every one does not scale. Antibody judges code: a proof is
-            a sequence of calls, and a deterministic verifier runs it. Here is the same test both ways, from the recorded run.
+            When a report costs nothing to write, a person reading every one does not scale. Antibody judges code instead: a proof is a sequence of
+            calls, and the verifier runs it. The same test both ways, from the recorded run:
           </p>
         </div>
         <div className={styles.contrast}>
@@ -142,8 +128,8 @@ export default async function Home() {
               <VerdictStamp kind="NoViolation" slots={[]} receipt="0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d" />
             </div>
             <figcaption className="xsmall">
-              The verifier never reads reports. Commit 15: no rule broke, T1-confirmed, and C&apos;s bond went to the
-              program&apos;s escrow. <Link href="/commits/15">See commit 15</Link>
+              The verifier never reads reports. Commit 15 broke no rule (attested on NEAR), so C&apos;s bond went to the program&apos;s escrow.{" "}
+              <Link href="/commits/15">See commit 15</Link>
             </figcaption>
           </figure>
         </div>
@@ -156,66 +142,69 @@ export default async function Home() {
             <h2 id="how" className={styles.h2}>
               Four steps, from rules to release
             </h2>
-            <p className="muted">The project commits its terms first; near-antibody applies them to every proof.</p>
+            <p className="muted">The project sets its terms first; a contract on NEAR applies them to every proof.</p>
           </div>
           <ol className={styles.steps}>
             <li>
               <span className={styles.stepNo}>1</span>
               <div>
                 <h3>A project opens a program</h3>
-                <p>An anchor block, its rules as code (an invariants contract, a severity and payout table) and an escrow, committed on NEAR before a launch or an upgrade.</p>
+                <p>It commits its rules as code and an escrow on NEAR, before a launch or an upgrade.</p>
               </div>
             </li>
             <li>
               <span className={styles.stepNo}>2</span>
               <div>
                 <h3>Anyone submits a sealed proof</h3>
-                <p>A person or an AI agent commits a sealed sequence of calls with a bond. Nobody, the project included, can read it before its verdict.</p>
+                <p>A person or an AI agent commits a sealed exploit with a bond. Nobody, the project included, can read it before the verdict.</p>
               </div>
             </li>
             <li>
               <span className={styles.stepNo}>3</span>
               <div>
-                <h3>A deterministic verifier re-runs it</h3>
-                <p>Inside a TEE, on state proven at the anchor. It reports which committed rule broke, where, and the impact; its TDX quote is verified on NEAR (T1).</p>
+                <h3>Antibody re-runs it in secure hardware</h3>
+                <p>
+                  OutLayer&apos;s enclave replays the exploit on the chain state the project committed and reports which rule broke and the damage.
+                  NEAR checks the enclave&apos;s attestation.
+                </p>
               </div>
             </li>
             <li>
               <span className={styles.stepNo}>4</span>
               <div>
-                <h3>Pay, pause, release gate</h3>
-                <p>The first proof of each rule and entry point is paid. A Critical pauses the protocol on every chain, and only a fix that every paid proof fails against is released.</p>
+                <h3>Pay, pause, ship the fix</h3>
+                <p>
+                  The first proof of each bug is paid; duplicates are not. A critical bug pauses the protocol on every chain, and only a fix that
+                  every paid proof fails against is released.
+                </p>
               </div>
             </li>
           </ol>
         </div>
       </section>
 
-      <section className="section page" aria-labelledby="tiers">
+      <section className="section page" aria-labelledby="levels">
         <div className={styles.head}>
-          <p className="eyebrow">Who vouches for a verdict</p>
-          <h2 id="tiers" className={styles.h2}>
-            Trust tiers
+          <p className="eyebrow">Trust</p>
+          <h2 id="levels" className={styles.h2}>
+            How a verdict is checked
           </h2>
         </div>
         <div className={`grid grid-3 ${styles.tiers}`}>
           <div className="card stack">
-            <Pill tone="neutral" icon="clock">T0 · operator</Pill>
-            <h3>The TEE&apos;s answer</h3>
+            <TierBadge tier="T0" />
+            <p className="muted small">OutLayer&apos;s enclave re-runs the proof; on that result alone, a payout waits for its challenge window.</p>
+          </div>
+          <div className="card stack">
+            <TierBadge tier="T1" />
+            <p className="muted small">NEAR verifies the run&apos;s Intel TDX attestation, which binds the verifier, its input and its output; instant payouts need it.</p>
+          </div>
+          <div className="card stack">
+            <TierBadge tier="T2" />
             <p className="muted small">
-              OutLayer&apos;s operator delivers the TEE worker&apos;s output. A payout on T0 waits its challenge window; above the instant cap it also
-              needs an independent second run that agrees.
+              A zero-knowledge proof, verified on NEAR, that the verifier re-run on the enclave&apos;s exact input gives the same result; it claims no
+              privacy, and no payout depends on it.
             </p>
-          </div>
-          <div className="card stack">
-            <Pill tone="t1">T1 · hardware</Pill>
-            <h3>The TDX quote, verified on NEAR</h3>
-            <p className="muted small">The run&apos;s Intel TDX quote binds the pinned wasm, the input and the output; near-antibody checks it on chain. Instant payouts need T1.</p>
-          </div>
-          <div className="card stack">
-            <Pill tone="t2">T2 · math</Pill>
-            <h3>A validity proof of a disclosed verdict</h3>
-            <p className="muted small">An SP1 proof that the verifier, re-run on the TEE&apos;s exact input, gives the TEE&apos;s receipt, verified on NEAR in about 34 Tgas. No privacy claim; no payout depends on it.</p>
             <p className="small">
               {t2List.length ? (
                 <Pill tone="t2" size="sm" title="near-t2's records on testnet (/v1/t2)">
@@ -223,7 +212,7 @@ export default async function Home() {
                   {t2Contradicts ? ` · ${t2Contradicts} contradicted` : ""}
                 </Pill>
               ) : t2.ok || t2NotYet(t2) ? (
-                <Pill tone="pending" size="sm" title={t2.ok ? "near-t2 is deployed and holds no record yet: T2 reads not yet on testnet until it does" : undefined}>
+                <Pill tone="pending" size="sm" title={t2.ok ? "near-t2 is deployed and holds no record yet" : undefined}>
                   not yet on testnet
                 </Pill>
               ) : (
@@ -233,7 +222,8 @@ export default async function Home() {
           </div>
         </div>
         <p className="small muted" style={{ marginTop: 16 }}>
-          Every tier rests on the same determinism: native, the TEE&apos;s wasm and the zkVM give the same receipt, byte for byte. <Link href="/trust">How to check each one</Link>.
+          All three check the same answer: the verifier gives the same receipt, byte for byte, natively, in the enclave and in the zero-knowledge VM.{" "}
+          <Link href="/trust">How to check each one</Link>.
         </p>
       </section>
 
@@ -249,42 +239,36 @@ export default async function Home() {
         </div>
         <dl className={styles.stats}>
           <div>
-            <dt>Verdict latency, p50</dt>
+            <dt>Time to verdict, median</dt>
             <dd className="num">{seconds(verdict?.p50)}</dd>
-            <dd className="xsmall muted">commit block to the TEE&apos;s verdict</dd>
           </div>
           <div>
-            <dt>Verdict latency, p95</dt>
+            <dt>Time to verdict, 95th percentile</dt>
             <dd className="num">{seconds(verdict?.p95)}</dd>
-            <dd className="xsmall muted">{verdict ? `over the ${verdict.n} verdicts with both blocks indexed` : "—"}</dd>
           </div>
           <div>
             <dt>Paid on proof</dt>
             <dd className="num">{leaders.ok ? payouts : "—"}</dd>
-            <dd className="xsmall muted">{leaders.ok ? `${amount(paidTotal.toString())} wNEAR in all` : "—"}</dd>
-            {leaders.ok && paidSplit ? <dd className="xsmall muted">{paidSplit}</dd> : null}
           </div>
           <div>
             <dt>Programs</dt>
             <dd className="num">{programs.ok ? programList.length : "—"}</dd>
-            <dd className="xsmall muted">our fixtures and practice programs</dd>
-            {programSplit ? <dd className="xsmall muted">{programSplit}</dd> : null}
           </div>
         </dl>
         <p className={`xsmall muted ${styles.sources}`}>
-          Each number, raw from our API:{" "}
+          The programs are our own fixtures{paidWho ? `; payouts went to ${paidWho}` : ""}. Raw data:{" "}
           <a href={`${config.apiBase}/v1/stats`} target="_blank" rel="noreferrer noopener">
             /v1/stats
-          </a>{" "}
-          (latency),{" "}
+          </a>
+          ,{" "}
           <a href={`${config.apiBase}/v1/leaderboard`} target="_blank" rel="noreferrer noopener">
             /v1/leaderboard
-          </a>{" "}
-          (payouts) and{" "}
+          </a>
+          ,{" "}
           <a href={`${config.apiBase}/v1/programs`} target="_blank" rel="noreferrer noopener">
             /v1/programs
           </a>
-          . Our own health: <Link href="/status">Status</Link>.
+          .
         </p>
       </section>
 
@@ -294,8 +278,8 @@ export default async function Home() {
             <p className="eyebrow">For hunters and agents</p>
             <h2>Earn on proof, not on prose</h2>
             <p className="muted">
-              Write the proof, check it locally, commit it sealed. Agents connect over MCP through accounts that cannot withdraw,
-              with a bond budget and a per-commit cap, and their proofs are judged like anyone&apos;s.
+              Write the exploit, test it on your machine, submit it sealed. AI agents connect over MCP with accounts that cannot withdraw and a
+              capped bond budget, and are judged like anyone else.
             </p>
             <div className="row">
               <Link href="/programs" className="btn btn-sm">Programs</Link>
@@ -306,8 +290,8 @@ export default async function Home() {
             <p className="eyebrow">For projects</p>
             <h2>Pause on proof. Ship only what survived.</h2>
             <p className="muted">
-              An auto-pay lane next to your existing bounty: rules as code, an escrow, a pause on every chain when a Critical is
-              proven, and a release gate your fix must pass against every paid proof.
+              Run it next to your existing bounty: rules as code, an escrow, an automatic pause on every chain when a critical bug is proven, and a
+              release gate your fix must pass against every paid proof.
             </p>
             <div className="row">
               <Link href="/projects" className="btn btn-sm">Open a program</Link>

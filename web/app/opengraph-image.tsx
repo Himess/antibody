@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import recorded from "@/data/moments.json";
 import type { Moments } from "@/lib/api/types";
+import { plainStep } from "@/lib/moment";
 import { OG, OgMark, ogFonts } from "@/lib/og";
 
 export const alt = "The one moment: A's Critical verified at 18.5 s, paid at 71.0 s, both chains paused by 90.6 s (recorded on NEAR testnet)";
@@ -20,7 +21,7 @@ const LANES: { lane: string; name: string; y: number; color: string }[] = [
 /** The landing's card: the one moment, from the recorded run (the same data as /v1/moments). */
 export default async function Image() {
   const m = (recorded as unknown as Moments).moments[0];
-  const steps = m.steps.filter((s) => !s.detail?.minor);
+  const steps = m.steps.filter((s) => !s.detail?.minor).map(plainStep);
   const end = Math.max(...steps.map((s) => s.seconds_exact));
   const span = Math.ceil((end + 4) / 10) * 10;
   const x = (s: number) => GUTTER + (s / span) * (W - GUTTER);

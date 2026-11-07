@@ -261,3 +261,65 @@
   color: var(--ink);
   box-shadow: var(--shadow);
 }
+
+/* A level's badge with its code beside it, as small secondary text (the trust page maps the codes). */
+.level {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.levelCode {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+/* "Check it yourself": the commands, hashes and checks behind a claim, one click away. */
+.disclosure {
+  min-width: 0;
+}
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 36px;
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+  color: var(--ink-2);
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+/* The marker (a flex summary drops the native one): a chevron that turns down when open. */
+.disclosure > summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-inline: 2px;
+  border-right: 2px solid var(--ink-3);
+  border-bottom: 2px solid var(--ink-3);
+  transform: rotate(-45deg);
+}
+.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .disclosure > summary::before {
+    transition: transform 0.15s var(--ease);
+  }
+}
+.disclosure > summary:hover {
+  color: var(--ink);
+}
+.disclosureBody {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 0 4px;
+}

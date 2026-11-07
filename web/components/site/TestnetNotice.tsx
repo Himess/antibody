@@ -7,8 +7,8 @@ export function TestnetNotice() {
       <div className="page notice-inner">
         <span className="notice-dot" aria-hidden />
         <span>
-          <strong>Testnet.</strong> wNEAR has no value. Acme Lend and the practice vaults are our own deliberately
-          vulnerable fixtures. <Link href="/judges#limits">Limits</Link>
+          <strong>Testnet:</strong> tokens have no value, and the vulnerable contracts are our own test fixtures.{" "}
+          <Link href="/judges#limits">Limits</Link>
         </span>
       </div>
     </div>

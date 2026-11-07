@@ -132,10 +132,6 @@
   align-items: flex-start;
 }
 
-.tiers h3 {
-  font-size: var(--fs-md);
-}
-
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -299,12 +295,4 @@
 
 .proofCard :global(.sealed-text) {
   opacity: 0.6;
-}
-
-.stats dd + dd {
-  font-family: var(--font-sans);
-  font-size: var(--fs-xs);
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--ink-3);
 }
