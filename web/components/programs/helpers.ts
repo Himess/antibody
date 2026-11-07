@@ -263,11 +263,18 @@ export function slotName(slots: SlotView[], bit: number): string {
 /** The practice vending contract: it creates every practice account and receives every try's payout. */
 const VENDING = "practice.antibody.testnet";
 
-/** Our own practice accounts on this run's programs: the recorded run's scripted tries (JUDGES.md row 12) and our rehearsal. */
+/** Our own practice accounts on this run's programs: the recorded run's scripted tries (JUDGES.md row 12), our rehearsal and our checks. */
 const OUR_TRIES: Record<string, string> = {
   "judge-1-p6.practice.antibody.testnet": "the recorded run's practice try",
   "judge-2-p6.practice.antibody.testnet": "the recorded run's practice try",
   "pcs-rehearsal.practice.antibody.testnet": "our rehearsal",
+  // Our checks of 2026-11-07 (docs/results/byo-2026-11-07.json and the try of the deployed site).
+  "site-check.practice.antibody.testnet": "our check of the deployed site",
+  "cli-check-t0.practice.antibody.testnet": "our check of the CLI",
+  "byo-alpha.practice.antibody.testnet": "our bring-your-own-proof check",
+  "byo-beta.practice.antibody.testnet": "our bring-your-own-proof check",
+  "byo-wrong.practice.antibody.testnet": "our bring-your-own-proof check",
+  "byo-invalid.practice.antibody.testnet": "our bring-your-own-proof check",
 };
 
 /** A practice try (a practice account other than the vending contract). */
