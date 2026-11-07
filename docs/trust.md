@@ -93,6 +93,11 @@ What it does not do:
 - It claims no privacy: the proof re-runs a disclosed proof.
 - Payouts in the locked deployment do not depend on it.
 
+On testnet (2026-11-07): near-t2 is `zk.antibody.testnet`, locked (code hash `3HFJXFtL…`, built from
+`21e0d696…`). It holds four `confirmed` records, for runs 33, 36, 35 and 53, whose content keys are published
+in `fixtures/zk`; a tampered proof was refused (an invalid G1 point). Each record links its proof's request
+on SP1's prover network (JUDGES.md row 16, `antibody zk status --run 33`).
+
 ## What is mock
 
 - **The sandbox demo:** MOCK OutLayer, DCAP and MPC contracts, resolved by the real verifier with a TEST
