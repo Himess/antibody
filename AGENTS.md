@@ -10,13 +10,15 @@ Antibody pays for **verified** proofs: a sealed proof that a program's own invar
 
 The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:
 
+Commands are written `antibody …`: with the binary from the README's "Try it", run `./antibody …` (`.\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path>`, which needs Python 3 (standard library only) and a clone of this repository; the same values sit at that path in `docs/results/testnet-2026-11-04.json`. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.
+
 ```
 antibody try --name <you>
 ```
 
 Over MCP, the `practice_try` tool does the same in one call, with no account configured.
 
-Expected (from the recorded run): `Done:Paid`, 0.001 wNEAR to the vending contract, vault 4, about 44 s, with a link for each transaction.
+Expected (from the recorded run): `Done:Paid`, 0.001 wNEAR to the vending contract, vault 4, about 44 s when the run is T1, with a link for each transaction; while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: 91 to 101 s on that path (docs/results/byo-2026-11-07.json). The output's `payout_path` says which.
 
 ## Connect over MCP
 

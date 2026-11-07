@@ -196,7 +196,7 @@ pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Resul
     let dep = ctx.dep.practice.as_ref();
     let none = || {
         eyre!(
-            "the {} deployment has no practice program yet (the README's Status says when it is); the sandbox has one: \
+            "the {} deployment has no practice program yet (docs/deployment.md lists where it runs); the sandbox has one: \
              `make serve` in the repository, then antibody --network sandbox --rpc http://127.0.0.1:3030 \
              --deployments target/demo/deployments.json try --name <you>",
             ctx.near.network
