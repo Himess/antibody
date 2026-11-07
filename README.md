@@ -34,6 +34,47 @@ with a bond budget, and its proofs are judged like anyone's.
 
 ## Check it
 
+**The fast path: a prebuilt binary, about a minute.** The binary has the testnet deployment built in, so it
+needs no repository, no account and no key. Each file has a sha256 and a build provenance attestation
+(`gh attestation verify <file> -R Himess/antibody`).
+
+```bash
+# Linux x86_64
+V=v0.5.0; F=antibody-x86_64-unknown-linux-gnu
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
+sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
+```
+
+```bash
+# macOS (Apple silicon)
+V=v0.5.0; F=antibody-aarch64-apple-darwin
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
+shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
+# downloaded with a browser instead of curl: xattr -d com.apple.quarantine ./antibody
+```
+
+```powershell
+# Windows x86_64 (PowerShell): compare the two hashes
+$V="v0.5.0"; $F="antibody-x86_64-pc-windows-msvc.exe"
+Invoke-WebRequest "https://github.com/Himess/antibody/releases/download/$V/$F" -OutFile antibody.exe
+(Get-FileHash antibody.exe -Algorithm SHA256).Hash; (Invoke-WebRequest "https://github.com/Himess/antibody/releases/download/$V/antibody-x86_64-pc-windows-msvc.sha256").Content
+```
+
+Then:
+
+```bash
+./antibody judge               # view calls only: each contract's code hash and locked status, the pins, every program's payouts and pauses
+./antibody try --name <you>    # a new lowercase name: the practice program, end to end, with no account
+```
+
+`try` vends a practice account, seals the public tutorial proof, commits and reveals it, and settles it with a
+link for every transaction. It settles at once when T1 confirms the run (the recorded tries took 43.7 s and
+39.9 s in all), or, while new OutLayer worker images wait their delay, at T0 as soon as a final NEAR block is
+past the program's 60 s challenge window (90.7 s from the vend to the payout, measured on 2026-11-07). Its
+output says which. The same image runs anywhere: `docker run --rm ghcr.io/himess/antibody:v0.5.0 judge`.
+
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
