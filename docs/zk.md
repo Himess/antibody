@@ -22,9 +22,10 @@ proofs, the contract, the tools.
   - near-t2, with unit tests on the four runs' public values against near-antibody's testnet records;
   - the sandbox step (an honest run confirmed, a lying MOCK TEE contradicted);
   - the CLI, the API and the prover service.
-- Pending on SP1's prover network (a PROVE deposit):
-  - the four real Groth16 proofs;
-  - near-t2 on testnet (`zk.antibody.testnet`).
+- Proven on SP1's prover network (2026-11-07): the four real Groth16 proofs, in `fixtures/zk/<case>/proof.bin`
+  with their requests, costs and times in `proof.json`. Each verifies against SP1 6.10.0's key and fails with
+  any public value changed (near-t2's tests, in CI).
+- Pending: near-t2 on testnet (`zk.antibody.testnet`), which needs testnet NEAR for its deployment.
 - The README and JUDGES.md list T2 as "not yet" until near-t2 holds those four records on testnet.
 
 ## The pieces
@@ -141,15 +142,17 @@ exact public values of `fixtures/zk/a`.
   explorer's Transfer moves them to the requester.
 - Each proof costs a base fee plus the auction's price per prover gas unit (PGU).
 
-| Run | Cycles | PGUs (simulated) | Request to proof | Cost |
+| Run | Cycles | PGUs | Request to proof | Cost |
 |---|---|---|---|---|
-| 33 (A, Violation Critical) | 29,358,505 | 34,802,407 | pending | pending |
-| 36 (D, a duplicate) | 28,581,912 | 34,096,961 | pending | pending |
-| 35 (C, NoViolation) | 25,841,727 | 31,567,333 | pending | pending |
-| 53 (practice) | 33,865,585 | 37,035,732 | pending | pending |
+| 33 (A, Violation Critical) | 29,358,505 | 34,802,407 | 61.4 s | 0.4221 PROVE |
+| 36 (D, a duplicate) | 28,581,912 | 34,096,961 | 52.2 s | 0.4220 PROVE |
+| 35 (C, NoViolation) | 25,841,727 | 31,567,333 | 44.9 s | 0.4214 PROVE |
+| 53 (practice) | 33,865,585 | 37,035,732 | 78.9 s | 0.4217 PROVE |
 
-Cycles and PGUs are from `antibody-zk-prove --mode execute` with the docker ELF. Its public values equal
-the ones `crates/zk/core` computes natively, byte for byte.
+Measured on SP1's prover network on 2026-11-07 (Groth16, mainnet auction; each request is linked in its
+`proof.json`). The cost is almost all the base fee (0.414 PROVE); the PGUs the network charged equal the ones
+`antibody-zk-prove --mode execute` simulates with the docker ELF, whose public values equal the ones
+`crates/zk/core` computes natively, byte for byte.
 
 **Budget (the prover service).**
 - At most 6 proofs an hour and 40 a day.
