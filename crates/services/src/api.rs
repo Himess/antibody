@@ -178,7 +178,7 @@ async fn status(State(a): State<Shared>) -> Response {
     let b = a.clone();
     cached(&a, "status".into(), 15, 900, move || {
         let recorded = web::recorded_relays(&b.results_dir);
-        crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
+        crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &b.results_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
     })
     .await
 }
@@ -691,7 +691,7 @@ pub async fn serve(api: Api, listen: &str) -> eyre::Result<()> {
             .cache
             .get("status", Duration::from_secs(15), Duration::from_secs(900), move || {
                 let recorded = web::recorded_relays(&b.results_dir);
-                crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
+                crate::status::compute_with(&b.near, &b.dep, &b.state_dir, &b.results_dir, &crate::status::Thresholds::default(), &b.chains, &recorded)
             })
             .await;
     });

@@ -1,0 +1,18 @@
+# The timer for antibody-drill.service (docs/drill.md): one drill a day. Install to
+# /etc/systemd/system/antibody-drill.timer, then `systemctl enable --now antibody-drill.timer`.
+# `/v1/status` warns (drill-stale) when the latest drill is older than a day plus a six-hour margin, so a
+# daily cadence with room for a late or resumed run keeps it green.
+
+[Unit]
+Description=Run the Antibody daily drill once a day
+
+[Timer]
+# 03:00 UTC daily, when EVM gas and the testnet are quiet. RandomizedDelaySec spreads it off the hour.
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=900
+# Catch up on a missed run (the machine was off) at the next boot.
+Persistent=true
+Unit=antibody-drill.service
+
+[Install]
+WantedBy=timers.target

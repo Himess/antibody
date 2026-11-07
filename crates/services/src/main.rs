@@ -13,6 +13,7 @@
 
 mod api;
 mod demo;
+mod drill;
 mod evm;
 mod indexer;
 mod keeper;
@@ -238,6 +239,28 @@ enum Cmd {
         #[arg(long)]
         evm_key: Option<PathBuf>,
     },
+    /// The daily live drill (docs/drill.md): the one moment on NEAR testnet, Sepolia and Base Sepolia, on a
+    /// fresh Acme Lend instance; resumable per step, writes `drill-YYYY-MM-DD.json` to --results-dir. Keys
+    /// from `.secrets/`, RPCs and the relayer EVM key from `.env` (as `live`). Guards: it reads the balances
+    /// a drill needs and skips with a reason if any is low; a kill switch (`<work>/drill.disabled` or
+    /// `$ANTIBODY_DRILL_OFF`) stops it
+    Drill {
+        #[arg(long)]
+        work_dir: Option<PathBuf>,
+        /// The base EVM deployer's key file (default .secrets/sepolia_deployer.json): a per-drill deployer
+        /// is derived from it (fresh CREATE2 addresses each day) and funded from it
+        #[arg(long)]
+        evm_key: Option<PathBuf>,
+        /// Where the finished `drill-YYYY-MM-DD.json` is written; on the host, the API's --results-dir
+        #[arg(long)]
+        results_dir: Option<PathBuf>,
+        /// Read the guards (balances, kill switch) and stop; spend nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Close exitable drill programs (their escrow back) instead of running a drill
+        #[arg(long)]
+        cleanup: bool,
+    },
 }
 
 /// The deployments file: `--deployments`, `$ANTIBODY_DEPLOYMENTS`, or the repository's.
@@ -302,6 +325,30 @@ fn relayer_signer() -> Result<Option<evm::EvmSigner>> {
         repo_root().and_then(|r| antibody_cli::ctx::load_dotenv(&r.join(".env")).into_iter().find(|(k, _)| k == "RELAYER_EVM_KEY").map(|(_, v)| v))
     };
     from_env.or_else(from_file).map(|k| evm::EvmSigner::from_hex(&k)).transpose()
+}
+
+/// The EVM accounts `/v1/status` watches, for `evm_accounts.json`: the permit relayer's address (from
+/// `$RELAYER_EVM_KEY`, the key never read beyond deriving its address) and the drill deployer's (from the
+/// `address` field of `.secrets/sepolia_deployer.json` or `$DRILL_EVM_KEY`'s key file, the private key left
+/// untouched). Absent keys are simply left out.
+fn evm_accounts() -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    if let Ok(Some(s)) = relayer_signer() {
+        out.push(serde_json::json!({"role": "relayer", "address": format!("{:?}", s.address)}));
+    }
+    let deployer_file = std::env::var("DRILL_EVM_KEY")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| repo_root().map(|r| r.join(".secrets/sepolia_deployer.json")))
+        .filter(|p| p.exists());
+    if let Some(addr) = deployer_file
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["address"].as_str().map(String::from))
+    {
+        out.push(serde_json::json!({"role": "deployer", "address": addr}));
+    }
+    out
 }
 
 fn explorer(chain_id: u64) -> String {
@@ -385,6 +432,40 @@ fn main() -> Result<()> {
             })?;
             Ok(())
         }
+        Cmd::Drill { work_dir, evm_key, results_dir, dry_run, cleanup } => {
+            let root = repo_root().ok_or_else(|| eyre!("run it from inside the repository"))?;
+            let dotenv = antibody_cli::ctx::load_dotenv(&root.join(".env"));
+            let var = |k: &str| -> Result<String> {
+                std::env::var(k)
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .or_else(|| dotenv.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()))
+                    .ok_or_else(|| eyre!("set {k} in .env"))
+            };
+            let exe = if cfg!(windows) { ".exe" } else { "" };
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_default();
+            let forge = home.join(".foundry/bin").join(format!("forge{exe}"));
+            // The permit relayer's own EVM key ($RELAYER_EVM_KEY/.env), checked that it parses (never printed).
+            let relayer_evm_key = var("RELAYER_EVM_KEY").map_err(|_| eyre!("set RELAYER_EVM_KEY in .env: the drill's permit relayer needs it"))?;
+            evm::EvmSigner::from_hex(&relayer_evm_key)?;
+            let out = drill::run(drill::DrillArgs {
+                work: work_dir_or(work_dir, root.join("target/drill"))?,
+                forge_bin: if forge.exists() { forge } else { PathBuf::from(format!("forge{exe}")) },
+                antibody_bin: root.join(format!("target/release/antibody{exe}")),
+                keys: root.join(".secrets/near"),
+                base_evm_key: evm_key.clone().unwrap_or_else(|| root.join(".secrets/sepolia_deployer.json")),
+                relayer_evm_key,
+                sepolia_tx_rpc: var("SEPOLIA_TX_RPC").or_else(|_| var("SEPOLIA_RPC").map(|v| v.split(',').next().unwrap_or_default().to_string()))?,
+                sepolia_rpc: var("SEPOLIA_RPC")?,
+                base_rpc: var("BASE_SEPOLIA_RPC")?,
+                results_dir: results_dir.clone().unwrap_or_else(default_results_dir),
+                dry_run: *dry_run,
+                cleanup: *cleanup,
+                root,
+            })?;
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            Ok(())
+        }
         Cmd::WorkerMock { outlayer, key_file } => {
             let dep = load_dep(&cli)?;
             let mut w = mocks::MockWorker {
@@ -462,7 +543,7 @@ fn main() -> Result<()> {
         Cmd::Notifier { program, interval_ms } => {
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
             let status = load_dep(&cli).ok().map(|d| (near_for(&cli, &d), d));
-            notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: *program, status }.run(*interval_ms)
+            notifier::Notifier { state_dir: state_dir(&cli), results_dir: default_results_dir(), webhooks, program: *program, status }.run(*interval_ms)
         }
         Cmd::Api { listen, chains: c, results_dir } => {
             let dep = load_dep(&cli)?;
@@ -496,6 +577,10 @@ fn main() -> Result<()> {
             }
             std::fs::create_dir_all(state_dir(&cli))?;
             std::fs::write(state_dir(&cli).join("floats.json"), serde_json::to_vec_pretty(&floats)?)?;
+            // The EVM accounts /v1/status checks against their floors (addresses only; never the keys): the
+            // permit relayer ($RELAYER_EVM_KEY) and the drill deployer (.secrets/sepolia_deployer.json or
+            // $DRILL_EVM_KEY). Each is checked on every chain the API has an RPC for.
+            std::fs::write(state_dir(&cli).join("evm_accounts.json"), serde_json::to_vec_pretty(&evm_accounts())?)?;
             if let (Some(acct), Some(t2)) = (t2_prover_account, dep.t2.clone()) {
                 let root = repo_root().unwrap_or_else(|| PathBuf::from("."));
                 let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), t2_prover_key_file.clone(), None)?;
@@ -527,7 +612,7 @@ fn main() -> Result<()> {
                 std::thread::spawn(move || r.run(3000));
             }
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
-            let n = notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: None, status: Some((near_for(&cli, &dep), dep.clone())) };
+            let n = notifier::Notifier { state_dir: state_dir(&cli), results_dir: default_results_dir(), webhooks, program: None, status: Some((near_for(&cli, &dep), dep.clone())) };
             std::thread::spawn(move || n.run(5000));
             if let Some(acct) = keeper_account {
                 let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), keeper_key_file.clone(), None)?;

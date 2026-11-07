@@ -42,29 +42,29 @@ use crate::{
     t1::{Source, T1Relayer},
 };
 
-const SEPOLIA: u64 = 11_155_111;
-const BASE_SEPOLIA: u64 = 84_532;
-const TESTNET: Net = Net { chain_id: SEPOLIA, trust: "light-client", label: "testnet" };
+pub(crate) const SEPOLIA: u64 = 11_155_111;
+pub(crate) const BASE_SEPOLIA: u64 = 84_532;
+pub(crate) const TESTNET: Net = Net { chain_id: SEPOLIA, trust: "light-client", label: "testnet" };
 /// The deployment's root account; the story's accounts are its sub-accounts.
-const HQ: &str = "antibody.testnet";
-const MPC: &str = "v1.signer-prod.testnet";
-const FASTNEAR_TX: &str = "https://tx.test.fastnear.com";
-const ETHERSCAN: &str = "https://sepolia.etherscan.io/tx/";
-const BASESCAN: &str = "https://sepolia.basescan.org/tx/";
+pub(crate) const HQ: &str = "antibody.testnet";
+pub(crate) const MPC: &str = "v1.signer-prod.testnet";
+pub(crate) const FASTNEAR_TX: &str = "https://tx.test.fastnear.com";
+pub(crate) const ETHERSCAN: &str = "https://sepolia.etherscan.io/tx/";
+pub(crate) const BASESCAN: &str = "https://sepolia.basescan.org/tx/";
 /// A thousandth of a wNEAR (24 decimals).
-const MILLI: u128 = ONE_NEAR / 1_000;
+pub(crate) const MILLI: u128 = ONE_NEAR / 1_000;
 /// The testnet programs' terms texts; their sha256 is committed in each manifest and named by every commit.
-const TERMS: &str = "Acme Lend (testnet) terms: a DELIBERATELY VULNERABLE TEST FIXTURE. Payouts in wNEAR on NEAR testnet, a testnet token with no value.";
+pub(crate) const TERMS: &str = "Acme Lend (testnet) terms: a DELIBERATELY VULNERABLE TEST FIXTURE. Payouts in wNEAR on NEAR testnet, a testnet token with no value.";
 const PRACTICE_TERMS: &str =
     "Practice program (testnet) terms: a TUTORIAL TARGET whose bug and proof are public. Payouts in wNEAR on NEAR testnet, a testnet token with no value.";
-const ESCROW: &str = "0.4";
+pub(crate) const ESCROW: &str = "0.4";
 const PRACTICE_ESCROW: &str = "0.03";
 /// A real OutLayer run and its T1 relay (DCAP on NEAR) take longer than the sandbox's MOCK.
-const T1_WAIT: Duration = Duration::from_secs(900);
+pub(crate) const T1_WAIT: Duration = Duration::from_secs(900);
 /// NEAR free of storage stake an account needs for its largest call: 300 Tgas (a round's opening, a pause
 /// ticket), set aside up front at ten times the gas price (0.301 NEAR, most of it refunded), with a margin.
 /// A run's 200 Tgas (`cmd::RUN_TGAS`) fits within it.
-const FREE_FOR_RUNS: u128 = 350 * MILLI;
+pub(crate) const FREE_FOR_RUNS: u128 = 350 * MILLI;
 /// What each vended practice account gets: its contract's storage (0.03), and the gas its commit and its
 /// reveal set aside (0.025 and 0.201: the reveal goes out before the commit's unused gas has come back);
 /// closing the account after its try returns what is left to the vending contract.
@@ -77,7 +77,7 @@ const TRIERS: [&str; 2] = ["judge-1", "judge-2"];
 const GUARD_TREASURY: u128 = 50 * MILLI;
 /// The NEAR credit the CLI keeps at near-antibody for each account: one run (0.02 deposit, 0.01 storage
 /// allowance) and a commit's storage, within the story accounts' lean funding (scripts/deploy/testnet.sh).
-const MIN_NEAR_CREDIT: &str = "0.045";
+pub(crate) const MIN_NEAR_CREDIT: &str = "0.045";
 
 const STAGES: &[&str] = &[
     "evm", "anchor", "prebuild", "light-client", "program", "guardian", "activate", "agents", "one-moment", "submissions", "settle",
@@ -125,7 +125,7 @@ fn deployable(root: &Path, name: &str, cargo_out: &str) -> Result<PathBuf> {
 
 /// Acme's terms on testnet: the sandbox's payouts, escrow and instant budget in wNEAR (a hundred-thousandth
 /// of the tUSD amounts), and windows lived in real time (testnet has no fast-forward).
-fn acme_settlement(deadline: u64) -> Settlement {
+pub(crate) fn acme_settlement(deadline: u64) -> Settlement {
     let w = |m: u128| (m * MILLI).to_string();
     Settlement {
         payouts: Payouts { critical: w(100), high: w(30), medium: w(10), low: "0".into(), impact_bps: 0, impact_cap: "0".into(), decimals: 24 },
@@ -194,12 +194,12 @@ fn round_code(round: u32) -> (&'static [(&'static str, &'static str)], &'static 
     }
 }
 
-fn unix() -> u64 {
+pub(crate) fn unix() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 /// Polls `f` every `every` until it returns `Some`, for at most `timeout`, saying each minute what it waits for.
-fn poll<T>(what: &str, timeout: Duration, every: Duration, mut f: impl FnMut() -> Option<T>) -> Result<T> {
+pub(crate) fn poll<T>(what: &str, timeout: Duration, every: Duration, mut f: impl FnMut() -> Option<T>) -> Result<T> {
     let t0 = Instant::now();
     let mut said = 0;
     loop {
@@ -227,13 +227,13 @@ fn view_raw(near: &Near, contract: &str, method: &str, args: &[u8]) -> Result<Ve
 }
 
 /// The light client's newest Sepolia block.
-fn lc_last_block(near: &Near, lc: &str) -> Result<u64> {
+pub(crate) fn lc_last_block(near: &Near, lc: &str) -> Result<u64> {
     let b = view_raw(near, lc, "last_block_number", &[])?;
     Ok(u64::from_le_bytes(b.get(..8).ok_or_else(|| eyre!("last_block_number: {} bytes", b.len()))?.try_into()?))
 }
 
 /// The hash the light client holds for Sepolia block `n`, if any.
-fn lc_block_hash(near: &Near, lc: &str, n: u64) -> Result<Option<B256>> {
+pub(crate) fn lc_block_hash(near: &Near, lc: &str, n: u64) -> Result<Option<B256>> {
     let b = view_raw(near, lc, "block_hash_safe", &n.to_le_bytes())?;
     Ok(match b.first() {
         Some(1) if b.len() >= 33 => Some(B256::from_slice(&b[1..33])),
@@ -242,7 +242,7 @@ fn lc_block_hash(near: &Near, lc: &str, n: u64) -> Result<Option<B256>> {
 }
 
 /// The EVM address of the MPC network's key for `path`, derived for near-guardian: what near-guardian pins.
-fn mpc_address(near: &Near, guardian: &str, path: &str) -> Result<String> {
+pub(crate) fn mpc_address(near: &Near, guardian: &str, path: &str) -> Result<String> {
     let pk = near.view(MPC, "derived_public_key", json!({"path": path, "predecessor": guardian, "domain_id": 0}))?;
     let s = pk.as_str().ok_or_else(|| eyre!("derived_public_key: {pk}"))?;
     let xy = bs58::decode(s.trim_start_matches("secp256k1:")).into_vec()?;
@@ -253,20 +253,45 @@ fn mpc_address(near: &Near, guardian: &str, path: &str) -> Result<String> {
 }
 
 /// Wraps `amount` yoctoNEAR into wNEAR for the signer, registering it with the token first.
-fn wrap(ctx: &Ctx, amount: u128) -> Result<Value> {
+pub(crate) fn wrap(ctx: &Ctx, amount: u128) -> Result<Value> {
     let me = ctx.signer()?;
     cmd::ensure_token_registered(ctx, &me, &me.account_id)?;
     let out = ctx.near.function_call(&me, &ctx.dep.token, "near_deposit", json!({}), 30, amount)?;
     cmd::ensure_ok(ctx, &out, "near_deposit")
 }
 
-fn wnear_of(ctx: &Ctx, account: &str) -> Result<u128> {
+pub(crate) fn wnear_of(ctx: &Ctx, account: &str) -> Result<u128> {
     Ok(cmd::u128_of(&ctx.near.view(&ctx.dep.token, "ft_balance_of", json!({"account_id": account}))?))
 }
 
 /// The relayer's permits, by id.
-fn permits(file: &Path) -> BTreeMap<String, Value> {
+pub(crate) fn permits(file: &Path) -> BTreeMap<String, Value> {
     std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+}
+
+/// Runs a forge deploy by `deployer` on `rpc`, again (three tries) when it failed before sending anything:
+/// a public RPC's backends sometimes disagree on the latest block during forge's simulation. Once a
+/// transaction is out, a failure stops the run (forge's `--resume` finishes it by hand).
+pub(crate) fn forge_retry(deployer: alloy_primitives::Address, rpc: &str, what: &str, deploy: impl Fn() -> Result<Value>) -> Result<Value> {
+    let evm = Evm::new(rpc);
+    let nonce = || {
+        (0..5).find_map(|i| {
+            std::thread::sleep(Duration::from_secs(3 * i));
+            evm.call("eth_getTransactionCount", json!([deployer, "pending"])).ok().and_then(|v| hex_u64(&v).ok())
+        })
+    };
+    let before = nonce();
+    for attempt in 1.. {
+        match deploy() {
+            Ok(v) => return Ok(v),
+            Err(e) if attempt < 4 && before.is_some() && nonce() == before => {
+                println!("  {what}: try {attempt} failed before sending anything ({e}); again in 30 s");
+                std::thread::sleep(Duration::from_secs(30));
+            }
+            Err(e) => return Err(e.wrap_err(what.to_string())),
+        }
+    }
+    unreachable!()
 }
 
 struct Live {
@@ -664,30 +689,8 @@ impl Live {
         }
     }
 
-    /// Runs a forge deploy on `rpc`, again (three tries) when it failed before sending anything: a public
-    /// RPC's backends sometimes disagree on the latest block during forge's simulation. Once a
-    /// transaction is out, a failure stops the run (forge's `--resume` finishes it by hand).
     fn forge_deploy(&self, rpc: &str, what: &str, deploy: impl Fn() -> Result<Value>) -> Result<Value> {
-        let deployer = EvmSigner::from_hex(&self.evm_key()?)?.address;
-        let evm = Evm::new(rpc);
-        let nonce = || {
-            (0..5).find_map(|i| {
-                std::thread::sleep(Duration::from_secs(3 * i));
-                evm.call("eth_getTransactionCount", json!([deployer, "pending"])).ok().and_then(|v| hex_u64(&v).ok())
-            })
-        };
-        let before = nonce();
-        for attempt in 1.. {
-            match deploy() {
-                Ok(v) => return Ok(v),
-                Err(e) if attempt < 4 && before.is_some() && nonce() == before => {
-                    println!("  {what}: try {attempt} failed before sending anything ({e}); again in 30 s");
-                    std::thread::sleep(Duration::from_secs(30));
-                }
-                Err(e) => return Err(e.wrap_err(what.to_string())),
-            }
-        }
-        unreachable!()
+        forge_retry(EvmSigner::from_hex(&self.evm_key()?)?.address, rpc, what, deploy)
     }
 
     // ------------------------------------------------------------------------------------------ stages

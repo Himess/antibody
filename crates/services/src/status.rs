@@ -40,26 +40,128 @@ pub struct Thresholds {
     pub vending_near: f64,
     pub vend_key_near: f64,
     pub vending_credit_near: f64,
+    /// How often a drill should run (seconds), plus the margin before a missing one is stale.
+    pub drill_cadence_s: u64,
+    pub drill_margin_s: u64,
+    /// The EVM relayer's and deployer's floor on each chain (wei), by chain id, and a default.
+    pub evm_relayer_floor_wei: std::collections::BTreeMap<u64, u128>,
+    pub evm_deployer_floor_wei: std::collections::BTreeMap<u64, u128>,
+    pub evm_floor_default_wei: u128,
 }
 
 impl Default for Thresholds {
     fn default() -> Self {
-        Self { stale_s: 300, vending_near: 0.5, vend_key_near: 0.05, vending_credit_near: 0.1 }
+        Self {
+            stale_s: 300,
+            vending_near: 0.5,
+            vend_key_near: 0.05,
+            vending_credit_near: 0.1,
+            // A drill runs daily; stale after a day plus six hours (a late run, a resume).
+            drill_cadence_s: 24 * 3600,
+            drill_margin_s: 6 * 3600,
+            // 0.002 ETH is a few deploys at Sepolia's price, or many relays; Base Sepolia adds an L1 fee.
+            evm_relayer_floor_wei: Default::default(),
+            evm_deployer_floor_wei: Default::default(),
+            evm_floor_default_wei: 2_000_000_000_000_000,
+        }
     }
 }
 
-pub fn compute(near: &Near, dep: &Deployments, state_dir: &Path, t: &Thresholds) -> Result<Value> {
-    compute_with(near, dep, state_dir, t, &Default::default(), &Default::default())
+impl Thresholds {
+    /// The floor for an EVM `role` on a chain: the per-chain override, else the default.
+    fn evm_floor(&self, role: &str, chain: u64) -> u128 {
+        if role == "relayer" { self.evm_relayer_floor_wei.get(&chain) } else { self.evm_deployer_floor_wei.get(&chain) }.copied().unwrap_or(self.evm_floor_default_wei)
+    }
+}
+
+/// One EVM account's balance row on a chain, and the alert (critical) when it is below its floor. `balance`
+/// is None when the RPC could not be read (a notice, not an alert: a down RPC must not raise a false low).
+pub fn evm_balance_row(role: &str, chain: u64, address: &str, balance: Option<u128>, floor: u128) -> (Value, Option<(&'static str, String, String)>) {
+    match balance {
+        Some(wei) => {
+            let alert = (wei < floor).then(|| {
+                ("critical", format!("evm-{role}-low-{chain}"),
+                 format!("the EVM {role} ({address}) holds {} ETH on chain {chain}, below its {} ETH floor: refill it", wei_eth(wei), wei_eth(floor)))
+            });
+            (json!({"role": role, "chain_id": chain, "address": address, "balance_wei": wei.to_string(), "balance_eth": wei_eth(wei),
+                    "floor_wei": floor.to_string(), "floor_eth": wei_eth(floor), "ok": wei >= floor}), alert)
+        }
+        None => (json!({"role": role, "chain_id": chain, "address": address, "balance_wei": null, "error": "could not read the balance"}), None),
+    }
+}
+
+/// wei as whole ether (18 decimals).
+fn wei_eth(wei: u128) -> String {
+    let unit = 10u128.pow(18);
+    format!("{}.{:018}", wei / unit, wei % unit)
+}
+
+/// One `eth_getBalance`, one attempt, short timeout: null on any error (a monitoring read never waits).
+fn eth_balance(rpc: &str, address: &str) -> Option<u128> {
+    if address.is_empty() {
+        return None;
+    }
+    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(6)).build().ok()?;
+    let v: Value = client.post(rpc).json(&json!({"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance", "params": [address, "latest"]})).send().ok()?.json().ok()?;
+    u128::from_str_radix(v["result"].as_str()?.trim_start_matches("0x"), 16).ok()
+}
+
+/// The latest drill's component and alerts from `results_dir` (`drill-*.json`, newest by name). Alerts:
+/// `drill-failed` (critical) when the latest drill did not pass, `drill-skipped` (warn) with its reason,
+/// `drill-stale` (warn) when the latest is older than the cadence plus the margin.
+pub fn drill_status(results_dir: &Path, t: &Thresholds) -> (Value, Vec<(&'static str, String, String)>) {
+    let mut alerts = Vec::new();
+    let latest = std::fs::read_dir(results_dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().to_str().map(String::from))
+                .filter(|n| crate::web::moment_kind(n) == Some("drill"))
+                .max()
+        })
+        .ok()
+        .flatten();
+    let Some(name) = latest else {
+        alerts.push(("warn", "drill-stale".into(), "no drill has run yet: the daily drill writes drill-YYYY-MM-DD.json".into()));
+        return (json!({"latest": null, "note": "no drill results file yet"}), alerts);
+    };
+    let r = read_json(&results_dir.join(&name));
+    let d = &r["drill"];
+    let when = r["finished_unix"].as_u64().or_else(|| r["started_unix"].as_u64()).unwrap_or(0);
+    let age = now_s().saturating_sub(when);
+    let skipped = d["skipped"] == json!(true);
+    let ok = r["all_ok"] == json!(true);
+    let steps = d["steps"].clone();
+    let failed_step = steps.as_object().and_then(|m| m.iter().find(|(_, v)| v["ok"] == json!(false)).map(|(k, v)| json!({"step": k, "error": v["error"]})));
+    if skipped {
+        let reason = d["reason"].as_str().unwrap_or("(no reason)").to_string();
+        alerts.push(("warn", "drill-skipped".into(), format!("the drill of {} was skipped: {reason}", &name)));
+    } else if !ok {
+        let where_ = failed_step.as_ref().and_then(|f| f["step"].as_str()).map(|s| format!(" at step {s}")).unwrap_or_default();
+        alerts.push(("critical", "drill-failed".into(), format!("the drill of {} did not pass{where_}: see /moment and docs/results/{}", &name, &name)));
+    }
+    if age > t.drill_cadence_s + t.drill_margin_s {
+        alerts.push(("warn", "drill-stale".into(), format!("the latest drill ({}) is {} h old, past the {} h cadence", &name, age / 3600, t.drill_cadence_s / 3600)));
+    }
+    let component = json!({"latest": name, "date": r["drill"]["date"].as_str().or_else(|| name.strip_prefix("drill-").and_then(|s| s.strip_suffix(".json"))),
+                           "ok": ok, "skipped": skipped, "skipped_reason": d["reason"], "finished_unix": when, "age_s": age, "cadence_s": t.drill_cadence_s,
+                           "steps": steps, "failed_step": failed_step, "cost": r["cost"], "results_file": format!("docs/results/{name}")});
+    (component, alerts)
+}
+
+pub fn compute(near: &Near, dep: &Deployments, state_dir: &Path, results_dir: &Path, t: &Thresholds) -> Result<Value> {
+    compute_with(near, dep, state_dir, results_dir, t, &Default::default(), &Default::default())
 }
 
 /// [`compute`], where a permit the relayer has not confirmed counts as pending only if it is not carried
 /// out already: a recorded run relayed it (`recorded`, from the results files), or its adapter's `used`
 /// view says it was applied (`chains`: EVM RPCs by chain id). A relayer that starts from a new state file
-/// meets earlier runs' permits that are long applied.
+/// meets earlier runs' permits that are long applied. `results_dir` holds the drill files (`drill-*.json`)
+/// and `state_dir` the services' own files (`evm_accounts.json` among them).
 pub fn compute_with(
     near: &Near,
     dep: &Deployments,
     state_dir: &Path,
+    results_dir: &Path,
     t: &Thresholds,
     chains: &std::collections::BTreeMap<u64, String>,
     recorded: &std::collections::BTreeMap<(String, u64), Value>,
@@ -235,6 +337,58 @@ pub fn compute_with(
         components.insert("practice".into(), json!({"vending": pr.vending, "program": pr.program, "balance_near": balance,
                                                    "public_vend_key_allowance_near": allowance, "credit_near": credit_near, "credit_tokens_raw": credit["tokens"]}));
     }
+
+    // A `hunt` vending contract, if the deployment names one: watched like the practice one. Its key is
+    // optional (absent today), so a missing one is only a notice.
+    if let Some(h) = &dep.hunt {
+        let acc = near.account(&h.vending)?;
+        let balance = acc.as_ref().map(|a| yocto(&a["amount"])).unwrap_or(0.0) / ONE_NEAR;
+        let public = antibody_cli::practice::public_vend_signer(&h.vending).public_key_str();
+        let allowance = near.access_keys(&h.vending)?.into_iter().find(|k| k["public_key"] == json!(public)).map(|k| yocto(&k["access_key"]["permission"]["FunctionCall"]["allowance"]) / ONE_NEAR);
+        let credit = near.view(&dep.antibody, "get_account", json!({"account_id": h.vending}))?;
+        let credit_near = yocto(&credit["near"]) / ONE_NEAR;
+        if balance < t.vending_near {
+            alert("critical", "hunt", "hunt-vending-balance".into(), format!("the hunt vending contract holds {balance:.3} NEAR: refill it"));
+        }
+        match allowance {
+            None => alert("info", "hunt", "hunt-vend-key-absent".into(), "the hunt vending has no public vend key (optional): agents pass their own account".into()),
+            Some(a) if a < t.vend_key_near => alert("warn", "hunt", "hunt-vend-key-allowance".into(), format!("the hunt vending's public vend key has {a:.4} NEAR of allowance left")),
+            _ => {}
+        }
+        if credit_near < t.vending_credit_near {
+            alert("warn", "hunt", "hunt-vending-credit".into(), format!("the hunt vending contract's NEAR credit at near-antibody is {credit_near:.3}"));
+        }
+        components.insert("hunt".into(), json!({"vending": h.vending, "balance_near": balance, "public_vend_key_allowance_near": allowance, "credit_near": credit_near}));
+    }
+
+    // The daily drill (docs/drill.md): the latest `drill-*.json` in the results directory.
+    let (drill, drill_alerts) = drill_status(results_dir, t);
+    for (level, key, message) in drill_alerts {
+        alert(level, "drill", key, message);
+    }
+    if !drill.is_null() {
+        components.insert("drill".into(), drill);
+    }
+
+    // The EVM relayer's and deployer's balances on each chain, against their floors (`evm_accounts.json`,
+    // written by `antibody-services all`). A monitoring read: one attempt with a short timeout.
+    let evm_accounts = read_json(&state_dir.join("evm_accounts.json"));
+    let mut evm_rows = Vec::new();
+    for a in evm_accounts.as_array().into_iter().flatten() {
+        let (role, address) = (a["role"].as_str().unwrap_or("?"), a["address"].as_str().unwrap_or_default());
+        for (chain, rpc) in chains {
+            let floor = a["floor_wei"].as_str().and_then(|s| s.parse::<u128>().ok()).unwrap_or_else(|| t.evm_floor(role, *chain));
+            let (row, al) = evm_balance_row(role, *chain, address, eth_balance(rpc, address), floor);
+            if let Some((level, key, message)) = al {
+                alert(level, "evm", key, message);
+            }
+            evm_rows.push(row);
+        }
+    }
+    if !evm_rows.is_empty() {
+        components.insert("evm_balances".into(), json!(evm_rows));
+    }
+
     let ok = !alerts.iter().any(|a| a["level"] == json!("critical"));
     Ok(json!({"at": now_s(), "ok": ok, "network": near.network, "components": components, "alerts": alerts}))
 }
@@ -393,6 +547,71 @@ mod tests {
         // Retries: every 10 s for two minutes, then doubling up to an hour.
         assert_eq!((crate::t1::backoff(1), crate::t1::backoff(11), crate::t1::backoff(12), crate::t1::backoff(13)), (10, 10, 10, 20));
         assert_eq!((crate::t1::backoff(20), crate::t1::backoff(21), crate::t1::backoff(59)), (2_560, 3_600, 3_600));
+    }
+
+    #[test]
+    fn a_drill_file_is_read_into_a_component_and_its_alerts() {
+        let dir = std::env::temp_dir().join(format!("drill-status-{}", now_s()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let t = Thresholds::default();
+        // No drill file yet: stale, and the component says so.
+        let (c, alerts) = drill_status(&dir, &t);
+        assert_eq!(c["latest"], json!(null));
+        assert_eq!(alerts.iter().map(|(_, k, _)| k.as_str()).collect::<Vec<_>>(), vec!["drill-stale"]);
+
+        // A passing drill from today: no alert.
+        let today = rfc3339_of_unix(now_s())[..10].to_string();
+        let ok = json!({"all_ok": true, "finished_unix": now_s(), "drill": {"date": today, "steps": {"evm": {"ok": true}, "one-moment": {"ok": true}}},
+                        "cost": {"near": []}});
+        std::fs::write(dir.join(format!("drill-{today}.json")), serde_json::to_vec(&ok).unwrap()).unwrap();
+        let (c, alerts) = drill_status(&dir, &t);
+        assert_eq!(c["ok"], json!(true));
+        assert!(alerts.is_empty(), "{alerts:?}");
+
+        // A failed drill (newer name) with a failed step: a critical drill-failed naming the step.
+        let failed = json!({"all_ok": false, "finished_unix": now_s(), "drill": {"date": "2999-01-01", "steps": {"evm": {"ok": true}, "guardian": {"ok": false, "error": "adapter deploy reverted"}}}});
+        std::fs::write(dir.join("drill-2999-01-01.json"), serde_json::to_vec(&failed).unwrap()).unwrap();
+        let (c, alerts) = drill_status(&dir, &t);
+        assert_eq!(c["ok"], json!(false));
+        assert_eq!(c["failed_step"]["step"], "guardian");
+        let a = &alerts[0];
+        assert_eq!(a.1, "drill-failed");
+        assert!(a.2.contains("at step guardian"), "{}", a.2);
+        std::fs::remove_file(dir.join("drill-2999-01-01.json")).unwrap();
+
+        // A skipped drill (newest): a warning with the reason.
+        let skipped = json!({"all_ok": false, "finished_unix": now_s(), "drill": {"skipped": true, "reason": "a balance a drill needs is below its floor", "date": "2999-12-31"}});
+        std::fs::write(dir.join("drill-2999-12-31.json"), serde_json::to_vec(&skipped).unwrap()).unwrap();
+        let (c, alerts) = drill_status(&dir, &t);
+        assert_eq!(c["skipped"], json!(true));
+        assert_eq!(alerts[0].1, "drill-skipped");
+        assert!(alerts[0].2.contains("below its floor"), "{}", alerts[0].2);
+
+        // A stale latest (old finished_unix): warns past the cadence.
+        std::fs::write(dir.join("drill-2999-12-31.json"), serde_json::to_vec(&json!({"all_ok": true, "finished_unix": 1, "drill": {"date": "2999-12-31", "steps": {}}})).unwrap()).unwrap();
+        let (_, alerts) = drill_status(&dir, &t);
+        assert!(alerts.iter().any(|(_, k, _)| k == "drill-stale"), "{alerts:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_low_evm_balance_is_a_critical_alert() {
+        let floor = 2_000_000_000_000_000u128;
+        let (row, alert) = evm_balance_row("relayer", 11155111, "0xabc", Some(1_000_000_000_000_000), floor);
+        assert_eq!(row["ok"], json!(false));
+        let (level, key, msg) = alert.unwrap();
+        assert_eq!((level, key.as_str()), ("critical", "evm-relayer-low-11155111"));
+        assert!(msg.contains("below its"), "{msg}");
+        // Enough: a row, no alert. A chain id in the key tells the two chains apart.
+        let (row, alert) = evm_balance_row("deployer", 84532, "0xdef", Some(floor), floor);
+        assert_eq!(row["ok"], json!(true));
+        assert!(alert.is_none());
+        let (_, alert) = evm_balance_row("relayer", 84532, "0xabc", Some(1), floor);
+        assert_eq!(alert.unwrap().1, "evm-relayer-low-84532");
+        // A down RPC (None): a notice, never a false low.
+        let (row, alert) = evm_balance_row("relayer", 11155111, "0xabc", None, floor);
+        assert!(alert.is_none());
+        assert_eq!(row["error"], "could not read the balance");
     }
 
     #[test]
