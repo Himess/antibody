@@ -25,8 +25,10 @@ proofs, the contract, the tools.
 - Proven on SP1's prover network (2026-11-07): the four real Groth16 proofs, in `fixtures/zk/<case>/proof.bin`
   with their requests, costs and times in `proof.json`. Each verifies against SP1 6.10.0's key and fails with
   any public value changed (near-t2's tests, in CI).
-- Pending: near-t2 on testnet (`zk.antibody.testnet`), which needs testnet NEAR for its deployment.
-- The README and JUDGES.md list T2 as "not yet" until near-t2 holds those four records on testnet.
+- Live on testnet (2026-11-07): near-t2 at `zk.antibody.testnet`, locked (code hash `3HFJXFtL…`; wasm sha256
+  `21e0d696…`). Its four records, for runs 33, 36, 35 and 53, are `confirmed`, and a tampered proof was refused.
+  Create `GSBX5sQo…`, deploy `8JwX9L9D…`, lock `4zVZbVpA…`; the submissions are in JUDGES.md row 16 and in
+  docs/results/testnet-2026-11-04.json (`t2`).
 
 ## The pieces
 

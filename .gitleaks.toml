@@ -24,3 +24,7 @@ paths = [
   # near-t2 test scenario built from them (public program vkey, placeholder hashes).
   '''web/tests/fixtures/.*\.json$''',
 ]
+# The zk guest's program vkey: a public constant (docs/zk.md, near-t2's code), recorded in results files.
+regexes = [
+  '''0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203''',
+]

@@ -40,19 +40,26 @@
         "code_hash": "7Wotb7nnbSnZnC8Dbx6iSCB785Dojai2HoVq7AqCbsdh",
         "locked": true,
         "role": "verdict guard"
+      },
+      {
+        "account": "zk.antibody.testnet",
+        "code_hash": "3HFJXFtLRaCEavhhUbr8eNfzy8qPvemYnQwFv6z6RqG7",
+        "locked": true,
+        "role": "T2 (near-t2)"
       }
     ],
-    "git_commit": "2777a3eb0afc5765ca91246e85dcfdbee551261b",
+    "git_commit": "9d07e045",
     "light_client": "client-eth2.sepolia.testnet",
     "network": "testnet",
     "outlayer": "outlayer.testnet",
-    "recorded_at": 1793972427,
+    "recorded_at": 1794083422,
     "verifier": {
       "wasm_hash": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
       "wasm_url": "https://github.com/Himess/antibody/releases/download/verifier-ccc27f0ca60c/antibody-verify.wasm"
     }
   },
   "rpc": "https://rpc.testnet.fastnear.com",
+  "t2": "zk.antibody.testnet",
   "token": "wrap.testnet",
   "token_decimals": 24,
   "token_symbol": "wNEAR",

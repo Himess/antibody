@@ -187,10 +187,12 @@ a hundred-thousandth of the sandbox's tUSD amounts. What a mainnet program would
 
 Tiers: **T0** (OutLayer delivers the TEE's output), **T1** (its quote verified on NEAR). Instant payouts
 need T1. Above the cap, a payout also needs an independent second run that agrees, and waits its
-challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) is **not yet** on
-testnet. The contract (near-t2), its tests and the sandbox run are in place
-([docs/zk.md](docs/zk.md)); its testnet deployment waits for the first proofs. It claims no privacy, and
-no payout depends on it. Full table: [docs/trust.md](docs/trust.md).
+challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) is **live on
+testnet** since 2026-11-07: near-t2 (`zk.antibody.testnet`, locked) checked the Groth16 proofs of the four
+runs whose content keys are published (33, 36, 35 and the practice run 53, proved on SP1's prover network)
+against near-antibody's records, and all four are `confirmed`; a tampered proof was refused
+(JUDGES.md row 16, [docs/zk.md](docs/zk.md)). It claims no privacy, and no payout depends on it. Full
+table: [docs/trust.md](docs/trust.md).
 
 ## The properties
 
@@ -394,7 +396,9 @@ bonds are never revenue: they go to the program's escrow.
    - Done ([docs/zk.md](docs/zk.md)): near-t2, which checks a Groth16 proof in about 34 Tgas and
      compares it with near-antibody's records; `antibody zk prove|submit|status`; the API; a prover
      service for every practice try.
-   - Next: the four testnet runs proven on SP1's prover network, and near-t2 on testnet.
+   - Done (2026-11-07): the four testnet runs proven on SP1's prover network (0.42 PROVE and 45-79 s
+     each) and near-t2 on testnet (`zk.antibody.testnet`, locked), all four records `confirmed`.
+   - Next: zk by default above a cap.
 4. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
 5. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
 6. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.

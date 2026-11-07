@@ -5333,5 +5333,337 @@
     "ok": true,
     "wallet_after": "0.061000000000000000000000",
     "wallet_before": "0.031000000000000000000000"
+  },
+  "t2": {
+    "at_unix": 1794083365,
+    "code_hash": "3HFJXFtLRaCEavhhUbr8eNfzy8qPvemYnQwFv6z6RqG7",
+    "contract": "zk.antibody.testnet",
+    "create": {
+      "amount_yocto": "2396940000000000000000000",
+      "code_bytes": 224694,
+      "tx": "GSBX5sQoRf1Ls1EzEFzYDE88Vj3chBcBM7kmHE9MxLyk"
+    },
+    "deploy": {
+      "bytes": 224694,
+      "sha256": "21e0d69653f3c37bd03624402625cf6fe6fbfbdf4d05183f4b78b5f52836c99c",
+      "tx": "8JwX9L9DXHX9msFnaoGHP32vV1NgPV7fyLcCUVHksxis"
+    },
+    "lock": {
+      "account": "zk.antibody.testnet",
+      "code_hash": "3HFJXFtLRaCEavhhUbr8eNfzy8qPvemYnQwFv6z6RqG7",
+      "deleted_keys": 1,
+      "locked": true,
+      "tx": {
+        "events": [],
+        "explorer": "https://testnet.nearblocks.io/txns/4zVZbVpAaUUAdDYQDRFs4JF2ENnhTspr5hjrtfUNPWfb",
+        "failures": [],
+        "tx": "4zVZbVpAaUUAdDYQDRFs4JF2ENnhTspr5hjrtfUNPWfb"
+      }
+    },
+    "locked": true,
+    "ok": true,
+    "pins": {
+      "antibody": "bounty.antibody.testnet",
+      "groth16": {
+        "is_sp1_v6_10_0": true,
+        "selector": "0x4388a21c",
+        "vk_root": "0x002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f25352"
+      },
+      "program_vkey": "0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203",
+      "record_deposit": "20000000000000000000000",
+      "verifier": "antibody-verifier 0.1.0 revm 38.0.0 reth v2.2.0 rsp 5afe72eb12a2d6accd9d7fdff66785d91cbc8e72",
+      "verifier_wasm": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1"
+    },
+    "refusal": {
+      "error": "submit failed: {\"ActionError\":{\"index\":0,\"kind\":{\"FunctionCallError\":{\"ExecutionError\":\"AltBn128 invalid input: invalid g1: [3C, E, 3F, AC, EE, 22, 44, 65, B5, AE, 5E, A9, 3A, 55, 6B, B6, 60, 92, 24, 87, B7, DC, BA, EA, BB, 1D, F7, 71, CF, F8, 61, 7, A3, E1, 21, 8D, 47, F4, B4, B, A1, B5, 58, 9D, E3",
+      "record_after": null,
+      "refused": true,
+      "what": "run 33's proof with one byte of its A point changed"
+    },
+    "stats": {
+      "confirmed": 4,
+      "contradicted": 0,
+      "records": 4
+    },
+    "submissions": [
+      {
+        "case": "a",
+        "events": [
+          {
+            "data": [
+              {
+                "at": 1794083350,
+                "block": 276679672,
+                "commit_id": 13,
+                "differ": [],
+                "kind": "Violation",
+                "outcome": "confirmed",
+                "program_id": 5,
+                "proof_sha256": "246a6f008b62dd9b3b1bc4adae8a1aa42c203671822c0f4a13faae95d7a3d3e0",
+                "public_values_sha256": "1fd34459d205521277f4d7a021b4a4262dbb5b0a563ba06ee1f4ed5307a62787",
+                "receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee",
+                "request_sha256": "c348b67ec9a15c29e066fa0d3933944be77336a394dce17b70d95554480afd86",
+                "round": 0,
+                "run_id": 33,
+                "slots": [
+                  {
+                    "severity": "critical",
+                    "slot": 0
+                  }
+                ],
+                "submitter": "antibody.testnet",
+                "tee_kind": "Violation",
+                "tee_receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee",
+                "tee_slots": [
+                  0
+                ],
+                "tee_tier": "T1"
+              }
+            ],
+            "event": "t2_confirmed",
+            "standard": "antibody-t2",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "https://testnet.nearblocks.io/txns/2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN",
+        "network_request": "0x713964e1a11bdb85aec522cc3acc416899f8b783b5ef115c9544051725a588d2",
+        "record": {
+          "at": 1794083350,
+          "block": 276679672,
+          "commit_id": 13,
+          "differ": [],
+          "kind": "Violation",
+          "outcome": "confirmed",
+          "program_id": 5,
+          "proof_sha256": "246a6f008b62dd9b3b1bc4adae8a1aa42c203671822c0f4a13faae95d7a3d3e0",
+          "public_values_sha256": "1fd34459d205521277f4d7a021b4a4262dbb5b0a563ba06ee1f4ed5307a62787",
+          "receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee",
+          "request_sha256": "c348b67ec9a15c29e066fa0d3933944be77336a394dce17b70d95554480afd86",
+          "round": 0,
+          "run_id": 33,
+          "slots": [
+            {
+              "severity": "critical",
+              "slot": 0
+            }
+          ],
+          "submitter": "antibody.testnet",
+          "tee_kind": "Violation",
+          "tee_receipt_sha256": "0ea67c6a56b964c4a8ef66861c89d56e99e0428836316d727f9d3dcea3dca2ee",
+          "tee_slots": [
+            0
+          ],
+          "tee_tier": "T1"
+        },
+        "run_id": 33,
+        "tx": "2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN",
+        "verify_proof_view": true
+      },
+      {
+        "case": "d",
+        "events": [
+          {
+            "data": [
+              {
+                "at": 1794083353,
+                "block": 276679678,
+                "commit_id": 16,
+                "differ": [],
+                "kind": "Violation",
+                "outcome": "confirmed",
+                "program_id": 5,
+                "proof_sha256": "66488e244bb6b0c6acae1aeb6dee492e4bab4f7e7625b6564344b2cf08703b9c",
+                "public_values_sha256": "eb1ade15f379982af0f30d3b61d682f80c7d7898f49f39078f83cefad77b5324",
+                "receipt_sha256": "fa62fbea3e9ea80fc38a8c5411b7041948e26add0c98efe501eafeec318d7c98",
+                "request_sha256": "83e954f00a028710a15249ca2a13982fae06007f1489fe8ad1d83a1a5d305592",
+                "round": 0,
+                "run_id": 36,
+                "slots": [
+                  {
+                    "severity": "critical",
+                    "slot": 0
+                  }
+                ],
+                "submitter": "antibody.testnet",
+                "tee_kind": "Violation",
+                "tee_receipt_sha256": "fa62fbea3e9ea80fc38a8c5411b7041948e26add0c98efe501eafeec318d7c98",
+                "tee_slots": [
+                  0
+                ],
+                "tee_tier": "T1"
+              }
+            ],
+            "event": "t2_confirmed",
+            "standard": "antibody-t2",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "https://testnet.nearblocks.io/txns/FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3",
+        "network_request": "0xbdfa94f58c775d6ec6538fb8a0108a075339f8ff54bd2d305fa2e9c3a923ecea",
+        "record": {
+          "at": 1794083353,
+          "block": 276679678,
+          "commit_id": 16,
+          "differ": [],
+          "kind": "Violation",
+          "outcome": "confirmed",
+          "program_id": 5,
+          "proof_sha256": "66488e244bb6b0c6acae1aeb6dee492e4bab4f7e7625b6564344b2cf08703b9c",
+          "public_values_sha256": "eb1ade15f379982af0f30d3b61d682f80c7d7898f49f39078f83cefad77b5324",
+          "receipt_sha256": "fa62fbea3e9ea80fc38a8c5411b7041948e26add0c98efe501eafeec318d7c98",
+          "request_sha256": "83e954f00a028710a15249ca2a13982fae06007f1489fe8ad1d83a1a5d305592",
+          "round": 0,
+          "run_id": 36,
+          "slots": [
+            {
+              "severity": "critical",
+              "slot": 0
+            }
+          ],
+          "submitter": "antibody.testnet",
+          "tee_kind": "Violation",
+          "tee_receipt_sha256": "fa62fbea3e9ea80fc38a8c5411b7041948e26add0c98efe501eafeec318d7c98",
+          "tee_slots": [
+            0
+          ],
+          "tee_tier": "T1"
+        },
+        "run_id": 36,
+        "tx": "FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3",
+        "verify_proof_view": true
+      },
+      {
+        "case": "c",
+        "events": [
+          {
+            "data": [
+              {
+                "at": 1794083357,
+                "block": 276679685,
+                "commit_id": 15,
+                "differ": [],
+                "kind": "NoViolation",
+                "outcome": "confirmed",
+                "program_id": 5,
+                "proof_sha256": "3dcd3c9408c5d050d895e244704a8f9d2abcc8ebaef5fe88053ecb663db73208",
+                "public_values_sha256": "0c703f6fc2975ae622c9a2e8a818db8dc15c5a670f134d7cf2500f9f91f56a04",
+                "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+                "request_sha256": "6c2bcfd74c9a559532c72ca4ab86ec422c7aea800cc1f85b43a032e209b4d4c4",
+                "round": 0,
+                "run_id": 35,
+                "slots": [],
+                "submitter": "antibody.testnet",
+                "tee_kind": "NoViolation",
+                "tee_receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+                "tee_slots": [],
+                "tee_tier": "T1"
+              }
+            ],
+            "event": "t2_confirmed",
+            "standard": "antibody-t2",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "https://testnet.nearblocks.io/txns/2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA",
+        "network_request": "0xa63270b347ec96c888a34e9542c2a6ef6b656f1a3cb9bc06adb79810779fe1dc",
+        "record": {
+          "at": 1794083357,
+          "block": 276679685,
+          "commit_id": 15,
+          "differ": [],
+          "kind": "NoViolation",
+          "outcome": "confirmed",
+          "program_id": 5,
+          "proof_sha256": "3dcd3c9408c5d050d895e244704a8f9d2abcc8ebaef5fe88053ecb663db73208",
+          "public_values_sha256": "0c703f6fc2975ae622c9a2e8a818db8dc15c5a670f134d7cf2500f9f91f56a04",
+          "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+          "request_sha256": "6c2bcfd74c9a559532c72ca4ab86ec422c7aea800cc1f85b43a032e209b4d4c4",
+          "round": 0,
+          "run_id": 35,
+          "slots": [],
+          "submitter": "antibody.testnet",
+          "tee_kind": "NoViolation",
+          "tee_receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+          "tee_slots": [],
+          "tee_tier": "T1"
+        },
+        "run_id": 35,
+        "tx": "2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA",
+        "verify_proof_view": true
+      },
+      {
+        "case": "practice",
+        "events": [
+          {
+            "data": [
+              {
+                "at": 1794083362,
+                "block": 276679692,
+                "commit_id": 20,
+                "differ": [],
+                "kind": "Violation",
+                "outcome": "confirmed",
+                "program_id": 6,
+                "proof_sha256": "9fa3de423540502496ad7c995f28342d75adf927908cde5e751395f879ef7ab4",
+                "public_values_sha256": "eba6136e1ad40d64334689d4985b93d3fc54c818ef2f370adc83b41dd6783324",
+                "receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+                "request_sha256": "b4b3647b4c0124bd471618664aef8e82fcc793e8a597f07d7de5423722a99d84",
+                "round": 0,
+                "run_id": 53,
+                "slots": [
+                  {
+                    "severity": "low",
+                    "slot": 0
+                  }
+                ],
+                "submitter": "antibody.testnet",
+                "tee_kind": "Violation",
+                "tee_receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+                "tee_slots": [
+                  0
+                ],
+                "tee_tier": "T1"
+              }
+            ],
+            "event": "t2_confirmed",
+            "standard": "antibody-t2",
+            "version": "1.0.0"
+          }
+        ],
+        "explorer": "https://testnet.nearblocks.io/txns/2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3",
+        "network_request": "0x8380dc391f6101b386a0b4c63ea6daf08dfcf0f5be9839486ef56450760b6954",
+        "record": {
+          "at": 1794083362,
+          "block": 276679692,
+          "commit_id": 20,
+          "differ": [],
+          "kind": "Violation",
+          "outcome": "confirmed",
+          "program_id": 6,
+          "proof_sha256": "9fa3de423540502496ad7c995f28342d75adf927908cde5e751395f879ef7ab4",
+          "public_values_sha256": "eba6136e1ad40d64334689d4985b93d3fc54c818ef2f370adc83b41dd6783324",
+          "receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+          "request_sha256": "b4b3647b4c0124bd471618664aef8e82fcc793e8a597f07d7de5423722a99d84",
+          "round": 0,
+          "run_id": 53,
+          "slots": [
+            {
+              "severity": "low",
+              "slot": 0
+            }
+          ],
+          "submitter": "antibody.testnet",
+          "tee_kind": "Violation",
+          "tee_receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+          "tee_slots": [
+            0
+          ],
+          "tee_tier": "T1"
+        },
+        "run_id": 53,
+        "tx": "2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3",
+        "verify_proof_view": true
+      }
+    ]
   }
 }

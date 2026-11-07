@@ -89,7 +89,7 @@
   "intro": "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.",
   "setup": [],
   "command": "antibody judge",
-  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true; contract audit ok: true; 8 programs.",
+  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs.",
   "programs_note": "This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the others are earlier runs' on the same deployment.",
   "contracts": [
    {
@@ -110,6 +110,11 @@
    {
     "role": "verdict guard",
     "account": "guard.antibody.testnet",
+    "locked": true
+   },
+   {
+    "role": "T2 (near-t2)",
+    "account": "zk.antibody.testnet",
     "locked": true
    }
   ],
@@ -1208,6 +1213,106 @@
   },
   {
    "n": 16,
+   "kind": "t2",
+   "claim": "T2: the verdict of each run whose content key is published (fixtures/zk; sealed on chain), re-run in SP1 on the TEE's exact input, is a Groth16 proof that near-t2 checks on NEAR against near-antibody's records (zk.antibody.testnet, locked; a validity proof of a disclosed verdict: no privacy claimed, no payout depends on it)",
+   "check": "`antibody zk status --run 33` (and runs 33, 36, 35, 53)",
+   "expected": "run 33 `confirmed`, run 36 `confirmed`, run 35 `confirmed`, run 53 `confirmed`; a tampered proof refused: `true`; SP1 6.10.0's key built in: `true`, program vkey `0x00e87aaa…`",
+   "evidence": "run 33 [2qv8TQiY…](https://testnet.nearblocks.io/txns/2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN), run 36 [FZaKJZ8M…](https://testnet.nearblocks.io/txns/FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3), run 35 [2k3SarGc…](https://testnet.nearblocks.io/txns/2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA), run 53 [2j6f6Ti8…](https://testnet.nearblocks.io/txns/2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3)",
+   "commands": [
+    "antibody zk status --run 33"
+   ],
+   "links": [
+    {
+     "label": "run 33",
+     "chain": "near",
+     "tx": "2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN",
+     "url": "https://testnet.nearblocks.io/txns/2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN"
+    },
+    {
+     "label": "run 36",
+     "chain": "near",
+     "tx": "FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3",
+     "url": "https://testnet.nearblocks.io/txns/FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3"
+    },
+    {
+     "label": "run 35",
+     "chain": "near",
+     "tx": "2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA",
+     "url": "https://testnet.nearblocks.io/txns/2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA"
+    },
+    {
+     "label": "run 53",
+     "chain": "near",
+     "tx": "2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3",
+     "url": "https://testnet.nearblocks.io/txns/2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3"
+    }
+   ],
+   "live": [
+    {
+     "kind": "near-view",
+     "contract": "zk.antibody.testnet",
+     "method": "get_record",
+     "args": {
+      "run_id": "33"
+     },
+     "expect": {
+      "path": "outcome",
+      "equals": "confirmed",
+      "says": "run 33's record is confirmed"
+     },
+     "label": "Read run 33's record on NEAR",
+     "cli": "antibody view --contract zk.antibody.testnet --method get_record --args '{\"run_id\":\"33\"}'"
+    },
+    {
+     "kind": "near-view",
+     "contract": "zk.antibody.testnet",
+     "method": "get_record",
+     "args": {
+      "run_id": "36"
+     },
+     "expect": {
+      "path": "outcome",
+      "equals": "confirmed",
+      "says": "run 36's record is confirmed"
+     },
+     "label": "Read run 36's record on NEAR",
+     "cli": "antibody view --contract zk.antibody.testnet --method get_record --args '{\"run_id\":\"36\"}'"
+    },
+    {
+     "kind": "near-view",
+     "contract": "zk.antibody.testnet",
+     "method": "get_record",
+     "args": {
+      "run_id": "35"
+     },
+     "expect": {
+      "path": "outcome",
+      "equals": "confirmed",
+      "says": "run 35's record is confirmed"
+     },
+     "label": "Read run 35's record on NEAR",
+     "cli": "antibody view --contract zk.antibody.testnet --method get_record --args '{\"run_id\":\"35\"}'"
+    },
+    {
+     "kind": "near-view",
+     "contract": "zk.antibody.testnet",
+     "method": "get_record",
+     "args": {
+      "run_id": "53"
+     },
+     "expect": {
+      "path": "outcome",
+      "equals": "confirmed",
+      "says": "run 53's record is confirmed"
+     },
+     "label": "Read run 53's record on NEAR",
+     "cli": "antibody view --contract zk.antibody.testnet --method get_record --args '{\"run_id\":\"53\"}'"
+    }
+   ],
+   "contract": "zk.antibody.testnet"
+  },
+  {
+   "n": 17,
    "kind": "project_read",
    "claim": "The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped",
    "check": "`antibody --account <project> program read --commit 13 --project-key <key file> --out <dir> --reveal-tx 8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY` (the wrap exists: no transaction)",
@@ -1261,7 +1366,7 @@
    "duplicate": 16
   },
   {
-   "n": 17,
+   "n": 18,
    "kind": "audit",
    "claim": "Every conservation equation balances (the ledger's both sides)",
    "check": "`antibody judge` (each program's `audit ok`, and the contract's)",
@@ -1548,7 +1653,7 @@
  ],
  "does_not_show": [
   "One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value.",
-  "T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet on testnet: near-t2 and the sandbox run are in place (docs/zk.md), and no payout depends on it.",
+  "T2 is a validity proof of a disclosed verdict (docs/zk.md): it claims no privacy, and no payout in the locked deployment depends on it. It covers the four testnet runs whose content keys are published (fixtures/zk; sealed on chain) and the practice tries the prover service proves.",
   "Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
   "A mutation score, where shown, measures a rule set's strength, not the code's security."
  ],
