@@ -1,7 +1,7 @@
 //! `antibody` — create programs, hunt, commit and submit sealed PoCs, verify receipts, and serve
 //! the same operations to AI agents over MCP. Every command prints JSON with explorer links.
 
-use antibody_cli::{cmd, ctx, hunt, mcp};
+use antibody_cli::{cmd, ctx, hunt, immune, mcp};
 
 use std::path::PathBuf;
 
@@ -492,6 +492,10 @@ enum Cmd {
         #[arg(long)]
         salt: Option<B256>,
     },
+    /// Immune memory on a pull request (docs/immune.md): re-run every paid proof this run can read against this
+    /// build's code, with the verifier, locally, at the program's anchor. View calls only. Exit 0: no re-run proof
+    /// breaks a rule; 2: one still breaks a rule; 3: none breaks, but a re-run was inconclusive
+    Immune(ImmuneArgs),
     /// NEAR credit at near-antibody for storage and verification runs (NEP-145 style)
     StorageDeposit {
         #[arg(long, default_value = "0.5")]
@@ -708,6 +712,48 @@ enum Cmd {
     },
 }
 
+/// `antibody immune`'s flags, in a struct of their own (clap builds them in their own function).
+#[derive(clap::Args)]
+struct ImmuneArgs {
+    /// The mapping the project commits: the program, and the target each contract builds
+    #[arg(long, default_value = ".antibody/immune.toml")]
+    config: PathBuf,
+    /// The program (default: the mapping's)
+    #[arg(long)]
+    program: Option<u32>,
+    /// Where the mapping's relative paths start (default: the current directory)
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// The project's key file, to read paid findings wrapped to it (or $ANTIBODY_PROJECT_KEY: the file's JSON or the
+    /// secret in hex). Never given to pull requests from forks
+    #[arg(long)]
+    project_key: Option<PathBuf>,
+    /// A published content key, <commit>=<hex or file>; repeatable
+    #[arg(long = "content-key")]
+    content_keys: Vec<String>,
+    /// Revealed blobs, found by sha256 (default: the mapping's `blobs`)
+    #[arg(long)]
+    blobs: Option<PathBuf>,
+    /// An Antibody API that indexed the reveals, for blobs not in --blobs
+    #[arg(long)]
+    api: Option<String>,
+    /// Write the report as JSON
+    #[arg(long)]
+    json: Option<PathBuf>,
+    /// Write the report as Markdown (a job summary)
+    #[arg(long)]
+    md: Option<PathBuf>,
+    /// Write the pull request's code as a round manifest
+    #[arg(long)]
+    manifest_out: Option<PathBuf>,
+    /// A paid proof that cannot be read counts as inconclusive (exit 3)
+    #[arg(long)]
+    strict: bool,
+    /// Show where a proof read with the project key breaks (off: it is still sealed; never in a public log)
+    #[arg(long)]
+    reveal_sealed: bool,
+}
+
 #[derive(Subcommand)]
 enum InvariantsCmd {
     /// Deterministic draft from standard shapes, plus templates; with --ai, Claude extends it
@@ -919,6 +965,7 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Programs { from, limit } => cmd::programs(&mk()?, from, limit),
         Cmd::Pull { program, ref out } => cmd::pull(&mk()?, program, &out.clone().unwrap_or_else(|| PathBuf::from(format!("antibody-program-{program}")))),
         Cmd::Check { program, ref manifest, ref bundle, salt } => cmd::check(&mk()?, program, manifest.as_deref(), bundle, salt),
+        Cmd::Immune(_) => Err(eyre::eyre!("`antibody immune` sets its own exit code: it runs from main")),
         Cmd::FromForge { ref project, ref contract, ref test, ref fork_url, fork_block, ref endowment_floor, ref forge, ref out } => {
             let fork = match (fork_url, fork_block) {
                 (Some(u), Some(b)) => Some((u.as_str(), b)),
@@ -1164,8 +1211,53 @@ fn run(cli: Cli) -> Result<Value> {
     }
 }
 
+/// `antibody immune`: writes the report (JSON, Markdown) and prints the Markdown; its exit code is the verdict
+/// (immune::EXIT_*), so a CI step fails when a paid proof still breaks a rule.
+fn immune(cli: Cli) -> Result<i32> {
+    let ctx = ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), cli.account.clone(), cli.key_file.clone(), cli.eth_rpc.clone())?;
+    let Cmd::Immune(ImmuneArgs { config, program, root, project_key, content_keys, blobs, api, json, md, manifest_out, strict, reveal_sealed }) = cli.cmd else {
+        return Err(eyre::eyre!("not the immune command"));
+    };
+    let root = root.unwrap_or_else(|| PathBuf::from("."));
+    let project_key = match (project_key, std::env::var("ANTIBODY_PROJECT_KEY").ok().filter(|v| !v.trim().is_empty())) {
+        (Some(f), _) => Some(immune::project_secret(&std::fs::read_to_string(&f).map_err(|e| eyre::eyre!("{}: {e}", f.display()))?)?),
+        (None, Some(v)) => Some(immune::project_secret(&v)?),
+        (None, None) => None,
+    };
+    // Content keys given here take precedence over the mapping's.
+    let mut keys = std::collections::BTreeMap::new();
+    for s in &content_keys {
+        let (commit, value) = s.split_once('=').ok_or_else(|| eyre::eyre!("--content-key takes <commit>=<hex or file>, not {s:?}"))?;
+        let id: u64 = commit.trim().parse().map_err(|_| eyre::eyre!("--content-key: {commit:?} is not a commit id"))?;
+        keys.insert(id, immune::key32(value, &root)?);
+    }
+    let opts = immune::Opts { config, program, root, project_key, content_keys: keys, blobs, api, strict, reveal_sealed };
+    let (report, manifest) = immune::run(&ctx, &opts)?;
+    let text = immune::markdown(&report);
+    if let Some(p) = json {
+        std::fs::write(&p, serde_json::to_vec_pretty(&immune::to_json(&report))?)?;
+    }
+    if let Some(p) = md {
+        std::fs::write(&p, &text)?;
+    }
+    if let Some(p) = manifest_out {
+        std::fs::write(&p, manifest.canonical())?;
+    }
+    println!("{text}");
+    Ok(report.exit_code)
+}
+
 fn main() {
     let cli = Cli::parse();
+    if matches!(cli.cmd, Cmd::Immune(_)) {
+        std::process::exit(match immune(cli) {
+            Ok(code) => code,
+            Err(e) => {
+                eprintln!("error: {e:#}");
+                1
+            }
+        });
+    }
     let is_mcp = matches!(cli.cmd, Cmd::Mcp { .. });
     match run(cli) {
         // A command that returns text (a summary) prints it as it is.
@@ -1213,5 +1305,8 @@ mod tests {
         Cli::try_parse_from(["antibody", "hunt", "submit", "--name", "ann", "--poc", "p.json"]).unwrap();
         Cli::try_parse_from(["antibody", "hunt", "status", "--name", "ann", "--json"]).unwrap();
         assert!(Cli::try_parse_from(["antibody", "hunt", "submit", "--name", "ann"]).is_err(), "--poc is required");
+        let args = ["antibody", "immune", "--content-key", "13=k.hex", "--content-key", "14=k2.hex", "--json", "r.json", "--md", "r.md", "--strict"];
+        let Cmd::Immune(ImmuneArgs { config, content_keys, strict, .. }) = Cli::try_parse_from(args).unwrap().cmd else { panic!("immune") };
+        assert_eq!((config, content_keys.len(), strict), (PathBuf::from(".antibody/immune.toml"), 2, true));
     }
 }

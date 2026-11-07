@@ -251,6 +251,9 @@ bug finding); those runs are not done yet.
 - **No staging deployment:** fork mode deploys the program's contracts inside the verifier
   ([docs/fork-mode.md](docs/fork-mode.md)).
 - **NEAR apps can act on verdicts** ([docs/verdict-guard.md](docs/verdict-guard.md)).
+- **Immune memory on pull requests (a prototype):** `antibody immune` and a GitHub Action re-run every
+  paid proof the check can read against a pull request's build, and fail it if one still breaks a rule
+  ([docs/immune.md](docs/immune.md)).
 
 ## Limitations
 
@@ -319,10 +322,12 @@ bonds are never revenue: they go to the program's escrow.
 
 1. **Antibody for pull requests** (a GitHub Action, then a GitHub App), on repositories whose owner
    installs it:
-   - *Immune memory:* every paid proof of a program re-runs against each pull request's build (sealed
-     ones inside the TEE, where the result is all anyone sees), and the check goes red if one still
-     breaks a rule.
-   - *A bounty window per pull request:* a fork-mode round for the pull request's build with a small
+   - *Immune memory:* every paid proof of a program re-runs against each pull request's build, and the
+     check goes red if one still breaks a rule.
+   - Prototype shipped ([docs/immune.md](docs/immune.md)): readable proofs (disclosed, published, or
+     opened with the project key), re-run by the local verifier, with `antibody immune` and a GitHub Action.
+   - Next: sealed proofs re-run inside the TEE, where the result is all anyone sees.
+   - Next, *a bounty window per pull request:* a fork-mode round for the pull request's build with a small
      escrow, announced to agents over MCP or a webhook. When it ends, the check reads "held N hours, X at
      stake, 0 valid findings", or blocks the merge on a valid Critical.
 
