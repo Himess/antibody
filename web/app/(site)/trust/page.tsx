@@ -11,7 +11,7 @@ import styles from "@/components/checks/checks.module.css";
 import { Cell } from "@/components/programs/Cell";
 import { OnThisPage } from "@/components/programs/OnThisPage";
 import rt from "@/components/programs/programs.module.css";
-import { TierBadge } from "@/components/ui/Badges";
+import { LevelCode, TierBadge } from "@/components/ui/Badges";
 import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
@@ -23,12 +23,13 @@ import { Time } from "@/components/ui/Time";
 import { AccountLink } from "@/components/ui/TxLink";
 import { api, t2NotYet } from "@/lib/api";
 import { config, sourceUrl } from "@/lib/config";
+import { plainLevels } from "@/lib/levels";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Trust",
     description:
-      "What you trust in Antibody and how to check each part: the anchor against the light client, a run's TDX quote and its T1 confirmation, T2 on NEAR, and the reproducible builds.",
+      "What you trust in Antibody and how to check each part: the anchor against the light client, a run's TDX quote and its attestation on NEAR, the zero-knowledge proofs, and the reproducible builds.",
   };
 }
 
@@ -40,8 +41,14 @@ function Ext({ href, children, className }: { href: string; children: ReactNode;
   );
 }
 
-/** The panel's actors start lower case ("the light client"); a contract's name stays as it is ("near-antibody's owner"). */
-const actorTitle = (s: string) => (/^near-/.test(s) ? s : s.charAt(0).toUpperCase() + s.slice(1));
+/**
+ * The panel's actors start lower case ("the light client"); a contract's name stays as it is ("near-antibody's
+ * owner"). The API's "the TEE (OutLayer worker)" reads "The enclave (OutLayer worker)", as the rest of the site says it.
+ */
+const actorTitle = (raw: string) => {
+  const s = plainLevels(raw);
+  return /^near-/.test(s) ? s : s.charAt(0).toUpperCase() + s.slice(1);
+};
 
 /** README's deployment table names the MPC network's contract; /v1/guardian reads it from near-guardian's config. */
 const MPC_CONTRACT = "v1.signer-prod.testnet";
@@ -85,16 +92,13 @@ export default async function TrustPage() {
         eyebrow="Trust"
         title="What you trust, and how to check it"
         lede={
-          <p>
-            Each part of Antibody, what it is trusted for, and a check anyone can run. The checks on this page run in your browser against NEAR
-            testnet and Sepolia, and each comes with its terminal command.
-          </p>
+          <p>Each part of Antibody, what it is trusted for, and a check you can run in your browser, with its terminal command.</p>
         }
       />
 
       <OnThisPage
         items={[
-          { id: "tiers", label: "Tiers" },
+          { id: "tiers", label: "Levels" },
           { id: "panel", label: "Trust panel" },
           { id: "checks", label: "Browser checks" },
           { id: "builds", label: "Builds" },
@@ -104,36 +108,40 @@ export default async function TrustPage() {
         ]}
       />
 
-      <Section id="tiers" title="Who vouches for a verdict" lede="Each tier is a different reason to believe the pinned verifier ran on the committed input.">
+      <Section
+        id="tiers"
+        title="How a verdict is checked"
+        lede="Three levels, each a different reason to believe the pinned verifier ran on the committed input. Beside each name, the code the CLI and JUDGES.md print."
+      >
         <div className={styles.cards}>
           <div className={styles.cardBox}>
-            <TierBadge tier="T0" />
+            <TierBadge tier="T0" code />
             <p className="small">
-              OutLayer&apos;s operator delivers the TEE worker&apos;s output. A payout on T0 waits its challenge window; above the instant cap it also
-              needs an independent second run that agrees.
+              OutLayer runs the verifier in an enclave (secure hardware, a TEE), and its operator delivers the output. On that alone, a payout waits
+              its challenge window; above the instant cap it also needs an independent second run that agrees.
             </p>
           </div>
           <div className={styles.cardBox}>
-            <TierBadge tier="T1" />
+            <TierBadge tier="T1" code />
             <p className="small">
-              The run&apos;s Intel TDX quote, verified on NEAR: it binds the pinned wasm, the input and the output. Instant payouts need T1.{" "}
+              The run&apos;s Intel TDX quote, verified on NEAR: it binds the pinned wasm, the input and the output. Instant payouts need it.{" "}
               <a href="#t1">Check a run</a>
             </p>
           </div>
           <div className={styles.cardBox}>
             <div className="row" style={{ ["--gap" as string]: "8px" }}>
-              <TierBadge tier="T2" />
+              <TierBadge tier="T2" code />
               {t2Status}
             </div>
             <p className="small">
-              A validity proof (SP1) of a disclosed verdict, verified on NEAR in about 34 Tgas. It claims no privacy, and no payout in the locked
-              deployment depends on it. <a href="#t2">Its records</a>
+              A zero-knowledge validity proof (SP1) of a disclosed verdict, verified on NEAR in about 34 Tgas. It claims no privacy, and no payout in
+              the locked deployment depends on it. <a href="#t2">Its records</a>
             </p>
           </div>
           <div className={styles.cardBox}>
             <p className="eyebrow">The common ground</p>
             <p className="small">
-              Native, the TEE&apos;s wasm and the zkVM give the same receipt, byte for byte. <a href="#three">Three environments, one answer</a>
+              Native, the enclave&apos;s wasm and the zkVM give the same receipt, byte for byte. <a href="#three">Three environments, one answer</a>
             </p>
           </div>
         </div>
@@ -220,12 +228,14 @@ export default async function TrustPage() {
         </div>
 
         <div id="t1" className={styles.checkBlock}>
-          <h3>A run&apos;s quote binding and its T1 confirmation</h3>
+          <h3>
+            A run&apos;s quote binding and its attestation on NEAR <LevelCode level="T1" />
+          </h3>
           <div className={styles.split}>
             <div className="stack" style={{ ["--gap" as string]: "12px" }}>
               <p className="small">
                 OutLayer&apos;s worker signs one Intel TDX quote per execution. Its <code>report_data</code> is SHA-256 over the task: the wasm hash,
-                the input hash, the output hash, the caller, the secrets and the time. near-antibody accepts the quote, and the run becomes T1, only
+                the input hash, the output hash, the caller, the secrets and the time. near-antibody accepts the quote, and the run is attested, only
                 if:
               </p>
               <ol className={styles.steps}>
@@ -306,7 +316,7 @@ export default async function TrustPage() {
             <div className="stack" style={{ ["--gap" as string]: "12px" }}>
               <LiveCheck
                 check={{ kind: "near-view", contract: antibody, method: "get_run", args: { run_id: RUN_BINDING.run } }}
-                expect={{ path: "outcome.Answered.tier", equals: "T1", says: `run ${RUN_BINDING.run} is T1: its quote was verified on NEAR` }}
+                expect={{ path: "outcome.Answered.tier", equals: "T1", says: `run ${RUN_BINDING.run} is attested: its quote was verified on NEAR` }}
                 cli={`antibody view --contract ${antibody} --method get_run --args '{"run_id":${RUN_BINDING.run}}'`}
                 label={`Read run ${RUN_BINDING.run} on NEAR`}
               />
@@ -323,11 +333,13 @@ export default async function TrustPage() {
         </div>
 
         <div id="t2" className={styles.checkBlock}>
-          <h3>A T2 record on NEAR</h3>
+          <h3>
+            A zero-knowledge proof record on NEAR <LevelCode level="T2" />
+          </h3>
           <p className="small" style={{ maxWidth: "72ch" }}>
             Once a verdict&apos;s proof is disclosed, its re-run can be a Groth16 proof (SP1 {ZK.sp1}) that near-t2 checks on NEAR, then compares
-            with near-antibody&apos;s records: the request hash (the TEE&apos;s exact input), the blob, base, manifest and anchor, and the receipt,
-            kind and slots. Equal means the verifier, re-run on exactly the TEE&apos;s input, gave the TEE&apos;s receipt.
+            with near-antibody&apos;s records: the request hash (the enclave&apos;s exact input), the blob, base, manifest and anchor, and the
+            receipt, kind and slots. Equal means the verifier, re-run on exactly the enclave&apos;s input, gave the enclave&apos;s receipt.
           </p>
           <T2Records r={t2} />
         </div>
@@ -338,7 +350,7 @@ export default async function TrustPage() {
           <div className={styles.cardBox}>
             <h3>The verifier wasm</h3>
             <p className="small">
-              Each program pins the sha256 of the wasm OutLayer&apos;s TEE runs. The build script pins the toolchain, the locked dependencies and every
+              Each program pins the sha256 of the wasm OutLayer&apos;s enclave runs. The build script pins the toolchain, the locked dependencies and every
               build path, so the same source gives the same bytes on any Linux x86_64 machine.
             </p>
             {verifier ? (
@@ -395,7 +407,9 @@ export default async function TrustPage() {
             </p>
           </div>
           <div className={styles.cardBox}>
-            <h3>The ZK program (T2)</h3>
+            <h3>
+              The zero-knowledge program <LevelCode level="T2" />
+            </h3>
             <p className="small">
               SP1&apos;s docker build of the guest. near-t2 pins its program vkey, and the prover refuses an ELF whose vkey is not the pinned one.
               Three docker builds on fresh machines gave the same bytes. A local build is not reproducible across machines: its ELF embeds the
@@ -441,22 +455,22 @@ export default async function TrustPage() {
       <Section
         id="three"
         title="Three environments, one answer"
-        lede="The verifier gives the same receipt, byte for byte, natively, in the TEE's wasm and in the zkVM. Every tier rests on it."
+        lede="The verifier gives the same receipt, byte for byte, natively, in the enclave's wasm and in the zkVM. Every level rests on it."
       >
         <div className="stack" style={{ ["--gap" as string]: "16px" }}>
           <ul className={styles.items}>
             <li>
               <Icon name="cpu" size={14} />
               <span>
-                <strong>The TEE&apos;s wasm and native.</strong> CI re-runs the recorded fixtures in both and requires the same verdicts, keys and
+                <strong>The enclave&apos;s wasm and native.</strong> CI re-runs the recorded fixtures in both and requires the same verdicts, keys and
                 receipts (<Ext href={sourceUrl(".github/workflows/ci.yml")} className="mono xsmall">the verifier job</Ext>).
               </span>
             </li>
             <li>
               <Icon name="sigma" size={14} />
               <span>
-                <strong>The zkVM.</strong> SP1&apos;s executor re-runs four testnet runs on the TEE&apos;s exact inputs and gives the TEE&apos;s
-                receipts, with the same public values that <code>crates/zk/core</code> computes natively. Their content keys are public (our
+                <strong>The zkVM.</strong> SP1&apos;s executor re-runs four testnet runs on the enclave&apos;s exact inputs and gives the
+                enclave&apos;s receipts, with the same public values that <code>crates/zk/core</code> computes natively. Their content keys are public (our
                 fixture agents and the recorded run&apos;s practice try published theirs in <code>fixtures/zk</code>; a practice try made now seals with
                 a key anyone can derive), though on chain their proofs stay sealed until disclosure.
               </span>
@@ -464,7 +478,7 @@ export default async function TrustPage() {
             <li>
               <Icon name="check" size={14} />
               <span>
-                <strong>On NEAR.</strong> Each run&apos;s answer holds the receipt the TEE gave. Read it below and compare.
+                <strong>On NEAR.</strong> Each run&apos;s answer holds the receipt the enclave gave. Read it below and compare.
               </span>
             </li>
           </ul>
@@ -497,9 +511,9 @@ export default async function TrustPage() {
                 </dl>
                 <LiveCheck
                   check={{ kind: "near-view", contract: antibody, method: "get_run", args: { run_id: c.run } }}
-                  expect={{ path: "outcome.Answered.facts.receipt_sha256", equals: c.receipt, says: `the TEE's receipt for run ${c.run} is ${c.receipt.slice(0, 12)}…` }}
+                  expect={{ path: "outcome.Answered.facts.receipt_sha256", equals: c.receipt, says: `the enclave's receipt for run ${c.run} is ${c.receipt.slice(0, 12)}…` }}
                   cli={`antibody view --contract ${antibody} --method get_run --args '{"run_id":${c.run}}'`}
-                  label="Read the TEE's receipt on NEAR"
+                  label="Read the enclave's receipt on NEAR"
                 />
               </li>
             ))}
@@ -595,7 +609,7 @@ export default async function TrustPage() {
             <Icon name="info" size={14} />
             <span>
               <strong>The sandbox demo</strong> (<code>make demo</code>): MOCK OutLayer, DCAP and MPC contracts, resolved by the real verifier with a
-              TEST seed and a TEST secp256k1 key. The T1 checks on its MOCK quotes are the real code.
+              TEST seed and a TEST secp256k1 key. The attestation checks on its MOCK quotes are the real code.
             </span>
           </li>
           <li>
@@ -615,7 +629,7 @@ export default async function TrustPage() {
           <li>
             <Icon name="check" size={14} />
             <span>
-              <strong>Testnet uses the real services:</strong> OutLayer&apos;s TEE workers, their TDX quotes verified on NEAR, the MPC network&apos;s
+              <strong>Testnet uses the real services:</strong> OutLayer&apos;s enclave workers, their Intel TDX quotes verified on NEAR, the MPC network&apos;s
               signatures and the Ethereum light client. Acme Lend and the practice vaults are our own deliberately vulnerable fixtures, and wNEAR on
               testnet has no value. <Link href="/judges#limits">The limits</Link>
             </span>

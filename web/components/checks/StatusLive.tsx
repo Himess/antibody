@@ -51,19 +51,22 @@ const permitNo = (v: unknown): number => {
 };
 
 /** The operating accounts by their role in floats.json. */
-const ROLE_NAME: Record<string, string> = { keeper: "the keeper", "t1-relayer": "the T1 relayer", "t2-prover": "the T2 prover" };
+const ROLE_NAME: Record<string, string> = { keeper: "the keeper", "t1-relayer": "the attestation relayer", "t2-prover": "the zero-knowledge prover" };
 
 function listed(names: string[]): string {
   if (names.length <= 1) return names.join("");
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-const SERVICES: { key: string; what: string }[] = [
+/** An operating account's role in words, for the floats table: "Attestation relayer" (raw role when unknown). */
+const roleTitle = (role: string | null) => (role && ROLE_NAME[role] ? ROLE_NAME[role].replace(/^the /, "").replace(/^./, (c) => c.toUpperCase()) : (role ?? "—"));
+
+const SERVICES: { key: string; name?: string; what: string }[] = [
   { key: "indexer", what: "Indexes every event of near-antibody, the token and near-guardian, in order." },
   { key: "keeper", what: "Every 30 s: allocates in commit order, pays funded claims, asks for pauses, re-runs at a fix." },
   { key: "relayer", what: "Submits near-guardian's signed pause and release permits to each chain's adapter." },
   { key: "notifier", what: "Posts new events, and each new alert once, to the webhooks." },
-  { key: "t1", what: "Relays each answered run's TDX quote to near-antibody, which verifies it on chain." },
+  { key: "t1", name: "attestation relayer", what: "Relays each answered run's TDX quote to near-antibody, which verifies it on chain." },
 ];
 
 /** The escrow table's column widths, the same for each group of programs: their tables, stacked, line up. */
@@ -75,7 +78,7 @@ function Level({ level }: { level: string }) {
   return <Pill tone="info">info</Pill>;
 }
 
-function ServiceCard({ name, what, c }: { name: string; what: string; c: Obj | null }) {
+function ServiceCard({ name, title, what, c }: { name: string; title: string; what: string; c: Obj | null }) {
   const s = c ? num(c.updated_s_ago) : null;
   let pill = (
     <Pill tone="neutral" size="sm">
@@ -109,7 +112,7 @@ function ServiceCard({ name, what, c }: { name: string; what: string; c: Obj | n
   return (
     <li className={styles.service}>
       <div className="row" style={{ ["--gap" as string]: "8px", justifyContent: "space-between" }}>
-        <h3>{name}</h3>
+        <h3>{title}</h3>
         {pill}
       </div>
       <span className={styles.ago}>{s === null ? "—" : ago(s)}</span>
@@ -127,7 +130,7 @@ function ServiceCard({ name, what, c }: { name: string; what: string; c: Obj | n
 
 /**
  * `/v1/status` in plain words, refreshed by the browser every 30 s while the tab is visible: the
- * services' progress from their own state files, the T1 relays' collateral and the worker images, the
+ * services' progress from their own state files, the attestation relays' collateral and the worker images, the
  * practice faucet, the operating accounts' floats, the permits, each program's escrow and every alert.
  */
 export function StatusLive({ initial, runRoles }: { initial: Result<Status>; runRoles: Record<string, string> }) {
@@ -352,15 +355,15 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
       <Section id="services" title="Services" lede="Each service's last progress, from its own state file. None of them is trusted: every value they show is re-derivable from NEAR.">
         <ul className={styles.services} style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {SERVICES.map((s) => (
-            <ServiceCard key={s.key} name={s.key} what={s.what} c={has(c, s.key) ? obj(c[s.key]) : null} />
+            <ServiceCard key={s.key} name={s.key} title={s.name ?? s.key} what={s.what} c={has(c, s.key) ? obj(c[s.key]) : null} />
           ))}
         </ul>
       </Section>
 
-      <Section id="t1" title="T1 relays and worker images" lede="What a run needs to become T1: DCAP collateral that verifies its quote, and a worker image its program counts.">
+      <Section id="t1" title="Attestation relays and worker images" lede="What a run needs to be attested on NEAR: DCAP collateral that verifies its quote, and a worker image its program counts.">
         <div className={styles.grid2}>
           <div className={styles.cardBox}>
-            <h3>The collateral the T1 relayer uses</h3>
+            <h3>The collateral the attestation relayer uses</h3>
             {t1 ? (
               <dl className={styles.mini}>
                 <div>
@@ -407,8 +410,8 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                               {w.expired ? (
                                 <span className="xsmall muted">
                                   {collateral === "outlayer"
-                                    ? "The T1 relayer uses only OutLayer's copies."
-                                    : "T1 relays for this platform use fresh Intel PCS collateral."}
+                                    ? "The attestation relayer uses only OutLayer's copies."
+                                    : "Attestation relays for this platform use fresh Intel PCS collateral."}
                                 </span>
                               ) : null}
                             </span>
@@ -427,7 +430,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                           <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
                             expired
                           </Pill>{" "}
-                          {collateral === "outlayer" ? "and the relayer uses only those copies" : "T1 relays use fresh Intel PCS collateral"}
+                          {collateral === "outlayer" ? "and the relayer uses only those copies" : "attestation relays use fresh Intel PCS collateral"}
                         </span>
                       ) : expired === false ? (
                         <Pill tone="ok" size="sm">
@@ -456,7 +459,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                 </div>
               </dl>
             ) : (
-              <Empty>The T1 relayer does not run with this API.</Empty>
+              <Empty>The attestation relayer does not run with this API.</Empty>
             )}
           </div>
           <div className={styles.cardBox}>
@@ -505,7 +508,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                       <Pill tone="warn" size="sm">
                         {pendingImages.length} pending
                       </Pill>{" "}
-                      A run on one of these gets no T1 before its time; its payout waits the challenge window.
+                      A run on one of these cannot be attested on NEAR before its time; its payout waits the challenge window.
                     </p>
                     <ul className={styles.items}>
                       {pendingImages.map((p, i) => (
@@ -710,7 +713,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                       return (
                         <tr key={`${str(f.account)}-${i}`}>
                           <Cell label="Account" lead className={styles.cell}>
-                            <strong className="small">{str(f.role) ?? "—"}</strong>
+                            <strong className="small">{roleTitle(str(f.role))}</strong>
                             <div className="mono xsmall">{str(f.account) ?? "—"}</div>
                           </Cell>
                           <Cell label="Liquid" className="num">
@@ -747,7 +750,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
             )}
             <p className="xsmall muted">
               {floatNames.length ? `${listed(floatNames).replace(/^t/, "T")} keep${floatNames.length === 1 ? "s" : ""} NEAR liquid for gas` : "Each operating account keeps NEAR liquid for gas"}
-              {floatRoles.includes("t2-prover") ? "" : " (the T2 prover too, once near-t2 is on testnet)"}: under the float is a warning, under a quarter
+              {floatRoles.includes("t2-prover") ? "" : " (the zero-knowledge prover too, once near-t2 is on testnet)"}: under the float is a warning, under a quarter
               of it is critical.
             </p>
           </div>
@@ -971,7 +974,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
       </Section>
 
       {prover ? (
-        <Section id="prover" title="The T2 prover" lede="The service that proves practice tries on SP1's prover network and submits them to near-t2.">
+        <Section id="prover" title="The zero-knowledge prover" lede="The service that proves practice tries on SP1's prover network and submits them to near-t2.">
           <dl className={styles.mini} style={{ maxWidth: 720 }}>
             <div>
               <dt>Runs proven and submitted</dt>

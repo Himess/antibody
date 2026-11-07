@@ -75,8 +75,8 @@ function FailureHelp({ s }: { s: TrySnapshot }) {
 const programShort = (r: Readiness) => (r.data ? `program ${r.data.programId}` : "the practice program");
 
 /**
- * When T1 may not come before: the last of the worker images still inside their delay. It sits in running
- * text, so the stamp is kept whole (never its date on one line and its clock on the next).
+ * When attestation (T1) may not come before: the last of the worker images still inside their delay. It sits
+ * in running text, so the stamp is kept whole (never its date on one line and its clock on the next).
  */
 function T1Until({ r, now }: { r: Readiness; now: number | null }) {
   const last = r.pending[r.pending.length - 1];
@@ -97,8 +97,8 @@ function Expectation({ id, initial, r, now }: { id: string; initial: TryInitial;
         <p className={`callout callout-warn ${styles.expectLine}`}>
           <Icon name="clock" size={15} />
           <span>
-            <strong>About a minute and a half now.</strong> T1 may not come before <T1Until r={r} now={now} />, when the last of OutLayer&apos;s new worker images counts for{" "}
-            {programShort(r)}. Without T1, the verdict stays T0 and the try is paid when the {r.challenge}&nbsp;s challenge window ends.
+            <strong>About 1.5 min now.</strong> Attestation on NEAR cannot come before <T1Until r={r} now={now} />, when the last of OutLayer&apos;s new
+            worker images counts for {programShort(r)}, so the payout waits for the {r.challenge}&nbsp;s challenge window to end.
           </span>
         </p>
       ) : (
@@ -106,11 +106,12 @@ function Expectation({ id, initial, r, now }: { id: string; initial: TryInitial;
           <Icon name="clock" size={15} />
           {initial.status.ok ? (
             <span>
-              <strong>About a minute:</strong> the recorded tries took 43.7 s and 39.9 s from vend to payout.
+              <strong>About 45 s,</strong> with the run attested on NEAR: the recorded tries took 43.7 s and 39.9 s from vend to payout.
             </span>
           ) : (
             <span>
-              <strong>About a minute</strong> when T1 follows the verdict within seconds, about a minute and a half when it does not (paid when the challenge window ends): our status could not be read, so which is unknown.
+              <strong>About 45 s</strong> when the run is attested on NEAR within seconds, about 1.5 min when it is not (paid when the challenge window ends): our
+              status could not be read, so which is unknown.
             </span>
           )}
         </p>
@@ -354,8 +355,8 @@ export function TryApp({ initial }: { initial: TryInitial }) {
               </li>
               <li>
                 <span>
-                  OutLayer&apos;s TEE re-runs the proof on the program&apos;s pinned base and answers on NEAR (T0). T1 follows once the run&apos;s TDX quote is verified on NEAR;
-                  if it has not come when the challenge window ends, the verdict stays T0 and is paid then.
+                  OutLayer&apos;s enclave re-runs the proof on the program&apos;s pinned base and answers on NEAR. The answer is attested once the run&apos;s
+                  TDX quote is verified on NEAR; if that has not happened when the challenge window ends, the try is paid then, without it.
                 </span>
               </li>
               <li>
@@ -423,8 +424,8 @@ export function TryApp({ initial }: { initial: TryInitial }) {
               <div className="callout callout-warn">
                 <Icon name="clock" size={16} />
                 <span className="small">
-                  T1 may not come before <T1Until r={r} now={now} />: OutLayer&apos;s new worker images do not all count for {programShort(r)} until then. If T1 has not come{" "}
-                  when the {r.challenge}&nbsp;s challenge window ends, the try takes the T0 path and is paid then.
+                  Attestation on NEAR may not come before <T1Until r={r} now={now} />: OutLayer&apos;s new worker images do not all count for{" "}
+                  {programShort(r)} until then. If it has not come when the {r.challenge}&nbsp;s challenge window ends, the try is paid then, without it.
                 </span>
               </div>
             ) : null}
@@ -433,7 +434,7 @@ export function TryApp({ initial }: { initial: TryInitial }) {
                 <Icon name="clock" size={16} />
                 <span className="small">
                   {s.t0Note.charAt(0).toUpperCase() + s.t0Note.slice(1)}
-                  {s.t0PayAfter !== undefined ? `: settling at ${utc(s.t0PayAfter, "ms")}.` : "."}
+                  {s.t0PayAfter !== undefined ? `; settling at ${utc(s.t0PayAfter, "ms")}.` : "."}
                 </span>
               </div>
             ) : null}

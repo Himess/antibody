@@ -9,7 +9,7 @@ import { AccountLink, TxLink } from "@/components/ui/TxLink";
 import { VerdictStamp } from "@/components/ui/Verdict";
 import type { IndexedEvent, ProgramDetail } from "@/lib/api";
 import { seconds } from "@/lib/format";
-import { isObj, isVerdictMode, MODE_WORDS, numOf, slotInfo, slotName, strOf, topSeverity, usd, who, type Answered } from "./model";
+import { isObj, isVerdictMode, MODE_WORDS, numOf, ruleLabel, slotInfo, slotName, strOf, topSeverity, usd, who, type Answered } from "./model";
 import styles from "./commit.module.css";
 
 function Account({ account, project, program }: { account: string | null; project: string | null; program: number | null }) {
@@ -81,7 +81,7 @@ function Produced({ mode, extra, project }: { mode: string | null; extra: unknow
           </Pill>
         </span>
         <span className="xsmall muted">
-          The TEE checked the proposed fix at the anchor: only target code changed, every rule kept, <code>check()</code> holds, the canaries still succeed,
+          The enclave checked the proposed fix at the anchor: only target code changed, every rule kept, <code>check()</code> holds, the canaries still succeed,
           and each release replaces a proxy&apos;s implementation.
         </span>
       </span>
@@ -233,7 +233,7 @@ export function RunFacts({
             </dd>
           </>
         )}
-        <dt>Tier</dt>
+        <dt>Level</dt>
         <dd>
           <span className={styles.inline}>
             <TierBadge tier={tier} />
@@ -247,7 +247,7 @@ export function RunFacts({
         <dt>Request sha256</dt>
         <dd>
           <Hash value={requestSha} head={16} label="request sha256" />
-          <div className="xsmall muted">The SHA-256 of the input near-antibody sent the TEE: T0 and T1 bind to the same bytes.</div>
+          <div className="xsmall muted">The SHA-256 of the input near-antibody sent the enclave: its result and its attestation bind to the same bytes.</div>
         </dd>
         <dt>Output sha256</dt>
         <dd>
@@ -305,7 +305,7 @@ export function RunFacts({
       </dl>
       {verdict && a ? (
         <div className={styles.stampCol}>
-          <VerdictStamp kind={a.kind} slots={a.keys.map((k) => k.slot)} severity={severity ?? undefined} />
+          <VerdictStamp kind={a.kind} slots={a.keys.map((k) => k.slot)} rules={a.keys.map((k) => ruleLabel(program, k.slot))} severity={severity ?? undefined} />
           {a.receipt ? (
             <span className={`xsmall muted ${styles.inline}`}>
               receipt <Hash value={a.receipt} head={12} label="receipt sha256" />

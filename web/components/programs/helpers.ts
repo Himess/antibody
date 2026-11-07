@@ -275,6 +275,8 @@ const OUR_TRIES: Record<string, string> = {
   "byo-beta.practice.antibody.testnet": "our bring-your-own-proof check",
   "byo-wrong.practice.antibody.testnet": "our bring-your-own-proof check",
   "byo-invalid.practice.antibody.testnet": "our bring-your-own-proof check",
+  "rel-linux-check.practice.antibody.testnet": "our check of the release binary",
+  "scrn-k7q2-1107.practice.antibody.testnet": "our screener dry run",
 };
 
 /** A practice try (a practice account other than the vending contract). */
@@ -346,7 +348,7 @@ export const WINDOWS: { key: string; label: string; says: string }[] = [
     label: "Challenge window",
     says: "A verdict that is not paid instantly is final after this; anyone may challenge it within it, with the challenge bond.",
   },
-  { key: "resolve", label: "Resolve", says: "A challenge with no T1 result within this voids the verdict; both bonds are refunded." },
+  { key: "resolve", label: "Resolve", says: "A challenge with no attested result within this voids the verdict; both bonds are refunded." },
   { key: "run_timeout", label: "Run timeout", says: "A run that never answered is void after this." },
   { key: "infra_grace", label: "Infrastructure grace", says: "An infrastructure failure is retried this long, then the commit closes with a refund." },
   { key: "round_min", label: "Round minimum", says: "A round runs at least this long before the next one opens." },

@@ -13,7 +13,7 @@ export interface TagSide {
 
 /**
  * Two keys side by side, and whether they are equal. A tag is a MAC of the rule and the entry point under
- * the program's key, which only the TEE holds: equal tags say "same rule, same entry point" and nothing
+ * the program's key, which only the enclave holds: equal tags say "same rule, same entry point" and nothing
  * more (two bugs behind one entry point share a tag until a fix tells them apart, README: Limitations).
  * The hex is laid out in the same grid of eight-character groups on both sides, so the eye can compare it.
  */
@@ -29,7 +29,7 @@ export function TagMatch({ left, right, label }: { left: TagSide; right: TagSide
         <Side side={right} />
       </div>
       <figcaption className={styles.tagVerdict}>
-        {equal ? <Pill tone="ok">equal: same slot, same tag</Pill> : <Pill tone="bad">not equal</Pill>}
+        {equal ? <Pill tone="ok">equal: same rule, same tag</Pill> : <Pill tone="bad">not equal</Pill>}
         <span>
           {equal
             ? "Equal tags: the same rule broken through the same entry point. That is all a tag says; a different bug behind the same entry point shows up at the fix (rounds)."

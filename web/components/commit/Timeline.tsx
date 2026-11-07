@@ -7,6 +7,7 @@ import { TxLink } from "@/components/ui/TxLink";
 import type { IndexedEvent, ProgramDetail } from "@/lib/api";
 import { chainName, sourceUrl } from "@/lib/config";
 import { cap, isoOf, seconds, utc, wnear } from "@/lib/format";
+import { LEVEL } from "@/lib/levels";
 import {
   cleanKeys,
   evData,
@@ -17,11 +18,12 @@ import {
   numOf,
   offset,
   recordedNote,
+  rulesText,
   runOfEvent,
   secondsBetween,
-  slotName,
   strOf,
   usd,
+  verdictWords,
   who,
 } from "./model";
 import styles from "./Timeline.module.css";
@@ -112,13 +114,16 @@ const recordedRun = (x: TimelineInput) => {
   return program !== null && recordedNote(x.commitId, program, x.hunter) !== null;
 };
 
-/** Glues a short tail to the words before it (" · T0" never starts a line). */
-const NB = " · ";
-
-function keysText(program: ProgramDetail | null, v: unknown): string {
-  const keys = cleanKeys(v);
-  return keys.length ? keys.map((k) => slotName(program, k.slot)).join(", ") : "";
+/** The rules a run's keys break, in prose: "the solvency rule". */
+function rulesOf(program: ProgramDetail | null, v: unknown): string {
+  return rulesText(
+    program,
+    cleanKeys(v).map((k) => k.slot),
+  );
 }
+
+/** A level's name in a step's title, its code in the tooltip ("Enclave result", "Attested on NEAR"). */
+const Lv = ({ level }: { level: keyof typeof LEVEL }) => <span title={LEVEL[level].title}>{LEVEL[level].name}</span>;
 
 /** One event's step. Grouped events (a reveal and its run request, …) are built by `buildSteps`. */
 function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, number>, promotedRound: number | null): Step {
@@ -152,7 +157,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           mark: "neutral",
           ev: e,
           title: `Release wrap requested · run ${run ?? "—"}`,
-          detail: <>{payer ? <>{by(payer, true)} asked</> : "The project asked"} the TEE to wrap this proof&apos;s content key to the project&apos;s own key.</>,
+          detail: <>{payer ? <>{by(payer, true)} asked</> : "The project asked"} the enclave to wrap this proof&apos;s content key to the project&apos;s own key.</>,
         };
       if (mode === "second")
         return {
@@ -174,7 +179,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
     }
     case "run_answered": {
       const kind = strOf(d.kind);
-      const keys = keysText(x.program, d.keys);
+      const rules = rulesOf(x.program, d.keys);
       const receipt = strOf(d.receipt_sha256);
       // A run that judges no proof (an activation, a round check, …) answers with a fixed NoViolation: no verdict to name.
       if (!isVerdictMode(mode) && kind === "NoViolation")
@@ -183,8 +188,12 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           tone: "minor",
           mark: "neutral",
           ev: e,
-          title: `${cap(modeName(mode))} answered${NB}T0`,
-          detail: "OutLayer's operator delivered the TEE's output to near-antibody (tier T0): its output, not a verdict.",
+          title: (
+            <>
+              {cap(modeName(mode))}: <Lv level="T0" />
+            </>
+          ),
+          detail: "OutLayer's operator delivered the enclave's output to near-antibody: its output, not a verdict.",
         };
       if (mode === "rerun") {
         const r = run !== null ? rerunRound.get(run) : undefined;
@@ -194,26 +203,29 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           tone: "minor",
           mark: kind === "Violation" ? "accent" : "neutral",
           ev: e,
-          title: `Re-run at ${at}: ${kindWords(kind)}${keys ? ` · ${keys}` : ""}`,
+          title: `Re-run at ${at}: ${verdictWords(kind, rules)}`,
           detail:
             kind === "NoViolation"
               ? `At ${at} this proof breaks nothing: the fix stops it.`
               : kind === "Violation"
-                ? `At ${at} it breaks ${keys || "a rule"}.`
-                : `The TEE's answer at ${at}.`,
+                ? `At ${at} it still breaks ${rules || "a rule"}.`
+                : `The enclave's result at ${at}.`,
         };
       }
-      if (mode === "second")
-        return { key, tone: "minor", mark: "neutral", ev: e, title: `Second run answered: ${kindWords(kind)}${keys ? ` · ${keys}` : ""}` };
+      if (mode === "second") return { key, tone: "minor", mark: "neutral", ev: e, title: `Second run answered: ${verdictWords(kind, rules)}` };
       return {
         key,
         tone: mode === "verify" ? "main" : "minor",
         mark: kind === "Violation" ? "accent" : "neutral",
         ev: e,
-        title: `The TEE's answer: ${kindWords(kind)}${keys ? ` · ${keys}` : ""}${NB}T0`,
+        title: (
+          <>
+            <Lv level="T0" />: {verdictWords(kind, rules)}
+          </>
+        ),
         detail: (
           <>
-            OutLayer&apos;s operator delivered the TEE&apos;s output to near-antibody (tier T0).
+            OutLayer&apos;s operator delivered the enclave&apos;s output to near-antibody.
             {receipt ? (
               <>
                 {" "}
@@ -231,14 +243,18 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           tone: "minor",
           mark: "t1",
           ev: e,
-          title: `${cap(modeName(mode))} T1-confirmed · run ${run ?? "—"}`,
+          title: (
+            <>
+              {cap(modeName(mode))} <span title={LEVEL.T1.title}>attested on NEAR</span> · run {run ?? "—"}
+            </>
+          ),
         };
       return {
         key,
         tone: "main",
         mark: "t1",
         ev: e,
-        title: "T1-confirmed",
+        title: <Lv level="T1" />,
         detail: "The run's Intel TDX quote, verified on NEAR: it binds the pinned verifier, this run's request and the output near-antibody received.",
       };
     case "holder": {
@@ -250,10 +266,10 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         tone: "main",
         mark: "ok",
         ev: e,
-        title: "Allocated: holder",
+        title: "Allocated: first proof",
         detail: (
           <>
-            The earliest final proof of {n === 1 ? "its key" : `${n || "its"} keys`}
+            The earliest final proof of {n === 1 ? "its key" : `${n || "its"} keys`} (a rule and an entry point)
             {amount ? `: ${wnear(amount)} reserved from the escrow` : ""}
             {debt && debt !== "0" ? `, ${wnear(debt)} owed` : ""}. The bond is returned.
           </>
@@ -341,7 +357,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         detail: (
           <>
             {instant
-              ? "Instant payout: T1, under the instant cap and within its window's instant budget."
+              ? "Instant payout: attested on NEAR, under the instant cap and within its window's instant budget."
               : promotedRound !== null
                 ? `At its original priority, after its promotion at round ${promotedRound}.`
                 : "After its challenge window, with no challenge open."}{" "}
@@ -360,7 +376,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         title: "A NEAR app acted on it",
         detail: (
           <>
-            The verdict guard read this verdict from near-antibody and froze its treasury: T1, a Critical slot, the first finding of its key (
+            The verdict guard read this verdict from near-antibody and froze its treasury: attested on NEAR, a Critical rule, the first finding of its key (
             <a href={sourceUrl("docs/verdict-guard.md")} target="_blank" rel="noreferrer noopener">
               how it decides
             </a>
@@ -406,7 +422,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         mark: "neutral",
         ev: e,
         title: `Round ${numOf(d.round) ?? "—"} proposed`,
-        detail: "The project proposed a fix; the TEE checks it in this run before any re-run.",
+        detail: "The project proposed a fix; the enclave checks it in this run before any re-run.",
       };
     case "known_issue":
       return {
@@ -467,7 +483,7 @@ function buildSteps(x: TimelineInput): Step[] {
         title: `Revealed · run ${run ?? "—"} requested`,
         detail: (
           <>
-            The sealed proof went to the TEE, in a request near-antibody built from its own records
+            The sealed proof went to the enclave, in a request near-antibody built from its own records
             {sha ? (
               <>
                 {" "}
@@ -523,7 +539,7 @@ function buildSteps(x: TimelineInput): Step[] {
         title: "Pause ticket",
         detail: (
           <>
-            A T1 holder of a pausing slot: near-antibody asked near-guardian for pause permits for every chain the program runs on
+            An attested first proof of a rule that pauses: near-antibody asked near-guardian for pause permits for every chain the program runs on
             {round !== null ? ` (round ${round})` : ""}; the MPC network signs them.
             {x.permits.length ? (
               <span className={styles.permits}>
@@ -553,7 +569,7 @@ function buildSteps(x: TimelineInput): Step[] {
   if (x.runOnly) {
     // `label` is the run's own status here: "" while it is in flight.
     if (x.label === "" && !has("run_answered") && !has("run_failed"))
-      steps.push(pending("answer", "The TEE's answer", "The run is in flight: OutLayer's operator delivers the TEE's output to near-antibody."));
+      steps.push(pending("answer", LEVEL.T0.name, "The run is in flight: OutLayer's operator delivers the enclave's output to near-antibody."));
     return steps;
   }
   if (x.label === "Committed") {
@@ -565,13 +581,13 @@ function buildSteps(x: TimelineInput): Step[] {
       ),
     );
   } else if (x.label === "Verifying") {
-    if (!all.some((e) => e.event === "run_answered" && modeOfEvent(e) === "verify")) steps.push(pending("answer", "The TEE's answer", "The verification run is in flight."));
+    if (!all.some((e) => e.event === "run_answered" && modeOfEvent(e) === "verify")) steps.push(pending("answer", LEVEL.T0.name, "The verification run is in flight."));
     else
       steps.push(
         pending(
           "final",
           "A final verdict",
-          `Allocation waits for a final verdict: T1 under the instant cap, or the end of its challenge window${x.windows.challenge ? ` (${seconds(x.windows.challenge, 0)})` : ""}.`,
+          `Allocation waits for a final verdict: attested on NEAR under the instant cap, or the end of its challenge window${x.windows.challenge ? ` (${seconds(x.windows.challenge, 0)})` : ""}.`,
         ),
       );
   } else if (x.label === "Holder") {

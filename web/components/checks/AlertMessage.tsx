@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { Time } from "@/components/ui/Time";
+import { plainLevels } from "@/lib/levels";
 import { Md } from "./Md";
 
 const ISO_TIME = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
@@ -11,12 +12,13 @@ function unixOf(iso: string): number | null {
 }
 
 /**
- * An alert's message as the page writes its own text: "2 permits", not "2 permit(s)", and each RFC 3339
- * time in UTC with its relative time. Code spans stay code. The status page and the try's "Before you
- * start" both show `/v1/status` alerts through it, so the same alert reads the same on each.
+ * An alert's message as the page writes its own text: "2 permits", not "2 permit(s)", the levels in words
+ * ("cannot be attested on NEAR", not "gets no T1"), and each RFC 3339 time in UTC with its relative time.
+ * Code spans stay code. The status page and the try's "Before you start" both show `/v1/status` alerts
+ * through it, so the same alert reads the same on each.
  */
 export function AlertMessage({ text }: { text: string }) {
-  const plural = text.replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
+  const plural = plainLevels(text).replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
   return (
     <>
       {plural.split(ISO_TIME).map((part, i) =>

@@ -76,7 +76,7 @@ export function shortHash(h: string | null | undefined, head = 8, tail = 0): str
   return tail ? `${s.slice(0, head)}…${s.slice(-tail)}` : `${s.slice(0, head)}…`;
 }
 
-/** The contract's commit states, in plain words (the raw label stays visible beside it). */
+/** The contract's commit states, in plain words (StateBadge keeps the raw label in its tooltip). */
 export function stateLabel(state: string | null | undefined): { text: string; tone: Tone } {
   const s = state ?? "";
   const map: Record<string, { text: string; tone: Tone }> = {
@@ -90,7 +90,7 @@ export function stateLabel(state: string | null | undefined): { text: string; to
     Holder: { text: "Verified · awaiting payment", tone: "info" },
     Verifying: { text: "Verifying", tone: "pending" },
     Committed: { text: "Committed · sealed", tone: "pending" },
-    Revealed: { text: "Revealed · in the TEE", tone: "pending" },
+    Revealed: { text: "Revealed · in the enclave", tone: "pending" },
     GapClaim: { text: "Gap claim recorded", tone: "info" },
   };
   if (map[s]) return map[s];
@@ -100,7 +100,7 @@ export function stateLabel(state: string | null | undefined): { text: string; to
 
 export type Tone = "ok" | "bad" | "warn" | "caution" | "info" | "pending" | "neutral" | "accent" | "t1" | "t2";
 
-/** Severity is a warm scale of its own: red, amber, amber outlined, grey. Blue stays the T1 tier's. */
+/** Severity is a warm scale of its own: red, amber, amber outlined, grey. Blue stays the "attested on NEAR" level's. */
 export const severityTone: Record<string, Tone> = {
   critical: "bad",
   high: "warn",

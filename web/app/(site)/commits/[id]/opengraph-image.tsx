@@ -9,6 +9,7 @@ import {
   numOf,
   programInfo,
   promotedIn,
+  ruleLabel,
   runOutcome,
   sealedLabel,
   sortedEvents,
@@ -17,6 +18,7 @@ import {
 } from "@/components/commit/model";
 import { api } from "@/lib/api";
 import { stateLabel, wnear } from "@/lib/format";
+import { LEVEL, levelOf } from "@/lib/levels";
 import { OG, OgMark, ogFonts } from "@/lib/og";
 
 export const alt = "A commit's verdict card on Antibody (NEAR testnet)";
@@ -31,7 +33,7 @@ function sealWords(k: KeyState, wrapD: boolean | null, known: boolean, hunter: s
   return sealedLabel(k, wrapD, hunter, program);
 }
 
-/** A commit's card: its verdict as a stamp, its tier, its state and payout, and who can open its proof, as its page says them. */
+/** A commit's card: its verdict as a stamp, its level, its state and payout, and who can open its proof, as its page says them. */
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const n = Number(id);
@@ -54,14 +56,14 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const promoted = events.find((e) => e.event === "gap_promoted");
   const gap = label === "Done:Paid" && (promoted !== undefined || isPaidGap(label, kind));
   const gapRound = numOf(evData(promoted).round) ?? (c && pr?.ok ? promotedIn(pr.data, c.commit.id) : null);
-  // Expired unrevealed: the TEE never judged it, so there is no verdict to wait for.
+  // Expired unrevealed: the enclave never judged it, so there is no verdict to wait for.
   const unrevealed = !kind && c !== null && neverRevealed(label, c.commit.run);
   const sub = gap
     ? gapRound !== null
       ? `GAP CLAIM · PROMOTED AT ROUND ${gapRound}`
       : "GAP CLAIM · PROMOTED"
     : slots.length
-      ? `SLOT ${slots.join(", ")}`
+      ? slots.map((s) => ruleLabel(pr?.ok ? pr.data : null, s)).join(", ").toUpperCase()
       : kind
         ? "NO RULE BROKEN"
         : unrevealed
@@ -98,7 +100,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
             <span style={{ fontSize: 40, fontWeight: 600 }}>{state}</span>
             {paid ? <span style={{ fontSize: 30, color: OG.ink2 }}>{paid}</span> : null}
             <span style={{ fontFamily: "Mono", fontSize: 22, color: tier === "T1" ? "#5bbdea" : tier === "T2" ? "#b39bff" : OG.ink3 }}>
-              {tier === "T1" ? "T1 · TDX quote verified on NEAR" : tier === "T2" ? "T2 · validity proof verified on NEAR" : tier ? "T0 · operator" : ""}
+              {tier ? LEVEL[levelOf(tier)].name : ""}
             </span>
           </div>
         </div>

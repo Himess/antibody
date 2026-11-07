@@ -45,11 +45,11 @@ const hunterSteps: Step[] = [
       <>
         <p>
           The practice program is a tutorial: its bug and its proof are public. <code>try</code> vends you a practice account,
-          seals the tutorial proof, commits and reveals it, waits for the verdict and its T1 confirmation, and settles, with a link
+          seals the tutorial proof, commits and reveals it, waits for the verdict and its attestation on NEAR, and settles, with a link
           for every transaction. In the recorded run, the whole try took about 44 s, from the vend to the account&apos;s close. While
-          new worker images wait out their delay (see <Link href="/status">the status page</Link>), no T1 can come: the try, from the
-          CLI or the browser, settles at T0 as soon as a final NEAR block is past the 60 s challenge window, about a minute and a
-          half after the commit. <code>&lt;you&gt;</code> is a new lowercase name.
+          new worker images wait out their delay (see <Link href="/status">the status page</Link>), no attestation can come: the try,
+          from the CLI or the browser, is paid without it as soon as a final NEAR block is past the 60 s challenge window, about
+          1.5 min after the commit. <code>&lt;you&gt;</code> is a new lowercase name.
         </p>
         <p>
           The same loop runs in your browser: <Link href="/try">Try it, no account</Link>.
@@ -114,7 +114,7 @@ const hunterSteps: Step[] = [
     body: (
       <p>
         The verifier on your machine, against the proven anchor state: nothing sent, no keys. It reports which rule breaks, in
-        which function, and the impact, as the TEE will. It builds the witness from the program&apos;s pinned base witness, so
+        which function, and the impact, as the enclave will. It builds the witness from the program&apos;s pinned base witness, so
         it needs no RPC unless your proof reads state beyond it.
       </p>
     ),
@@ -127,7 +127,7 @@ const hunterSteps: Step[] = [
       <ol>
         <li>It seals the witness to the program&apos;s key, bound to your account.</li>
         <li>It commits the hash with your bond: this fixes your priority, and nobody can read the proof before its verdict.</li>
-        <li>It reveals the sealed proof, so near-antibody has the TEE verify it.</li>
+        <li>It reveals the sealed proof, so near-antibody has the enclave verify it.</li>
         <li>It waits for the verdict.</li>
       </ol>
     ),
@@ -139,8 +139,8 @@ const hunterSteps: Step[] = [
     body: (
       <>
         <p>
-          <code>status</code> shows the verdict, its tier, the state and the payout. <code>judge</code> makes view calls only,
-          with no account and no key: each contract&apos;s code hash and lock, and per program its anchor, T1 confirmations,
+          <code>status</code> shows the verdict, how far it is checked, the state and the payout. <code>judge</code> makes view calls
+          only, with no account and no key: each contract&apos;s code hash and lock, and per program its anchor, attestations,
           payouts and permits.
         </p>
         <p>
@@ -159,7 +159,7 @@ const verdicts: { verdict: string; outcome: ReactNode; tone: "ok" | "neutral" | 
   {
     verdict: "Violation, first on its key",
     outcome:
-      "Paid at the severity table: in seconds when T1-confirmed and under the instant cap; above it, after an independent second run agrees and the challenge window.",
+      "Paid at the severity table: in seconds when attested on NEAR and under the instant cap; above it, after an independent second run agrees and the challenge window.",
     tone: "ok",
     word: "paid",
     example: { commit: 13, who: "our fixture agent A" },
@@ -225,7 +225,7 @@ const byoCalls: { name: string; body: ReactNode }[] = [
     body: (
       <>
         With <code>name</code> and <code>poc</code>, the proof&apos;s path. It seals the proof to the program&apos;s key, commits and
-        reveals it, waits for the verdict and for T1 or the end of the challenge window on NEAR&apos;s clock, settles, and closes the
+        reveals it, waits for the verdict and for its attestation or the end of the challenge window on NEAR&apos;s clock, settles, and closes the
         account. One proof per account.
       </>
     ),
@@ -607,7 +607,7 @@ export default function AgentsPage() {
           <div className="stack">
             <p className="small">
               Can an off-the-shelf AI agent, given only Antibody&apos;s MCP server, complete the whole loop: get an account, seal a
-              proof, commit it, have it verified in the TEE, and be paid? The runs that measure this, on the practice program with
+              proof, commit it, have it verified in the enclave, and be paid? The runs that measure this, on the practice program with
               its tutorial proof, <strong>have not been done yet</strong>. They will measure completing the loop, not finding bugs.
             </p>
             <ul className={styles.bullets}>

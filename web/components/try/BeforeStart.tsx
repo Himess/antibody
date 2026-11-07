@@ -13,9 +13,9 @@ export type PreState = { status: "loading" } | { status: "ready"; data: Prefligh
 /** What decides how a try goes, read before it starts: the Start card and "Before you start" both say it. */
 export interface Readiness {
   data?: Preflight;
-  /** Worker images still inside their delay for this program, earliest first: a run on one gets no T1. */
+  /** Worker images still inside their delay for this program, earliest first: a run on one cannot be attested (T1). */
   pending: PendingImage[];
-  /** The program's challenge window (s): the T0 path pays after it. */
+  /** The program's challenge window (s): without attestation, the try is paid after it. */
   challenge: number;
   programName: string;
   /** Practice accounts left this clock hour; undefined when the count could not be read. */
@@ -76,7 +76,7 @@ function Row({ icon, tone, children }: { icon: IconName; tone?: "ok" | "warn"; c
 
 const nearAmount = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 3 })} NEAR`;
 
-/** Whether the try can run now, said before it starts: the program, the vend limit, the faucet, T1, the queue. */
+/** Whether the try can run now, said before it starts: the program, the vend limit, the faucet, attestation, the queue. */
 export function BeforeStart({ initial, pre, r, now, className }: { initial: TryInitial; pre: PreState; r: Readiness; now: number | null; className?: string }) {
   const f = initial.status.faucet;
   const { data, pending, challenge, programName, balanceNear, lentNear } = r;
@@ -164,7 +164,8 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
         {initial.status.ok ? (
           pending.length ? (
             <Row icon="alert" tone="warn">
-              <strong>T1 may not come yet.</strong> OutLayer listed new worker images recently, and near-antibody counts them for {programName} only from{" "}
+              <strong>Attestation on NEAR may not come yet.</strong> OutLayer listed new worker images recently, and near-antibody counts them for {programName}{" "}
+              only from{" "}
               <time className="nowrap" dateTime={new Date(pending[0].countsFrom * 1000).toISOString()}>
                 {utc(pending[0].countsFrom)}
               </time>
@@ -174,19 +175,19 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
                   , the last from <span className="nowrap">{utc(pending[pending.length - 1].countsFrom)}</span>
                 </>
               ) : null}
-              . A run
-              on one gets no T1 before then: the verdict stays T0, and the try settles it as soon as the program&apos;s {challenge} s challenge window
-              ends, about a minute and a half after the commit.
+              . A run on one of them cannot be attested before then, so the try is paid when the program&apos;s {challenge} s challenge window ends,
+              about 1.5 min after the commit.
             </Row>
           ) : (
             <Row icon="check" tone="ok">
-              Every worker image counts for T1 on {programName} now: T1 usually follows the verdict within seconds (9 and 12 s in the recorded tries).
+              Every worker image counts for {programName} now: attestation on NEAR usually follows the verdict within seconds (9 and 12 s in the
+              recorded tries).
             </Row>
           )
         ) : (
           <Row icon="info">
-            Our status could not be read ({initial.status.error ?? "unavailable"}), so whether T1 comes in seconds is unknown. If it has not come when the
-            program&apos;s {challenge} s challenge window ends, the try takes the T0 path and is paid then.
+            Our status could not be read ({initial.status.error ?? "unavailable"}), so whether attestation on NEAR comes in seconds is unknown. If it
+            has not come when the program&apos;s {challenge} s challenge window ends, the try is paid then, without it.
           </Row>
         )}
         {data?.held ? (

@@ -68,7 +68,7 @@ export function PracticeSection({ d, id, fork, practiceProgram }: { d: ProgramDe
             <p className="small">
               The manifest commits the transactions that deploy the factory, its 24 vaults and the rule. The verifier runs them in
               its own copy of the chain, on the anchor&apos;s state, before any proof: no staging deployment. So a vault&apos;s
-              address has no code on Sepolia, and the proof was still verified, T1-confirmed and paid.
+              address has no code on Sepolia, and the proof was still verified, attested on NEAR and paid.
             </p>
             {vault ? (
               <LiveCheck
@@ -92,7 +92,7 @@ export function PracticeSection({ d, id, fork, practiceProgram }: { d: ProgramDe
             <ol className={`small ${styles.list}`}>
               <li>Vends you a practice account for a key your browser (or the CLI) generates; the key cannot withdraw or transfer.</li>
               <li>Builds the tutorial proof against the vault assigned to you, seals it to the program&apos;s key, commits and reveals it.</li>
-              <li>Waits for the verdict and its T1 confirmation.</li>
+              <li>Waits for the verdict and its attestation on NEAR.</li>
               <li>Allocates and pays (both permissionless), then closes the practice account: its NEAR goes back to the vending contract.</li>
             </ol>
             <p className="xsmall muted">The payout goes to the vending contract&apos;s credit, which pays the next try&apos;s bond and run.</p>

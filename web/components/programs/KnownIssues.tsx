@@ -23,7 +23,7 @@ export function KnownIssues({ d, slots, id, antibody }: { d: ProgramDetail; slot
     <Section
       id="known"
       title="Known issues"
-      lede="Declared sealed before open; a later proof with the same tag is not paid again. Their count, slots and severities are public; their content stays sealed for good."
+      lede="Declared sealed before open; a later proof with the same tag is not paid again. Their count, rules and severities are public; their content stays sealed for good."
       actions={
         <Pill tone={count ? "neutral" : "ok"} icon="lock" size="sm">
           {count} sealed

@@ -60,8 +60,8 @@ export function TryResult({ s }: { s: TrySnapshot }) {
           <dd>{t(s.steps.verdict)}</dd>
         </div>
         <div>
-          <dt>T1</dt>
-          <dd>{s.tier === "T1" ? t(s.steps.t1) : "none (T0)"}</dd>
+          <dt>attested</dt>
+          <dd>{s.tier === "T1" ? t(s.steps.t1) : "not attested"}</dd>
         </div>
         <div>
           <dt>paid</dt>
@@ -100,8 +100,8 @@ export function TryResult({ s }: { s: TrySnapshot }) {
 }
 
 /**
- * T2 for this try: not yet on testnet (near-t2 is not deployed), or, once it is, the run's T2 record as
- * the API reports it (the prover service proves every practice try, minutes after the verdict).
+ * The zero-knowledge proof of this try (T2): not yet on testnet (near-t2 is not deployed), or, once it is, the
+ * run's record as the API reports it (the prover service proves every practice try, minutes after the verdict).
  */
 export function T2Row({ t2, runId, over }: { t2: TryInitial["t2"]; runId?: number; over: boolean }) {
   const [record, setRecord] = useState<string | null>(null);
@@ -131,30 +131,30 @@ export function T2Row({ t2, runId, over }: { t2: TryInitial["t2"]; runId?: numbe
       {t2 === "live" ? (
         record ? (
           <>
-            <Pill tone="t2">T2 · {record}</Pill>
-            <span>near-t2 checked a validity proof of this try&apos;s verdict and recorded it as {record}.</span>
+            <Pill tone="t2">ZK proof · {record}</Pill>
+            <span>near-t2 checked a zero-knowledge proof of this try&apos;s verdict and recorded it as {record}.</span>
           </>
         ) : (
           <>
             <Pill tone="pending" icon="sigma">
-              T2 · waiting
+              ZK proof · waiting
             </Pill>
-            <span>The prover service proves every practice try: a validity proof of this try&apos;s verdict arrives minutes later, here and on its commit page.</span>
+            <span>Our prover service proves every practice try: a zero-knowledge proof of this try&apos;s verdict arrives minutes later, here and on its commit page.</span>
           </>
         )
       ) : t2 === "not-yet" ? (
         <>
           <Pill tone="pending" icon="sigma">
-            T2 · not yet on testnet
+            ZK proof · not yet on testnet
           </Pill>
-          <span>A validity proof of this try&apos;s verdict would arrive minutes later once near-t2 is on testnet (not yet). No payout depends on it.</span>
+          <span>A zero-knowledge proof of this try&apos;s verdict would arrive minutes later once near-t2 is on testnet (not yet). No payout depends on it.</span>
         </>
       ) : (
         <>
           <Pill tone="neutral" icon="sigma">
-            T2 · status unavailable
+            ZK proof · status unavailable
           </Pill>
-          <span>T2 is a validity proof of a disclosed verdict; its status could not be read just now. No payout depends on it.</span>
+          <span>A zero-knowledge proof of a disclosed verdict; its status could not be read just now. No payout depends on it.</span>
         </>
       )}
     </div>

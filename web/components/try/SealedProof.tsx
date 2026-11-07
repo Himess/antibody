@@ -25,9 +25,9 @@ interface Opened {
 }
 
 /**
- * The sealed proof: visible, and until disclosure readable only by the TEE (and, once paid, the project),
+ * The sealed proof: visible, and until disclosure readable only by the enclave (and, once paid, the project),
  * except that a practice try is sealed under a public content key (blob.rs `practice_content_key`), so
- * anyone, T2's prover included, can open it.
+ * anyone, the zero-knowledge prover included, can open it.
  * "Open it" does that here, to show it is the public tutorial proof.
  */
 export function SealedProof({ s }: { s: TrySnapshot }) {
@@ -92,9 +92,9 @@ export function SealedProof({ s }: { s: TrySnapshot }) {
       </dl>
       <p className={`small muted ${styles.wrapAny}`}>
         The commitment binds the program key, the round, your account and this blob&apos;s sha256. The blob&apos;s content key is wrapped to the program&apos;s sealing
-        key, which only the TEE holds. On a real program that content key is random: until disclosure, only the TEE opens the proof, and the project once it has paid
-        for it (through its release wrap). A practice try uses a public content key instead, <code>{formula}</code>, so anyone can open it, and T2 can prove it with
-        nothing handed over.
+        key, which only the enclave holds. On a real program that content key is random: until disclosure, only the enclave opens the proof, and the project once it
+        has paid for it (through its release wrap). A practice try uses a public content key instead, <code>{formula}</code>, so anyone can open it, and a
+        zero-knowledge proof of it needs nothing handed over.
       </p>
       <div className="row" style={{ ["--gap" as string]: "8px" }}>
         <button type="button" className="btn btn-sm" onClick={open} aria-expanded={opened !== null} aria-controls="opened-proof">

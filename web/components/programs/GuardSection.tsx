@@ -72,7 +72,7 @@ async function GuardState() {
 
 /**
  * 10. A NEAR app acting on this program's verdicts: guard.antibody.testnet, a DAO treasury the Acme
- * project owns, froze on A's T1-confirmed Critical, and D's duplicate did not freeze it.
+ * project owns, froze on A's attested Critical, and D's duplicate did not freeze it.
  */
 export function GuardSection({ guard }: { guard: string }) {
   return (
@@ -88,7 +88,7 @@ export function GuardSection({ guard }: { guard: string }) {
           </h3>
           <p className="small">
             Owned by the Acme project and locked: its full-access key is deleted. Anyone may report a commit; the guard reads
-            near-antibody itself and trusts the reporter for nothing. It freezes only on a T1-confirmed Critical of the program it
+            near-antibody itself and trusts the reporter for nothing. It freezes only on an attested Critical of the program it
             watches, on a light-client anchor, and only for the first finding of its key.
           </p>
           <ol className={styles.plain}>
@@ -108,7 +108,7 @@ export function GuardSection({ guard }: { guard: string }) {
             <li>
               <Icon name="lock" size={14} />
               <span className="small">
-                A&apos;s T1-confirmed Critical (<Link href="/commits/13">commit 13</Link>, solvency, slot 0) froze it.{" "}
+                A&apos;s attested Critical (<Link href="/commits/13">commit 13</Link>, the solvency rule) froze it.{" "}
                 <TxLink hash={GUARD.a_report_tx} />
               </span>
             </li>
@@ -154,7 +154,7 @@ export function GuardSection({ guard }: { guard: string }) {
           </Suspense>
           <LiveCheck
             check={{ kind: "near-view", contract: guard, method: "get_state" }}
-            expect={{ path: "frozen.commit_id", equals: 13, says: "frozen on commit 13 (A's Critical), slot 0" }}
+            expect={{ path: "frozen.commit_id", equals: 13, says: "frozen on commit 13 (A's Critical, the solvency rule)" }}
             cli={`antibody view --contract ${guard} --method get_state`}
             label="Ask the guard"
           />

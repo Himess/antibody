@@ -399,16 +399,19 @@ function PhoneLabel({ step, top, left, done }: { step: Step; top: number; left: 
   );
 }
 
-/** The landing's list under the chart (wide screens): two columns, each read top to bottom in time order. */
+/**
+ * The landing's list under the chart (wide screens): two columns, each read top to bottom in time order.
+ * Steps are on NEAR testnet unless tagged with their chain.
+ */
 function StepList({ steps }: { steps: Step[] }) {
   return (
-    <ol className={styles.list} style={{ ["--rows" as string]: Math.ceil(steps.length / 2) }} aria-label="Steps, each with its transaction">
+    <ol className={styles.list} style={{ ["--rows" as string]: Math.ceil(steps.length / 2) }} aria-label="Steps, each with its transaction (on NEAR testnet unless another chain is named)">
       {steps.map((s) => (
         <li key={s.key} className={`${styles.item} ${s.detail?.minor ? styles.itemMinor : ""}`}>
           <span className={`${styles.itemTime} num`}>{timeText(s)}</span>
           <span className={styles.itemBody}>
             <span className={styles.itemLabel}>{s.label}</span>
-            <span className={`${styles.chip} ${laneClass(s.chain)}`}>{laneName(s.chain)}</span>
+            {s.chain === "near" ? null : <span className={`${styles.chip} ${laneClass(s.chain)}`}>{laneName(s.chain)}</span>}
           </span>
           {s.explorer ? (
             <a className={`${styles.itemTx} mono`} href={s.explorer} target="_blank" rel="noreferrer noopener" title={s.tx ?? undefined}>

@@ -47,7 +47,7 @@ export async function RecordedAgentRun() {
           <dd className="num">{seconds(at("verified")?.seconds)}</dd>
         </div>
         <div>
-          <dt>T1-confirmed</dt>
+          <dt>Attested on NEAR</dt>
           <dd className="num">{seconds(at("t1")?.seconds)}</dd>
         </div>
         <div>
@@ -57,7 +57,7 @@ export async function RecordedAgentRun() {
       </dl>
       <p className="xsmall muted">
         Seconds from the commit&apos;s block on NEAR testnet. Paid {wnear(m.paid_raw)}
-        {m.instant ? ", an instant payout (T1, under the cap)" : ""}.
+        {m.instant ? ", an instant payout (attested on NEAR, under the cap)" : ""}.
       </p>
       <ul className={styles.txList}>
         <li>
@@ -74,9 +74,9 @@ export async function RecordedAgentRun() {
       />
       <Check
         check={{ kind: "api", path: `/v1/commits/${m.commit_id}` }}
-        expect={{ path: "row.verdict.tier", equals: "T1", says: "tier T1: the TDX quote verified on NEAR" }}
+        expect={{ path: "row.verdict.tier", equals: "T1", says: "attested on NEAR: the TDX quote verified there" }}
         cli={`antibody status --commit ${m.commit_id}`}
-        label="Read the tier"
+        label="Read the attestation"
       />
       <p className="small">
         <Link href={`/commits/${m.commit_id}`}>Commit {m.commit_id}, step by step</Link> · <Link href="/moment">The one moment</Link>

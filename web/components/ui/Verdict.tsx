@@ -3,16 +3,30 @@ import { Icon } from "./Icon";
 import styles from "./ui.module.css";
 
 /**
- * The verdict as a deterministic stamp: the kind, the broken slots, and the receipt hash that any re-run
- * of the same input reproduces byte for byte.
+ * The verdict as a deterministic stamp: the kind, the broken rules (by name when the program names them,
+ * else by slot), and the receipt hash that any re-run of the same input reproduces byte for byte.
  */
-export function VerdictStamp({ kind, slots, severity, receipt }: { kind: string | null; slots?: number[]; severity?: string; receipt?: string | null }) {
+export function VerdictStamp({
+  kind,
+  slots,
+  rules,
+  severity,
+  receipt,
+}: {
+  kind: string | null;
+  slots?: number[];
+  /** The broken rules' names, in the slots' order: shown instead of the slot numbers. */
+  rules?: string[];
+  severity?: string;
+  receipt?: string | null;
+}) {
   const tone = kind === "Violation" ? "var(--accent-ink)" : "var(--ink-2)";
+  const broke = rules && rules.length ? rules.join(", ") : slots && slots.length ? `slot ${slots.join(", ")}` : null;
   return (
     <div className={styles.stamp} style={{ color: tone }} aria-label={`Verdict: ${kind ?? "pending"}`}>
       <span className={styles.stampKind}>{kind === "NoViolation" ? "No violation" : (kind ?? "Pending")}</span>
       <span className={styles.stampMeta}>
-        {!kind ? "awaiting the verifier" : slots && slots.length ? `slot ${slots.join(", ")}` : "no rule broken"}
+        {!kind ? "awaiting the verifier" : broke ?? "no rule broken"}
         {kind && severity ? ` · ${severity}` : ""}
       </span>
       {receipt ? (
@@ -25,7 +39,7 @@ export function VerdictStamp({ kind, slots, severity, receipt }: { kind: string 
 }
 
 /**
- * A sealed proof: visible, unreadable. Its ciphertext is public once revealed, but only the TEE (and,
+ * A sealed proof: visible, unreadable. Its ciphertext is public once revealed, but only the enclave (and,
  * after payment, the project) can open it until disclosure.
  */
 export function Sealed({ seed, label = "Sealed until disclosure", lines = 4 }: { seed: string; label?: string; lines?: number }) {

@@ -1,28 +1,37 @@
 import { cap, severityTone, stateLabel } from "@/lib/format";
+import { LEVEL, levelOf, type Level } from "@/lib/levels";
 import { Pill } from "./Pill";
+import styles from "./ui.module.css";
+
+export { LEVEL, levelOf, type Level } from "@/lib/levels";
 
 /**
- * Who vouches for a verdict. T0: OutLayer's operator delivered the TEE's output. T1: its TDX quote was
- * verified on NEAR (hardware). T2: a validity proof of a disclosed verdict, verified on NEAR (math).
+ * The level's badge, in plain words (lib/levels.ts): "Enclave result", "Attested on NEAR", "ZK-proven", the
+ * code in its tooltip. `code` adds the code beside it as small text (the trust page only).
  */
-export function TierBadge({ tier, size }: { tier: string | null | undefined; size?: "sm" | "md" }) {
+export function TierBadge({ tier, size, code = false }: { tier: string | null | undefined; size?: "sm" | "md"; code?: boolean }) {
   if (!tier) return <Pill size={size}>no verdict yet</Pill>;
-  if (tier === "T2")
-    return (
-      <Pill tone="t2" size={size} title="T2: a validity proof (SP1) of a disclosed verdict, verified on NEAR">
-        T2 · math
-      </Pill>
-    );
-  if (tier === "T1")
-    return (
-      <Pill tone="t1" size={size} title="T1: the run's Intel TDX quote, verified on NEAR">
-        T1 · hardware
-      </Pill>
-    );
-  return (
-    <Pill tone="neutral" icon="clock" size={size} title="T0: OutLayer's operator delivered the TEE's output; T1 not yet">
-      T0 · operator
+  const level = levelOf(tier);
+  const pill = (
+    <Pill tone={level === "T2" ? "t2" : level === "T1" ? "t1" : "neutral"} icon={level === "T0" ? "clock" : undefined} size={size} title={LEVEL[level].title}>
+      {LEVEL[level].name}
     </Pill>
+  );
+  if (!code) return pill;
+  return (
+    <span className={styles.level}>
+      {pill}
+      <LevelCode level={level} />
+    </span>
+  );
+}
+
+/** A level's code as small secondary text ("T1"), where the trust page maps names to the CLI's codes. */
+export function LevelCode({ level }: { level: Level }) {
+  return (
+    <span className={styles.levelCode} title={LEVEL[level].title}>
+      {level}
+    </span>
   );
 }
 
@@ -34,10 +43,11 @@ export function SeverityBadge({ severity, size }: { severity: string; size?: "sm
   );
 }
 
+/** The state in plain words; the contract's own name for it ("Done:Paid") is in the tooltip. */
 export function StateBadge({ state, size }: { state: string | null | undefined; size?: "sm" | "md" }) {
   const s = stateLabel(state);
   return (
-    <Pill tone={s.tone} size={size} title={state ?? undefined}>
+    <Pill tone={s.tone} size={size} title={state ? `Contract state: ${state}` : undefined}>
       {s.text}
     </Pill>
   );

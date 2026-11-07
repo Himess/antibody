@@ -33,7 +33,7 @@ export function MomentHeader({ moment, live, titleId, level = 2 }: { moment: Mom
       <p className="small muted">
         Program {moment.program_id} (Acme Lend, our fixture), commit {moment.commit_id} by {moment.hunter ?? `agent ${name}`}
         {over ? ` over ${over}` : ""}, {utc(moment.commit.block_ts_ns, "ns")}. Paid {wnear(moment.paid_raw)}
-        {moment.instant ? `, an instant payout (${moment.verdict?.tier || "T1"}, under the cap)` : ""}.{" "}
+        {moment.instant ? " instantly (attested on NEAR, under the cap)" : ""}.{" "}
         <span style={{ whiteSpace: "nowrap" }}>
           <a href={sourceUrl(moment.results_file)} target="_blank" rel="noreferrer noopener">
             Results file <Icon name="external" size={11} style={{ display: "inline" }} />
