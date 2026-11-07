@@ -1,0 +1,33 @@
+{
+  "balance_spent_prove": 0.42139548659,
+  "elf_sha256": "7fea93b80cc71db7ccd2315acc9b85c583fd3164bc95c6e6b68b6119d1c39702",
+  "explorer": "https://explorer.succinct.xyz/request/0xa63270b347ec96c888a34e9542c2a6ef6b656f1a3cb9bc06adb79810779fe1dc",
+  "mode": "groth16",
+  "network": {
+    "base_fee_prove": 0.414135,
+    "created_at": 1794082342,
+    "cycles": 25841727,
+    "deduction_prove": null,
+    "fulfilled_at": 1794082380,
+    "fulfiller": "0x01ac75c0867b496f8dda0348096f5d1cca64b8a8",
+    "gas_limit": 31567333,
+    "gas_price": 230000000,
+    "gas_used": 31567333,
+    "max_price_per_pgu": "790000000",
+    "refund_prove": null,
+    "settlement_tx": "0x0ff7cacb813e559e1b8b7201186158671273184a4a9d819bda139bf2236e496b"
+  },
+  "program_vkey": "0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203",
+  "proof_bytes": 356,
+  "proof_sha256": "3dcd3c9408c5d050d895e244704a8f9d2abcc8ebaef5fe88053ecb663db73208",
+  "prover": "SP1 prover network (mainnet, auction)",
+  "public_values_sha256": "0c703f6fc2975ae622c9a2e8a818db8dc15c5a670f134d7cf2500f9f91f56a04",
+  "request_id": "0xa63270b347ec96c888a34e9542c2a6ef6b656f1a3cb9bc06adb79810779fe1dc",
+  "requested_at": 1794082337,
+  "seconds": {
+    "request": 6.232983516,
+    "request_to_proof": 44.93286309,
+    "setup_once": 17.369315567
+  },
+  "sp1": "6.10.0"
+}
