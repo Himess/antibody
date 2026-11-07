@@ -109,15 +109,15 @@ waits the program's 60 s challenge window instead: about a minute and a half (90
 
 ## The one moment
 
-On 2026-11-04, on the locked testnet deployment, our test agent A found a critical bug in Acme Lend, our
-deliberately vulnerable test protocol on Sepolia and Base Sepolia, and submitted its proof over MCP.
-Counted from the block of its commit:
+On 2026-11-04, on the locked testnet deployment, our scripted test agent A submitted over MCP a sealed
+proof of a critical bug in Acme Lend, our deliberately vulnerable test protocol on Sepolia and Base
+Sepolia. Counted from the block of its commit:
 
 | Time | What happened |
 |---:|---|
 | 18.5 s | The enclave's verdict: a critical rule broke |
 | 29.1 s | The verdict attested on NEAR |
-| 71.0 s | Agent A paid 0.1 wNEAR |
+| 71.0 s | 0.1 wNEAR paid to agent A |
 | 90.6 s | The protocol paused on both chains |
 
 Replay it with every transaction: [antibody-three.vercel.app/moment](https://antibody-three.vercel.app/moment).
@@ -188,7 +188,8 @@ account is a NEAR sub-account that cannot withdraw, with a bond budget and a per
 - **Fuzzing and golden vectors:** the parsers (manifests, witnesses, sealed payloads) are fuzzed, every
   format two components share has golden vectors, and the native and wasm verifiers agree byte for byte
   on every fixture.
-- **CI runs all of it** on every change, with the whole story end to end in a sandbox
+- **CI on every change:** the model and its trace replay, the Kani proofs, the verifier (native and wasm),
+  the contracts, the site, and the whole story end to end in a sandbox
   ([latest runs](https://github.com/Himess/antibody/actions/workflows/ci.yml)).
 
 ## Run it from source
