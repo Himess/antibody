@@ -290,6 +290,35 @@ fn pct(mut v: Vec<f64>, p: f64) -> Option<f64> {
 /// The events that settle a commit's verification (its verdict, as near-antibody applied it).
 pub const VERDICT_EVENTS: &[&str] = &["holder", "duplicate", "known_match", "forfeited", "gap_claim", "unevaluable", "run_failed"];
 
+/// Verdict latency from the event log: from each commit's block to its verify run's answer (the TEE's
+/// verdict, `run_answered`), in seconds and blocks. `metrics` measures to the settlement events instead,
+/// which wait for the program's earlier commits (claims go in commit order).
+pub fn answer_metrics(events: &[Value]) -> Value {
+    let mut committed: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
+    let mut secs = Vec::new();
+    let mut blocks = Vec::new();
+    let mut seen = BTreeSet::new();
+    for e in events.iter().filter(|e| e["standard"] == "antibody") {
+        let Some(c) = e["data"]["commit_id"].as_u64() else { continue };
+        let (ts, h) = (e["block_ts_ns"].as_u64().unwrap_or(0), e["block_height"].as_u64().unwrap_or(0));
+        match e["event"].as_str() {
+            Some("commit") => {
+                committed.insert(c, (ts, h));
+            }
+            Some("run_answered") if e["data"]["mode"] == "verify" && seen.insert(c) => {
+                if let Some((t0, h0)) = committed.get(&c) {
+                    secs.push((ts as f64 - *t0 as f64) / 1e9);
+                    blocks.push(h.saturating_sub(*h0) as f64);
+                }
+            }
+            _ => {}
+        }
+    }
+    json!({"commit_to_answer_s": {"n": secs.len(), "p50": pct(secs.clone(), 0.5), "p95": pct(secs, 0.95)},
+           "commit_to_answer_blocks": {"p50": pct(blocks.clone(), 0.5), "p95": pct(blocks, 0.95)},
+           "note": "from each commit's NEAR block to its verify run's answer (the TEE's verdict)"})
+}
+
 /// Latencies from the event log: commit → verdict and commit → payout, per commit.
 pub fn metrics(events: &[Value]) -> Value {
     let mut submitted: BTreeMap<u64, u64> = BTreeMap::new();

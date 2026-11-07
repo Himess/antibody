@@ -23,6 +23,7 @@ mod prover;
 mod relayer;
 mod status;
 mod t1;
+mod web;
 mod zk;
 
 use std::{collections::BTreeMap, path::PathBuf};
@@ -67,6 +68,13 @@ enum Cmd {
     Api {
         #[arg(long, default_value = "127.0.0.1:8787")]
         listen: String,
+        /// chain id = RPC URL (as the relayer takes them): the adapters' `used` view, so a permit any
+        /// relayer carried out shows as applied; defaults from $SEPOLIA_RPC/$BASE_SEPOLIA_RPC
+        #[arg(long = "chain")]
+        chains: Vec<String>,
+        /// The results files (`/v1/moments`, recorded relays); default: the repository's docs/results
+        #[arg(long)]
+        results_dir: Option<PathBuf>,
     },
     /// chain id = RPC URL (e.g. --chain 11155111=$SEPOLIA_RPC); defaults from $SEPOLIA_RPC/$BASE_SEPOLIA_RPC
     Relayer {
@@ -232,13 +240,21 @@ enum Cmd {
     },
 }
 
-fn load_dep(cli: &Cli) -> Result<Deployments> {
-    let path = cli
-        .deployments
+/// The deployments file: `--deployments`, `$ANTIBODY_DEPLOYMENTS`, or the repository's.
+fn dep_path(cli: &Cli) -> Option<PathBuf> {
+    cli.deployments
         .clone()
         .or_else(|| std::env::var("ANTIBODY_DEPLOYMENTS").ok().map(PathBuf::from))
         .or_else(|| repo_root().map(|r| r.join(format!("deployments/near-{}.json", cli.network))))
-        .ok_or_else(|| eyre!("no deployments file"))?;
+}
+
+/// The results files the API reads (`/v1/moments`): the repository's docs/results.
+fn default_results_dir() -> PathBuf {
+    repo_root().map(|r| r.join("docs/results")).unwrap_or_else(|| PathBuf::from("docs/results"))
+}
+
+fn load_dep(cli: &Cli) -> Result<Deployments> {
+    let path = dep_path(cli).ok_or_else(|| eyre!("no deployments file"))?;
     Ok(serde_json::from_str(&std::fs::read_to_string(&path).map_err(|e| eyre!("{}: {e}", path.display()))?)?)
 }
 
@@ -448,13 +464,11 @@ fn main() -> Result<()> {
             let status = load_dep(&cli).ok().map(|d| (near_for(&cli, &d), d));
             notifier::Notifier { state_dir: state_dir(&cli), webhooks, program: *program, status }.run(*interval_ms)
         }
-        Cmd::Api { listen } => {
+        Cmd::Api { listen, chains: c, results_dir } => {
             let dep = load_dep(&cli)?;
-            let api = api::Api {
-                near: near_for(&cli, &dep),
-                dep,
-                state_dir: state_dir(&cli),
-            };
+            let rpcs = chains(c)?.into_iter().map(|(id, (url, _))| (id, url)).collect();
+            let results = results_dir.clone().unwrap_or_else(default_results_dir);
+            let api = api::Api::new(near_for(&cli, &dep), dep, state_dir(&cli), dep_path(&cli), rpcs, results);
             tokio::runtime::Runtime::new()?.block_on(api::serve(api, listen))
         }
         Cmd::Keeper { account, key_file, programs, interval_ms, once } => {
@@ -536,11 +550,8 @@ fn main() -> Result<()> {
                     std::thread::sleep(std::time::Duration::from_millis(10_000));
                 });
             }
-            let api = api::Api {
-                near: near_for(&cli, &dep),
-                dep,
-                state_dir: state_dir(&cli),
-            };
+            let rpcs = chains(c)?.into_iter().map(|(id, (url, _))| (id, url)).collect();
+            let api = api::Api::new(near_for(&cli, &dep), dep, state_dir(&cli), dep_path(&cli), rpcs, default_results_dir());
             tokio::runtime::Runtime::new()?.block_on(api::serve(api, listen))
         }
     }
