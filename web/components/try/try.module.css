@@ -1,0 +1,597 @@
+/* The try page: the loop, step by step, as it happens. Tokens only (globals.css); mobile first. */
+
+.wrap {
+  display: grid;
+  gap: clamp(24px, 4vw, 40px);
+  padding-bottom: clamp(32px, 5vw, 56px);
+}
+
+/* Long account names, hashes and formulas wrap instead of widening the page. */
+.wrapAny {
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------ intro */
+
+.intro {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 960px) {
+  .intro {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: start;
+  }
+}
+
+.what {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+  counter-reset: what;
+}
+
+.what li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  counter-increment: what;
+}
+
+.what li::before {
+  content: counter(what);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  background: var(--bg-elev);
+}
+
+.whatFoot {
+  margin-top: 4px;
+}
+
+/* ------------------------------------------------------------ before you start */
+
+.checks {
+  display: grid;
+  gap: 12px;
+}
+
+.checkRow {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.checkRow > svg {
+  margin-top: 3px;
+  color: var(--ink-3);
+}
+
+.checkRow strong {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.okIcon {
+  color: var(--ok) !important;
+}
+
+.warnIcon {
+  color: var(--warn) !important;
+}
+
+/* ------------------------------------------------------------ the form */
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--bg-elev);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.nameRow:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.nameInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+
+.nameInput:focus-visible {
+  outline: none;
+}
+
+.nameSuffix {
+  display: none;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--bg-sunk);
+  border-left: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+@media (min-width: 560px) {
+  .nameSuffix {
+    display: flex;
+  }
+}
+
+.fieldError {
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.saved {
+  display: grid;
+  gap: 10px;
+}
+
+/* ------------------------------------------------------------ the run */
+
+.run {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (min-width: 1040px) {
+  .run {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.runMain,
+.aside {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.runHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.runHead h2:focus {
+  outline: none;
+}
+
+.announce {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  min-height: 46px;
+}
+
+.announce > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.commitLink {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--t1) 30%, var(--line));
+  background: var(--t1-soft);
+  font-size: var(--fs-sm);
+}
+
+.commitLink a {
+  font-weight: 560;
+}
+
+.phase {
+  display: grid;
+  gap: 0;
+}
+
+.phaseTitle {
+  margin: 0 0 6px;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title time"
+    "detail detail"
+    "tx tx";
+  gap: 4px 12px;
+  padding: 12px 14px 12px 16px;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+
+.step:last-child {
+  border-bottom: 0;
+}
+
+.step::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+}
+
+.stepRunning::before {
+  background: var(--accent);
+}
+
+.stepDone::before {
+  background: var(--ok);
+}
+
+.stepFailed::before {
+  background: var(--bad);
+}
+
+.stepWaiting {
+  color: var(--ink-3);
+}
+
+@media (min-width: 720px) {
+  .step {
+    grid-template-columns: 112px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "status title time"
+      "status detail detail"
+      "status tx tx";
+  }
+}
+
+.stepTitle {
+  grid-area: title;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.stepTitle h4 {
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.stepStatusInline {
+  display: inline-flex;
+}
+
+.stepStatus {
+  grid-area: status;
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .stepStatus {
+    display: block;
+    padding-top: 1px;
+  }
+  .stepStatusInline {
+    display: none;
+  }
+}
+
+.stepDetail {
+  grid-area: detail;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.stepWaiting .stepDetail {
+  color: var(--ink-3);
+}
+
+.stepTx {
+  grid-area: tx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: center;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepTime {
+  grid-area: time;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.approx {
+  color: var(--ink-3);
+}
+
+.t2Row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------ the result */
+
+.result {
+  display: grid;
+  gap: 16px;
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+}
+
+.resultPending {
+  border-color: var(--line);
+}
+
+.resultHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.amount {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: clamp(1.75rem, 1.3rem + 2vw, 2.5rem);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+@media (min-width: 720px) {
+  .times {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.times > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.times dt {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.times dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ the sealed proof and the ledger */
+
+.panel {
+  display: grid;
+  gap: 12px;
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kvTight {
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+  gap: 6px 14px;
+  font-size: var(--fs-sm);
+}
+
+.opened {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--line));
+  background: var(--ok-soft);
+}
+
+.code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+}
+
+.hosts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hosts li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  font-size: var(--fs-sm);
+}
+
+.hostName {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.hostRole {
+  grid-column: 1 / -1;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------ recorded tries */
+
+.recorded {
+  display: grid;
+  gap: 16px;
+}
+
+.recordedGrid {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .recordedGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.recordedCard {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.txList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+}
+
+.txList li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.txStep {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spin {
+    animation: spin 1.2s linear infinite;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
