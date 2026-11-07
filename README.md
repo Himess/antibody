@@ -139,11 +139,13 @@ the same receipt, byte for byte. Details and checks: [docs/trust.md](docs/trust.
 
 ## Bring your own proof
 
-Write a proof yourself, by hand or with an agent, still with no account:
+Write a proof yourself, by hand or with an agent, still with no account. `hunt start` gets an account and
+writes a workspace (the rules, the sources, a Foundry harness, the proof format), `check` runs the verifier
+on your machine, and `hunt submit` seals, commits and settles your proof:
 
 ```bash
-./antibody hunt start --name <you> --vending practice.antibody.testnet   # an account and a workspace: rules, sources, a Foundry harness, the proof format
-./antibody check --program 6 --bundle hunt-<you>/proof.bundle.json       # the verifier, on your machine
+./antibody hunt start --name <you> --vending practice.antibody.testnet
+./antibody check --program 6 --bundle hunt-<you>/proof.bundle.json
 ./antibody hunt submit --name <you> --vending practice.antibody.testnet --poc hunt-<you>/proof.bundle.json
 ```
 
@@ -191,10 +193,12 @@ account is a NEAR sub-account that cannot withdraw, with a bond budget and a per
 
 ## Run it from source
 
-The whole story also runs offline, in a sandbox with mocked external services (Linux or macOS):
+The whole story also runs offline, in a sandbox with mocked external services (Linux or macOS). This
+builds everything, runs the story with every outcome asserted (about nine minutes), then keeps the
+sandbox up:
 
 ```bash
-make serve    # builds everything, runs the story with every outcome asserted (about nine minutes), then keeps the sandbox up
+make serve
 ```
 
 What it runs and how to query it: [docs/sandbox.md](docs/sandbox.md). The site: [web/README.md](web/README.md).
