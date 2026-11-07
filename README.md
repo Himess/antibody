@@ -120,6 +120,13 @@ Sepolia. Counted from the block of its commit:
 | 71.0 s | 0.1 wNEAR paid to agent A |
 | 90.6 s | The protocol paused on both chains |
 
+<a href="https://antibody-three.vercel.app/moment">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/moment-dark.png">
+    <img src="docs/assets/moment-light.png" width="100%" alt="The recorded moment on the site: agent A's critical bug paid in 71.0 s, and both chains paused by 90.6 s, on a timeline across NEAR testnet, Base Sepolia and Sepolia">
+  </picture>
+</a>
+
 Replay it with every transaction: [antibody-three.vercel.app/moment](https://antibody-three.vercel.app/moment).
 Check every claim yourself: [JUDGES.md](JUDGES.md) gives each one a command, the output to expect and the
 transaction behind it.
