@@ -5,20 +5,39 @@ import { DocLink } from "./DocLink";
 import { Done, NotYet } from "./Labels";
 import styles from "./build.module.css";
 
-type Item = { title: string; detail?: string; parts?: { done: boolean; text: string }[]; t2?: boolean };
+type Item = {
+  title: string;
+  detail?: string;
+  parts?: { done: boolean; text: string }[];
+  t2?: boolean;
+  doc?: { path: string; text: string };
+};
 
-/** README's roadmap, in its order. Only T2 has parts the README marks done. */
+/** README's roadmap, in its order. Pull requests and T2 have parts the README marks done. */
 const ROADMAP: Item[] = [
   {
     title: "Antibody for pull requests",
     detail:
-      "A CI check, then a repository app, on repositories whose owner installs it. Immune memory: every paid proof of a program re-runs against each pull request's build (sealed ones inside the TEE, where the result is all anyone sees), and the check goes red if one still breaks a rule. A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical. Sealed proofs never appear in public logs.",
+      "A CI check, then a repository app, on repositories whose owner installs it. Immune memory: every paid proof of a program re-runs against each pull request's build, and the check goes red if one still breaks a rule. Sealed proofs never appear in public logs.",
+    parts: [
+      {
+        done: true,
+        text: "A prototype: readable proofs (disclosed, published, or opened with the project key), re-run by the local verifier, with antibody immune and a GitHub Action.",
+      },
+      { done: false, text: "Sealed proofs re-run inside the TEE, where the result is all anyone sees." },
+      {
+        done: false,
+        text: "A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical.",
+      },
+    ],
+    doc: { path: "docs/immune.md", text: "How the prototype works and what it reads" },
   },
   { title: "NEAR contracts as a second target VM", detail: "Proofs against NEAR wasm contracts from committed, proven state." },
   {
     title: "T2: validity proofs of disclosed verdicts, verified on NEAR",
     detail: "Later, zk by default above a cap. A validity proof of a disclosed verdict: no privacy claim, and no payout in the locked deployment depends on it.",
     t2: true,
+    doc: { path: "docs/zk.md", text: "How T2 works and what it checks" },
     parts: [
       { done: true, text: "The feasibility study: the verifier runs in SP1 6.10.0 and reproduces the TEE's receipts in about 30 million cycles." },
       {
@@ -88,7 +107,7 @@ export function Roadmap() {
               </Suspense>
             ) : null}
           </span>
-          {item.detail || item.parts || item.t2 ? (
+          {item.detail || item.parts || item.doc ? (
             <div className={styles.rmBody}>
               {item.detail ? <p className={styles.rmText}>{item.detail}</p> : null}
               {item.parts ? (
@@ -101,9 +120,9 @@ export function Roadmap() {
                   ))}
                 </ul>
               ) : null}
-              {item.t2 ? (
+              {item.doc ? (
                 <p className="xsmall muted">
-                  How T2 works and what it checks: <DocLink path="docs/zk.md">docs/zk.md</DocLink>.
+                  {item.doc.text}: <DocLink path={item.doc.path}>{item.doc.path}</DocLink>.
                 </p>
               ) : null}
             </div>

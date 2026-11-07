@@ -396,12 +396,19 @@ export default function ProjectsPage() {
                 </span>
               </li>
               <li>
-                <NotYet />
+                <Pill tone="info" size="sm">
+                  prototype
+                </Pill>
                 <span>
-                  For pull requests (roadmap item 1): a CI check, then a repository app, re-runs every paid proof of a program
-                  against each pull request&apos;s build, sealed ones inside the TEE, and the check goes red if one still breaks a
-                  rule.
+                  For pull requests (roadmap item 1): <code>antibody immune</code> and a GitHub Action re-run every paid proof
+                  the check can read (disclosed, published, or opened with your project key) against the pull request&apos;s build,
+                  with the local verifier, and the check goes red if one still breaks a rule (
+                  <DocLink path="docs/immune.md">docs/immune.md</DocLink>).
                 </span>
+              </li>
+              <li>
+                <NotYet>next</NotYet>
+                <span>Sealed proofs re-run inside the TEE, where the result is all anyone sees, and a bounty window per pull request.</span>
               </li>
             </ul>
           </Claim>

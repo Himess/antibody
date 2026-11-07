@@ -509,7 +509,7 @@ pub fn blob_arg_in_tx(ctx: &Ctx, hash: &str, signer: &str, commit_id: u64) -> Re
 }
 
 /// The blob of a commit and the argument near-antibody takes for it again.
-fn commit_blob(ctx: &Ctx, c: &Value, from: &BlobFrom) -> Result<(Vec<u8>, Value)> {
+pub(crate) fn commit_blob(ctx: &Ctx, c: &Value, from: &BlobFrom) -> Result<(Vec<u8>, Value)> {
     let id = c["id"].as_u64().unwrap_or_default();
     let arg = match from {
         BlobFrom::File(p) => {

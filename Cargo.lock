@@ -658,9 +658,11 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "reqwest",
+ "revm",
  "serde",
  "serde_json",
  "sha2",
+ "toml",
  "x25519-dalek",
 ]
 

@@ -19,6 +19,9 @@ antibody-verifier = { path = "../verifier" }
 antibody-witness = { path = "../witness" }
 antibody-zk-core = { path = "../zk/core" }
 alloy-primitives.workspace = true
+# `antibody immune` runs a build's creation code (with the verifier's EVM) and reads its mapping file (TOML)
+revm.workspace = true
+toml = "0.8.23"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

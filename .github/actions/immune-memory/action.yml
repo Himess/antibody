@@ -1,0 +1,154 @@
+name: Antibody immune memory
+description: >-
+  Re-runs the paid proofs of an Antibody program that this run can read against the pull request's compiled
+  code, with the verifier, locally, at the program's anchor; fails when one still breaks a committed rule.
+  Use it on the pull_request event, never pull_request_target (README.md).
+author: Antibody
+
+inputs:
+  version:
+    description: The antibody release whose prebuilt binary runs (its sha256 is checked against the release's .sha256 file)
+    required: false
+    default: v0.5.0
+  repository:
+    description: The repository that publishes the release
+    required: false
+    default: Himess/antibody
+  program:
+    description: The program's id on near-antibody (default the mapping's `program`)
+    required: false
+    default: ""
+  config:
+    description: The mapping file the project commits, relative to working-directory
+    required: false
+    default: .antibody/immune.toml
+  project-key:
+    description: >-
+      Optional. The project's key (its key file's JSON, or the secret in hex) as a repository secret: it reads paid
+      findings wrapped to the project. GitHub never gives secrets to pull requests from forks, which re-run disclosed
+      proofs only.
+    required: false
+    default: ""
+  network:
+    description: NEAR network (the binary has the testnet deployment built in)
+    required: false
+    default: testnet
+  working-directory:
+    description: The Foundry project (forge build runs here; the mapping's paths start here)
+    required: false
+    default: .
+  foundry-version:
+    description: The Foundry release that builds the contracts
+    required: false
+    default: v1.8.5
+  strict:
+    description: "true: a paid proof that cannot be read here counts as inconclusive"
+    required: false
+    default: "false"
+  fail-on-inconclusive:
+    description: "true: fail when no proof breaks a rule but a re-run was inconclusive (never shown as fixed)"
+    required: false
+    default: "true"
+  api:
+    description: Optional. An Antibody API that indexed the reveals, for blobs not committed under the mapping's `blobs`
+    required: false
+    default: ""
+
+outputs:
+  exit-code:
+    description: "0: no re-run paid proof breaks a rule; 2: one still breaks a rule; 3: inconclusive; 1: the check could not run"
+    value: ${{ steps.immune.outputs.exit-code }}
+  report:
+    description: The JSON report's path
+    value: ${{ steps.immune.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: antibody ${{ inputs.version }} (checksum-verified release binary)
+      id: bin
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) target=x86_64-unknown-linux-gnu; exe="" ;;
+          macOS-ARM64) target=aarch64-apple-darwin; exe="" ;;
+          Windows-X64) target=x86_64-pc-windows-msvc; exe=".exe" ;;
+          *) echo "::error::no prebuilt antibody binary for ${RUNNER_OS} ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+        dir="${RUNNER_TEMP}/antibody-${VERSION}"
+        mkdir -p "$dir"
+        base="https://github.com/${REPO}/releases/download/${VERSION}"
+        curl -fsSL --retry 3 -o "$dir/antibody${exe}" "$base/antibody-${target}${exe}"
+        curl -fsSL --retry 3 -o "$dir/antibody.sha256" "$base/antibody-${target}.sha256"
+        want=$(awk -v f="antibody-${target}${exe}" '$2 == f || $2 == "*" f {print $1}' "$dir/antibody.sha256")
+        if command -v sha256sum >/dev/null; then
+          got=$(sha256sum "$dir/antibody${exe}" | cut -d' ' -f1)
+        else
+          got=$(shasum -a 256 "$dir/antibody${exe}" | cut -d' ' -f1)
+        fi
+        if [ -z "$want" ] || [ "$want" != "$got" ]; then
+          echo "::error::antibody-${target}${exe} does not match the release's sha256 (want '${want}', got ${got})"
+          exit 1
+        fi
+        chmod +x "$dir/antibody${exe}"
+        echo "antibody-${target}${exe} ${got} (checked against ${base}/antibody-${target}.sha256)"
+        echo "path=$dir/antibody${exe}" >> "$GITHUB_OUTPUT"
+
+    - uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: ${{ inputs.foundry-version }}
+
+    # The pull request's own code is built here, with no secret in this step's environment.
+    - name: forge build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: forge build
+
+    - name: antibody immune
+      id: immune
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ANTIBODY: ${{ steps.bin.outputs.path }}
+        ANTIBODY_PROJECT_KEY: ${{ inputs.project-key }}
+        PROGRAM: ${{ inputs.program }}
+        CONFIG: ${{ inputs.config }}
+        NETWORK: ${{ inputs.network }}
+        STRICT: ${{ inputs.strict }}
+        API: ${{ inputs.api }}
+      run: |
+        set -uo pipefail
+        args=(--network "$NETWORK" immune --config "$CONFIG" --json "$RUNNER_TEMP/immune.json" --md "$RUNNER_TEMP/immune.md")
+        [ -n "$PROGRAM" ] && args+=(--program "$PROGRAM")
+        [ "$STRICT" = "true" ] && args+=(--strict)
+        [ -n "$API" ] && args+=(--api "$API")
+        "$ANTIBODY" "${args[@]}"
+        code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "report=$RUNNER_TEMP/immune.json" >> "$GITHUB_OUTPUT"
+        if [ -f "$RUNNER_TEMP/immune.md" ]; then
+          cat "$RUNNER_TEMP/immune.md" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### Antibody immune memory: the check could not run (exit $code); its log says why" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit 0
+
+    - name: verdict
+      shell: bash
+      env:
+        CODE: ${{ steps.immune.outputs.exit-code }}
+        FAIL_ON_INCONCLUSIVE: ${{ inputs.fail-on-inconclusive }}
+      run: |
+        case "$CODE" in
+          0) echo "No paid proof re-run here breaks a rule." ;;
+          2) echo "::error title=Antibody immune memory::a paid proof still breaks a committed rule against this pull request's code (job summary)"; exit 1 ;;
+          3) if [ "$FAIL_ON_INCONCLUSIVE" = "true" ]; then
+               echo "::error title=Antibody immune memory::no paid proof breaks a rule, but a re-run was inconclusive (job summary)"; exit 1
+             fi
+             echo "::warning title=Antibody immune memory::a re-run was inconclusive (job summary)" ;;
+          *) echo "::error title=Antibody immune memory::the check could not run (exit ${CODE:-none})"; exit 1 ;;
+        esac
