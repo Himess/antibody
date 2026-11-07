@@ -139,7 +139,16 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
   return (
     <div className="stack" style={{ ["--gap" as string]: "12px" }}>
       <div className="row" style={{ ["--gap" as string]: "10px" }}>
-        <button type="button" className="btn btn-sm" onClick={run} disabled={state.status === "running"} aria-busy={state.status === "running"}>
+        {/* aria-disabled, not disabled, while it reads: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (state.status !== "running") void run();
+          }}
+          aria-disabled={state.status === "running" || undefined}
+          aria-busy={state.status === "running"}
+        >
           <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
           {state.status === "running" ? "Checking…" : state.status === "idle" ? "Run the anchor check" : "Run again"}
         </button>
@@ -210,12 +219,15 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
               <span className="xsmall muted num">{Math.round(state.ms ?? 0)} ms · read by your browser</span>
             </div>
             <p className="small">{verdict.detail}</p>
-            <pre className={styles.raw} tabIndex={0} aria-label="Raw answers">
-              {raw}
-            </pre>
           </>
         ) : null}
       </div>
+      {/* The raw answers sit outside the live region: a screen reader announces the verdict, not the JSON. */}
+      {verdict ? (
+        <pre className={styles.raw} tabIndex={0} aria-label="Raw answers">
+          {raw}
+        </pre>
+      ) : null}
       <Command label="CLI command">{`antibody anchor-check --block ${block}`}</Command>
       <details className={styles.more}>
         <summary>The same two reads with curl, no Antibody code</summary>
