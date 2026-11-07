@@ -79,6 +79,26 @@
   color: var(--ink-3);
 }
 
+/* The keys legend keeps to one line (it broke mid-phrase at 1080p); the note beside it takes the wrapping. */
+.foot > span:first-child {
+  min-width: 0;
+}
+
+.keys {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A screen too narrow for both side by side stacks them, and the legend may wrap again. */
+@media (max-width: 759.98px) {
+  .foot {
+    flex-direction: column;
+  }
+  .keys {
+    white-space: normal;
+  }
+}
+
 .keys kbd {
   font-family: var(--font-mono);
   font-size: 0.85em;

@@ -205,8 +205,11 @@ export function ruleSource(kind: ProgramKind, name: string): RuleSource | null {
   return null;
 }
 
-/** Acme's round 1 adds bit 3 (AcmeInvariantsV2, docs/rounds.md); the API names the round-0 slots only. */
-const ACME_ADDED: Record<number, string> = { 3: "protected_balances" };
+/**
+ * Acme's round 1 adds bit 3 (AcmeInvariantsV2, docs/rounds.md); the API names the round-0 slots only. The
+ * commit and run pages name it from here too, so a round's slot reads the same on every page.
+ */
+export const ACME_ADDED: Record<number, string> = { 3: "protected_balances" };
 
 export interface SlotView {
   bit: number;

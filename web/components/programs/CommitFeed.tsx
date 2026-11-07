@@ -49,7 +49,7 @@ function FeedRowView({
     <tr>
       <Cell label="Commit" lead>
         <Link href={`/commits/${r.commit_id}`} className={styles.progLink}>
-          <span className={styles.progName}>Commit {r.commit_id}</span>
+          <span className={`${styles.progName} nowrap`}>Commit {r.commit_id}</span>
         </Link>
         <span className={styles.sub}>
           <span className="nowrap">

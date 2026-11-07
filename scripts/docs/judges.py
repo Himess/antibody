@@ -371,7 +371,7 @@ def judges(d):
             out += [look["programs_note"]]
         for p in progs:
             v = p.get("verdicts", {})
-            each_try = " (each `try` adds one verdict and one payout)" if p.get("program_id") == practice.get("program_id") else ""
+            each_try = " (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0)" if p.get("program_id") == practice.get("program_id") else ""
             line = (f"program {p.get('program_id')} ({p.get('name', '')}): phase `{p.get('phase')}`, anchor `{p.get('anchor', {}).get('status')}`, "
                     f"{v.get('t1_confirmed')} of {v.get('runs')} verdicts T1-confirmed, {len(p.get('payouts', []))} payouts, "
                     f"{p.get('pauses')} pause and {p.get('releases')} release permits, audit ok: {str(p.get('audit_ok')).lower()}{each_try}")
@@ -541,14 +541,14 @@ def judges(d):
             contract=vc.get("contract"), frozen=fr or None)
     t2 = r.get("t2") or {}
     if t2.get("ok") and t2.get("submissions"):
-        # Testnet: near-t2 with the four disclosed runs' proofs from SP1's prover network.
+        # Testnet: near-t2 with the four published-key runs' proofs from SP1's prover network.
         n += 1
         t2subs = t2["submissions"]
         runs = ", ".join(str(x.get("run_id")) for x in t2subs)
         outcomes = ", ".join(f"run {x.get('run_id')} `{(x.get('record') or {}).get('outcome')}`" for x in t2subs)
         pins = t2.get("pins") or {}
         cmd = d.cli('zk status --run ' + str(t2subs[0].get('run_id')))
-        row(n, f"T2: each disclosed run's verdict, re-run in SP1 on the TEE's exact input, is a Groth16 proof that near-t2 checks on NEAR against near-antibody's records "
+        row(n, f"T2: the verdict of each run whose content key is published (fixtures/zk; sealed on chain), re-run in SP1 on the TEE's exact input, is a Groth16 proof that near-t2 checks on NEAR against near-antibody's records "
                f"({t2.get('contract')}, locked; a validity proof of a disclosed verdict: no privacy claimed, no payout depends on it)",
             f"`{cmd}` (and runs {runs})",
             f"{outcomes}; a tampered proof refused: `{str((t2.get('refusal') or {}).get('refused')).lower()}`; "
@@ -674,7 +674,7 @@ def judges(d):
             nots += ["The NEAR app that freezes on a verdict (verdict-guard) runs in the sandbox run only: its code stake did not fit this deployment's lean budget."]
         nots += ["One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value."]
     if (r.get("t2") or {}).get("ok") and d.net != "sandbox":
-        nots += ["T2 is a validity proof of a disclosed verdict (docs/zk.md): it claims no privacy, and no payout in the locked deployment depends on it. It covers the four disclosed runs and the practice tries the prover service proves."]
+        nots += ["T2 is a validity proof of a disclosed verdict (docs/zk.md): it claims no privacy, and no payout in the locked deployment depends on it. It covers the four testnet runs whose content keys are published (fixtures/zk; sealed on chain) and the practice tries the prover service proves."]
     else:
         nots += ["T2 (a validity proof of a disclosed verdict, verified on NEAR) is not yet on testnet: near-t2 and the sandbox run are in place (docs/zk.md), and no payout depends on it."]
     nots += [

@@ -5,8 +5,10 @@ import {
   hasWrapD,
   isPaidGap,
   keyState,
+  neverRevealed,
   numOf,
   programInfo,
+  promotedIn,
   runOutcome,
   sealedLabel,
   sortedEvents,
@@ -47,10 +49,13 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const paid = c?.row?.paid_raw && c.row.paid_raw !== "0" ? wnear(c.row.paid_raw) : null;
   const stampColor = kind === "Violation" ? OG.accent : OG.ink2;
 
-  // A gap claim a round promoted and paid: named as the page names it ("gap claim · promoted at round 1").
+  // A gap claim a round promoted and paid: named as the page names it ("gap claim · promoted at round 1"),
+  // its round from the program's rounds when its events are not indexed.
   const promoted = events.find((e) => e.event === "gap_promoted");
   const gap = label === "Done:Paid" && (promoted !== undefined || isPaidGap(label, kind));
-  const gapRound = numOf(evData(promoted).round);
+  const gapRound = numOf(evData(promoted).round) ?? (c && pr?.ok ? promotedIn(pr.data, c.commit.id) : null);
+  // Expired unrevealed: the TEE never judged it, so there is no verdict to wait for.
+  const unrevealed = !kind && c !== null && neverRevealed(label, c.commit.run);
   const sub = gap
     ? gapRound !== null
       ? `GAP CLAIM · PROMOTED AT ROUND ${gapRound}`
@@ -59,7 +64,9 @@ export default async function Image({ params }: { params: Promise<{ id: string }
       ? `SLOT ${slots.join(", ")}`
       : kind
         ? "NO RULE BROKEN"
-        : "NO VERDICT YET";
+        : unrevealed
+          ? "NEVER JUDGED"
+          : "NO VERDICT YET";
 
   let seal: string | null = null;
   if (c) {
@@ -84,7 +91,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 40, marginTop: 26 }}>
           <div style={{ display: "flex", flexDirection: "column", border: `4px solid ${stampColor}`, borderRadius: 8, padding: "18px 28px", color: stampColor }}>
-            <span style={{ fontFamily: "Mono", fontWeight: 700, fontSize: 56, letterSpacing: 2 }}>{(kind === "NoViolation" ? "NO VIOLATION" : kind ?? "PENDING").toUpperCase()}</span>
+            <span style={{ fontFamily: "Mono", fontWeight: 700, fontSize: 56, letterSpacing: 2 }}>{(kind === "NoViolation" ? "NO VIOLATION" : (kind ?? (unrevealed ? "NOT REVEALED" : "PENDING"))).toUpperCase()}</span>
             <span style={{ fontFamily: "Mono", fontSize: 22, letterSpacing: 2 }}>{sub}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

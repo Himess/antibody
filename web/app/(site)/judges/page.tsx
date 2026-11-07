@@ -76,12 +76,20 @@ function ExternalIcon() {
   return <Icon name="external" size={11} style={{ display: "inline", verticalAlign: "-1px" }} />;
 }
 
+/** The columns' widths: this run's table and the earlier runs' one, stacked, line up column for column. */
+const PROGRAM_COLS = ["31%", "7%", "11.5%", "12.5%", "10.5%", "20%", "7.5%"];
+
 /** The run's judge view of programs; on a phone each row is a card. */
 function ProgramsTable({ rows, caption }: { rows: JudgeProgram[]; caption: string }) {
   return (
     <div className={`table-wrap ${rt.cardsWrap}`}>
-      <table className={`table ${rt.rtable}`}>
+      <table className={`table ${rt.rtable} ${rt.fixedCols} ${rt.wideCols}`}>
         <caption className="visually-hidden">{caption}</caption>
+        <colgroup>
+          {PROGRAM_COLS.map((w, i) => (
+            <col key={i} style={{ width: w }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
             <th scope="col">Program</th>

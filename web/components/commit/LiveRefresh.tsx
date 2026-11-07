@@ -9,11 +9,13 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : null);
 
 /**
- * Keeps an unsettled commit's page current. It follows the API's live stream (server-sent events) and,
- * when an event names this commit, its pause ticket or one of its runs, renders the page again from the
- * server. The server keeps its reads for about ten seconds and serves a stale one while it refreshes it,
- * so each such event brings refreshes until that cache has turned over twice. Without a stream, it reads
- * the page again every 20 seconds while the tab is visible.
+ * Keeps an unsettled commit's page current. It follows the API's live stream (server-sent events) from
+ * `after`, the first seq it replays: the API reads `after` inclusively, so the page passes one past the
+ * last event it rendered. When an event names this commit, its pause ticket or one of its runs, it renders
+ * the page again from the server. The server keeps its reads for about ten seconds and serves a stale one
+ * while it refreshes it, so such an event brings refreshes until that cache has turned over twice; a burst
+ * of events (one transaction often carries several) brings one set, timed from the last. Without a stream,
+ * it reads the page again every 20 seconds while the tab is visible.
  */
 export function LiveRefresh({ commitId, runs, after }: { commitId: number; runs: string; after: number }) {
   const router = useRouter();
@@ -21,6 +23,9 @@ export function LiveRefresh({ commitId, runs, after }: { commitId: number; runs:
     const runIds = new Set(runs.split(",").filter(Boolean).map(Number));
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const refreshSoon = () => {
+      // Each refresh is a full server render: a new event restarts the set rather than adding three more.
+      timers.forEach(clearTimeout);
+      timers.clear();
       for (const ms of [1_500, 12_000, 24_000]) {
         const t = setTimeout(() => {
           timers.delete(t);

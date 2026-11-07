@@ -5,6 +5,7 @@ import { LiveRefresh } from "@/components/commit/LiveRefresh";
 import {
   cleanKeys,
   DEFAULT_ANTIBODY,
+  duration,
   earlierClaim,
   evData,
   findT2,
@@ -13,9 +14,11 @@ import {
   keyState,
   kindWords,
   modeOfEvent,
+  neverRevealed,
   numOf,
   parseId,
   programInfo,
+  promotedIn,
   runEvent,
   runOfEvent,
   runOutcome,
@@ -42,7 +45,7 @@ import { PageHead, Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { ErrorState } from "@/components/ui/States";
 import { api, t2NotYet, type CommitDetail, type IndexedEvent, type ProgramDetail, type VerdictKey } from "@/lib/api";
-import { cap, seconds, stateLabel, wnear } from "@/lib/format";
+import { cap, stateLabel, wnear } from "@/lib/format";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -59,7 +62,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = parseId((await params).id);
   if (id === null) return { title: "Commit not found" };
   const r = await api.commit(id);
-  if (!r.ok) return { title: `Commit ${id}` };
+  // The API may be slow or down: the page still describes itself (search engines and link previews read this).
+  if (!r.ok) return { title: `Commit ${id}`, description: `Commit ${id} on near-antibody, NEAR testnet: its sealed proof, verdict, tier and payout, each step with its transaction.` };
   const label = r.data.row?.state || stateLabelOf(r.data.commit?.state);
   const kind = r.data.proof_card?.facts?.kind ?? r.data.row?.verdict?.kind ?? null;
   const gap = isPaidGap(label, kind);
@@ -83,23 +87,25 @@ function summary(x: {
   events: IndexedEvent[];
   baseNs: number | null;
   t1: boolean;
+  /** A gap claim a round promoted and paid: from its state and kind, so the lede holds when its events are not indexed. */
+  gap: GapPaid | null;
 }): string {
   const S = subject(x.c.commit.hunter, x.c.commit.program);
   const d = stateData(x.c.commit.state);
   const slots = x.keys.map((k) => slotName(x.program, k.slot)).join(" and ");
   const sev = topSeverity(x.program, x.keys);
   const paid = x.events.find((e) => e.event === "paid");
-  const gap = x.events.find((e) => e.event === "gap_promoted");
   const promoted = x.events.find((e) => e.event === "promoted");
   const of = numOf(evData(x.events.find((e) => e.event === "duplicate")).of) ?? numOf(d?.of);
   switch (x.label) {
     case "Done:Paid": {
       const amount = wnear(strOf(d?.amount) ?? strOf(evData(paid).amount));
-      if (gap) return `${S}'s proof broke no rule but harmed a protected account: refunded and recorded, then paid ${amount} when round ${numOf(evData(gap).round) ?? "—"} added a rule it breaks.`;
+      if (x.gap)
+        return `${S}'s proof broke no rule but harmed a protected account: refunded and recorded, then paid ${amount} when ${x.gap.round !== null ? `round ${x.gap.round}` : "a later round"} added a rule it breaks.`;
       if (promoted)
         return `${S}'s proof was a duplicate until round ${numOf(evData(promoted).round) ?? "—"}'s fix stopped the earlier claim but not this one: promoted, and paid ${amount}.`;
       const s = secondsBetween(x.baseNs, paid?.block_ts_ns);
-      return `${S}'s sealed proof broke ${sev ? `a ${cap(sev)} rule: ` : ""}${slots || "a rule"}. Verified in the TEE${x.t1 ? ", T1-confirmed" : ""} and paid ${amount}${d?.instant === true ? ", an instant payout (T1, under the cap)" : " after its challenge window"}${s !== null ? `, ${seconds(s)} from its commit's block` : ""}.`;
+      return `${S}'s sealed proof broke ${sev ? `a ${cap(sev)} rule: ` : ""}${slots || "a rule"}. Verified in the TEE${x.t1 ? ", T1-confirmed" : ""} and paid ${amount}${d?.instant === true ? ", an instant payout (T1, under the cap)" : " after its challenge window"}${s !== null ? `, ${duration(s)} from its commit's block` : ""}.`;
     }
     case "Duplicate":
     case "Done:DuplicateConfirmed":
@@ -209,7 +215,8 @@ export default async function CommitPage({ params }: Props) {
   const gap: GapPaid | null =
     label === "Done:Paid" && (gapPromoted || isPaidGap(label, kind))
       ? {
-          round: numOf(evData(gapPromoted).round),
+          // With its events not indexed (the staging run's), the program's rounds still name the round that promoted it.
+          round: numOf(evData(gapPromoted).round) ?? promotedIn(program, id),
           rerun: caughtRun,
           rerunRound: numOf(evData(caughtReq).round),
           slots: cleanKeys(evData(caught).keys)
@@ -218,7 +225,10 @@ export default async function CommitPage({ params }: Props) {
         }
       : null;
   const live = !label.startsWith("Done:") && label !== "";
+  // Expired unrevealed: no blob, no run, no verdict, now or later.
+  const unrevealed = neverRevealed(label, commit.run);
   const runIds = [commit.run, commit.second, commit.rerun, commit.wrapped].map(numOf).filter((n): n is number => n !== null);
+  // The live stream reads `after` inclusively: it starts one past this, or it replays the last event shown and refreshes for nothing.
   const lastSeq = events.reduce((m, e) => Math.max(m, numOf(e.seq) ?? 0), 0);
   const rows = fr.ok && Array.isArray(fr.data?.submissions) ? fr.data.submissions : Array.isArray(program?.commits) ? program.commits : null;
   const feedError = fr.ok ? null : fr.error;
@@ -259,15 +269,21 @@ export default async function CommitPage({ params }: Props) {
     programKey: strOf(program?.program?.key),
   };
   const severity = topSeverity(program, keys);
-  const lede = summary({ c, label, kind, keys, program, events, baseNs, t1: Boolean(t1Ev) || teeTier === "T1" });
+  const lede = summary({ c, label, kind, keys, program, events, baseNs, t1: Boolean(t1Ev) || teeTier === "T1", gap });
 
   return (
     <>
       <PageHead crumbs={crumbs(id, programId)} eyebrow={`Commit · program ${programId} · round ${commit.round ?? "—"}`} title={`Commit ${id}`} lede={lede}>
         <StateBadge state={label} />
         {gap ? <GapPill gap={gap} /> : null}
-        {kind || label !== "Committed" ? <KindBadge kind={kind} /> : null}
-        <TierBadge tier={tierShown} />
+        {unrevealed ? (
+          <Pill>never judged</Pill>
+        ) : (
+          <>
+            {kind || label !== "Committed" ? <KindBadge kind={kind} /> : null}
+            <TierBadge tier={tierShown} />
+          </>
+        )}
         {severity ? <SeverityBadge severity={severity} /> : null}
         {info.practice ? (
           <Pill tone="info" icon="info">
@@ -275,7 +291,7 @@ export default async function CommitPage({ params }: Props) {
           </Pill>
         ) : null}
         {info.earlier ? <Pill icon="clock">earlier run</Pill> : null}
-        {live ? <LiveRefresh commitId={id} runs={runIds.join(",")} after={lastSeq} /> : null}
+        {live ? <LiveRefresh commitId={id} runs={runIds.join(",")} after={lastSeq + 1} /> : null}
       </PageHead>
       <div className={styles.withJump}>
         <nav className={styles.jumpNav} aria-label="On this page">
@@ -310,6 +326,7 @@ export default async function CommitPage({ params }: Props) {
           info={info}
           moment={moment}
           gap={gap}
+          neverRevealed={unrevealed}
         />
         {!pr.ok ? (
           <div className={`page ${styles.spaced}`}>
@@ -333,6 +350,7 @@ export default async function CommitPage({ params }: Props) {
             earlier={earlier}
             contract={contract}
             keyState={proofKeys}
+            gap={gap}
           />
         </Section>
 
@@ -385,6 +403,7 @@ export default async function CommitPage({ params }: Props) {
             programKey={strOf(program?.program?.key)}
             hunter={commit.hunter}
             programId={programId}
+            neverRevealed={unrevealed}
           />
         </Section>
 
@@ -415,6 +434,7 @@ export default async function CommitPage({ params }: Props) {
             bound={bound}
             mode="verify"
             keyState={proofKeys}
+            neverRevealed={unrevealed}
           />
         </Section>
 

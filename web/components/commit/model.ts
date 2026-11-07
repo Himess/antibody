@@ -3,7 +3,7 @@
  * omit a field or send an unexpected type, so every reader here tolerates both and falls back to "—".
  */
 import { RECEIPTS } from "@/components/checks/trust-data";
-import { isPracticeTry, practiceTry } from "@/components/programs/helpers";
+import { ACME_ADDED, isPracticeTry, practiceTry, programKind } from "@/components/programs/helpers";
 import type { Expect } from "@/components/ui/LiveCheck";
 import type { FeedRow, IndexedEvent, KnownIssue, ProgramDetail, Severity, T2Panel, T2Record, VerdictKey } from "@/lib/api";
 import type { Result } from "@/lib/api";
@@ -104,6 +104,23 @@ export function bondFate(label: string): BondFate {
  */
 export const isPaidGap = (label: string | null | undefined, kind: string | null | undefined) => label === "Done:Paid" && kind === "NoViolation";
 
+/**
+ * A commit that was never revealed: only an unrevealed commit expires (the engine's `expire` and its exit
+ * pass), so it has no blob, no run and no verdict, and never will. A refunded commit whose verdict was
+ * voided has no run either, but it was revealed: the state tells them apart, not the missing run.
+ */
+export const neverRevealed = (label: string, run: unknown) => label === "Done:Expired" && numOf(run) === null;
+
+/**
+ * The round whose opening promoted this commit (`program.rounds[].promoted`, as the program's feed reads it).
+ * It stands in for the `gap_promoted` or `promoted` event when the commit's events are not indexed.
+ */
+export function promotedIn(p: ProgramDetail | null | undefined, commitId: number): number | null {
+  const rounds = p?.program?.rounds;
+  if (!Array.isArray(rounds)) return null;
+  return numOf(rounds.find((r) => Array.isArray(r?.promoted) && r.promoted.includes(commitId))?.round);
+}
+
 export const kindWords = (k: string | null | undefined): string =>
   !k
     ? "Pending"
@@ -180,7 +197,11 @@ export function slotInfo(p: ProgramDetail | null | undefined, slot: number): { n
   const ps = p?.program?.params?.slots;
   if (Array.isArray(ps)) {
     const x = ps.find((s) => isObj(s) && numOf(s.slot) === slot);
-    if (isObj(x)) return { name: null, severity: isSeverity(x.severity) ? x.severity : null, added: true };
+    if (isObj(x)) {
+      // The API names the round-0 slots only: on our Acme fixture, a round's slot is named as the program page names it.
+      const name = programKind(strOf(p?.meta?.name), strOf(p?.meta?.description)) === "fixture" ? (ACME_ADDED[slot] ?? null) : null;
+      return { name, severity: isSeverity(x.severity) ? x.severity : null, added: true };
+    }
   }
   return { name: null, severity: null, added: false };
 }
@@ -276,12 +297,19 @@ export function secondsBetween(fromNs: number | null | undefined, toNs: number |
   return (toNs - fromNs) / 1e9;
 }
 
-/** "+18.5 s", "+8.4 min", "+45.5 h": seconds up to two minutes, then one unit per scale, one decimal. */
+/**
+ * "18.5 s", "8.4 min", "45.5 h": seconds up to two minutes, then one unit per scale, one decimal. The
+ * timeline's offsets use it, and so does the copy beside them, so one step reads the same in both.
+ */
+export function duration(a: number): string {
+  if (!Number.isFinite(a)) return "—";
+  return a >= 3600 ? `${(a / 3600).toFixed(1)} h` : a >= 120 ? `${(a / 60).toFixed(1)} min` : `${a.toFixed(1)} s`;
+}
+
+/** "+18.5 s", "+8.4 min", "+45.5 h": a step's time from the timeline's base, as `duration` writes it. */
 export function offset(s: number | null | undefined): string {
   if (s === null || s === undefined || !Number.isFinite(s)) return "—";
-  const a = Math.abs(s);
-  const body = a >= 3600 ? `${(a / 3600).toFixed(1)} h` : a >= 120 ? `${(a / 60).toFixed(1)} min` : `${a.toFixed(1)} s`;
-  return `${s < 0 ? "−" : "+"}${body}`;
+  return `${s < 0 ? "−" : "+"}${duration(Math.abs(s))}`;
 }
 
 // ------------------------------------------------------------------ money
@@ -426,7 +454,7 @@ export type KeyState =
 export const keyFile = (fixture: string) => `${fixture}/content_key.hex`;
 
 /**
- * The fixture whose content key is published for this run (docs/zk.md: "the four disclosed testnet runs").
+ * The fixture whose content key is published for this run (docs/zk.md: "the four testnet runs whose content keys are published").
  * Matched on the commit, the run, the program and the TEE's receipt, so another deployment's ids match none.
  */
 export function publishedFixture(x: { commitId: number | null; runId: number | null; programId: number | null; receipt: string | null | undefined }): string | null {
@@ -525,7 +553,8 @@ export function findT2(runId: number | null, runT2: T2Record | null | undefined,
       panel.ok && isObj(panel.data?.pins)
         ? { version: strOf(panel.data.pins.verifier), wasm: strOf(panel.data.pins.verifier_wasm) }
         : null,
-    notYet: !record && notYet,
+    // As on the landing: near-t2 named but holding no record yet still reads "not yet on testnet".
+    notYet: !record && (notYet || (panel.ok && records.length === 0)),
     error: !record && !panel.ok && !notYet ? panel.error : null,
   };
 }

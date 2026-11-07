@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
+import { AlertMessage } from "@/components/checks/AlertMessage";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/States";
 import { relative, utc } from "@/lib/format";
 import { nextHourMs, vendsLeft } from "@/lib/practice/vending";
-import { FAUCET_MIN_ALLOWANCE_NEAR, FAUCET_MIN_BALANCE_NEAR, type PendingImage, type TryInitial } from "./initial";
+import { FAUCET_MIN_ALLOWANCE_NEAR, FAUCET_MIN_BALANCE_NEAR, FAUCET_MIN_CREDIT_NEAR, TRY_CREDIT_NEAR, type PendingImage, type TryInitial } from "./initial";
 import type { Preflight } from "./store";
 import styles from "./try.module.css";
 
@@ -24,6 +25,11 @@ export interface Readiness {
   lowBalance: boolean;
   keyGone: boolean;
   lowAllowance: boolean;
+  /** The vending contract's NEAR credit at near-antibody: it pays each try's verification run and storage. */
+  creditNear?: number;
+  lowCredit: boolean;
+  /** Under one try's run and storage: a try would stop at its reveal. */
+  outOfCredit: boolean;
   /** The program does not take commits now. */
   closed: boolean;
 }
@@ -49,6 +55,9 @@ export function readiness(initial: TryInitial, pre: PreState, now: number | null
     lowBalance: balanceNear !== undefined && balanceNear < FAUCET_MIN_BALANCE_NEAR,
     keyGone: f?.allowanceNear === null,
     lowAllowance: f?.allowanceNear !== undefined && f.allowanceNear !== null && f.allowanceNear < FAUCET_MIN_ALLOWANCE_NEAR,
+    creditNear: f?.creditNear,
+    lowCredit: f?.creditNear !== undefined && f.creditNear < FAUCET_MIN_CREDIT_NEAR,
+    outOfCredit: f?.creditNear !== undefined && f.creditNear < TRY_CREDIT_NEAR,
     closed: data?.phase !== undefined && data.phase !== "Open",
   };
 }
@@ -71,8 +80,10 @@ const nearAmount = (n: number) => `${n.toLocaleString("en-US", { maximumFraction
 export function BeforeStart({ initial, pre, r, now, className }: { initial: TryInitial; pre: PreState; r: Readiness; now: number | null; className?: string }) {
   const f = initial.status.faucet;
   const { data, pending, challenge, programName, balanceNear, lentNear } = r;
-  const faucetLow = r.lowBalance || r.keyGone || r.lowAllowance;
-  const practiceAlerts = initial.status.alerts.filter((a) => a.component === "practice");
+  const faucetLow = r.lowBalance || r.keyGone || r.lowAllowance || r.lowCredit;
+  // The faucet row below states these; any other practice alert still shows as our status says it.
+  const stated = ["vending-balance", "vend-key-missing", "vend-key-allowance", "vending-credit"];
+  const practiceAlerts = initial.status.alerts.filter((a) => a.component === "practice" && !stated.includes(a.key));
   return (
     <div className={`card stack ${className ?? ""}`} style={{ ["--gap" as string]: "12px" }}>
       <h2 className="eyebrow">Before you start</h2>
@@ -126,9 +137,18 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
               : f?.allowanceNear !== undefined && f.allowanceNear !== null
                 ? `; the public vend key has ${nearAmount(f.allowanceNear)} of allowance`
                 : ""}
+            {r.creditNear !== undefined
+              ? `; its NEAR credit at near-antibody, which pays each try's verification run and storage (about ${TRY_CREDIT_NEAR} NEAR a try), is ${nearAmount(r.creditNear)}`
+              : ""}
             . A try costs it about 0.046 NEAR (measured on testnet);{" "}
             {lentNear !== undefined ? `the ${nearAmount(lentNear)} it lends the account comes back at the close.` : "what it lends the account comes back at the close."}
-            {faucetLow ? (
+            {r.outOfCredit ? (
+              <>
+                {" "}
+                <strong>That credit cannot pay for another try:</strong> a try now stops at its reveal; the <a href="#recorded">recorded tries</a> show the
+                same loop.
+              </>
+            ) : faucetLow ? (
               <>
                 {" "}
                 <strong>It is low, so a try may be refused:</strong> the <a href="#recorded">recorded tries</a> show the same loop.
@@ -138,7 +158,7 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
         ) : null}
         {practiceAlerts.map((a) => (
           <Row key={a.key} icon="alert" tone="warn">
-            Our status: {a.message}
+            Our status: <AlertMessage text={a.message} />
           </Row>
         ))}
         {initial.status.ok ? (

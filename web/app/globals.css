@@ -33,7 +33,8 @@
   --pill: var(--bg-sunk);
   --pill-line: var(--line);
   --shadow: 0 1px 0 rgb(12 14 15 / 4%), 0 8px 24px -12px rgb(12 14 15 / 12%);
-  /* The edge of a table that scrolls sideways: stronger in dark mode, where a faint one would not show. */
+  /* The edge of a table that scrolls sideways: a dark shade in light mode, a light one in dark mode, where black on the
+     dark card would not show. */
   --scroll-shadow: rgb(12 14 15 / 14%);
   --focus: #0a6690;
 
@@ -93,7 +94,7 @@
     --pill: #1d2023;
     --pill-line: var(--line-strong);
     --shadow: 0 1px 0 rgb(0 0 0 / 40%), 0 10px 30px -14px rgb(0 0 0 / 70%);
-    --scroll-shadow: rgb(0 0 0 / 60%);
+    --scroll-shadow: rgb(255 255 255 / 12%);
     --focus: #5bbdea;
   }
 }
@@ -126,7 +127,7 @@
   --pill: #1d2023;
   --pill-line: var(--line-strong);
   --shadow: 0 1px 0 rgb(0 0 0 / 40%), 0 10px 30px -14px rgb(0 0 0 / 70%);
-  --scroll-shadow: rgb(0 0 0 / 60%);
+  --scroll-shadow: rgb(255 255 255 / 12%);
   --focus: #5bbdea;
 }
 

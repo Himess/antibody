@@ -50,19 +50,22 @@ export function isoOf(t: number, unit: "s" | "ns" | "ms" = "s"): string {
   return new Date(ms).toISOString();
 }
 
-/** "3 min ago", "in 2 h" relative to `now` (ms). */
+/** Joins a number to its unit: callers print `relative()` inside running text, where "32" and "h" could split. */
+const NBSP = "\u00a0";
+
+/** "3 min ago", "in 2 h" relative to `now` (ms); the number and its unit never split across lines. */
 export function relative(t: number, now: number, unit: "s" | "ns" | "ms" = "s"): string {
   const ms = unit === "s" ? t * 1000 : unit === "ns" ? t / 1e6 : t;
   const d = Math.round((ms - now) / 1000);
   const a = Math.abs(d);
   const fmt =
     a < 45
-      ? `${a} s`
+      ? `${a}${NBSP}s`
       : a < 2700
-        ? `${Math.round(a / 60)} min`
+        ? `${Math.round(a / 60)}${NBSP}min`
         : a < 129600
-          ? `${Math.round(a / 3600)} h`
-          : `${Math.round(a / 86400)} d`;
+          ? `${Math.round(a / 3600)}${NBSP}h`
+          : `${Math.round(a / 86400)}${NBSP}d`;
   return d <= 0 ? `${fmt} ago` : `in ${fmt}`;
 }
 

@@ -48,11 +48,13 @@ const NO_HISTORY: History = { agents: [], withdrawals: [], truncated: false };
 
 /**
  * Reads everything; `fresh` reads the account's views from NEAR rather than the API's short cache. The event
- * log (registered agents, withdrawals) feeds only the actions, so a read-only view skips it.
+ * log (registered agents, withdrawals) feeds only the actions, so a read-only view skips it. A read-only view
+ * reads the account's three views from NEAR first (three view calls from this browser), the API only if NEAR
+ * fails: an uncached /v1/accounts read waits on the API's shared RPC budget and can take 10-20 s.
  */
 async function readAll(id: string, fresh: boolean, withHistory: boolean): Promise<Snapshot> {
   const [a, act, h, b] = await Promise.all([
-    loadAccount(id, fresh),
+    fresh || withHistory ? loadAccount(id, fresh) : loadAccount(id, true).then((r) => (r.ok ? r : loadAccount(id, false))),
     loadActivity(id),
     withHistory ? loadHistory(id) : Promise.resolve({ ok: true as const, data: NO_HISTORY }),
     loadNearBalance(id),

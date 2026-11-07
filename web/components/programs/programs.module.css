@@ -40,10 +40,11 @@
   flex: none;
 }
 
-/* Phones and tablets: one row that scrolls sideways, its fading edge the cue. */
+/* Phones and tablets: one row that scrolls sideways, its fading edge the cue. The end padding keeps the last
+   link's focus ring clear of the fade at full scroll. */
 @media (max-width: 1099.98px) {
   .toc ol {
-    padding-right: calc(var(--gutter) + 24px);
+    padding-right: calc(var(--gutter) + 32px);
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
   }
@@ -155,8 +156,36 @@
     white-space: normal;
   }
 
+  /* A token kept whole (a timestamp, a relative time, "#0 · round 0") stays whole in a card too. */
+  table.rtable td :global(.nowrap) {
+    white-space: nowrap;
+  }
+
+  /* A card is a stack of label and value: the columns' set widths do not apply. */
+  table.rtable colgroup {
+    display: none;
+  }
+
   table.rtable td .cell {
     overflow-wrap: anywhere;
+  }
+}
+
+/* Groups of a table stacked one under another (this run's programs, earlier runs'): each column's width comes
+   from the <colgroup>, not from that group's own rows, so the columns line up from one group to the next. A
+   header longer than its column wraps rather than run into the next one. */
+@media (min-width: 720px) {
+  table.fixedCols {
+    table-layout: fixed;
+  }
+
+  table.fixedCols th {
+    white-space: normal;
+  }
+
+  /* Seven columns: below this width the table scrolls sideways inside its wrapper, as it did before. */
+  table.fixedCols.wideCols {
+    min-width: 760px;
   }
 }
 
@@ -173,9 +202,11 @@ div.inCard td:first-child {
   padding-left: 0;
 }
 
+/* 4 px, not 0, at the end: a link there keeps its whole focus ring (2 px outline, 2 px offset), which the
+   wrapper's sideways scroll would clip. */
 div.inCard th:last-child,
 div.inCard td:last-child {
-  padding-right: 0;
+  padding-right: 4px;
 }
 
 /* On phones its rows are hairline-separated groups, not cards inside the card. */

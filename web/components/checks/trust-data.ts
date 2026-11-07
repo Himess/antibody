@@ -48,8 +48,9 @@ export const RUN_BINDING = {
 } as const;
 
 /**
- * The four testnet runs whose content keys are public (fixtures/zk: our fixture agents published theirs; a
- * practice try's is public by construction). On chain their proofs stay sealed until disclosure, so the page
+ * The four testnet runs whose content keys are public (fixtures/zk: our fixture agents and the recorded run's
+ * practice try published theirs; that try predates the practice key anyone can derive, docs/zk.md). On chain
+ * their proofs stay sealed until disclosure, so the page
  * never calls them "disclosed". The TEE's receipt (on NEAR, in each run's answer) is what the native re-run
  * and SP1's executor reproduce byte for byte (fixtures/zk/<case>/expected.json).
  */

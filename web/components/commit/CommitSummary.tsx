@@ -42,6 +42,7 @@ export function CommitSummary({
   info,
   moment,
   gap,
+  neverRevealed,
 }: {
   c: CommitDetail;
   label: string;
@@ -55,6 +56,8 @@ export function CommitSummary({
   moment: boolean;
   /** Set when this commit is a gap claim a round promoted and paid. */
   gap: GapPaid | null;
+  /** The commit expired unrevealed: the TEE never judged it, and never will (no "yet"). */
+  neverRevealed: boolean;
 }) {
   const commit = c.commit;
   const hunterIs = who(commit.hunter, commit.program);
@@ -151,8 +154,14 @@ export function CommitSummary({
           <dt>Verdict</dt>
           <dd>
             <span className={styles.inline}>
-              {kind || label !== "Committed" ? <KindBadge kind={kind} /> : <Pill tone="pending">not revealed yet</Pill>}
-              <TierBadge tier={tier} />
+              {neverRevealed ? (
+                <Pill>never judged</Pill>
+              ) : (
+                <>
+                  {kind || label !== "Committed" ? <KindBadge kind={kind} /> : <Pill tone="pending">not revealed yet</Pill>}
+                  <TierBadge tier={tier} />
+                </>
+              )}
               {t2Contradicts ? (
                 <Pill tone="bad" size="sm">
                   T2 contradicts
@@ -211,6 +220,11 @@ export function CommitSummary({
                   {gap.rerun !== null ? `; re-run ${gap.rerun}, at round ${gap.rerunRound ?? gap.round ?? "—"}'s fix, broke ${gap.slots || "a rule"}` : ""}.
                 </p>
               ) : null}
+            </>
+          ) : neverRevealed ? (
+            <>
+              <Pill>never judged</Pill>
+              <p className="xsmall muted">Never revealed, so the TEE never judged it.</p>
             </>
           ) : (
             <>

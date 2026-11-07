@@ -178,11 +178,11 @@ export function primaryChecks(c: JudgeClaim, evm: JudgeEvmCheck[]): ClaimCheck[]
  * opening words, so a reworded limit drops out rather than points at the wrong one).
  */
 const LIMITS_BY_KIND: Record<string, string[]> = {
-  submission: ["TEE trust is tiered", "One block"],
-  one_moment: ["Ethereum L1 for verification"],
+  submission: ["TEE trust is tiered", "Worker images", "One block"],
+  one_moment: ["Ethereum L1 for verification", "Worker images"],
   round: ["Duplicates are judged by"],
   release: ["Ethereum L1 for verification"],
-  practice: ["Claims are paid in commit order"],
+  practice: ["Claims are paid in commit order", "Worker images"],
   rule_strength: ["Rule strength is the rules"],
 };
 

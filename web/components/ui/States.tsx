@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { cap } from "@/lib/format";
 import { Icon } from "./Icon";
 import styles from "./ui.module.css";
 
@@ -33,7 +32,7 @@ export function ErrorState({ what, error, children, partial = false }: { what: s
     <div className={`${styles.state} ${partial || p.late ? styles.stateWarn : styles.stateError}`} role={partial ? "status" : "alert"}>
       <Icon name="alert" size={16} />
       <div className="stack" style={{ ["--gap" as string]: "4px" }}>
-        <strong>{p.late ? `${cap(what)} did not load in time.` : `Could not read ${what}.`}</strong>
+        <strong>{p.late ? `Could not read ${what} in time.` : `Could not read ${what}.`}</strong>
         {p.words ? <span className="small">{p.words}</span> : null}
         {error && !technical ? <span className="mono xsmall muted">{error}</span> : null}
         {children ?? (

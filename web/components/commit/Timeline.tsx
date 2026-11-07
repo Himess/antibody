@@ -76,11 +76,20 @@ export interface TimelineInput {
   baseWhat?: string;
 }
 
-/** Who acted, with the account kept on one line where it fits ("our fixture agent A (agent-a.antibody.testnet)"). */
-function actor(project: string | null, program: number | null, account: string | null | undefined, capital: boolean): ReactNode {
-  if (!account) return capital ? "The hunter" : "the hunter";
+/**
+ * Who acted, with the account kept on one line where it fits ("our fixture agent A (agent-a.antibody.testnet)").
+ * `tail` is the punctuation after it ("." or ","), kept inside the account's box: a line may break right after
+ * that inline-block, and a "." must not start the next line.
+ */
+function actor(project: string | null, program: number | null, account: string | null | undefined, capital: boolean, tail = ""): ReactNode {
+  if (!account) return `${capital ? "The hunter" : "the hunter"}${tail}`;
   const w = project && account === project ? "the project" : who(account, program);
-  const acct = <span className={styles.acct}>{w ? `(${account})` : account}</span>;
+  const acct = (
+    <span className={styles.acct}>
+      {w ? `(${account})` : account}
+      {tail}
+    </span>
+  );
   return w ? (
     <>
       {capital ? cap(w) : w} {acct}
@@ -92,7 +101,10 @@ function actor(project: string | null, program: number | null, account: string |
 
 const programOf = (x: TimelineInput) => x.programId ?? x.program?.program?.id ?? null;
 
-const actorWith = (x: TimelineInput) => (account: string | null | undefined, capital = false) => actor(x.project, programOf(x), account, capital);
+const actorWith =
+  (x: TimelineInput) =>
+  (account: string | null | undefined, capital = false, tail = "") =>
+    actor(x.project, programOf(x), account, capital, tail);
 
 /** This commit is the recorded run's (the program and the hunter match, as for its note under "What it settled"). */
 const recordedRun = (x: TimelineInput) => {
@@ -125,8 +137,9 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         title: "Committed",
         detail: (
           <>
-            A sealed proof{x.bond ? ` and a ${wnear(x.bond)} bond` : ""}, by {by(strOf(d.hunter) ?? x.hunter)}
-            {x.round ? `, in round ${x.round}` : ""}.{x.practice ? "" : " Nobody, the project included, can read it before its verdict."}
+            A sealed proof{x.bond ? ` and a ${wnear(x.bond)} bond` : ""}, by {by(strOf(d.hunter) ?? x.hunter, false, x.round ? "," : ".")}
+            {x.round ? ` in round ${x.round}.` : ""}
+            {x.practice ? "" : " Nobody, the project included, can read it before its verdict."}
           </>
         ),
       };
@@ -156,7 +169,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         mark: "neutral",
         ev: e,
         title: `Run ${run ?? "—"} requested${mode && mode !== "verify" ? ` · ${modeName(mode)}` : ""}`,
-        detail: payer ? <>Requested and paid for by {by(payer)}.</> : undefined,
+        detail: payer ? <>Requested and paid for by {by(payer, false, ".")}</> : undefined,
       };
     }
     case "run_answered": {
@@ -332,8 +345,8 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
               : promotedRound !== null
                 ? `At its original priority, after its promotion at round ${promotedRound}.`
                 : "After its challenge window, with no challenge open."}{" "}
-            Credited to {by(strOf(d.beneficiary) ?? x.beneficiary)}
-            {fee && fee !== "0" ? `; protocol fee ${wnear(fee)}` : ""}.
+            Credited to {by(strOf(d.beneficiary) ?? x.beneficiary, false, fee && fee !== "0" ? ";" : ".")}
+            {fee && fee !== "0" ? ` protocol fee ${wnear(fee)}.` : ""}
           </>
         ),
       };
@@ -376,6 +389,35 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
       return { key, tone: "minor", mark: "warn", ev: e, title: `Run ${run ?? ""} failed`.replace("  ", " "), detail: strOf(d.reason) ?? undefined };
     case "retry_available":
       return { key, tone: "minor", mark: "neutral", ev: e, title: "Retry available", detail: "The run may be requested again; the commit keeps its priority." };
+    // A program's own runs (the run page): confirm_tee's relay, a round's proposal, a known issue's declaration.
+    case "tee_confirm_requested":
+      return {
+        key,
+        tone: "minor",
+        mark: "neutral",
+        ev: e,
+        title: "TDX quote relayed",
+        detail: "near-antibody checked that the attestation describes this run and sent its Intel TDX quote to NEAR's DCAP verifier.",
+      };
+    case "round_proposed":
+      return {
+        key,
+        tone: "minor",
+        mark: "neutral",
+        ev: e,
+        title: `Round ${numOf(d.round) ?? "—"} proposed`,
+        detail: "The project proposed a fix; the TEE checks it in this run before any re-run.",
+      };
+    case "known_issue":
+      return {
+        key,
+        tone: "main",
+        mark: "neutral",
+        ev: e,
+        title: "Recorded as a known issue",
+        detail:
+          "Declared sealed before the program opened: a later proof with the same tag is never paid, and this proof stays sealed for good (a known issue's run carries no disclosure wrap).",
+      };
     default:
       return { key, tone: "minor", mark: "neutral", ev: e, title: e.event.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) };
   }
@@ -432,7 +474,7 @@ function buildSteps(x: TimelineInput): Step[] {
                 (request sha256 <Hash value={sha} head={12} label="request sha256" />)
               </>
             ) : null}
-            .{payer && payer !== x.hunter ? <> The run was paid for by {by(payer)}.</> : null}
+            .{payer && payer !== x.hunter ? <> The run was paid for by {by(payer, false, ".")}</> : null}
           </>
         ),
       });

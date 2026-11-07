@@ -30,8 +30,24 @@ export type Result<T> = { ok: true; data: T; at: number } | { ok: false; error: 
  */
 const BUDGET_MS = { server: 25_000, browser: 20_000 };
 
-/** A failure that is not an answer (no connection, a 5xx) is worth one more try; a 4xx is the answer. */
-const retryable = (r: Result<unknown>) => !r.ok && (r.status === undefined || r.status >= 500);
+/** near-t2 is not on testnet until the API names it: `/v1/t2` answers this error until then. */
+export const t2NotYet = (r: Result<unknown>) => !r.ok && /no near-t2/i.test(r.error);
+
+/**
+ * A failure that is not an answer is worth one more try: no connection, a timeout, a 5xx (the API answers a
+ * failed upstream RPC read with 502), and a 429. The API rate-limits each client address, and on the server
+ * every visitor's reads leave from the same few addresses, so one busy moment refuses them all. Any other
+ * 4xx is the answer, and so is /v1/t2's 502 "this deployment names no near-t2 contract yet", which stays
+ * until near-t2 is deployed: retried, it cost every page that reads T2 a second uncached call and 0.4 s.
+ */
+const retryable = (r: Result<unknown>) => !r.ok && !t2NotYet(r) && (r.status === 429 || r.status === undefined || r.status >= 500);
+
+/**
+ * The pause before that try. A 429 asks for "a few seconds" (Retry-After: 10, longer than a page should
+ * wait); the API refills each address's allowance at 2 reads a second (crates/services/src/api.rs), so
+ * 1.5 s lets a few through.
+ */
+const retryPause = (r: Result<unknown>) => (!r.ok && r.status === 429 ? 1_500 : 400);
 
 /**
  * GET an API path. On the server, answers are kept in the Data Cache for `revalidate` seconds (pages read
@@ -40,13 +56,16 @@ const retryable = (r: Result<unknown>) => !r.ok && (r.status === undefined || r.
  */
 export async function get<T>(path: string, revalidate = 15): Promise<Result<T>> {
   const server = typeof window === "undefined";
-  if (typeof window === "undefined") await atRequestTime();
+  // A build define: "nodejs" in Next's server bundles, "" in the browser's (the import is dropped there),
+  // unset outside Next (tests, scripts), where there is no request to wait for.
+  if (process.env.NEXT_RUNTIME === "nodejs") await atRequestTime();
   const at = Date.now();
   const budget = server ? BUDGET_MS.server : BUDGET_MS.browser;
   const first = await getOnce<T>(path, revalidate, server, budget, at);
-  const left = budget - (Date.now() - at) - 400;
+  const pause = retryPause(first);
+  const left = budget - (Date.now() - at) - pause;
   if (!retryable(first) || left < 3_000) return first;
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, pause));
   return getOnce<T>(path, revalidate, server, left, at);
 }
 
@@ -109,8 +128,6 @@ export const api = {
   moments: () => get<Moments>("/v1/moments", 300),
 };
 
-/** near-t2 is not on testnet until the API names it: `/v1/t2` answers this error until then. */
-export const t2NotYet = (r: Result<unknown>) => !r.ok && /no near-t2/i.test(r.error);
 
 /** The live event stream (server-sent events) of Antibody's own events. */
 export const streamUrl = (after?: number) => `${config.apiBase}/v1/stream?scope=antibody${after ? `&after=${after}` : ""}`;
