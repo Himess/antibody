@@ -17,4 +17,7 @@ paths = [
   # T2 fixtures: the TEST Groth16 key, and the proofs of disclosed runs with their network request ids.
   '''fixtures/zk/t2-test-key\.json$''',
   '''fixtures/zk/[^/]+/proof\.json$''',
+  # Web vectors: practice content keys are public by construction (sha256 of a published formula,
+  # docs/zk.md), and the seeds, salts and nonces are fixed test bytes (0x21…, 0x41…).
+  '''golden/web-vectors\.json$''',
 ]

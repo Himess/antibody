@@ -643,7 +643,9 @@ dependencies = [
 name = "antibody-cli"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-primitives",
+ "alloy-rlp",
  "antibody-rules",
  "antibody-verifier",
  "antibody-witness",
