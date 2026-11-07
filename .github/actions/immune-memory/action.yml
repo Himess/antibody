@@ -85,7 +85,11 @@ runs:
         curl -fsSL --retry 3 -o "$dir/antibody${exe}" "$base/antibody-${target}${exe}"
         curl -fsSL --retry 3 -o "$dir/antibody.sha256" "$base/antibody-${target}.sha256"
         want=$(awk -v f="antibody-${target}${exe}" '$2 == f || $2 == "*" f {print $1}' "$dir/antibody.sha256")
-        if command -v sha256sum >/dev/null; then got=$(sha256sum "$dir/antibody${exe}" | cut -d' ' -f1); else got=$(shasum -a 256 "$dir/antibody${exe}" | cut -d' ' -f1); fi
+        if command -v sha256sum >/dev/null; then
+          got=$(sha256sum "$dir/antibody${exe}" | cut -d' ' -f1)
+        else
+          got=$(shasum -a 256 "$dir/antibody${exe}" | cut -d' ' -f1)
+        fi
         if [ -z "$want" ] || [ "$want" != "$got" ]; then
           echo "::error::antibody-${target}${exe} does not match the release's sha256 (want '${want}', got ${got})"
           exit 1

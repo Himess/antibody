@@ -610,7 +610,7 @@ pub struct ProofRow {
     pub round: u32,
     pub hunter: String,
     pub state: String,
-    /// The amount paid (or held), in whole tokens.
+    /// What it was paid, or is due or owed, in whole tokens.
     pub paid: String,
     /// The rules its keys name, as paid: `name (severity)`.
     pub paid_for: Vec<String>,
@@ -990,9 +990,12 @@ pub fn run(ctx: &Ctx, o: &Opts) -> Result<(Report, Manifest)> {
             Some(r) => cmd::run(ctx, r)?,
             None => Value::Null,
         };
-        let raw = match state.as_str() {
-            "Done:Paid" => cmd::paid_of(&c),
-            s => cmd::u128_of(&c["state"][s.trim_start_matches("Done:")]["amount"]),
+        let tokens = |raw: u128| format!("{} {symbol}", cmd::human_tokens(raw, decimals));
+        let paid = match state.as_str() {
+            "Done:Paid" => tokens(cmd::paid_of(&c)),
+            "Done:Exhausted" => "nothing (the rule's budget ran out)".to_string(),
+            "Done:Defaulted" => format!("{} owed", tokens(cmd::u128_of(&c["state"]["Done"]["Defaulted"]["owed"]))),
+            s => format!("{} due", tokens(cmd::u128_of(&c["state"][s]["amount"]))),
         };
         let paid_for = answered(&verify)["keys"]
             .as_array()
@@ -1009,7 +1012,7 @@ pub fn run(ctx: &Ctx, o: &Opts) -> Result<(Report, Manifest)> {
             round: cround,
             hunter: c["hunter"].as_str().unwrap_or_default().to_string(),
             state: state.clone(),
-            paid: format!("{} {symbol}", cmd::human_tokens(raw, decimals)),
+            paid,
             paid_for,
             read_through: None,
             outcome: Outcome::Sealed,
@@ -1206,9 +1209,10 @@ mod tests {
         let m = manifest0();
         let lend_impl = m.targets.iter().find(|t| t.name == "AcmeLendImpl").unwrap().address;
         // Echoes its argument: the runtime code is the 32-byte word given for `x`.
+        let pair = json!({"type": "tuple", "components": [{"type": "uint8"}, {"type": "address"}]});
         let abi = json!([{"type": "constructor", "inputs": [{"name": "x", "type": "uint256"}]},
                          {"type": "function", "name": "sweepFees", "inputs": [{"name": "to", "type": "address"}]},
-                         {"type": "function", "name": "f", "inputs": [{"type": "tuple", "components": [{"type": "uint8"}, {"type": "address"}]}, {"type": "bytes32[]"}]}]);
+                         {"type": "function", "name": "f", "inputs": [pair, {"type": "bytes32[]"}]}]);
         artifact(&dir.join("out"), "Echo.sol", "Echo", "60206020380360003960206000f3", abi);
         artifact(&dir.join("out"), "Twin.sol", "Twin", RETURN_REST, json!([]));
         artifact(&dir.join("out"), "Other.sol", "Twin", RETURN_REST, json!([]));
@@ -1251,7 +1255,16 @@ mod tests {
         assert!(read_artifact(&linked).unwrap_err().to_string().contains("links libraries"));
 
         // The config file's own syntax.
-        let toml = "program = 5\nblobs = \"proofs\"\n[content_keys]\n13 = \"keys/13.hex\"\n[[contract]]\ncontract = \"AcmeLend\"\ntarget = \"AcmeLendImpl\"\nargs = [\"AcmeGuard\", 2000]\n";
+        let toml = r#"
+program = 5
+blobs = "proofs"
+[content_keys]
+13 = "keys/13.hex"
+[[contract]]
+contract = "AcmeLend"
+target = "AcmeLendImpl"
+args = ["AcmeGuard", 2000]
+"#;
         std::fs::write(dir.join("immune.toml"), toml).unwrap();
         let c = Config::load(&dir.join("immune.toml")).unwrap();
         assert_eq!((c.program, c.artifacts.clone(), c.contracts.len(), c.content_keys["13"].as_str()), (Some(5), PathBuf::from("out"), 1, "keys/13.hex"));
@@ -1400,7 +1413,11 @@ mod tests {
         use Outcome::*;
         let md = markdown(&report(vec![row(14, StillBreaks), row(13, Fixed), row(18, Inconclusive), row(19, Sealed)], false));
         assert!(md.starts_with("### Antibody immune memory: 1 paid proof still breaks a rule\n"), "{md}");
-        assert!(md.contains("| **still breaks** | 14 by agent-14.testnet (round 0, Done:Paid) | fees_to_treasury (high), 0.03 wNEAR | disclosure | fees_to_treasury (high) | `AcmeVault.sweepFees(address)` |"), "{md}");
+        let breaks = concat!(
+            "| **still breaks** | 14 by agent-14.testnet (round 0, Done:Paid) | fees_to_treasury (high), 0.03 wNEAR | disclosure ",
+            "| fees_to_treasury (high) | `AcmeVault.sweepFees(address)` |"
+        );
+        assert!(md.contains(breaks), "{md}");
         assert!(md.contains("| fixed | 13 by agent-13.testnet"));
         assert!(md.contains("- Commit 18, inconclusive: the code under test reads storage slot 0x7 of AcmeVault"));
         assert!(md.contains("| not re-run (sealed) | 19 by"));

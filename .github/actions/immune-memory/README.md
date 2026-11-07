@@ -29,8 +29,8 @@ jobs:
   immune:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: Himess/antibody/.github/actions/immune-memory@main   # pin a commit SHA in production
+      - uses: actions/checkout@v4     # with `submodules: recursive` if forge build needs them
+      - uses: Himess/antibody/.github/actions/immune-memory@v0.5.0   # or a commit SHA
         with:
           program: "5"
           project-key: ${{ secrets.ANTIBODY_PROJECT_KEY }}   # optional

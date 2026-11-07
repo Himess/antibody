@@ -29,8 +29,8 @@ It sends nothing: view calls on NEAR, then local verifier runs.
    overrides at the same anchor. A target the repository builds gets the pull request's code; every other
    target keeps the current round's code (the committed fix) or, without one, the anchor's. The rules are the
    current round's. `--manifest-out` writes it: it is the round manifest the pull request would propose.
-4. **Opens each paid proof it can read.** Paid proofs are the commits paid, holding a key, promoted, or whose
-   key's budget ran out. A proof opens through:
+4. **Opens each paid proof it can read.** Paid proofs are the commits paid or owed: paid, holding a key,
+   promoted, or a valid claim left unpaid (an exhausted budget, a default at exit). A proof opens through:
    - **disclosure**: the program's disclosure keys (`request_disclosure`, spec §11.6) open the content key
      from the verify run's `wrap_d`; anyone can read these;
    - **a published content key**, given in the mapping or with `--content-key`;
@@ -94,8 +94,9 @@ implementation behind a proxy, not the proxy: a target's storage stays the ancho
   program's base witnesses, checked against the anchor's state root. Code that reads anything else stops the
   run as inconclusive, naming what is missing; nothing is fetched or guessed.
 - **The code is the build.** Overrides use the verifier's own round mechanism: the pull request's runtime code
-  at the target's address, with the anchor's storage. On testnet, the mapping above builds Acme Lend's final
-  fix to exactly the code hashes its release permits installed (`0x7deb43a5…`, `0x8281ee18…`).
+  at the target's address, with the anchor's storage. Acme Lend's final fix, built from its sources through a
+  mapping like the one above, hashes to exactly the code its release permits installed on testnet
+  (`0x7deb43a5…`, `0x8281ee18…`).
 - **The binary is the release's.** The GitHub Action checks the binary's sha256 against the release's.
 
 What it does not show: that the pull request has no new bug. It shows that each paid exploit it can read
@@ -129,11 +130,13 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
 
 - `crates/cli/src/immune.rs`, tests with no network: the override derivation from artifacts and the mapping;
   the code under test (only what the build replaces, under the current round's rules); disclosure keys
-  opening `wrap_d`; the results and exit codes; the Markdown, sealed details withheld. End to end on the
+  opening `wrap_d`, and release wraps opening with the project key only; the results and exit codes; the
+  Markdown, sealed details withheld. End to end on the
   recorded fixture (`fixtures/acme-local`): bug B's paid proof still breaks `fees_to_treasury` at
   `AcmeVault.sweepFees(address)` on the vault as deployed and breaks no rule on `AcmeVaultFixed`, each built
   from an artifact through the mapping; its receipt, assembled as the TEE ran it, is the fixture's; and a
   witness that does not prove what the code reads is inconclusive, naming it.
 - On testnet (2026-11-07, view calls only): program 5's commit 13 (A, paid, its content key published in
-  `fixtures/zk/a`) reproduces the TEE's receipt and is fixed on the final fix built from source; commits 14,
-  18 and 19 are listed as sealed until disclosure.
+  `fixtures/zk/a`) reproduces the TEE's receipt and is fixed on the final fix built from source. Commits 14
+  and 18 are listed as not re-run until their tags are disclosed (both qualify), and 19, a gap claim with no
+  tag to disclose, as sealed.
