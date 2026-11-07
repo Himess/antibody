@@ -48,7 +48,10 @@ jobs:
           mkdir dist
           cp "target/${{ matrix.target }}/release/antibody${{ matrix.exe }}" "dist/antibody-${{ matrix.target }}${{ matrix.exe }}"
           cd dist
-          if command -v sha256sum >/dev/null; then sha256sum ./*; else shasum -a 256 ./*; fi | sed 's#\./##' > "antibody-${{ matrix.target }}.sha256"
+          # Only the binary: a glob would also list the .sha256 file the redirect has just created (empty),
+          # and `shasum -c` would then fail on that line (v0.5.0's macOS file, fixed by hand).
+          B="antibody-${{ matrix.target }}${{ matrix.exe }}"
+          if command -v sha256sum >/dev/null; then sha256sum "$B"; else shasum -a 256 "$B"; fi | sed 's# \*#  #' > "antibody-${{ matrix.target }}.sha256"
           cat ./*.sha256
       - uses: actions/attest-build-provenance@v1
         with:
