@@ -201,7 +201,11 @@ class Doc:
                     f"Values only the run records (timings, refusals, counts) print with `{REC} <path>`, from the serving run's results file "
                     "(else the recorded one). On your own run, ids, states and amounts are these; hashes and times are your run's "
                     "(regenerate this file: `python3 scripts/docs/judges.py target/demo/results.json`).", ""]
-        return []
+        return ["Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on "
+                f"Windows). Values only the run records (timings, refusals, counts) print with `{REC} <path>`, which needs Python 3 (standard "
+                f"library only) and a clone of this repository; the same values sit at that path in `{self.source}`. Tiers are the verification "
+                "levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's "
+                "TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.", ""]
 
     def curl(self, rpc, method, params):
         body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, separators=(",", ":"))
@@ -251,13 +255,16 @@ class Doc:
         return lines
 
 
+LIMITS_DOC = "docs/limitations.md"
+
+
 def readme_limits():
-    """README.md's Limitations, item by item ({title, text}: the bold lead and the rest), for the site."""
+    """docs/limitations.md, item by item ({title, text}: the bold lead and the rest), for the site."""
     try:
-        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        text = (ROOT / LIMITS_DOC).read_text(encoding="utf-8")
     except OSError:
         return []
-    m = re.search(r"^## Limitations[ \t]*\n(.*?)(?=^## )", text, re.M | re.S)
+    m = re.search(r"^# Limitations[ \t]*\n(.*?)(?=^#|\Z)", text, re.M | re.S)
     items = []
     for line in (m.group(1) if m else "").splitlines():
         if line.startswith("- "):
@@ -269,6 +276,31 @@ def readme_limits():
         b = re.match(r"\*\*(.+?)\*\*\s*(.*)", it, re.S)
         out.append({"title": b.group(1).strip(), "text": b.group(2).strip()} if b else {"title": "", "text": it})
     return out
+
+
+def t0_path():
+    """Tries that settled on the T0 path (paid after the challenge window), from docs/results/byo-*.json:
+    (their seconds, the files), so the expected times come from results files, not from prose."""
+    secs, files = [], []
+    for p in sorted((ROOT / "docs" / "results").glob("byo-*.json")):
+        try:
+            runs = json.loads(p.read_text(encoding="utf-8")).get("runs", [])
+        except (OSError, ValueError):
+            continue
+        xs = [x["seconds"] for x in runs if x.get("payout_path") == "T0" and isinstance(x.get("seconds"), (int, float))]
+        if xs:
+            secs += xs
+            files.append(p.relative_to(ROOT).as_posix())
+    return secs, files
+
+
+def t0_note():
+    """The practice try's other path, in words, or "" when no results file measured it."""
+    secs, files = t0_path()
+    if not secs:
+        return ""
+    return (f"; while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: "
+            f"{min(secs):.0f} to {max(secs):.0f} s on that path ({', '.join(files)}). The output's `payout_path` says which")
 
 
 def report_file(sha256):
@@ -371,7 +403,10 @@ def judges(d):
             out += [look["programs_note"]]
         for p in progs:
             v = p.get("verdicts", {})
-            each_try = " (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0)" if p.get("program_id") == practice.get("program_id") else ""
+            each_try = (" (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0. The program is public, "
+                        "so its live counts include every try since this run, ours too: our checks of the site, the CLI and the release binary, a "
+                        "screener dry run, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on purpose; the site labels them)"
+                        if p.get("program_id") == practice.get("program_id") else "")
             line = (f"program {p.get('program_id')} ({p.get('name', '')}): phase `{p.get('phase')}`, anchor `{p.get('anchor', {}).get('status')}`, "
                     f"{v.get('t1_confirmed')} of {v.get('runs')} verdicts T1-confirmed, {len(p.get('payouts', []))} payouts, "
                     f"{p.get('pauses')} pause and {p.get('releases')} release permits, audit ok: {str(p.get('audit_ok')).lower()}{each_try}")
@@ -479,7 +514,7 @@ def judges(d):
         end = (f"`{t.get('state')}` with a T1 `Violation` in about {t.get('seconds', 0):.0f} s, then `{t.get('final_state')}`, "
                f"{d.tokens(t.get('final_paid_raw'))} to the vending contract once the keeper settled the queue (claims go in commit order)"
                if t.get("settled_by") == "keeper" else
-               f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, about {t.get('seconds', 0):.0f} s")
+               f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, about {t.get('seconds', 0):.0f} s when the run is T1")
         cmd = d.cli('try --name <you>')
         final = t.get("final_state") or t.get("state")
         live = [d.check_api(f"/v1/commits/{t.get('commit_id')}", f"the recorded try (commit {t.get('commit_id')}): row.state is {final}", "Check the recorded try",
@@ -487,7 +522,8 @@ def judges(d):
         row(n, "Anyone can run the loop with no account: the practice program (a tutorial)",
             f"`{cmd}` (sends {d.net} transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')})",
             f"{end} (it paid the bond and the run), a vault of its own "
-            f"(each `try` gets the next free one); `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken)",
+            f"(each `try` gets the next free one); `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken)"
+            f"{t0_note()}",
             links, "practice", [cmd], [d.link(k, h) for k, h in hashes], live, commit=t.get("commit_id"), run=t.get("run_id"),
             account=t.get("account"), vending=practice.get("vending", {}).get("vending"), program=practice.get("program_id"))
     rs = main.get("rule_strength") or {}
@@ -681,8 +717,8 @@ def judges(d):
             "Fixture bugs are planted textbook classes, labeled in the code; nothing here is a finding in a real protocol.",
             "A mutation score, where shown, measures a rule set's strength, not the code's security."]
     out += [f"- {x}" for x in nots] + [""]
-    # README.md's Limitations, for the site's limits (the testnet notice on every page links there).
-    data["limits"] = {"source": "README.md", "anchor": "limitations", "items": readme_limits()}
+    # docs/limitations.md, for the site's limits (the testnet notice on every page links there).
+    data["limits"] = {"source": LIMITS_DOC, "anchor": "limitations", "items": readme_limits()}
     return "\n".join(out)
 
 
@@ -757,7 +793,7 @@ def agents(d):
                     f"(claims go in commit order); vault {t.get('vault_index')}, with a link for each transaction.", ""]
         else:
             out += [f"Expected (from the recorded run): `{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, vault {t.get('vault_index')}, "
-                    f"about {t.get('seconds', 0):.0f} s, with a link for each transaction.", ""]
+                    f"about {t.get('seconds', 0):.0f} s when the run is T1, with a link for each transaction{t0_note()}.", ""]
     out += ["## Connect over MCP", "", "One config. Give the agent a function-call key (`antibody agent key add`): it may commit, reveal and retry, and it cannot withdraw or transfer.", "",
             "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["--account", d.account("<agent>.<you>"), "--key-file", "<agent-key>.json", "mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
     names = mcp.get("tool_names") or []

@@ -18,6 +18,23 @@ sent; "How mainnet works" (docs/mainnet.md, `/v1/mainnet`) makes view calls only
 | **Relayers, keeper, indexer, API, notifier** | Nothing: permissionless calls and derived data | Everything is re-derivable from NEAR views |
 | **The sandbox demo** | Nothing (local): MOCK OutLayer, DCAP and MPC, TEST keys; the T1 checks on its MOCK quotes are the real code | It is a test harness |
 
+## By actor
+
+| Actor | Trusted for | How anyone checks it |
+|---|---|---|
+| The light client | The anchor block's hash | The program's anchor check (`antibody judge`) against any RPC |
+| The TEE (OutLayer worker) | Running the pinned verifier on the sealed proof | **T1:** the run's TDX quote is verified on NEAR; `antibody tee check --request-id <id>` reads OutLayer's attestation (testnet: the sandbox's OutLayer is a MOCK) |
+| The verifier | Nothing beyond its pinned build | Native and wasm builds agree byte for byte; `antibody check` re-runs a proof locally; after disclosure every verdict can be recomputed |
+| The MPC network | Signing the pause and release permits near-guardian builds | `AntibodyAdapter` recomputes each permit's EIP-712 digest on chain |
+| near-antibody's owner | The defaults of new programs only | A live program's pins never change (property 12); `antibody judge` shows whether the contract is locked |
+| The project | Its manifest, escrow and fixes | The manifest hash is committed; known issues are sealed before open; a fix is released only after every paid proof re-runs against it and fails |
+| Relayers, keeper, indexer, API | Nothing: permissionless calls and derived data | Everything they show is re-derivable from NEAR |
+
+The verification levels: **T0** (OutLayer delivers the TEE's output), **T1** (its quote verified on NEAR).
+Instant payouts need T1. Above the cap, a payout also needs an independent second run that agrees, and
+waits its challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) claims no
+privacy, and no payout depends on it.
+
 ## T1: TDX quotes verified on NEAR
 
 OutLayer's worker signs one TDX quote per execution. Its `report_data` is SHA-256 over the task: the wasm

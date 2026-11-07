@@ -87,7 +87,10 @@
  },
  "one_look": {
   "intro": "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.",
-  "setup": [],
+  "setup": [
+   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path>`, which needs Python 3 (standard library only) and a clone of this repository; the same values sit at that path in `docs/results/testnet-2026-11-04.json`. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
+   ""
+  ],
   "command": "antibody judge",
   "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs.",
   "programs_note": "This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the others are earlier runs' on the same deployment.",
@@ -223,7 +226,7 @@
     "audit_ok": true,
     "this_run": "practice",
     "each_try": true,
-    "line": "program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0)"
+    "line": "program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0. The program is public, so its live counts include every try since this run, ours too: our checks of the site, the CLI and the release binary, a screener dry run, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on purpose; the site labels them)"
    },
    {
     "program_id": 7,
@@ -1010,7 +1013,7 @@
    "kind": "practice",
    "claim": "Anyone can run the loop with no account: the practice program (a tutorial)",
    "check": "`antibody try --name <you>` (sends testnet transactions; vending `practice.antibody.testnet`, program 6)",
-   "expected": "`Done:Paid`, 0.001 wNEAR to the vending contract, about 44 s (it paid the bond and the run), a vault of its own (each `try` gets the next free one); `<you>` is a new lowercase name (judge-1-p6, judge-2-p6 are taken)",
+   "expected": "`Done:Paid`, 0.001 wNEAR to the vending contract, about 44 s when the run is T1 (it paid the bond and the run), a vault of its own (each `try` gets the next free one); `<you>` is a new lowercase name (judge-1-p6, judge-2-p6 are taken); while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: 91 to 101 s on that path (docs/results/byo-2026-11-07.json). The output's `payout_path` says which",
    "evidence": "vend [2wUoCN17…](https://testnet.nearblocks.io/txns/2wUoCN17qhVnTMxFRWdwjfQJvizo4YS81DpkdurFpEC8), commit [L9wQ6bJi…](https://testnet.nearblocks.io/txns/L9wQ6bJiSore1NN2TzsnPDbLcfevZt7K5xt6AqnWtmc), reveal [7KduoN6W…](https://testnet.nearblocks.io/txns/7KduoN6WrLrkPKK6hc1NAWKMmeJqfac9MBt5oi7Ma2DH), allocate [2qYXUQQV…](https://testnet.nearblocks.io/txns/2qYXUQQVTqDg2zuyhnokZKmjLQr2M3JpAdatBPspkAKi), pay [rbhQjh9X…](https://testnet.nearblocks.io/txns/rbhQjh9XTWSwPmMQNL8PM6kmWRBoiuHmGSmCMspWGS7), close [8iVfV6ij…](https://testnet.nearblocks.io/txns/8iVfV6ijpQzW6jRUjZCxFPs844EJaDoqjEtQtf3ugT2X), reclaim [4C4sh1ah…](https://testnet.nearblocks.io/txns/4C4sh1ahZoToWt1yG92VL48xXdvyX7toYrELYVxER2Xw)",
    "commands": [
     "antibody try --name <you>"
@@ -1658,7 +1661,7 @@
   "A mutation score, where shown, measures a rule set's strength, not the code's security."
  ],
  "limits": {
-  "source": "README.md",
+  "source": "docs/limitations.md",
   "anchor": "limitations",
   "items": [
    {

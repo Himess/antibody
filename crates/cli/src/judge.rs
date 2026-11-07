@@ -132,7 +132,7 @@ pub fn deployment_record(ctx: &Ctx, git_commit: Option<&str>) -> Result<Value> {
 pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
     if ctx.near.account(&ctx.dep.antibody)?.is_none() {
         return Err(eyre::eyre!(
-            "near-antibody is not deployed at {} on {} yet (the README's Status says when it is); \
+            "near-antibody is not deployed at {} on {} yet (docs/deployment.md lists where it runs); \
              the sandbox runs the same checks: `make serve` in the repository, then antibody --network sandbox \
              --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json judge",
             ctx.dep.antibody, ctx.near.network
