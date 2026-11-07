@@ -55,13 +55,13 @@ export const RUN_TGAS = BigInt(200);
 /** cmd.rs `MAX_INLINE_BLOB`: a proof sent through a practice account travels inline. */
 export const MAX_INLINE_BLOB = 15 * 1024;
 
-/** The waits, as the CLI's (cmd.rs `wait_verdict`, practice.rs `wait_t1` and `settle`). */
+/** The waits, as the CLI's (cmd.rs `wait_verdict`, payable.rs `wait`, practice.rs `settle`). */
 export interface Timing {
   /** cmd.rs `wait_verdict(…, 240)`. */
   verdictSecs: number;
   /**
-   * The longest wait for T1 when the answer's time is unknown (practice.rs `wait_t1(…, 300)`). With it known,
-   * the try waits for T1 only until a T0 payout is allowed: the answer, the challenge window and 5 s.
+   * The longest wait for T1 when the answer's time is unknown (the CLI's cap, payable.rs `T1_CAP_S`). With it
+   * known, the try waits for T1 only until a T0 payout is allowed: the answer, the challenge window and 5 s.
    */
   t1Secs: number;
   /** practice.rs `settle`: views read a moment behind the allocation just executed. */
@@ -1065,8 +1065,9 @@ export class TryFlow {
   /**
    * Wait for T1, the run's TDX quote verified on NEAR, until a T0 payout is allowed: the answer, the
    * program's challenge window and 5 s. T1 first: settled at once, under the instant cap. No T1 by then: the
-   * verdict stays T0 and is settled then, as the contract allows (practice.rs `try_it` takes the same T0
-   * path, after waiting 300 s for T1; a visitor waits only as long as the contract makes them).
+   * verdict stays T0 and is settled then, as the contract allows (the CLI's try, payable.rs `wait`, takes the
+   * same two paths: at once on T1, or as soon as a final block is past the window; a visitor waits only as long
+   * as the contract makes them).
    */
   private async stepT1(): Promise<void> {
     if (this.s.tier === "T1" && this.s.steps.t1.status === "done") return;

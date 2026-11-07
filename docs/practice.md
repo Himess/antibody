@@ -17,10 +17,15 @@ another). No NEAR account, no key, no API key and no Ethereum RPC are needed. Th
 2. builds the tutorial proof against the vault assigned to you from the program's pinned base witness
    (it already covers the tutorial proof, for every vault), seals it to the program's key, commits, and
    reveals it;
-3. waits for the verdict and its T1 confirmation;
+3. waits for the verdict, then for T1 (its TDX quote verified on NEAR) or the end of the program's
+   challenge window, whichever comes first. T1 is paid at once, under the instant cap. A verdict that
+   stays T0 (a worker image the program does not count yet: docs/runbooks/worker-images.md) is paid as
+   soon as a final NEAR block is past the answer plus the window. The try reads NEAR's clock for this,
+   never your machine's, so a clock that runs fast or slow changes nothing;
 4. calls `allocate` and `pay` (both permissionless), then closes the practice account (`close`, then the
    vending contract's `reclaim`): its NEAR goes back to the vending contract. It prints the state
-   (`Done:Paid`) with a link for every transaction.
+   (`Done:Paid`), which path paid (`T1-confirmed: paid at once`, or `T0, paid after the 60 s challenge
+   window`) and a link for every transaction.
 
 ## The target
 

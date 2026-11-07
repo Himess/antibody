@@ -114,7 +114,7 @@ enum Cmd {
         #[arg(long, default_value = "auto", value_parser = ["auto", "outlayer", "pcs"])]
         t1_collateral: String,
         /// The T1 relayer gives up on a run after this many failed relays, 10 s apart: enough to ride out
-        /// a rate-limited RPC or an attestation OutLayer publishes late (a practice try waits 300 s)
+        /// a rate-limited RPC or an attestation OutLayer publishes late (a practice try pays T0 at the window if T1 is late)
         #[arg(long, default_value_t = 60)]
         t1_max_attempts: u32,
         /// Run the T2 prover service (docs/zk.md) as this account: each practice try's verdict, proven on

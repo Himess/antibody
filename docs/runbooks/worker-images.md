@@ -16,8 +16,10 @@ added six, in two batches. This runbook covers what that does to T1, what the lo
 - **The effect.** On programs 5–7, a run on a new image stays T0 for those 2 days.
   - The T1 relayer sends nothing for it, and retries when the image counts.
   - A T0 payout waits the program's challenge window. That is 60 s on the practice program, so a judge's
-    `antibody try` is still paid, about 6 minutes after the reveal instead of in seconds. `try` waits
-    300 s for T1, then settles as T0, and says so.
+    `antibody try` is still paid, once the window has passed instead of in seconds. `try` (and the MCP
+    `practice_try`) waits for T1 and the window together and settles at the first: here, as soon as a
+    final NEAR block is past the answer plus the window (NEAR's clock, not the judge's). Its summary
+    says so: `T0, paid after the 60 s challenge window` (`payout_path` in `--json`).
 - **T2 is not affected:** near-t2 checks proofs, not images.
 
 ## The fallback the locked contracts allow
@@ -56,7 +58,8 @@ changes: near-antibody, near-guardian, the vending code and the verifier wasm st
      NEAR free on `antibody.testnet`.
 4. **The deployments file.** Set `practice.program` in `deployments/near-testnet.json` to the new id and
    commit it. `try` already follows the vending contract; the file keeps `judge` and the docs in step.
-5. **Check.** `antibody try --name runbook-<n>` must give `Done:Paid` with T1 in seconds. Then
+5. **Check.** `antibody try --name runbook-<n>` must give `Done:Paid` with T1 in seconds (its summary:
+   `T1-confirmed: paid at once`). Then
    regenerate JUDGES.md from the new results (`scripts/docs/judges.py`).
 
 **Rollback.** None is needed: program 6 stays valid. Once its pending images count, `set_terms` can

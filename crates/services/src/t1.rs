@@ -40,7 +40,7 @@ fn now_s() -> u64 {
 }
 
 /// Seconds before retrying after `attempts` failed relays: every 10 s for two minutes (an attestation
-/// OutLayer publishes late, a rate-limited RPC; a practice try waits 300 s), then doubling up to an hour.
+/// OutLayer publishes late, a rate-limited RPC; a practice try pays T0 at the window meanwhile), then doubling up to an hour.
 pub fn backoff(attempts: u32) -> u64 {
     if attempts < 12 {
         10
