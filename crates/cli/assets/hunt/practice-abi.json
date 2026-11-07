@@ -1,0 +1,216 @@
+{
+ "PracticeVault": [
+  {
+   "type": "constructor",
+   "inputs": [
+    {
+     "name": "owner_",
+     "type": "address",
+     "internalType": "address"
+    }
+   ],
+   "stateMutability": "payable"
+  },
+  {
+   "type": "receive",
+   "stateMutability": "payable"
+  },
+  {
+   "type": "function",
+   "name": "owner",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "address",
+     "internalType": "address"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "sweep",
+   "inputs": [
+    {
+     "name": "to",
+     "type": "address",
+     "internalType": "address payable"
+    }
+   ],
+   "outputs": [],
+   "stateMutability": "nonpayable"
+  }
+ ],
+ "PracticeFactory": [
+  {
+   "type": "constructor",
+   "inputs": [
+    {
+     "name": "count_",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "stateMutability": "payable"
+  },
+  {
+   "type": "function",
+   "name": "count",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "owner",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "address",
+     "internalType": "address"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "vaultAt",
+   "inputs": [
+    {
+     "name": "i",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "address",
+     "internalType": "address"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "vaultOf",
+   "inputs": [
+    {
+     "name": "factory",
+     "type": "address",
+     "internalType": "address"
+    },
+    {
+     "name": "owner_",
+     "type": "address",
+     "internalType": "address"
+    },
+    {
+     "name": "i",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "",
+     "type": "address",
+     "internalType": "address"
+    }
+   ],
+   "stateMutability": "pure"
+  }
+ ],
+ "PracticeInvariants": [
+  {
+   "type": "constructor",
+   "inputs": [
+    {
+     "name": "factory_",
+     "type": "address",
+     "internalType": "contract PracticeFactory"
+    }
+   ],
+   "stateMutability": "nonpayable"
+  },
+  {
+   "type": "function",
+   "name": "VAULT_KEEPS_ITS_ETHER",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "check",
+   "inputs": [
+    {
+     "name": "pre",
+     "type": "bytes",
+     "internalType": "bytes"
+    }
+   ],
+   "outputs": [
+    {
+     "name": "broken",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "count",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "uint256",
+     "internalType": "uint256"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "factory",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "address",
+     "internalType": "contract PracticeFactory"
+    }
+   ],
+   "stateMutability": "view"
+  },
+  {
+   "type": "function",
+   "name": "snapshot",
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "",
+     "type": "bytes",
+     "internalType": "bytes"
+    }
+   ],
+   "stateMutability": "view"
+  }
+ ]
+}

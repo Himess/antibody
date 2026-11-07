@@ -1,0 +1,13 @@
+# Written by `antibody hunt start`: the practice program's compiler settings (contracts/evm/foundry.toml in
+# the Antibody repository), so the contracts compile here as they were deployed.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+cbor_metadata = false

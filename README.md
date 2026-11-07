@@ -230,13 +230,14 @@ four permits did not fit one call; the gap lane's model allowed a re-run after e
 
 ## Agents
 
-`antibody mcp` serves 8 tools over stdio. Every result is marked untrusted data; file access is confined
+`antibody mcp` serves 10 tools over stdio. Every result is marked untrusted data; file access is confined
 to a workspace and key files are refused. An agent account is a sub-account whose bonds come from its
 owner's credit within a per-commit cap and a budget that counts bonds lost as well as locked, which may be
-bound to a list of programs, whose payouts go to the owner, and whose key cannot withdraw. See
-[AGENTS.md](AGENTS.md), and [docs/agent-runs.md](docs/agent-runs.md) for how runs of an off-the-shelf
-agent completing the loop on the practice program are measured (the loop, not bug finding); those runs
-are not done yet.
+bound to a list of programs, whose payouts go to the owner, and whose key cannot withdraw. Two tools,
+`hunt_start` and `hunt_submit`, need no account at all: the server gets one from a vending contract for a
+proof the agent wrote. See [AGENTS.md](AGENTS.md), and [docs/agent-runs.md](docs/agent-runs.md) for how
+runs of an off-the-shelf agent completing the loop on the practice program are measured (the loop, not
+bug finding); those runs are not done yet.
 
 ## For projects
 

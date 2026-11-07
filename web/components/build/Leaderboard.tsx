@@ -84,6 +84,12 @@ const KIND_WORD: Record<ProgramKind, string | null> = { fixture: "Acme Lend", pr
 const OUR_TRIES = new Map<string, string>([
   ...RECORDED_TRIES.map((t): [string, string] => [t.account, "the recorded run"]),
   ["pcs-rehearsal.practice.antibody.testnet", "a rehearsal"],
+  ["site-check.practice.antibody.testnet", "our check"],
+  ["cli-check-t0.practice.antibody.testnet", "our check"],
+  ["byo-alpha.practice.antibody.testnet", "our check"],
+  ["byo-beta.practice.antibody.testnet", "our check"],
+  ["byo-wrong.practice.antibody.testnet", "our check"],
+  ["byo-invalid.practice.antibody.testnet", "our check"],
 ]);
 
 const VISITORS = "visitors'";

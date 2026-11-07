@@ -1,0 +1,216 @@
+{
+ "network": "testnet",
+ "date": "2026-11-07",
+ "what": "D3, bring your own proof: antibody hunt start / hunt submit on the practice vending (practice.antibody.testnet, program 6), from a build of the D3 branch",
+ "note": "Worker images listed on 2026-11-06 count only from 2026-11-08, so every run settled on the T0 path (paid after the 60 s challenge window).",
+ "runs": [
+  {
+   "account": "byo-alpha.practice.antibody.testnet",
+   "commit_id": 27,
+   "run_id": 61,
+   "state": "Done:Paid",
+   "verdict": {
+    "answered_at": 1794074651,
+    "commit_id": 27,
+    "impact_usd_micro": "0",
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "94f9aa81ba1a5a2316e0c856a2a2d5dd498aff858bd921a91909ff8dd50f49c3"
+     }
+    ],
+    "kind": "Violation",
+    "mode": "verify",
+    "protected_harm_usd_micro": "0",
+    "reason": null,
+    "receipt_sha256": "650504b850321c68689029764d43d1c74ff2f8600a1ccea05f7a53a8b8a783b0",
+    "run_id": 61,
+    "seconds": 0,
+    "tier": "T0"
+   },
+   "payout_path": "T0",
+   "payout": "T0, paid after the 60 s challenge window",
+   "challenge_window_s": 60,
+   "paid_raw": "1000000000000000000000",
+   "beneficiary": "practice.antibody.testnet",
+   "seconds": 91.2245526,
+   "closed": true,
+   "links": [
+    {
+     "commit": "https://testnet.nearblocks.io/txns/8WNcW8moQLJfHGUrVgQj3HNJ1LUSAieYN9BLibkvgYqz"
+    },
+    {
+     "reveal": "https://testnet.nearblocks.io/txns/6rHwPV4AMA8E9G5uc5pC5eSorGShekXVnaiugECuWntg"
+    },
+    {
+     "allocate": "https://testnet.nearblocks.io/txns/C3etwTbQdudmoVVFzGfTrqT5krE1tzN4mbBPeJqwmR4a"
+    },
+    {
+     "pay": "https://testnet.nearblocks.io/txns/HPaWu96EVMU1ejFowMJMV3511gqAVqXBLAHyoTLX6ub4"
+    },
+    {
+     "close": "https://testnet.nearblocks.io/txns/Kk7DbfUpeN3n36Y6q3ULHbrVbaBNhg44gHEvCUg9ugk"
+    },
+    {
+     "reclaim": "https://testnet.nearblocks.io/txns/AJbH5GxCchHHQWb9kUzibCFsjWiL71STMrV1Q74Sp8oV"
+    }
+   ],
+   "vault": null,
+   "vault_index": null,
+   "sealed_bytes": null,
+   "proof": "the tutorial proof, written to the workspace by hunt start, on the account's own vault"
+  },
+  {
+   "account": "byo-beta.practice.antibody.testnet",
+   "commit_id": 28,
+   "run_id": 62,
+   "state": "Done:Paid",
+   "verdict": {
+    "answered_at": 1794074767,
+    "commit_id": 28,
+    "impact_usd_micro": "0",
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "8be585601aa3caa6b91f5701ead5e7b232fa0c11f6b95ec69bec3196b5997421"
+     }
+    ],
+    "kind": "Violation",
+    "mode": "verify",
+    "protected_harm_usd_micro": "0",
+    "reason": null,
+    "receipt_sha256": "7139949ec51ae7153a827658d43a318d8d8b8b77ee39edc8ca86f232b8b1f898",
+    "run_id": 62,
+    "seconds": 0,
+    "tier": "T0"
+   },
+   "payout_path": "T0",
+   "payout": "T0, paid after the 60 s challenge window",
+   "challenge_window_s": 60,
+   "paid_raw": "1000000000000000000000",
+   "beneficiary": "practice.antibody.testnet",
+   "seconds": 94.8739333,
+   "closed": true,
+   "links": [
+    {
+     "commit": "https://testnet.nearblocks.io/txns/2bpbKFYGoag9PnmB9qJnh6vxZD5SqTnUMjZYBnPLcjsA"
+    },
+    {
+     "reveal": "https://testnet.nearblocks.io/txns/DZF9zUmjGMYwiF8armbE79nsVkvT6iXTbSWp5yUTT8em"
+    },
+    {
+     "allocate": "https://testnet.nearblocks.io/txns/6WWwgormSmVPCHtEGFjLvqvSZW4RYorhGZ2eJgbPWA83"
+    },
+    {
+     "pay": "https://testnet.nearblocks.io/txns/47jRdtYAw1nrLEquh2CikzoPj4oN3UfmXSfBkeKqSSt2"
+    },
+    {
+     "close": "https://testnet.nearblocks.io/txns/7kViQAiPkGaGLfTtdab7JhyTA1xttJM82gLm52V19VqE"
+    },
+    {
+     "reclaim": "https://testnet.nearblocks.io/txns/62YdWLjgzLSBFUbmY6WPhn11SzpcX2c15vAFwJRaxEtE"
+    }
+   ],
+   "vault": null,
+   "vault_index": null,
+   "sealed_bytes": null,
+   "proof": "the same, a second account on another vault: paid independently"
+  },
+  {
+   "account": "byo-wrong.practice.antibody.testnet",
+   "commit_id": 29,
+   "run_id": 63,
+   "state": "Done:Forfeited",
+   "verdict": {
+    "answered_at": 1794074868,
+    "commit_id": 29,
+    "impact_usd_micro": "0",
+    "keys": [],
+    "kind": "NoViolation",
+    "mode": "verify",
+    "protected_harm_usd_micro": "0",
+    "reason": null,
+    "receipt_sha256": "0c8e23c8c989b438e2a32e202b7da312db5298e3c7d75c8ea21c7d6c41d6626f",
+    "run_id": 63,
+    "seconds": 0,
+    "tier": "T0"
+   },
+   "payout_path": "T0",
+   "payout": "none: T0, final after the 60 s challenge window",
+   "challenge_window_s": 60,
+   "paid_raw": "0",
+   "beneficiary": "practice.antibody.testnet",
+   "seconds": 93.3459691,
+   "closed": true,
+   "links": [
+    {
+     "commit": "https://testnet.nearblocks.io/txns/7wEBuvSECgoZio8FRUbsb1A8aXYVm3KBNS8aHfcWEkLq"
+    },
+    {
+     "reveal": "https://testnet.nearblocks.io/txns/332SYN2kj9smg9ju9EZ25JSda1Ue7mT8C4b1EwDXAKyb"
+    },
+    {
+     "allocate": "https://testnet.nearblocks.io/txns/4Ta9CTmu3mxf19vcwKwdTedX3csf4cBwRDUAp2otbMHt"
+    },
+    {
+     "close": "https://testnet.nearblocks.io/txns/EjJg4xMW7kdAcMFkodJNZQ9qugAk3KmMX2fYxA2RaeZK"
+    },
+    {
+     "reclaim": "https://testnet.nearblocks.io/txns/6h6PRh8vcvpvmVReowWrLzjk1jr97jK9ZAxNNA6zEDmQ"
+    }
+   ],
+   "vault": null,
+   "vault_index": null,
+   "sealed_bytes": null,
+   "proof": "a call that breaks no rule (an empty call to the account's own vault)"
+  },
+  {
+   "account": "byo-invalid.practice.antibody.testnet",
+   "commit_id": 30,
+   "run_id": 64,
+   "state": "Done:Forfeited",
+   "verdict": {
+    "answered_at": 1794074974,
+    "commit_id": 30,
+    "impact_usd_micro": "0",
+    "keys": [],
+    "kind": "InvalidPoC",
+    "mode": "verify",
+    "protected_harm_usd_micro": "0",
+    "reason": "2 txs > cap 1",
+    "receipt_sha256": "e1ce2d0027aa688b0ec6ed4a23e03d4b25c26b4a7be1886466541161103b7d71",
+    "run_id": 64,
+    "seconds": 0,
+    "tier": "T0"
+   },
+   "payout_path": "T0",
+   "payout": "none: T0, final after the 60 s challenge window",
+   "challenge_window_s": 60,
+   "paid_raw": "0",
+   "beneficiary": "practice.antibody.testnet",
+   "seconds": 100.8859148,
+   "closed": true,
+   "links": [
+    {
+     "commit": "https://testnet.nearblocks.io/txns/DRmY7zqvyaRCaZ9Nayx6t6SgZV4MQeDfrohgBbwQUJC2"
+    },
+    {
+     "reveal": "https://testnet.nearblocks.io/txns/HxQbudLZC9Z1zSEABo2zWvYAEttjhfmttpErouHsqNbR"
+    },
+    {
+     "allocate": "https://testnet.nearblocks.io/txns/3STDVyWQWUeebo1EH9i7zSAM9ZbTPzknLwJBn4yUp47s"
+    },
+    {
+     "close": "https://testnet.nearblocks.io/txns/2KteH8Vd2Gdu92J5kNYLdLBmnd2bF6qg8Kce5m9en1aS"
+    },
+    {
+     "reclaim": "https://testnet.nearblocks.io/txns/95Y3AbXPuK1PMh3G7LeDa814Kn6rnexjXAMkfYKmMmHg"
+    }
+   ],
+   "vault": null,
+   "vault_index": null,
+   "sealed_bytes": null,
+   "proof": "two calls where the practice program allows one"
+  }
+ ]
+}

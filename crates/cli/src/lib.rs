@@ -6,6 +6,7 @@ pub mod cmd;
 pub mod compat;
 pub mod ctx;
 pub mod draft;
+pub mod hunt;
 pub mod judge;
 pub mod mcp;
 pub mod near;

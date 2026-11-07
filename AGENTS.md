@@ -47,6 +47,55 @@ Tools (8): `list_programs`, `get_program`, `fetch_env`, `check_poc`, `commit`, `
 - The server reads and writes files only inside its workspace, refuses files that look like keys, and caps reports at 64 KB.
 - An agent's bonds come from its owner's credit within a per-commit cap and a budget that counts bonds lost as well as locked, on the programs its owner listed; a commit outside them is refused and counted as a containment event.
 
+## Bring your own agent
+
+Your agent writes the proof itself and needs no NEAR account: the server gets it an account from a vending contract and keeps the account's key. The vending contract pays the bond, the verification run and the storage, and payouts go back to it. One config, with no account:
+
+```json
+{
+  "mcpServers": {
+    "antibody": {
+      "command": "antibody",
+      "args": [
+        "mcp",
+        "--workspace",
+        "<dir>"
+      ]
+    }
+  }
+}
+```
+
+The recorded run's server had no `hunt_start` or `hunt_submit`: the tools below were added after it.
+
+Three calls:
+
+1. `hunt_start` with a new lowercase `name`: the account, the instance of the program's targets it may prove (their addresses), the rules and what each pays, the program's limits, and a workspace `hunt-<name>/` with the proof format (for the practice program, also its sources and a Foundry harness that runs offline).
+2. `check_poc` with the program's id and the proof's path: the verifier on your machine, nothing sent.
+3. `hunt_submit` with `name` and `poc`, the proof's path. Before anything is spent it refuses a malformed bundle, a call to another account's instance and a proof over 15 KB sealed. Then it seals the proof, commits and reveals it, waits for the verdict and for T1 or the end of the challenge window on NEAR's clock, settles, and closes the account. One proof per account.
+
+This deployment has no hunt vending contract yet: pass `vending: "practice.antibody.testnet"` to `hunt_start` to run the loop with your own proof on the practice program (its tutorial proof is in the workspace's `PROOF.md`). The tools accept the deployment's hunt and practice vending contracts only. From a terminal: `antibody hunt start --name <you> --vending practice.antibody.testnet`, then `antibody hunt submit --name <you> --poc hunt-<you>/proof.bundle.json`.
+
+What `hunt_submit` returns, abridged, here with the recorded practice try's values (that try sent the tutorial proof through `practice_try`). A `hunt_submit` result also says what was checked before anything was spent: `proof` (its sealed size and the verdict on your machine).
+
+```json
+{
+ "account": "<name>.practice.antibody.testnet",
+ "program": 6,
+ "instance": 4,
+ "targets": [{"name": "vault-4", "address": "0x185d4f6a747091760f39adbe66a3a414ce8fe56a"}],
+ "verdict": {"kind": "Violation", "keys": [{"slot": 0, "tag": "cc52c19a12…"}]},
+ "payout_path": "T1",
+ "state": "Done:Paid",
+ "paid_raw": "1000000000000000000000",
+ "beneficiary": "practice.antibody.testnet",
+ "closed": true,
+ "links": [{"commit": "…"}, {"reveal": "…"}, {"allocate": "…"}, {"pay": "…"}, {"close": "…"}, {"reclaim": "…"}]
+}
+```
+
+A proof under which every rule holds ends `Done:Forfeited` (`NoViolation`): no payout, and the bond goes to the program's escrow.
+
 ## Measured in the recorded run
 
 Agent A submitted over MCP. From its commit's block: verdict 18.5 s, T1 29.1 s, paid 71.0 s (the payment's block; NEAR testnet blocks).

@@ -717,7 +717,8 @@ pub fn build_witness(ctx: &Ctx, program: Option<u32>, manifest_json: &[u8], bund
     Ok((bytes, v, receipt, salt))
 }
 
-fn verdict_view(r: &ProgramReceipt) -> Value {
+/// A local receipt's verdict: kind, the rules that broke and where, impact, and each call's outcome.
+pub fn verdict_view(r: &ProgramReceipt) -> Value {
     json!({"kind": r.kind, "reason": r.reason, "broken_mask": r.broken_mask,
            "broken": r.broken.iter().map(|b| json!({"invariant": b.name, "severity": b.severity,
                 "function": format!("{}.{}", b.target_name.clone().unwrap_or_else(|| b.target.to_string()), b.selector)})).collect::<Vec<_>>(),
@@ -811,27 +812,104 @@ fn blob_arg(ctx: &Ctx, signer: &Signer, blob_bytes: &[u8], dir: &str) -> Result<
     Ok((json!({"near_tx": {"location": up["near_tx"], "sha256": sha}}), up))
 }
 
-/// Builds the witness, seals it to the program's key, and commits with the bond (the blob stays
-/// private until `reveal`). An agent's bond comes from its owner's credit; anyone else's from their
-/// credit when it covers the bond, otherwise it is attached with `ft_transfer_call`.
-pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>) -> Result<Value> {
-    let signer = ctx.signer()?;
+/// Refuses a proof whose sealed blob, `len` bytes, would not travel inline (at most `max`): a vended
+/// account's proofs travel inline only.
+pub fn check_inline(len: usize, max: usize) -> Result<()> {
+    if len > max {
+        return Err(eyre!(
+            "this proof seals to {len} bytes, and a proof sent through a vended account travels inline, at most {max} bytes sealed: \
+             refused before it is sealed or anything is sent (fewer or shorter calls make it smaller)"
+        ));
+    }
+    Ok(())
+}
+
+/// Seals a witness envelope (and a report) to the program's key for `hunter`, under `content_key` when
+/// given (a practice try's public one). With `max`, a blob that would be larger is refused before anything
+/// is sealed: its size is the reveal's ([`blob::sealed_len`]).
+pub fn seal_envelope(
+    sealing_pk: &str,
+    program_key: &str,
+    hunter: &str,
+    envelope: Vec<u8>,
+    report: Vec<u8>,
+    content_key: Option<[u8; 32]>,
+    max: Option<usize>,
+) -> Result<blob::Sealed> {
+    if let Some(max) = max {
+        check_inline(blob::sealed_len(program_key, hunter, envelope.len(), report.len()), max)?;
+    }
+    blob::seal_with(sealing_pk, program_key, hunter, envelope, report, content_key)
+}
+
+/// A proof sealed for one hunter and not yet committed: its witness sealed to the program's key, and the
+/// commitment that binds it to the hunter and the round.
+pub struct SealedProof {
+    pub program: u32,
+    pub round: u32,
+    pub program_key: String,
+    pub hunter: String,
+    pub sealed: blob::Sealed,
+    pub commitment: String,
+    /// How the witness was built (`source`: the pinned base or the RPC) and its stats.
+    pub witness: Value,
+    /// The verifier's verdict on this machine.
+    pub local: ProgramReceipt,
+    pub salt: B256,
+}
+
+/// Builds the witness for `bundle` and seals it to `program`'s key for `hunter`. Nothing is sent. With
+/// `max_sealed`, a proof whose sealed blob would be larger is refused before it is sealed.
+pub fn seal_proof(
+    ctx: &Ctx,
+    program: u32,
+    bundle: &Path,
+    salt: Option<B256>,
+    report: Option<&Path>,
+    hunter: &str,
+    max_sealed: Option<usize>,
+) -> Result<SealedProof> {
     let p = ctx.program(program)?;
     let round = p["round"].as_u64().unwrap_or(0) as u32;
     let key = p["key"].as_str().unwrap_or_default().to_string();
     let pk = sealing_pk(&p)?;
     let manifest_json = program_manifest(ctx, program)?;
-    let (envelope, wmeta, local, salt) = build_witness(ctx, Some(program), &manifest_json, bundle, salt, &key)?;
+    let (envelope, witness, local, salt) = build_witness(ctx, Some(program), &manifest_json, bundle, salt, &key)?;
     let report = match report {
         Some(r) => std::fs::read(r)?,
         None => Vec::new(),
     };
     // The practice program's proof is a public tutorial: its content key is public too (docs/zk.md), so
     // T2 can prove any try without being handed a key.
-    let public_key = (ctx.dep.practice.as_ref().map(|p| p.program) == Some(program)).then(|| blob::practice_content_key(&key, &signer.account_id));
-    let s = blob::seal_with(&pk, &key, &signer.account_id, envelope, report, public_key)?;
-    let blob_sha = sha256(&s.blob);
-    let cm = hex::encode(commitment(&key, round, &signer.account_id, &blob_sha));
+    let public_key = (ctx.dep.practice.as_ref().map(|p| p.program) == Some(program)).then(|| blob::practice_content_key(&key, hunter));
+    let sealed = seal_envelope(&pk, &key, hunter, envelope, report, public_key, max_sealed)?;
+    let commitment = hex::encode(commitment(&key, round, hunter, &sha256(&sealed.blob)));
+    Ok(SealedProof { program, round, program_key: key, hunter: hunter.to_string(), sealed, commitment, witness, local, salt })
+}
+
+/// Builds the witness, seals it to the program's key, and commits with the bond (the blob stays
+/// private until `reveal`). An agent's bond comes from its owner's credit; anyone else's from their
+/// credit when it covers the bond, otherwise it is attached with `ft_transfer_call`.
+pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report: Option<&Path>) -> Result<Value> {
+    let signer = ctx.signer()?;
+    // A practice account's proof travels inline (`reveal`): one too large is refused before it is sealed,
+    // rather than after its bond is locked.
+    let max = ctx.via.is_some().then_some(MAX_INLINE_BLOB);
+    commit_sealed(ctx, seal_proof(ctx, program, bundle, salt, report, &signer.account_id, max)?)
+}
+
+/// Commits a proof sealed for the signer ([`seal_proof`]) with the bond, and keeps the blob and its record
+/// in the state directory for `reveal`.
+pub fn commit_sealed(ctx: &Ctx, sp: SealedProof) -> Result<Value> {
+    let signer = ctx.signer()?;
+    if signer.account_id != sp.hunter {
+        return Err(eyre!("the proof was sealed for {}, not for the signer {}", sp.hunter, signer.account_id));
+    }
+    let (program, round, key, salt, local, wmeta, s, cm) = (sp.program, sp.round, sp.program_key, sp.salt, sp.local, sp.witness, sp.sealed, sp.commitment);
+    let p = ctx.program(program)?;
+    if p["round"].as_u64().unwrap_or(0) as u32 != round {
+        return Err(eyre!("program {program} is in round {} now, and the proof was sealed in round {round}: seal it again", p["round"]));
+    }
     let terms = meta(ctx, program)?["terms_sha256"].clone();
     let bond = u128_of(&p["params"]["bond"]);
     let me = account(ctx, &signer.account_id)?;
@@ -866,7 +944,8 @@ pub fn commit(ctx: &Ctx, program: u32, bundle: &Path, salt: Option<B256>, report
                         "salt": format!("{salt:#x}"), "local_verdict": verdict_view(&local), "commit_tx": summary["tx"]});
     write_json(&ctx.record_path(program, commit_id), &record)?;
     Ok(json!({"commit_id": commit_id, "commitment": cm, "bond_from_credit": from_credit, "witness_source": wmeta["source"],
-              "witness_bytes": wmeta["stats"]["witness_bytes"], "local_verdict": verdict_view(&local), "record": ctx.record_path(program, commit_id), "tx": summary,
+              "witness_bytes": wmeta["stats"]["witness_bytes"], "sealed_bytes": s.blob.len(), "local_verdict": verdict_view(&local),
+              "record": ctx.record_path(program, commit_id), "tx": summary,
               "note": "the content key and salt are in the local record (.antibody/): keep it private"}))
 }
 
@@ -1028,31 +1107,46 @@ pub fn human_tokens(raw: u128, decimals: u32) -> String {
     if frac.is_empty() { grouped } else { format!("{grouped}.{frac}") }
 }
 
+/// A verdict's keys in words: `slot 0 (tag cc52c19a12)`, each.
+pub fn keys_words(verdict: &Value) -> Vec<String> {
+    let txt = |v: &Value| v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
+    let tag = |k: &Value| txt(&k["tag"]).chars().take(10).collect::<String>();
+    verdict["keys"].as_array().into_iter().flatten().map(|k| format!("slot {} (tag {})", k["slot"], tag(k))).collect()
+}
+
+/// One commit's lines in `status`'s summary; `s` holds its `commit` and `verdict` as [`status`] reads them.
+pub fn commit_lines(s: &Value, d: u32, sym: &str) -> Vec<String> {
+    let txt = |v: &Value| v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
+    let mut out = vec![];
+    let (c, v) = (&s["commit"], &s["verdict"]);
+    let raw = &c["raw"];
+    let paid = paid_of(raw);
+    let mut line = format!("commit {}: {}, tier {}, {}", raw["id"], v["kind"].as_str().unwrap_or("no verdict yet"), v["tier"].as_str().unwrap_or("-"), txt(&c["state"]));
+    if paid > 0 {
+        line += &format!(", paid {} {sym} to {}", human_tokens(paid, d), txt(&raw["beneficiary"]));
+    }
+    out.push(line);
+    out.push(format!("  program {}, round {}, hunter {}, run {}", raw["program"], raw["round"], txt(&raw["hunter"]), raw["run"]));
+    let keys = keys_words(v);
+    if !keys.is_empty() {
+        out.push(format!("  keys: {}", keys.join(", ")));
+    }
+    if let Some(i) = raw["state"]["Done"]["Paid"]["instant"].as_bool() {
+        out.push(format!("  paid instantly under the cap: {i}"));
+    }
+    if v["protected_harm_usd_micro"].as_str().is_some_and(|h| h != "0") {
+        out.push(format!("  harm to protected accounts: {} micro-USD", txt(&v["protected_harm_usd_micro"])));
+    }
+    out
+}
+
 /// `status`'s summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
 pub fn status_summary(ctx: &Ctx, s: &Value) -> String {
     let (d, sym) = (ctx.dep.decimals(), ctx.dep.symbol());
     let txt = |v: &Value| v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
     let mut out = vec![];
-    if let Some(c) = s.get("commit") {
-        let (raw, v) = (&c["raw"], &s["verdict"]);
-        let paid = paid_of(raw);
-        let mut line = format!("commit {}: {}, tier {}, {}", raw["id"], v["kind"].as_str().unwrap_or("no verdict yet"), v["tier"].as_str().unwrap_or("-"), txt(&c["state"]));
-        if paid > 0 {
-            line += &format!(", paid {} {sym} to {}", human_tokens(paid, d), txt(&raw["beneficiary"]));
-        }
-        out.push(line);
-        out.push(format!("  program {}, round {}, hunter {}, run {}", raw["program"], raw["round"], txt(&raw["hunter"]), raw["run"]));
-        let keys: Vec<String> =
-            v["keys"].as_array().into_iter().flatten().map(|k| format!("slot {} (tag {})", k["slot"], txt(&k["tag"]).chars().take(10).collect::<String>())).collect();
-        if !keys.is_empty() {
-            out.push(format!("  keys: {}", keys.join(", ")));
-        }
-        if let Some(i) = raw["state"]["Done"]["Paid"]["instant"].as_bool() {
-            out.push(format!("  paid instantly under the cap: {i}"));
-        }
-        if v["protected_harm_usd_micro"].as_str().is_some_and(|h| h != "0") {
-            out.push(format!("  harm to protected accounts: {} micro-USD", txt(&v["protected_harm_usd_micro"])));
-        }
+    if s.get("commit").is_some() {
+        out.extend(commit_lines(s, d, sym));
     }
     if let Some(r) = s.get("run") {
         out.push(format!("run {}: {} {}, tier {}, receipt {}", r["run_id"], txt(&r["mode"]), r["kind"].as_str().unwrap_or("pending"),
