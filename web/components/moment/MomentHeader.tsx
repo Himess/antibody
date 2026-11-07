@@ -18,7 +18,7 @@ export function MomentHeader({ moment, live, titleId, level = 2 }: { moment: Mom
       <div className="row" style={{ ["--gap" as string]: "8px" }}>
         <p className="eyebrow">The one moment</p>
         <Pill tone={moment.kind === "drill" ? "ok" : "neutral"} icon={moment.kind === "drill" ? "bolt" : "clock"} size="sm">
-          {moment.kind === "drill" ? "scheduled drill" : "recorded"}
+          {moment.kind === "drill" ? "automated drill" : "recorded"}
         </Pill>
         {!live ? (
           <Pill tone="warn" size="sm" title="The API could not be reached; showing the bundled copy of the same results">
