@@ -56,16 +56,17 @@ shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
 ```
 
 ```powershell
-# Windows x86_64 (PowerShell): compare the two hashes
-$V="v0.5.0"; $F="antibody-x86_64-pc-windows-msvc.exe"
-Invoke-WebRequest "https://github.com/Himess/antibody/releases/download/$V/$F" -OutFile antibody.exe
-(Get-FileHash antibody.exe -Algorithm SHA256).Hash; (Invoke-WebRequest "https://github.com/Himess/antibody/releases/download/$V/antibody-x86_64-pc-windows-msvc.sha256").Content
+# Windows x86_64 (PowerShell)
+$V="v0.5.0"; $U="https://github.com/Himess/antibody/releases/download/$V"
+Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.exe" -OutFile antibody.exe -UseBasicParsing
+Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.sha256" -OutFile antibody.sha256 -UseBasicParsing
+if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
 ```
 
 Then:
 
 ```bash
-./antibody judge               # view calls only: each contract's code hash and locked status, the pins, every program's payouts and pauses
+./antibody judge               # (.\antibody.exe on Windows) view calls only: each contract's code hash and locked status, the pins, every program's payouts and pauses
 ./antibody try --name <you>    # a new lowercase name: the practice program, end to end, with no account
 ```
 
