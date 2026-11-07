@@ -165,9 +165,16 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
           pending.length ? (
             <Row icon="alert" tone="warn">
               <strong>T1 may not come yet.</strong> OutLayer listed new worker images recently, and near-antibody counts them for {programName} only from{" "}
-              <time dateTime={new Date(pending[0].countsFrom * 1000).toISOString()}>{utc(pending[0].countsFrom)}</time>
+              <time className="nowrap" dateTime={new Date(pending[0].countsFrom * 1000).toISOString()}>
+                {utc(pending[0].countsFrom)}
+              </time>
               {now !== null ? ` (${relative(pending[0].countsFrom, now)})` : ""}
-              {pending.length > 1 && pending[pending.length - 1].countsFrom !== pending[0].countsFrom ? `, the last from ${utc(pending[pending.length - 1].countsFrom)}` : ""}. A run
+              {pending.length > 1 && pending[pending.length - 1].countsFrom !== pending[0].countsFrom ? (
+                <>
+                  , the last from <span className="nowrap">{utc(pending[pending.length - 1].countsFrom)}</span>
+                </>
+              ) : null}
+              . A run
               on one gets no T1 before then: the verdict stays T0, and the try settles it as soon as the program&apos;s {challenge} s challenge window
               ends, about a minute and a half after the commit.
             </Row>
@@ -184,8 +191,8 @@ export function BeforeStart({ initial, pre, r, now, className }: { initial: TryI
         )}
         {data?.held ? (
           <Row icon="alert" tone="warn">
-            Commit {data.held.commitId}, committed at {utc(data.held.committedAt)}, is not yet revealed. Claims are paid in commit order, so your payout may wait until its reveal
-            window ends at {utc(data.held.expiresAt)}
+            Commit {data.held.commitId}, committed at <span className="nowrap">{utc(data.held.committedAt)}</span>, is not yet revealed. Claims are paid in commit order, so your payout may wait until its reveal
+            window ends at <span className="nowrap">{utc(data.held.expiresAt)}</span>
             {now !== null ? ` (${relative(data.held.expiresAt, now)})` : ""}, when the keeper expires it.
           </Row>
         ) : pre.status === "ready" ? (

@@ -101,7 +101,16 @@ export function RequestIdFinder({
   return (
     <div className={styles.finder}>
       <div className={styles.finderHead}>
-        <button type="button" className="btn btn-sm" onClick={find} disabled={st.status === "running"} aria-busy={st.status === "running"}>
+        {/* aria-disabled, not disabled, while it works: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (st.status !== "running") void find();
+          }}
+          aria-disabled={st.status === "running" || undefined}
+          aria-busy={st.status === "running"}
+        >
           <Icon name={st.status === "running" ? "refresh" : "play"} size={13} />
           {st.status === "running" ? "Reading…" : st.status === "done" ? "Read again" : "Find the OutLayer request"}
         </button>
