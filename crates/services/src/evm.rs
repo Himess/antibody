@@ -153,15 +153,18 @@ impl EvmSigner {
         self.send_value(evm, chain_id, to, data, gas_limit, 0)
     }
 
-    /// Sends `value` wei to an account (a plain transfer: 21,000 gas; an OP Stack chain adds its L1 fee).
+    /// Sends `value` wei to an account, with the gas the node estimates for it plus a fifth (an OP Stack
+    /// chain adds its L1 fee). A plain transfer is 21,000 gas only to an account that exists: on Sepolia,
+    /// since Glamsterdam, one that creates the account (a fresh drill deployer) costs about 207,000.
     pub fn transfer(&self, evm: &Evm, chain_id: u64, to: Address, value: u128) -> Result<String> {
-        self.send_value(evm, chain_id, to, Vec::new(), 21_000, value)
+        let estimate = evm.read("eth_estimateGas", json!([{"from": self.address, "to": to, "value": format!("{value:#x}")}, "latest"]));
+        self.send_value(evm, chain_id, to, Vec::new(), transfer_gas(estimate.ok().and_then(|v| hex_u64(&v).ok())), value)
     }
 
-    /// The most a transfer can cost at the node's gas price: its 21,000 gas at [`Self::send`]'s fee cap
-    /// (twice the price plus the tip), and `l1_margin` wei for an OP Stack chain's L1 fee.
+    /// The most a transfer can cost at the node's gas price: [`TRANSFER_GAS_CAP`] at [`Self::send`]'s fee
+    /// cap (twice the price plus the tip), and `l1_margin` wei for an OP Stack chain's L1 fee.
     pub fn transfer_reserve(gas_price: u128, l1_margin: u128) -> u128 {
-        21_000 * (gas_price * 2 + gas_price.min(1_000_000_000)) + l1_margin
+        TRANSFER_GAS_CAP as u128 * (gas_price * 2 + gas_price.min(1_000_000_000)) + l1_margin
     }
 
     /// A key derived from this one and `label` (`keccak256(tag ‖ key ‖ label ‖ counter)`, the first valid
@@ -211,6 +214,17 @@ pub fn hex_u64(v: &Value) -> Result<u64> {
     u64::from_str_radix(v.as_str().ok_or_else(|| eyre!("not hex: {v}"))?.trim_start_matches("0x"), 16).map_err(|e| eyre!("{e}"))
 }
 
+/// The gas limit a transfer gets when the node gives no estimate, and what a reserve counts per transfer:
+/// above Sepolia's measured 207,391 for a transfer that creates its account (2026-11-07), plus a fifth.
+/// Unused gas is not charged.
+pub const TRANSFER_GAS_CAP: u64 = 300_000;
+
+/// A transfer's gas limit from the node's estimate: the estimate plus a fifth, never under 21,000;
+/// [`TRANSFER_GAS_CAP`] when there is no estimate.
+pub fn transfer_gas(estimate: Option<u64>) -> u64 {
+    estimate.map(|g| (g + g / 5).max(21_000)).unwrap_or(TRANSFER_GAS_CAP)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +239,19 @@ mod tests {
         assert_ne!(a.address, main.address);
         // The secret round-trips as forge reads it.
         assert_eq!(EvmSigner::from_hex(&a.secret_hex()).unwrap().address, a.address);
-        assert_eq!(EvmSigner::transfer_reserve(10, 5), 21_000 * 30 + 5);
+        assert_eq!(EvmSigner::transfer_reserve(10, 5), TRANSFER_GAS_CAP as u128 * 30 + 5);
+    }
+
+    #[test]
+    fn a_transfer_gets_the_gas_its_account_creation_costs() {
+        // To an account that exists: 21,000 (the estimate's margin never goes under it).
+        assert_eq!(transfer_gas(Some(21_000)), 25_200);
+        assert_eq!(transfer_gas(Some(10_000)), 21_000);
+        // To a fresh account on Sepolia (eth_estimateGas, 2026-11-07): 207,391, plus a fifth. A fixed
+        // 21,000 ran out of gas there and reverted the drill's funding transfer.
+        assert_eq!(transfer_gas(Some(207_391)), 248_869);
+        // No estimate (a node that does not answer): the cap, which covers both.
+        assert_eq!(transfer_gas(None), TRANSFER_GAS_CAP);
+        assert!(transfer_gas(Some(207_391)) <= TRANSFER_GAS_CAP);
     }
 }
