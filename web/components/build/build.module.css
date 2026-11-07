@@ -1,0 +1,824 @@
+/* The build pages (hunters and agents, projects): steps, the MCP panel, the leaderboard, the roadmap. */
+
+/* ------------------------------------------------------------ on this page */
+
+.tocWrap {
+  padding-bottom: clamp(20px, 3vw, 28px);
+}
+
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* ------------------------------------------------------------ at a glance */
+
+.glance {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 720px) {
+  .glance {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1040px) {
+  .glance {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.glance > div {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 14px 16px;
+  background: var(--bg-elev);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.glance dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.glance dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------ steps */
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+
+.step:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+@media (min-width: 720px) {
+  .step {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: 6px 20px;
+    padding: 26px 0;
+  }
+}
+
+.stepNo {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  color: var(--accent-ink);
+}
+
+.stepBody {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.stepTitle {
+  font-size: var(--fs-md);
+  line-height: 1.35;
+}
+
+.stepText {
+  display: grid;
+  gap: 8px;
+  max-width: 72ch;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.stepText ul,
+.stepText ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+
+.cmds {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cmd {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cmdNote {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  max-width: 72ch;
+}
+
+.options {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.option {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-elev);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.option h4 {
+  font-size: var(--fs-base);
+}
+
+.option p {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------ links and labels */
+
+.inlineIcon {
+  display: inline-block;
+  vertical-align: -1px;
+  margin-left: 3px;
+}
+
+.docLink {
+  overflow-wrap: anywhere;
+}
+
+.labelRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+/* ------------------------------------------------------------ claims and evidence */
+
+.claims {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .claims {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.claim {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.claimHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.claimHead h3 {
+  font-size: var(--fs-md);
+  flex: 1 1 12rem;
+}
+
+.claimIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--r);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.claimText {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.evidence {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line-strong);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.evidenceTitle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.txList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.txList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+/* Three recorded seconds side by side. */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.strip > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.strip dt {
+  font-size: var(--fs-2xs);
+  color: var(--ink-3);
+}
+
+.strip dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------ can and cannot */
+
+.limits {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 720px) {
+  .limits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.limitList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.limitList li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.limitList svg {
+  margin-top: 3px;
+}
+
+.can {
+  color: var(--ok);
+}
+
+.cannot {
+  color: var(--bad);
+}
+
+/* ------------------------------------------------------------ MCP */
+
+.mcpGrid {
+  display: grid;
+  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1040px) {
+  .mcpGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 40px;
+  }
+}
+
+.mcpCol {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mcpBlock {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mcpBlock h3 {
+  font-size: var(--fs-md);
+}
+
+.tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+
+.tools li {
+  display: grid;
+  gap: 2px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.tools li:first-child {
+  border-top: 0;
+}
+
+@media (min-width: 560px) {
+  .tools li {
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 14px;
+    align-items: baseline;
+  }
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.toolLine {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.frame {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.frame pre {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  background: var(--bg-sunk);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.frameMark {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.frame figcaption {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------ verdicts table */
+
+.verdicts tbody td {
+  font-size: var(--fs-sm);
+}
+
+.mobileLabel {
+  display: none;
+}
+
+/* On a phone each verdict stacks into a block; the roles in the markup keep it a table for screen readers. */
+@media (max-width: 719px) {
+  .verdicts thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .verdicts,
+  .verdicts tbody,
+  .verdicts tr,
+  .verdicts td {
+    display: block;
+  }
+  .verdicts tbody tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .verdicts tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .verdicts tbody td {
+    padding: 4px 16px;
+    border-bottom: 0;
+  }
+  .mobileLabel {
+    display: inline;
+  }
+}
+
+@media (min-width: 720px) {
+  .verdicts tbody td:first-child {
+    min-width: 11rem;
+  }
+}
+
+/* ------------------------------------------------------------ leaderboard */
+
+.lbTable {
+  display: none;
+}
+
+.lbTable tbody th {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  white-space: normal;
+  vertical-align: top;
+}
+
+.lbTable tr:last-child th {
+  border-bottom: 0;
+}
+
+.lbTable th.numCol,
+.lbTable td.numCol {
+  text-align: right;
+}
+
+.lbCards {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 720px) {
+  .lbTable {
+    display: block;
+  }
+  .lbCards {
+    display: none;
+  }
+}
+
+.lbCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lbStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.lbStats dt {
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.lbStats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.prov {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.legend {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ business model */
+
+.model {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .model {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.model > div {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  padding: clamp(16px, 2.4vw, 22px);
+  background: var(--bg-elev);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.model dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.model dd {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.modelLead {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------ roadmap */
+
+.roadmap {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.rmItem {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.rmItem:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+@media (min-width: 720px) {
+  .rmItem {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: 4px 20px;
+  }
+}
+
+.rmNo {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.rmBody {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rmHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+
+.rmTitle {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.rmText {
+  max-width: 76ch;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.rmParts {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.rmParts li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------ the pilot call */
+
+.cta {
+  display: grid;
+  gap: 18px;
+  align-items: center;
+  padding: clamp(20px, 3vw, 32px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  box-shadow: inset 4px 0 0 var(--accent), var(--shadow);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 900px) {
+  .cta {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 32px;
+  }
+}
+
+.ctaText {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ctaText p:last-child {
+  max-width: 64ch;
+  color: var(--ink-2);
+}
+
+.ctaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ------------------------------------------------------------ live checks */
+
+/* LiveCheck's own grid sizes its single column to its CLI command's longest line; a 0 minimum lets the
+   command scroll inside its box instead of widening the page on a phone. */
+.liveWrap {
+  min-width: 0;
+}
+
+.liveWrap > div {
+  grid-template-columns: minmax(0, 1fr);
+}
