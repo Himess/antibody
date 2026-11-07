@@ -28,7 +28,7 @@ payloads ([`results/api-examples.json`](results/api-examples.json)).
 | Endpoint | Returns |
 |---|---|
 | `GET /health` | The network, the contract ids, the version and the endpoints |
-| `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), the T1 relayer (its collateral source, when OutLayer's on-chain DCAP collateral expires, the runs it could not confirm), OutLayer's worker images against near-antibody's list (unlisted ones, and listed ones still inside the image delay), and the alerts |
+| `GET /v1/status` | Each service's last progress, permits not yet confirmed, each open program's escrow against its largest payout, the practice faucet (below), the T1 relayer (its collateral source, when OutLayer's on-chain DCAP collateral expires, the runs it could not confirm), OutLayer's worker images against near-antibody's list (unlisted ones, and listed ones still inside the image delay), the latest daily drill (`drill`: its date, pass/skip, steps and cost — docs/drill.md), the EVM relayer and deployer balances against their floors (`evm_balances`), and the alerts |
 | `GET /v1/stats` | Contract totals, and commit-to-verdict and commit-to-payout latencies (p50, p95) from the event log |
 | `GET /v1/programs` | Every program: name, project, phase, round, anchor, commits, ledger |
 | `GET /v1/programs/{id}` | The program, its rules (each slot's severity and payout, the payout table, bond and instant terms, escrow coverage, the sealed known-issue count, the anchor and its check), its meta, its record (bait metrics), its audit, its commits and its events |
@@ -75,7 +75,15 @@ More alerts:
 - an operating account (the keeper, the T1 relayer, the T2 prover) has less NEAR liquid than its float
   (`--keeper-float`, `--relayer-float`, `--prover-float`): a warning, and critical below a quarter of it;
 - the T2 prover: its PROVE balance is low (it pauses), its budget is reached, a proof failed, or near-t2
-  recorded a contradiction (critical).
+  recorded a contradiction (critical);
+- **the daily drill** (docs/drill.md): the latest `drill-*.json` in the results directory did not pass
+  (`drill-failed`, critical, naming the step it stopped at), is older than the cadence plus a margin
+  (`drill-stale`, warn; default 24 h + 6 h), or was skipped (`drill-skipped`, warn, with the reason). The
+  `drill` component gives the latest drill's date, whether it passed, its steps and its cost;
+- **the EVM relayer and deployer** (`evm_balances`, from `evm_accounts.json` written by `all`): below
+  their floor on a chain is critical (`evm-relayer-low-<chain id>`, `evm-deployer-low-<chain id>`);
+- a **hunt** vending contract, if the deployment names one, is watched like the practice faucet (its key
+  is optional and absent today, so a missing one is only a notice).
 
 **A second NEAR RPC.** `$NEAR_RPC_EXTRA` (comma-separated URLs, a keyed one included) is tried in turn
 when the primary RPC fails or rate-limits. `$NEAR_RPC_API_KEY` goes to FastNear hosts as a bearer token.

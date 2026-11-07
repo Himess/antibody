@@ -260,6 +260,16 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   ].filter((g) => g.rows.length);
   const prover = has(c, "t2_prover") ? obj(c.t2_prover) : null;
 
+  // The daily drill (docs/drill.md) and the EVM accounts: generic components the API added, each shown here.
+  const drill = has(c, "drill") ? obj(c.drill) : null;
+  const drillId = str(drill?.latest)?.replace(/\.json$/, "") ?? null;
+  const drillSteps = drill ? Object.entries(obj(drill.steps)).map(([k, v]) => ({ step: k, ok: obj(v).ok === true })) : [];
+  const drillCost = drill ? obj(drill.cost) : null;
+  const drillNear = drillCost ? arr(drillCost.near).map(obj) : [];
+  const evmBalances = arr(c.evm_balances)
+    .map(obj)
+    .sort((a, b) => (str(a.role) ?? "").localeCompare(str(b.role) ?? "") || (num(a.chain_id) ?? 0) - (num(b.chain_id) ?? 0));
+
   return (
     <>
       <div className="page" style={{ paddingBottom: 8 }}>
@@ -524,6 +534,88 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
         </div>
       </Section>
 
+      <Section
+        id="drill"
+        title="The daily drill"
+        lede="The automated drill runs the one moment again on a fresh Acme Lend instance each day. The recorded run stays the hero; a drill shows the system still works today."
+      >
+        {drill ? (
+          drillId ? (
+            <div className={styles.cardBox}>
+              <div className="row" style={{ ["--gap" as string]: "10px", justifyContent: "space-between" }}>
+                <h3>
+                  <Link href={`/moment?run=${encodeURIComponent(drillId)}`}>{drillId}</Link>
+                </h3>
+                {drill.skipped === true ? (
+                  <Pill tone="warn" size="sm">
+                    skipped
+                  </Pill>
+                ) : drill.ok === true ? (
+                  <Pill tone="ok" size="sm">
+                    all checks passed
+                  </Pill>
+                ) : (
+                  <Pill tone="bad" size="sm">
+                    did not pass
+                  </Pill>
+                )}
+              </div>
+              <dl className={styles.mini}>
+                <div>
+                  <dt>Ran</dt>
+                  <dd>
+                    {num(drill.finished_unix) ? <Time t={num(drill.finished_unix)} /> : "—"}
+                    {num(drill.age_s) !== null ? <span className="xsmall muted"> · {ago(num(drill.age_s) as number)}</span> : null}
+                  </dd>
+                </div>
+                {drill.skipped === true ? (
+                  <div>
+                    <dt>Why skipped</dt>
+                    <dd className="small">{str(drill.skipped_reason) ?? "—"}</dd>
+                  </div>
+                ) : null}
+                {drillSteps.length ? (
+                  <div>
+                    <dt>Steps</dt>
+                    <dd className="row" style={{ ["--gap" as string]: "6px", flexWrap: "wrap" }}>
+                      {drillSteps.map((s) => (
+                        <Pill key={s.step} tone={s.ok ? "ok" : "bad"} size="sm">
+                          {s.step}
+                        </Pill>
+                      ))}
+                    </dd>
+                  </div>
+                ) : null}
+                {obj(drill.failed_step).step ? (
+                  <div>
+                    <dt>Stopped at</dt>
+                    <dd className="small">
+                      <code>{str(obj(drill.failed_step).step)}</code>
+                      {str(obj(drill.failed_step).error) ? <span className="xsmall muted"> · {str(obj(drill.failed_step).error)}</span> : null}
+                    </dd>
+                  </div>
+                ) : null}
+                {drillNear.length ? (
+                  <div>
+                    <dt>Cost (NEAR, this drill)</dt>
+                    <dd className="small">
+                      {drillNear
+                        .filter((r) => str(r.spent_near) && str(r.spent_near) !== "0.000000000000000000000000")
+                        .map((r) => `${str(r.role)} ${str(r.spent_near)}`)
+                        .join(" · ") || "—"}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+          ) : (
+            <Empty>No drill has run yet. The daily drill writes drill-YYYY-MM-DD.json into the results.</Empty>
+          )
+        ) : (
+          <Empty>The API did not report a drill.</Empty>
+        )}
+      </Section>
+
       <Section id="balances" title="Balances that keep it running" lede="The practice faucet, watched against draining, and the NEAR each operating account keeps for its gas.">
         <div className={styles.grid2}>
           <div className={styles.cardBox}>
@@ -737,6 +829,71 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
           <Empty>The API lists no permit.</Empty>
         )}
       </Section>
+
+      {evmBalances.length ? (
+        <Section
+          id="evm"
+          title="EVM balances"
+          lede="The permit relayer and the drill deployer on each chain, against their floors. The relayer submits the pause permits; the deployer deploys each drill's fresh fixture."
+        >
+          <div className={`table-wrap ${rt.cardsWrap}`}>
+            <table className={`table ${rt.rtable}`}>
+              <caption className="visually-hidden">Each EVM account&apos;s balance on each chain against its floor</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">Chain</th>
+                  <th scope="col">Balance</th>
+                  <th scope="col">Floor</th>
+                  <th scope="col">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evmBalances.map((e, i) => {
+                  const chain = num(e.chain_id);
+                  const eth = str(e.balance_eth);
+                  const floor = str(e.floor_eth);
+                  const ok = e.ok === true;
+                  const unread = has(e, "error") && e.balance_wei === null;
+                  return (
+                    <tr key={`${str(e.role)}-${chain}-${i}`}>
+                      <Cell label="Account" lead className={styles.cell}>
+                        <strong className="small">{str(e.role) ?? "—"}</strong>
+                        <div className="mono xsmall">{str(e.address) ?? "—"}</div>
+                      </Cell>
+                      <Cell label="Chain">{chain !== null ? chainName(chain) : "—"}</Cell>
+                      <Cell label="Balance" className="num">
+                        {unread ? "—" : eth ? `${Number(eth).toLocaleString("en-US", { maximumFractionDigits: 6 })} ETH` : "—"}
+                      </Cell>
+                      <Cell label="Floor" className="num">
+                        {floor ? `${Number(floor).toLocaleString("en-US", { maximumFractionDigits: 6 })} ETH` : "—"}
+                      </Cell>
+                      <Cell label="State">
+                        {unread ? (
+                          <Pill tone="neutral" size="sm">
+                            not read
+                          </Pill>
+                        ) : ok ? (
+                          <Pill tone="ok" size="sm">
+                            above
+                          </Pill>
+                        ) : (
+                          <Pill tone="bad" size="sm">
+                            below floor
+                          </Pill>
+                        )}
+                      </Cell>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="xsmall muted" style={{ marginTop: 10 }}>
+            Amounts on Sepolia and Base Sepolia, testnets with no value.
+          </p>
+        </Section>
+      ) : null}
 
       <Section id="escrow" title="Escrow" lede="Each program's available escrow against its largest payout: an open program below it raises a warning.">
         {programs.length ? (
