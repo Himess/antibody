@@ -826,7 +826,7 @@ describe("the browser try", () => {
     expect([s.tier, s.state]).toEqual(["T0", "Done:Paid"]);
     const answered = (s.verdict?.answeredAt ?? 0) * 1000;
     const allocate = chain.sent.find((t) => t.method === "allocate");
-    // Not before the contract allows a T0 payout, and not the CLI's 300 s later.
+    // Not before the contract allows a T0 payout, and not minutes later (the CLI's wait, crates/cli/src/payable.rs, is the same).
     expect(allocate?.at ?? 0).toBeGreaterThanOrEqual(answered + 65_000);
     expect((allocate?.at ?? 0) - answered).toBeLessThan(80_000);
     expect(s.t0PayAfter).toBe(answered + 65_000);
