@@ -97,7 +97,16 @@ export function ContractCheck() {
         </table>
       </div>
       <div className="row">
-        <button type="button" className="btn btn-sm" onClick={run} disabled={state?.status === "loading"} aria-busy={state?.status === "loading"}>
+        {/* aria-disabled, not disabled, while it works: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (state?.status !== "loading") void run();
+          }}
+          aria-disabled={state?.status === "loading" || undefined}
+          aria-busy={state?.status === "loading"}
+        >
           <Icon name="play" size={13} /> {state ? "Check again" : "Check the contracts on NEAR"}
         </button>
         <span className="xsmall muted">view_account and view_access_key_list, read by your browser (no key, no transaction)</span>

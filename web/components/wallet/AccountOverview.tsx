@@ -152,7 +152,16 @@ export function AccountOverview({
         }
         actions={
           <>
-            <button type="button" className="btn btn-sm" onClick={() => refresh(true)} disabled={busy} aria-busy={busy}>
+            {/* aria-disabled, not disabled, while it works: a disabled button would drop keyboard focus to the page. */}
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                if (!busy) void refresh(true);
+              }}
+              aria-disabled={busy || undefined}
+              aria-busy={busy}
+            >
               <Icon name="refresh" size={13} /> {busy ? "Reading…" : "Refresh from NEAR"}
             </button>
             <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
