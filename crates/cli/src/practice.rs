@@ -12,6 +12,7 @@ use crate::{
     cmd,
     ctx::Ctx,
     near::{Action, Permission, Signer, ONE_YOCTO, TGAS},
+    payable,
 };
 
 /// `sweep(0x…dEaD)`: the tutorial proof's one call (`cast calldata "sweep(address)" 0x…dEaD`).
@@ -165,24 +166,6 @@ pub fn reclaim(ctx: &Ctx, vending: &str, account: &str) -> Result<Value> {
     cmd::ensure_ok(ctx, &out, "reclaim")
 }
 
-/// Waits until a run is T1-confirmed (or failed).
-fn wait_t1(ctx: &Ctx, run_id: u64, timeout_s: u64) -> Result<Value> {
-    let t0 = Instant::now();
-    loop {
-        let v = cmd::run_view(&cmd::run(ctx, run_id)?);
-        if v["tier"] == json!("T1") {
-            return Ok(v);
-        }
-        if v.get("failed").is_some() || v["kind"] == json!("InfraError") {
-            return Err(eyre!("run {run_id} failed: {v}"));
-        }
-        if t0.elapsed().as_secs() > timeout_s {
-            return Err(eyre!("run {run_id} is not T1-confirmed after {timeout_s} s: {v}"));
-        }
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    }
-}
-
 /// Settles one commit with the permissionless calls a practice key may make: `allocate` the program's
 /// claims, then `pay` this one.
 pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
@@ -238,9 +221,9 @@ pub fn vending_program(near: &crate::near::Near, vending: &str) -> Result<u32> {
 }
 
 /// The whole try-it: vend a practice account, prove its vault with the tutorial proof (commit, sealed
-/// reveal, verdict, T1), settle as the practice account, and close it (its NEAR back to the vending
-/// contract). With no `--account`, the public vend key calls `vend`, so nothing but this command is
-/// needed.
+/// reveal, verdict, then T1 or the end of the challenge window on NEAR's clock), settle as the practice
+/// account, and close it (its NEAR back to the vending contract). With no `--account`, the public vend
+/// key calls `vend`, so nothing but this command is needed.
 pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Value> {
     check_name(name)?;
     let t0 = Instant::now();
@@ -272,27 +255,15 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
         let commit = submitted["commit"]["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {submitted}"))?;
         let run = submitted["reveal"]["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {submitted}"))?;
         // T1 normally arrives in seconds. When it cannot (a worker image the program does not count yet,
-        // docs/runbooks/worker-images.md), the verdict stays T0 and its payout waits the challenge window.
-        let t1 = match wait_t1(&practice, run, 300) {
-            Ok(v) => v,
-            Err(e) if e.to_string().contains("not T1-confirmed") => {
-                let window = practice.program(program)?["params"]["windows"]["challenge"].as_u64().unwrap_or(60);
-                let v = cmd::run_view(&cmd::run(&practice, run)?);
-                let answered = v["answered_at"].as_u64().unwrap_or(0);
-                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                std::thread::sleep(std::time::Duration::from_secs((answered + window + 5).saturating_sub(now)));
-                let mut v = v;
-                v["note"] = json!(format!("no T1 within 300 s: the verdict stays T0 and was paid after the {window} s challenge window"));
-                v
-            }
-            Err(e) => return Err(e),
-        };
+        // docs/runbooks/worker-images.md), the verdict stays T0 and is final once NEAR's clock passes the
+        // challenge window: the try settles at whichever comes first.
+        let ready = payable::wait_on_near(&practice, program, run)?;
         let settled = settle(&practice, program, commit)?;
-        Ok((submitted, commit, run, t1, settled))
+        Ok((submitted, commit, run, ready, settled))
     })();
     // The try is over, done or not: the account goes, its NEAR back to the vending contract (one left
     // open, the vending contract's `reclaim` closes an hour after its vend).
-    let (submitted, commit, run, t1, settled) = match tried {
+    let (submitted, commit, run, ready, settled) = match tried {
         Ok(t) => t,
         Err(e) => {
             let closed = close().map(|_| format!("{account} is closed, its NEAR back to {vending}")).unwrap_or_else(|c| format!("{account} stays open ({c})"));
@@ -312,11 +283,31 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
     }
     links.push(json!({"close": done["explorer"]}));
     links.push(json!({"reclaim": reclaimed["explorer"]}));
+    let state = cmd::state_label(&c["state"]);
+    // The run as the wait last read it: T1-confirmed, or T0 with why.
+    let mut t1 = ready.run;
+    if let Some(note) = ready.note {
+        t1["note"] = json!(note);
+    }
+    let path = ready.path.as_str();
+    let payout = payout_words(path, Some(ready.challenge_s), state == "Done:Paid");
     Ok(json!({"account": account, "vault": vault, "vault_index": vended["vault"], "vended_by": vended["vended_by"], "commit_id": commit,
               "run_id": run, "verdict": submitted["reveal"]["result"], "witness_source": submitted["commit"]["witness_source"],
-              "witness_bytes": submitted["commit"]["witness_bytes"], "t1": t1, "settle": settled,
-              "state": cmd::state_label(&c["state"]), "paid_raw": cmd::paid_of(&c).to_string(), "beneficiary": c["beneficiary"],
-              "closed": ctx.near.account(&account)?.is_none(), "links": links, "seconds": t0.elapsed().as_secs_f64()}))
+              "witness_bytes": submitted["commit"]["witness_bytes"], "t1": t1, "payout_path": path, "payout": payout,
+              "challenge_window_s": ready.challenge_s, "settle": settled, "state": state, "paid_raw": cmd::paid_of(&c).to_string(),
+              "beneficiary": c["beneficiary"], "closed": ctx.near.account(&account)?.is_none(), "links": links, "seconds": t0.elapsed().as_secs_f64()}))
+}
+
+/// The payout's path in words: T1 pays at once, under the instant cap; a T0 verdict waits out the
+/// challenge window. `final` while the payout itself waits for an earlier commit's claim.
+fn payout_words(path: &str, window: Option<u64>, paid: bool) -> String {
+    let window = window.map(|w| format!("the {w} s challenge window")).unwrap_or_else(|| "the challenge window".into());
+    match (path == "T1", paid) {
+        (true, true) => "T1-confirmed: paid at once (an instant payout, under the cap)".into(),
+        (true, false) => "T1-confirmed: final at once (under the instant cap)".into(),
+        (false, true) => format!("T0, paid after {window}"),
+        (false, false) => format!("T0, final after {window}"),
+    }
 }
 
 /// `try`'s summary: what happened, in words, with each transaction (`--json` for the record).
@@ -325,15 +316,20 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
     let amount = cmd::fmt_tokens(paid, decimals);
     let amount = amount.trim_end_matches('0').trim_end_matches('.');
     let to = r["beneficiary"].as_str().unwrap_or("?");
+    let kind = r["t1"]["kind"].as_str().or(r["verdict"]["kind"].as_str()).unwrap_or("?");
+    // A record from before `payout_path`: its run's tier says the same.
+    let path = r["payout_path"].as_str().or(r["t1"]["tier"].as_str()).unwrap_or("T0");
     let mut out = vec![
         format!("Practice try: {}, vault {} ({})", r["account"].as_str().unwrap_or("?"), r["vault_index"], r["vault"].as_str().unwrap_or("?")),
         format!("  proof: the public tutorial proof, sealed against the program's pinned base witness ({} bytes; no Ethereum RPC)", r["witness_bytes"]),
-        format!(
-            "  verdict: {}, first answered at T0 (OutLayer's result), then T1 (its TDX quote verified on NEAR)",
-            r["t1"]["kind"].as_str().or(r["verdict"]["kind"].as_str()).unwrap_or("?")
-        ),
+        if path == "T1" {
+            format!("  verdict: {kind}, first answered at T0 (OutLayer's result), then T1 (its TDX quote verified on NEAR)")
+        } else {
+            format!("  verdict: {kind}, answered at T0 (OutLayer's result); no T1 (its TDX quote verified on NEAR) before the challenge window ended")
+        },
+        format!("  payout: {}", payout_words(path, r["challenge_window_s"].as_u64(), r["state"] == json!("Done:Paid"))),
         if r["state"] == json!("Verifying") {
-            // Verified and T1, but claims are allocated in commit order: an earlier commit not yet final holds it.
+            // Final, but claims are allocated in commit order: an earlier commit not yet final holds it.
             format!("  state: Verifying: verified, and its payout ({symbol} to {to}) follows once the program's earlier commits are settled \
                      (claims go in commit order; the keeper runs allocate and pay)")
         } else {
@@ -474,5 +470,31 @@ mod tests {
         let k = public_vend_signer("practice.antibody.testnet");
         assert_eq!(k.account_id, "practice.antibody.testnet");
         assert_eq!(k.public_key(), public_vend_signer("other.testnet").public_key());
+    }
+
+    /// A try's record, as `try_it` returns it, down to what the summary reads.
+    fn record(path: &str, window: u64, state: &str) -> Value {
+        json!({"account": "ann.practice.antibody.testnet", "vault_index": 4, "vault": "0x185d4f6a747091760f39adbe66a3a414ce8fe56a",
+               "vended_by": "practice.antibody.testnet", "witness_bytes": 363, "t1": {"kind": "Violation", "tier": path},
+               "payout_path": path, "challenge_window_s": window, "state": state, "paid_raw": "1000000000000000000000",
+               "beneficiary": "practice.antibody.testnet", "seconds": 44.0, "links": [{"pay": "testnet:Hash1"}]})
+    }
+
+    #[test]
+    fn the_summary_says_which_path_paid() {
+        let t1 = try_summary(&record("T1", 60, "Done:Paid"), 24, "wNEAR");
+        assert!(t1.contains("\n  payout: T1-confirmed: paid at once (an instant payout, under the cap)\n"), "{t1}");
+        assert!(t1.contains("then T1 (its TDX quote verified on NEAR)") && t1.contains("0.001 wNEAR paid to practice.antibody.testnet"), "{t1}");
+        // The program's own window, not a constant.
+        let t0 = try_summary(&record("T0", 90, "Done:Paid"), 24, "wNEAR");
+        assert!(t0.contains("\n  payout: T0, paid after the 90 s challenge window\n"), "{t0}");
+        assert!(!t0.contains("then T1") && t0.contains("no T1 (its TDX quote verified on NEAR) before the challenge window ended"), "{t0}");
+        // Final, its payout behind an earlier commit's claim.
+        let held = try_summary(&record("T0", 60, "Verifying"), 24, "wNEAR");
+        assert!(held.contains("payout: T0, final after the 60 s challenge window") && held.contains("state: Verifying"), "{held}");
+        // A record from before `payout_path`: the run's tier.
+        let mut old = record("T1", 60, "Done:Paid");
+        old.as_object_mut().unwrap().retain(|k, _| k != "payout_path" && k != "challenge_window_s");
+        assert!(try_summary(&old, 24, "wNEAR").contains("payout: T1-confirmed: paid at once"));
     }
 }

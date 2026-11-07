@@ -374,6 +374,12 @@ impl Near {
         self.call("tx", json!({"tx_hash": hash, "sender_account_id": signer, "wait_until": "NONE"}))
     }
 
+    /// NEAR's clock at the latest final block, as near-antibody reads it. A transaction sent after
+    /// this read executes in a later block, so near-antibody's `now` for it is at least this.
+    pub fn final_block_secs(&self) -> Result<u64> {
+        block_secs(&self.call("block", json!({"finality": "final"}))?["header"])
+    }
+
     pub fn explorer_account(&self, account: &str) -> String {
         match self.network.as_str() {
             "mainnet" => format!("https://nearblocks.io/address/{account}"),
@@ -395,6 +401,14 @@ impl Near {
             other => format!("{other}:{hash}"),
         }
     }
+}
+
+/// A block header's time in whole seconds, rounded down as near-antibody's `now` is
+/// (`block_timestamp() / 1_000_000_000`).
+pub fn block_secs(header: &Value) -> Result<u64> {
+    // The string first: a number this large loses precision in any JavaScript proxy on the way.
+    let ns = header["timestamp_nanosec"].as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| header["timestamp"].as_u64());
+    ns.map(|n| n / 1_000_000_000).ok_or_else(|| eyre!("a block header with no timestamp: {header}"))
 }
 
 /// Outcome helpers over a `send_tx` result.
@@ -475,6 +489,15 @@ mod tests {
         assert_eq!(o.len(), 34);
         assert_eq!(&o[..2], &[6, 0]);
         assert!(o[2..].iter().all(|b| *b == 7));
+    }
+
+    /// A block header as NEAR RPCs return it: whole seconds, rounded down like near-antibody's `now`.
+    #[test]
+    fn block_time_in_seconds() {
+        let h = json!({"height": 276_600_000, "timestamp": 1_793_809_254_999_999_999u64, "timestamp_nanosec": "1793809254999999999"});
+        assert_eq!(block_secs(&h).unwrap(), 1_793_809_254);
+        assert_eq!(block_secs(&json!({"timestamp": 1_793_809_255_000_000_000u64})).unwrap(), 1_793_809_255);
+        assert!(block_secs(&json!({"height": 1})).is_err());
     }
 
     /// nearcore's `Action::DeleteAccount` is variant 7, then the beneficiary (a borsh string).

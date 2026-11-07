@@ -41,7 +41,7 @@ fn tools() -> Value {
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id"), "commit_id": int("an existing commit to reveal"), "bundle_path": s("bundle JSON (commit + reveal)"), "report_path": s("optional report"), "wait": {"type": "boolean"}}, "required": ["program_id"]}},
         {"name": "status", "description": "A commit (state, verdict), a run, a program summary, and/or an account's credit and agent statement.",
          "inputSchema": {"type": "object", "properties": {"commit_id": int("commit id"), "run_id": int("run id"), "program_id": int("program id"), "account": s("NEAR account")}}},
-        {"name": "practice_try", "description": "The practice program (a tutorial whose bug and proof are public): get a practice account from the vending contract, prove its vault with the tutorial proof, and settle. Returns the verdict, the payout and a link for every transaction. Needs no account.",
+        {"name": "practice_try", "description": "The practice program (a tutorial whose bug and proof are public): get a practice account from the vending contract, prove its vault with the tutorial proof, and settle: at once when T1 confirms the verdict, else once NEAR's clock passes the challenge window. Returns the verdict, the payout, which path paid (`payout_path` T1 or T0, `payout` in words) and a link for every transaction. Needs no account.",
          "inputSchema": {"type": "object", "properties": {"vending": s("the vending contract (default: the deployment's)"), "program_id": int("the practice program's id (default: the deployment's)"),
                          "name": s("your practice account's name: 1 to 32 of a-z, 0-9, - and _")}, "required": ["name"]}}
     ])
@@ -149,6 +149,7 @@ fn call(ctx: &Ctx, name: &str, a: &Value) -> Result<Value> {
             }
         }
         "status" => cmd::status(ctx, a["commit_id"].as_u64(), a["run_id"].as_u64(), a["program_id"].as_u64().map(|x| x as u32), a["account"].as_str().map(String::from)),
+        // The CLI's `try`, so the same wait: T1, or the challenge window on NEAR's clock.
         "practice_try" => {
             let (vending, program) = crate::practice::target(ctx, a["vending"].as_str().map(String::from), a["program_id"].as_u64().map(|p| p as u32))?;
             crate::practice::try_it(ctx, &vending, program, a["name"].as_str().ok_or_else(|| eyre!("name"))?)
