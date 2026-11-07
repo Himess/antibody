@@ -2,18 +2,46 @@
 
 /* ------------------------------------------------------------ header */
 
+/* "On this page": one row that stays under the site's sticky header (60 px and its rule) while the page
+   scrolls, and scrolls sideways on a phone instead of wrapping. */
 .jumpNav {
+  position: sticky;
+  top: 61px;
+  z-index: 30;
   margin-bottom: 16px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Focus lands below the header and this bar: the page's scroll padding (88 px) clears the header; this
+   clears the bar too. Section anchors already clear it with their own top padding. */
+.withJump :global(a),
+.withJump :global(button),
+.withJump :global(summary),
+.withJump :global([tabindex]) {
+  scroll-margin-top: 36px;
 }
 
 .jump {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
+  flex-wrap: nowrap;
+  gap: 6px;
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin-block: 0;
+  padding-block: 8px;
   font-size: var(--fs-sm);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jump::-webkit-scrollbar {
+  display: none;
+}
+
+.jump li {
+  flex: none;
 }
 
 .jump a {
@@ -25,12 +53,18 @@
   border: 1px solid var(--line);
   color: var(--ink-2);
   text-decoration: none;
+  white-space: nowrap;
   background: var(--bg-elev);
 }
 
 .jump a:hover {
   color: var(--ink);
   border-color: var(--line-strong);
+}
+
+/* The summary card and its notes keep clear of the next section's rule. */
+.summaryWrap {
+  margin-bottom: clamp(24px, 3vw, 36px);
 }
 
 .summary {
@@ -52,6 +86,13 @@
   gap: 10px;
   justify-items: start;
   max-width: 34ch;
+}
+
+/* On a phone the verdict comes first, before the list of facts. */
+@media (max-width: 899px) {
+  .stampCol {
+    order: -1;
+  }
 }
 
 @media (min-width: 900px) {
@@ -87,6 +128,42 @@
 
 .spaced {
   margin-top: 16px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.wrapAny {
+  overflow-wrap: anywhere;
+}
+
+.noteBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A line quoted from a file in the repository. */
+.quote {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.quote blockquote {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--bg-elev);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  overflow-wrap: anywhere;
+}
+
+.quote code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink);
 }
 
 /* Lists of facts: two columns where there is room, stacked on phones so long accounts and hashes fit. */
@@ -163,6 +240,7 @@
 .checks {
   display: grid;
   gap: 12px;
+  align-content: start;
   min-width: 0;
 }
 
@@ -228,23 +306,52 @@
   gap: 4px;
 }
 
+/* The 64 hex digits as eight groups of eight, in the same grid on both sides: four by two where there is
+   room, two by four on a phone, so the two tags line up group for group. */
 .tagHex {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 0 0.9ch;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: 1.6;
-  word-spacing: 0.15em;
-  overflow-wrap: anywhere;
   color: var(--ink);
 }
 
+@media (max-width: 479px) {
+  .tagHex {
+    grid-template-columns: repeat(2, max-content);
+  }
+}
+
+/* The equality mark between the two keys: a glyph in a disc, its tone and its words below. */
 .tagEq {
   display: grid;
   place-items: center;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xl);
-  font-weight: 600;
-  color: var(--ink-3);
   min-height: 24px;
+}
+
+.tagEq span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tagEqOk span {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.tagEqBad span {
+  color: var(--bad);
+  background: var(--bad-soft);
 }
 
 .tagVerdict {
@@ -438,6 +545,13 @@
   gap: 4px 6px;
 }
 
+.sibState {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
 .sibPaid {
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -445,12 +559,36 @@
   white-space: nowrap;
 }
 
+/* Wide screens: the list is one grid and each row a subgrid, so the state, verdict, tier and payout
+   columns line up from row to row (fixed widths where subgrid is not supported). */
 @media (min-width: 900px) {
+  .sibs {
+    display: grid;
+    grid-template-columns: minmax(170px, max-content) max-content max-content max-content minmax(96px, 1fr);
+  }
   .sib {
-    grid-template-columns: minmax(180px, 1fr) minmax(0, 1.6fr) minmax(110px, auto);
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(170px, max-content) 13rem 7rem 7.5rem minmax(96px, 1fr);
+    grid-template-columns: subgrid;
+    column-gap: 14px;
   }
   .sibBadges {
-    grid-column: auto;
+    display: contents;
+  }
+  .sibMain {
+    grid-column: 1;
+  }
+  .sibState {
+    grid-column: 2;
+  }
+  .sibKind {
+    grid-column: 3;
+  }
+  .sibTier {
+    grid-column: 4;
+  }
+  .sibPaid {
+    grid-column: 5;
   }
 }
 
@@ -473,12 +611,38 @@
 .raw > summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 48px;
   padding: 0 16px;
   cursor: pointer;
   font-weight: 560;
-  list-style-position: inside;
+  list-style: none;
+}
+
+.raw > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The disclosure's marker (a flex summary drops the native one): a chevron that turns down when open. */
+.raw > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline: 2px 2px;
+  border-right: 2px solid var(--ink-3);
+  border-bottom: 2px solid var(--ink-3);
+  transform: rotate(-45deg);
+}
+
+.raw[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .raw > summary::before {
+    transition: transform 0.15s var(--ease);
+  }
 }
 
 .raw[open] > summary {

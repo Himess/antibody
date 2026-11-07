@@ -3,7 +3,7 @@ import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { LogoMark } from "@/components/ui/Logo";
 import { utc, wnear } from "@/lib/format";
-import { getMoments, latestMoment } from "@/lib/moment";
+import { chainsWord, committer, getMoments, latestMoment, pausesOf, possessive } from "@/lib/moment";
 import styles from "./present.module.css";
 
 export const metadata: Metadata = {
@@ -14,13 +14,14 @@ export const metadata: Metadata = {
 
 /**
  * Presentation mode for the video and the stage: 16:9, no chrome, readable at 1080p, driven by the
- * recorded run. Space plays or pauses, R replays, arrows step; ?speed=1 plays in real time.
+ * recorded run. Space or a tap plays or pauses, R replays, arrows step, F goes full screen; ?speed=1 plays in real time.
  */
 export default async function Present({ searchParams }: { searchParams: Promise<{ speed?: string; run?: string }> }) {
   const sp = await searchParams;
   const { data } = await getMoments();
   const m = data.moments.find((x) => x.id === sp.run) ?? latestMoment(data);
-  const paused = m.steps.filter((s) => s.chain.startsWith("evm:"));
+  const paused = pausesOf(m);
+  const who = possessive(committer(m).name);
   return (
     <div className={styles.stage} data-theme-lock="dark">
       <div className={styles.frame}>
@@ -33,18 +34,18 @@ export default async function Present({ searchParams }: { searchParams: Promise<
         <div className={styles.title}>
           <p className={styles.kicker}>The one moment · recorded on NEAR testnet · {utc(m.commit.block_ts_ns, "ns")}</p>
           <h1>
-            A&apos;s sealed proof of a Critical: verified, paid {wnear(m.paid_raw)}, and the protocol paused on{" "}
-            {paused.length === 2 ? "both chains" : `${paused.length} chains`}.
+            {who} sealed proof of a Critical: verified, paid {wnear(m.paid_raw)}, and the protocol paused on {chainsWord(paused.length)}.
           </h1>
         </div>
         <OneMoment moment={m} variant="present" initialSpeed={sp.speed === "1" ? 1 : 10} />
         <footer className={styles.foot}>
           <span>
-            Every node is a transaction. Each chain&apos;s time is its own block time, from A&apos;s commit block. Testnet: wNEAR has
-            no value; Acme Lend is our deliberately vulnerable fixture.
+            Every node links to its transaction. NEAR steps are timed at their blocks, each pause when the relayer got its chain&apos;s
+            receipt. Testnet: wNEAR has no value; Acme Lend is our deliberately vulnerable fixture.
           </span>
           <span className={styles.keys}>
-            <kbd>Space</kbd> play · <kbd>R</kbd> replay · <kbd>←</kbd> <kbd>→</kbd> step · <Link href="/moment">exit</Link>
+            <kbd>Space</kbd> or tap: play · <kbd>R</kbd> replay · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>F</kbd> full screen ·{" "}
+            <Link href="/moment">exit</Link>
           </span>
         </footer>
       </div>

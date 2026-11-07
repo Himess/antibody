@@ -11,18 +11,74 @@
   overflow-wrap: anywhere;
 }
 
-/* ------------------------------------------------------------ intro */
+/* An account or a short code token moves to the next line whole rather than break at its hyphens; one longer
+   than the line still wraps. */
+.acct {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 
-.intro {
+/* ------------------------------------------------------------ the top: start, what will happen, before you start */
+
+/* The Start card comes first, right under the lede. On wide screens "Before you start" sits beside it and
+   "What will happen" under it; on phones they follow it. */
+.top {
   display: grid;
-  gap: 16px;
+  gap: 24px;
+  grid-template-areas:
+    "start"
+    "what"
+    "before";
+}
+
+.start {
+  grid-area: start;
+}
+
+.whatBlock {
+  grid-area: what;
+  --gap: 16px;
+}
+
+.before {
+  grid-area: before;
 }
 
 @media (min-width: 960px) {
-  .intro {
+  .top {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "start before"
+      "what before";
+    gap: 32px 24px;
     align-items: start;
   }
+}
+
+/* How long a try takes now, and what may stop it: beside the Start button. */
+.expect {
+  display: grid;
+  gap: 8px;
+}
+
+.expectLine {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.expectLine > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.expectLine strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .what {
@@ -84,6 +140,15 @@
 .checkRow strong {
   color: var(--ink);
   font-weight: 560;
+}
+
+/* A row that changes what happens (T1 delayed, a low faucet, a held queue): a warning, not one more check. */
+.warnRow {
+  padding: 10px 12px;
+  border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  background: var(--warn-soft);
+  color: var(--ink);
 }
 
 .okIcon {
@@ -234,145 +299,243 @@
   font-weight: 560;
 }
 
-.phase {
-  display: grid;
-  gap: 0;
+/* The steps, on the commit page's rail (commit/Timeline.module.css): seconds from the commit, a dot per
+   step, the step, its transaction. A dashed ring waits, a pulsing ring runs, a filled dot is done; failed
+   and skipped also say so in words. Where the run's column is wide enough, the transaction gets its own
+   column, as on the commit page. */
+
+.tl {
+  --time: 5.2rem;
+  container-type: inline-size;
 }
 
-.phaseTitle {
-  margin: 0 0 6px;
-}
-
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--bg-elev);
-  overflow: hidden;
-}
-
-.step {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "title time"
-    "detail detail"
-    "tx tx";
-  gap: 4px 12px;
-  padding: 12px 14px 12px 16px;
-  border-bottom: 1px solid var(--line);
+.tlPhase {
   position: relative;
+  padding: 12px 0 2px calc(var(--time) + 40px);
+  line-height: 1.4;
 }
 
-.step:last-child {
-  border-bottom: 0;
-}
-
-.step::before {
+/* The rail runs on through the phase names. */
+.tlPhase::before {
   content: "";
   position: absolute;
-  left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
-  background: transparent;
+  left: calc(var(--time) + 19px);
+  border-left: 2px solid var(--line);
 }
 
-.stepRunning::before {
-  background: var(--accent);
+.tlGroup:first-child .tlPhase {
+  padding-top: 0;
 }
 
-.stepDone::before {
-  background: var(--ok);
-}
-
-.stepFailed::before {
-  background: var(--bad);
-}
-
-.stepWaiting {
-  color: var(--ink-3);
-}
-
-@media (min-width: 720px) {
-  .step {
-    grid-template-columns: 112px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "status title time"
-      "status detail detail"
-      "status tx tx";
-  }
-}
-
-.stepTitle {
-  grid-area: title;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  min-width: 0;
-}
-
-.stepTitle h4 {
-  font-size: var(--fs-base);
-  font-weight: 600;
-}
-
-.stepStatusInline {
-  display: inline-flex;
-}
-
-.stepStatus {
-  grid-area: status;
+.tlGroup:first-child .tlPhase::before {
   display: none;
 }
 
-@media (min-width: 720px) {
-  .stepStatus {
-    display: block;
-    padding-top: 1px;
-  }
-  .stepStatusInline {
-    display: none;
-  }
+.tlList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.stepDetail {
-  grid-area: detail;
-  font-size: var(--fs-sm);
-  color: var(--ink-2);
-  overflow-wrap: anywhere;
+.tlStep {
+  --dot: var(--ink-3);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--time) 16px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 10px 0;
 }
 
-.stepWaiting .stepDetail {
-  color: var(--ink-3);
-}
-
-.stepTx {
-  grid-area: tx;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-  align-items: center;
-  font-size: var(--fs-xs);
-  color: var(--ink-3);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.stepTime {
-  grid-area: time;
+.tlTime {
+  grid-column: 1;
+  grid-row: 1 / span 2;
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  color: var(--ink-2);
-  white-space: nowrap;
+  font-weight: 600;
   text-align: right;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.tlNow {
+  color: var(--accent-ink);
 }
 
 .approx {
   color: var(--ink-3);
+  font-weight: 500;
+}
+
+.tlRail {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tlRail::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: calc(50% - 1px);
+  border-left: 2px solid var(--line);
+}
+
+.tlGroup:first-child .tlStep:first-child .tlRail::before {
+  top: 10px;
+}
+
+.tlGroup:last-child .tlStep:last-child .tlRail::before {
+  bottom: auto;
+  height: 20px;
+}
+
+.tlDot {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--dot);
+  background: var(--bg-elev);
+  flex: none;
+}
+
+.tlMinor .tlDot {
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+}
+
+.markOk {
+  --dot: var(--ok);
+}
+
+.markAccent {
+  --dot: var(--accent);
+}
+
+.markT1 {
+  --dot: var(--t1);
+}
+
+.isDone .tlDot {
+  background: var(--dot);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 16%, transparent);
+}
+
+.isWaiting .tlDot {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.isRunning {
+  --dot: var(--accent);
+}
+
+.isRunning .tlDot {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .isRunning .tlDot {
+    animation: tl-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes tl-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 34%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+
+.isFailed {
+  --dot: var(--bad);
+}
+
+.isFailed .tlDot {
+  background: var(--dot);
+}
+
+.isSkipped .tlDot {
+  border-color: var(--line-strong);
+}
+
+.tlBody {
+  grid-column: 3;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.tlTitle {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tlState {
+  font-weight: 540;
+  color: var(--ink-3);
+}
+
+.isFailed .tlState {
+  color: var(--bad);
+}
+
+.tlDetail {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  max-width: 72ch;
+  overflow-wrap: anywhere;
+}
+
+.isWaiting .tlTitle,
+.isSkipped .tlTitle {
+  font-weight: 540;
+  color: var(--ink-2);
+}
+
+.isWaiting .tlDetail,
+.isSkipped .tlDetail {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.tlTx {
+  grid-column: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  min-width: 0;
+}
+
+@container (min-width: 620px) {
+  .tlStep {
+    grid-template-columns: var(--time) 16px minmax(0, 1fr) minmax(150px, max-content);
+  }
+  .tlTx {
+    grid-column: 4;
+    grid-row: 1;
+    flex-direction: column;
+    align-items: flex-end;
+    align-self: start;
+    padding-top: 1px;
+    text-align: right;
+  }
 }
 
 .t2Row {

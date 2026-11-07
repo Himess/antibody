@@ -8,7 +8,20 @@ export function TxLink({ hash, chainId, href, head = 8 }: { hash: string | null 
   return <Hash value={hash} href={url} head={head} label={chainId ? `${chainName(chainId)} transaction` : "NEAR transaction"} />;
 }
 
-export function AccountLink({ account }: { account: string | null | undefined }) {
+/**
+ * An account: it opens its read-only view on this site; its explorer page is the icon beside it (new tab).
+ * `site={false}` where the page already is that view: the name then links to the explorer only.
+ */
+export function AccountLink({ account, site = true }: { account: string | null | undefined; site?: boolean }) {
   if (!account) return <span className="muted">—</span>;
-  return <Hash value={account} href={explorers.nearAccount(account)} head={40} copy label="account" />;
+  return (
+    <Hash
+      value={account}
+      to={site ? `/account?view=${encodeURIComponent(account)}` : undefined}
+      href={explorers.nearAccount(account)}
+      head={40}
+      copy
+      label="account"
+    />
+  );
 }

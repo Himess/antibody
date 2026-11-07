@@ -31,6 +31,7 @@ const paths: Record<string, string> = {
   key: "M15 9a3 3 0 11-6 0 3 3 0 016 0zM12 12v9M12 16h3M12 19h2",
   bolt: "M13 3L5 14h6l-1 7 8-11h-6z",
   layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+  monitor: "M4.5 4h15A1.5 1.5 0 0121 5.5v9a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 14.5v-9A1.5 1.5 0 014.5 4zM12 16v4M8 20h8",
 };
 
 export type IconName = keyof typeof paths;

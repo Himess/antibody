@@ -1,3 +1,8 @@
+/* The panel's section keeps its distance from the next block's rule. */
+.panelWrap {
+  padding-bottom: clamp(28px, 4vw, 48px);
+}
+
 .panel {
   display: grid;
   gap: 22px;
@@ -24,8 +29,33 @@
   background: var(--bg-elev);
 }
 
+/* The run in the panel: an accent edge and a label, not a heavier border. */
 .runs .current {
-  border-color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The step table: the seconds and the step read as one line, also as the head of a phone's card. */
+.stepHead {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.secs {
+  display: inline-block;
+  min-width: 5.6em;
+}
+
+.sub {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.chain {
+  white-space: nowrap;
 }
 
 .notes {

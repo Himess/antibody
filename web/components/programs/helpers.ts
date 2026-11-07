@@ -38,11 +38,31 @@ export const RECORDED_RUN = {
   programs: [5, 6, 7] as readonly number[],
 };
 
+/**
+ * The staging run, on the same contracts before the lock (README; its results file lists programs 0–3 and
+ * records near-antibody `locked: false`). Program 4 came after it and before the recorded run.
+ */
+export const STAGING_RUN = {
+  results_file: "docs/results/testnet-staging-2026-11-03.json",
+  date: "2026-11-03",
+  programs: [0, 1, 2, 3] as readonly number[],
+};
+
 export type RunGroup = "this-run" | "earlier" | "later";
 
+/** This run's programs, the earlier runs' (0–4: the staging run, then program 4), or later ones. */
 export function runGroup(id: number): RunGroup {
   if (RECORDED_RUN.programs.includes(id)) return "this-run";
   return id < Math.min(...RECORDED_RUN.programs) ? "earlier" : "later";
+}
+
+/** Among the earlier runs: the staging run's programs, before the lock. */
+export const isStagingRun = (id: number) => STAGING_RUN.programs.includes(id);
+
+/** The label of a try button: a try always goes to the program the practice vending contract names. */
+export function tryLabel(id: number, practiceProgram: number | null): string {
+  if (practiceProgram === id) return "Try it, no account";
+  return practiceProgram !== null ? `Try the practice program (${practiceProgram})` : "Try the practice program";
 }
 
 /** A route segment as a program id: a canonical u32, else null (a 404). */
@@ -237,14 +257,44 @@ export function slotName(slots: SlotView[], bit: number): string {
 
 /* ------------------------------------------------------------------ who */
 
+/** The practice vending contract: it creates every practice account and receives every try's payout. */
+const VENDING = "practice.antibody.testnet";
+
+/** Our own practice accounts on this run's programs: the recorded run's scripted tries (JUDGES.md row 12) and our rehearsal. */
+const OUR_TRIES: Record<string, string> = {
+  "judge-1-p6.practice.antibody.testnet": "the recorded run's practice try",
+  "judge-2-p6.practice.antibody.testnet": "the recorded run's practice try",
+  "pcs-rehearsal.practice.antibody.testnet": "our rehearsal",
+};
+
+/** A practice try (a practice account other than the vending contract). */
+export const isPracticeTry = (account?: string | null) => provenance(account) === "practice" && account !== VENDING;
+
+/**
+ * Whose practice try: ours (the recorded run's, our rehearsal, or any try on an earlier run's program, 0–4),
+ * else a visitor's.
+ */
+export function practiceTry(account: string, program?: number | null): string {
+  return OUR_TRIES[account] ?? (typeof program === "number" && runGroup(program) === "earlier" ? "an earlier run's practice try" : "a visitor's practice try");
+}
+
 /** Our fixture agents, the practice tries and our own accounts, labelled wherever they appear. */
-export function whoLabel(account?: string | null): string | null {
+export function whoLabel(account?: string | null, program?: number | null): string | null {
   const a = account ?? "";
   const p = provenance(a);
   if (p === "fixture-agent") return `our fixture agent ${fixtureAgentLetter(a) ?? ""}`.trim();
-  if (p === "practice") return a === "practice.antibody.testnet" ? "the practice vending contract" : "practice try";
+  if (p === "practice") return a === VENDING ? "the practice vending contract" : practiceTry(a, program);
   if (p === "ours") return "ours";
   return null;
+}
+
+/**
+ * Whether a program's feed is "the tries": its rows are practice tries, or, with none yet, it is the
+ * program the vending contract sends tries to. Our fixture agent's commit in fork mode is not a try.
+ */
+export function feedIsTries(rows: FeedRow[], kind: ProgramKind, vending: boolean): boolean {
+  if (rows.length) return rows.some((r) => isPracticeTry(r.hunter));
+  return kind === "practice" && vending;
 }
 
 /** A short name for a feed row's hunter: "A" for our fixture agent A, else the account. */

@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { LiveCheck } from "@/components/ui/LiveCheck";
 import { Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
@@ -8,30 +7,73 @@ import { amount, TOKEN } from "@/lib/format";
 import { isZero } from "./helpers";
 import styles from "./programs.module.css";
 
-function Equation({ total, terms, label }: { total: { label: string; raw?: string | null }; terms: { label: string; raw?: string | null }[]; label: string }) {
+type Term = { label: string; raw?: string | null };
+
+const big = (raw?: string | null): bigint | null => {
+  if (!raw) return null;
+  try {
+    return BigInt(raw);
+  } catch {
+    return null;
+  }
+};
+
+/** Digits after the point that `amount` shows for a raw value (it keeps at most six). */
+const fracDigits = (raw?: string | null) => amount(raw).split(".")[1]?.length ?? 0;
+
+/** A raw value with exactly `dp` decimals, so a column of them lines up on the point. */
+function fixed(raw: string | null | undefined, dp: number): string {
+  const s = amount(raw);
+  if (!/^-?[\d,]+(\.\d+)?$/.test(s)) return s;
+  const [int, frac = ""] = s.split(".");
+  return `${int}.${frac.padEnd(dp, "0")}`;
+}
+
+/**
+ * One side of the escrow's equation as a statement: a term per row, values right-aligned on the point,
+ * then a rule and the total, so the sum can be checked by eye.
+ */
+function Statement({ total, terms, label }: { total: Term; terms: Term[]; label: string }) {
+  const dp = Math.min(6, Math.max(3, ...[total, ...terms].map((t) => fracDigits(t.raw))));
+  // The page adds the terms too: a sum that differs from the total is said, not hidden.
+  const parts = terms.map((t) => big(t.raw));
+  const sum = parts.every((p): p is bigint => p !== null) ? parts.reduce((x, y) => x + y, BigInt(0)) : null;
+  const tot = big(total.raw);
+  const off = sum !== null && tot !== null && sum !== tot;
   return (
-    <div className={styles.eq} role="group" aria-label={label}>
-      <div className={`${styles.term} ${styles.termTotal}`}>
-        <span className={styles.termLabel}>{total.label}</span>
-        <span className={styles.termValue}>{amount(total.raw)}</span>
-      </div>
-      <span className={styles.op} aria-hidden>
-        =
-      </span>
-      {terms.map((t, i) => (
-        <Fragment key={t.label}>
-          {i ? (
-            <span className={styles.op} aria-hidden>
-              +
-            </span>
-          ) : null}
-          <div className={styles.term}>
-            <span className={styles.termLabel}>{t.label}</span>
-            <span className={styles.termValue}>{amount(t.raw)}</span>
-          </div>
-        </Fragment>
-      ))}
-    </div>
+    <>
+      <table className={styles.stmt} aria-label={label}>
+        <tbody>
+          {terms.map((t, i) => (
+            <tr key={t.label}>
+              <th scope="row">
+                <span className={styles.stmtOp} aria-hidden>
+                  {i ? "+" : ""}
+                </span>
+                {t.label}
+              </th>
+              <td className="num">{fixed(t.raw, dp)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">
+              <span className={styles.stmtOp} aria-hidden>
+                =
+              </span>
+              {total.label}
+            </th>
+            <td className="num">{fixed(total.raw, dp)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      {off ? (
+        <p className="small" role="note">
+          The terms add up to <span className="num">{fixed(sum.toString(), dp)}</span>, not <span className="num">{fixed(total.raw, dp)}</span>.
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -69,25 +111,25 @@ export function LedgerSection({ d, id, antibody }: { d: ProgramDetail; id: numbe
       <div className="grid grid-2">
         <div className="card stack">
           <h3 className={styles.cardTitle}>Where the escrow is</h3>
-          <Equation
-            label="funded equals available plus reserved plus paid plus fees plus returned"
-            total={{ label: "funded", raw: a?.funded }}
+          <Statement
+            label="Where the escrow is: available plus reserved plus paid plus fees plus returned equals funded"
+            total={{ label: "Funded", raw: a?.funded }}
             terms={[
-              { label: "available", raw: a?.available ?? l?.available },
-              { label: "reserved", raw: a?.reserved ?? l?.reserved },
-              { label: "paid", raw: a?.paid ?? l?.paid },
-              { label: "fees", raw: a?.fees ?? l?.fees },
-              { label: "returned", raw: a?.returned ?? l?.returned },
+              { label: "Available", raw: a?.available ?? l?.available },
+              { label: "Reserved", raw: a?.reserved ?? l?.reserved },
+              { label: "Paid", raw: a?.paid ?? l?.paid },
+              { label: "Fees", raw: a?.fees ?? l?.fees },
+              { label: "Returned", raw: a?.returned ?? l?.returned },
             ]}
           />
           <h3 className={styles.cardTitle}>What came in</h3>
-          <Equation
-            label="funded equals deposits plus forfeited bonds plus challenge bonds"
-            total={{ label: "funded", raw: a?.funded }}
+          <Statement
+            label="What came in: deposits plus forfeited bonds plus challenge bonds equals funded"
+            total={{ label: "Funded", raw: a?.funded }}
             terms={[
-              { label: "deposits", raw: l?.deposits },
-              { label: "forfeited bonds", raw: forfeits },
-              { label: "challenge bonds", raw: l?.challenge_bonds },
+              { label: "Deposits", raw: l?.deposits },
+              { label: "Forfeited bonds", raw: forfeits },
+              { label: "Challenge bonds", raw: l?.challenge_bonds },
             ]}
           />
           <p className="small muted">

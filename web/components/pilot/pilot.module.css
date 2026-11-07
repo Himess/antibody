@@ -307,22 +307,17 @@
 
 .next li {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: baseline;
   font-size: var(--fs-sm);
   color: var(--ink-2);
 }
 
+/* The site's step number ("01"), as the numbered steps draw it; circles are for claim numbers only. */
 .nextNo {
-  display: inline-grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
   font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  font-weight: 600;
   color: var(--accent-ink);
 }
 

@@ -1,69 +1,91 @@
 import Link from "next/link";
+import { Icon } from "@/components/ui/Icon";
 import { LiveCheck } from "@/components/ui/LiveCheck";
 import { Section } from "@/components/ui/PageHead";
 import { Skeleton, Empty, ErrorState } from "@/components/ui/States";
 import type { ProgramDetail, ProgramSummary, Result } from "@/lib/api";
-import { chainName } from "@/lib/config";
+import { sourceUrl } from "@/lib/config";
 import { wnear } from "@/lib/format";
 import { Cell } from "./Cell";
 import { CoverageBar } from "./CoverageBar";
 import { contractsOf, getProgram, getPrograms } from "./data";
-import { coverageOf, isZero, largestPayout, programKind, RECORDED_RUN, runGroup } from "./helpers";
+import { anchorConfirmed, coverageOf, coverageText, isZero, largestPayout, phaseOf, programKind, RECORDED_RUN, runGroup, STAGING_RUN } from "./helpers";
 import { AnchorBadge, PhaseBadge, ProgramKindBadge } from "./ProgramBadges";
+import { ProgramName } from "./ProgramName";
 import styles from "./programs.module.css";
 
 type Row = { summary: ProgramSummary; detail: Result<ProgramDetail> };
 
-const COLUMNS = ["Program", "Kind", "Phase", "Round", "Anchor", "Escrow coverage", "Largest payout", "Commits", "Payouts"];
+const COLUMNS = ["Program", "Phase · round", "Anchor", "Escrow coverage", "Commits · payouts"];
 
 function ProgramRow({ summary: s, detail }: Row) {
   const d = detail.ok ? detail.data : null;
   const kind = programKind(s.name || d?.meta?.name, d?.meta?.description);
   const largest = d ? largestPayout(d.rules?.payouts_raw) : null;
   const coverage = d ? coverageOf(d.rules?.escrow_coverage, s.ledger?.available, largest) : null;
-  const chainId = s.anchor?.chain_id ?? d?.rules?.anchor?.chain_id;
-  const block = s.anchor?.block ?? d?.rules?.anchor?.block;
+  const round = typeof s.round === "number" ? s.round : null;
+  const commits = typeof s.commits === "number" ? s.commits : null;
+  const paid = typeof d?.record?.paid_findings === "number" ? d.record.paid_findings : null;
+  const paidAmount = s.ledger?.paid && !isZero(s.ledger.paid) ? wnear(s.ledger.paid) : null;
+  const check = d?.rules?.anchor?.check;
   return (
     <tr>
       <Cell label="Program" lead>
-        <Link href={`/programs/${s.program_id}`} className={styles.progLink}>
+        <Link href={`/programs/${s.program_id}`} className={`${styles.progLink} ${styles.stretch}`}>
           <span className={styles.progId}>Program {s.program_id}</span>
-          <span className={styles.progName}>{s.name || `Program ${s.program_id}`}</span>
+          <span className={styles.progName}>
+            <ProgramName name={s.name || `Program ${s.program_id}`} />
+          </span>
         </Link>
-        <span className={styles.sub}>{s.project}</span>
+        <span className={styles.progMeta}>
+          <ProgramKindBadge kind={kind} size="sm" />
+          <span className="xsmall muted">{s.project}</span>
+        </span>
         {!detail.ok ? <span className={styles.sub}>Details unavailable right now ({detail.error}).</span> : null}
+        <Icon name="arrow" size={16} className={styles.chev} />
       </Cell>
-      <Cell label="Kind">
-        <ProgramKindBadge kind={kind} size="sm" />
+
+      {/* Phones and tablets: the same facts as two lines; the program page has the detail. */}
+      <td className={styles.dirSummary}>
+        <span className="small">
+          {phaseOf(s.phase).text} · round {round ?? "—"} · {check ? (anchorConfirmed(check) ? "light-client confirmed" : "project-attested") : "anchor not read"}
+        </span>
+        <span className="small muted">
+          {coverage === null ? (
+            "Escrow coverage: —"
+          ) : coverage < 1 ? (
+            <>
+              Escrow: {coverageText(coverage)} the largest payout{largest ? ` (${wnear(largest)})` : ""}, <strong>below it</strong>
+            </>
+          ) : (
+            `Escrow: ${coverageText(coverage)} the largest payout${largest ? ` (${wnear(largest)})` : ""}`
+          )}
+        </span>
+        {commits !== null ? (
+          <span className="small muted">
+            {paid ?? "—"} of {commits} {commits === 1 ? "commit" : "commits"} paid
+          </span>
+        ) : null}
+      </td>
+
+      <Cell label="Phase · round" className={styles.dirWide}>
+        <span className={styles.phaseRound}>
+          <PhaseBadge phase={s.phase} size="sm" />
+          <span className="num">round {round ?? "—"}</span>
+        </span>
       </Cell>
-      <Cell label="Phase">
-        <PhaseBadge phase={s.phase} size="sm" />
+      <Cell label="Anchor" className={styles.dirWide}>
+        {d ? <AnchorBadge check={check} size="sm" /> : <span className="muted">—</span>}
       </Cell>
-      <Cell label="Round">
-        <span className="num">{typeof s.round === "number" ? s.round : "—"}</span>
-      </Cell>
-      <Cell label="Anchor">
-        <div className={styles.stack6}>
-          {d ? <AnchorBadge check={d.rules?.anchor?.check} size="sm" /> : <span className="muted">—</span>}
-          {chainId && block ? (
-            <span className="xsmall muted num">
-              {chainName(chainId)} block {block}
-            </span>
-          ) : null}
-        </div>
-      </Cell>
-      <Cell label="Escrow coverage">
+      <Cell label="Escrow coverage" className={styles.dirWide}>
         <CoverageBar coverage={coverage} available={s.ledger?.available} largest={largest} />
       </Cell>
-      <Cell label="Largest payout">
-        <span className="num">{largest ? wnear(largest) : "—"}</span>
-      </Cell>
-      <Cell label="Commits">
-        <span className="num">{typeof s.commits === "number" ? s.commits : "—"}</span>
-      </Cell>
-      <Cell label="Payouts">
-        <span className="num">{typeof d?.record?.paid_findings === "number" ? d.record.paid_findings : "—"}</span>
-        {s.ledger?.paid && !isZero(s.ledger.paid) ? <span className={styles.sub}>{wnear(s.ledger.paid)} in all</span> : null}
+      <Cell label="Commits · payouts" className={styles.dirWide}>
+        <span className={`num ${styles.nowrap}`}>{commits !== null ? `${commits} ${commits === 1 ? "commit" : "commits"}` : "—"}</span>
+        <span className={`${styles.sub} ${styles.nowrap}`}>
+          {paid !== null ? `${paid} paid` : "payouts —"}
+          {paidAmount ? ` · ${paidAmount}` : ""}
+        </span>
       </Cell>
     </tr>
   );
@@ -71,8 +93,8 @@ function ProgramRow({ summary: s, detail }: Row) {
 
 function ProgramsTable({ rows, caption }: { rows: Row[]; caption: string }) {
   return (
-    <div className={`table-wrap ${styles.cardsWrap}`}>
-      <table className={`table ${styles.rtable}`}>
+    <div className={`table-wrap ${styles.dirWrap}`}>
+      <table className={`table ${styles.dirTable}`}>
         <caption className="visually-hidden">{caption}</caption>
         <thead>
           <tr>
@@ -165,10 +187,19 @@ export async function ProgramsDirectory() {
       {earlier.length ? (
         <Section
           id="earlier"
-          title="Earlier runs on the same locked deployment"
-          lede="The same story, run before the recorded one on the same contracts. Their records stay on NEAR; the recorded results cover programs 5, 6 and 7 only."
+          title="Earlier runs on the same contracts"
+          lede={
+            <>
+              Programs 0 to 3 are the staging run of {STAGING_RUN.date}, on the same contracts before the lock (
+              <a href={sourceUrl(STAGING_RUN.results_file)} target="_blank" rel="noreferrer noopener">
+                its results file <Icon name="external" size={11} className={styles.inlineIcon} />
+              </a>
+              ). Program 4 is an earlier run, before the recorded one. Their records stay on NEAR; the recorded run on the locked
+              deployment is programs 5, 6 and 7.
+            </>
+          }
         >
-          <ProgramsTable rows={earlier} caption="Programs from earlier runs on the same locked deployment" />
+          <ProgramsTable rows={earlier} caption="Programs from earlier runs on the same contracts" />
         </Section>
       ) : null}
 

@@ -68,7 +68,7 @@ const steps: Step[] = [
         <div className={styles.option}>
           <h4>From a draft you review</h4>
           <p>
-            Deterministic and offline (add <code>--ai</code> for a model&apos;s extension). It writes a compiling rules contract,
+            Deterministic and offline (add <code className="nowrap">--ai</code> for a model&apos;s extension). It writes a compiling rules contract,
             suggested severities, a <code>REVIEW.md</code> of what each rule assumes, and a bundle that changes nothing. Nothing
             is binding until you commit it (<DocLink path="docs/invariants-drafting.md">docs/invariants-drafting.md</DocLink>).
           </p>
@@ -84,7 +84,7 @@ const steps: Step[] = [
     title: "Choose where it runs",
     after: (
       <>
-        <div className={styles.options}>
+        <div className={`${styles.options} ${styles.optionsFit}`}>
           <div className={styles.option}>
             <h4>A deployment</h4>
             <p>
@@ -111,11 +111,13 @@ const steps: Step[] = [
             />
           </div>
         </div>
-        <p className={styles.stepText}>
-          For pausing and releases, put your proxies behind the program&apos;s{" "}
-          <DocLink path="contracts/evm/src/antibody/AntibodyAdapter.sol">AntibodyAdapter</DocLink>, one per chain at the same
-          CREATE2 address, and register it with near-guardian.
-        </p>
+        <div className={styles.stepText}>
+          <p>
+            For pausing and releases, put your proxies behind the program&apos;s{" "}
+            <DocLink path="contracts/evm/src/antibody/AntibodyAdapter.sol">AntibodyAdapter</DocLink>, one per chain at the same
+            CREATE2 address, and register it with near-guardian.
+          </p>
+        </div>
       </>
     ),
   },
@@ -142,7 +144,7 @@ const steps: Step[] = [
       },
       {
         cmd: "antibody invariants strength --project <foundry dir> --test <your strength test> --mutate src/X.sol",
-        note: "Optional. It mutates your code one line at a time in labeled ways (a missing access check, a flipped comparison, an unchecked transfer, a dropped guard) and counts the mutants your rules catch under your Foundry invariant test.",
+        note: "Optional. It mutates your code one line at a time in labelled ways (a missing access check, a flipped comparison, an unchecked transfer, a dropped guard) and counts the mutants your rules catch under your Foundry invariant test.",
       },
     ],
     after: (
@@ -222,9 +224,10 @@ const steps: Step[] = [
     body: (
       <p>
         Commit the fix as code at the same anchor: the TEE checks it, and every paid proof is re-run against it. A round may
-        change target code and append rules (<code>--invariants-code</code>, <code>--add-slot</code>); everything else stays
-        byte-identical. The release gate holds when every paid proof re-run at the fix fails, the canaries pass and no Critical
-        or High key is open. Then near-guardian signs a release permit per proxy and chain, for exactly the code the re-runs ran (
+        change target code and append rules (<code className="nowrap">--invariants-code</code>,{" "}
+        <code className="nowrap">--add-slot</code>); everything else stays byte-identical. The release gate holds when every
+        paid proof re-run at the fix fails, the canaries pass and no Critical or High key is open. Then near-guardian signs a
+        release permit per proxy and chain, for exactly the code the re-runs ran (
         <DocLink path="docs/rounds.md">docs/rounds.md</DocLink>).
       </p>
     ),
@@ -395,7 +398,7 @@ export default function ProjectsPage() {
               <li>
                 <NotYet />
                 <span>
-                  For pull requests (roadmap item 1): a GitHub Action, then a GitHub App, re-runs every paid proof of a program
+                  For pull requests (roadmap item 1): a CI check, then a repository app, re-runs every paid proof of a program
                   against each pull request&apos;s build, sealed ones inside the TEE, and the check goes red if one still breaks a
                   rule.
                 </span>
@@ -451,7 +454,11 @@ export default function ProjectsPage() {
               <span>A bond is refunded, or forfeited to the program&apos;s own escrow (property 7): never to us.</span>
               <Check
                 check={{ kind: "api", path: "/v1/programs" }}
-                expect={{ path: "programs.5.ledger.forfeits", says: "each program's ledger counts its forfeits in its own escrow: see programs.5.ledger" }}
+                expect={{
+                  path: "programs.5.ledger.forfeits",
+                  equals: "1000000000000000000000",
+                  says: "program 5's ledger counts commit 15's forfeited bond, 0.001 wNEAR, in its own escrow",
+                }}
                 cli={`curl -s ${config.apiBase}/v1/programs`}
                 label="Read the ledgers"
               />
@@ -484,7 +491,7 @@ export default function ProjectsPage() {
         <Roadmap />
       </Section>
 
-      <PilotCta id="pilot" role="project" title="Ask for a pilot" cta="Ask for a pilot" secondary={{ href: "/agents", label: "For hunters and agents" }}>
+      <PilotCta id="pilot" role="project" title="Ask for a pilot" cta="Ask for a pilot" secondary={{ href: "/pilot", label: "I hunt or run an agent" }}>
         Tell us about your contracts, the chains they run on and your timeline. We reply about a pilot; your details stay on our
         server and are never published.
       </PilotCta>

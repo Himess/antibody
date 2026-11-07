@@ -1,3 +1,4 @@
+import { shortHash } from "@/lib/format";
 import { Icon } from "./Icon";
 import styles from "./ui.module.css";
 
@@ -14,7 +15,11 @@ export function VerdictStamp({ kind, slots, severity, receipt }: { kind: string 
         {!kind ? "awaiting the verifier" : slots && slots.length ? `slot ${slots.join(", ")}` : "no rule broken"}
         {kind && severity ? ` · ${severity}` : ""}
       </span>
-      {receipt ? <span className={styles.stampMeta}>receipt {receipt.slice(0, 12)}…</span> : null}
+      {receipt ? (
+        <span className={styles.stampMeta} title={receipt}>
+          receipt <span className={styles.stampHash}>{shortHash(receipt, 12)}</span>
+        </span>
+      ) : null}
     </div>
   );
 }

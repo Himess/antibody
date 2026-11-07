@@ -12,10 +12,13 @@
   gap: 8px 12px;
 }
 
+/* The described call wraps at its spaces and its <wbr>s. A part wider than the line still breaks inside, and
+   min-width: 0 lets it shrink to the line, so a phone never scrolls sideways. */
 .what {
+  min-width: 0;
   font-size: var(--fs-xs);
   color: var(--ink-3);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .result {
@@ -23,6 +26,12 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
+}
+
+/* The value the check read, above the raw answer. */
+.checked {
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .raw {

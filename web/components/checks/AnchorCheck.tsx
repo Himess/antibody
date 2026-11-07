@@ -138,6 +138,13 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
 
   return (
     <div className="stack" style={{ ["--gap" as string]: "12px" }}>
+      <div className="row" style={{ ["--gap" as string]: "10px" }}>
+        <button type="button" className="btn btn-sm" onClick={run} disabled={state.status === "running"} aria-busy={state.status === "running"}>
+          <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
+          {state.status === "running" ? "Checking…" : state.status === "idle" ? "Run the anchor check" : "Run again"}
+        </button>
+        <span className="xsmall muted">Two reads by your browser: a NEAR view call and a {chain} RPC call.</span>
+      </div>
       <dl className={styles.anchorRows}>
         <div className={styles.anchorRow}>
           <dt>
@@ -148,7 +155,7 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
           </dt>
           <dd>{expected}</dd>
         </div>
-        <div className={styles.anchorRow}>
+        <div className={`${styles.anchorRow} ${lc ? "" : styles.anchorRowIdle}`}>
           <dt>
             <span>
               NEAR&apos;s light client, <span className="mono">{lightClient}</span>
@@ -171,9 +178,9 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
               </Pill>
             ) : null}
           </dt>
-          <dd>{lc ? (lc.ok ? (lcHash ?? "None: outside its window") : lc.error) : <span className="muted">not read yet</span>}</dd>
+          <dd>{lc ? (lc.ok ? (lcHash ?? "None: outside its window") : lc.error) : <span className="muted">read when you run the check</span>}</dd>
         </div>
-        <div className={styles.anchorRow}>
+        <div className={`${styles.anchorRow} ${eth ? "" : styles.anchorRowIdle}`}>
           <dt>
             <span>{chain}&apos;s own block, from a public RPC</span>
             {ethEqual === true ? (
@@ -190,16 +197,9 @@ export function AnchorCheck({ block, expected, lightClient, chainId, program }: 
               </Pill>
             ) : null}
           </dt>
-          <dd>{eth ? (eth.ok ? eth.value.hash : eth.error) : <span className="muted">not read yet</span>}</dd>
+          <dd>{eth ? (eth.ok ? eth.value.hash : eth.error) : <span className="muted">read when you run the check</span>}</dd>
         </div>
       </dl>
-      <div className="row" style={{ ["--gap" as string]: "10px" }}>
-        <button type="button" className="btn btn-sm" onClick={run} disabled={state.status === "running"} aria-busy={state.status === "running"}>
-          <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
-          {state.status === "running" ? "Checking…" : state.status === "idle" ? "Run the anchor check" : "Run again"}
-        </button>
-        <span className="xsmall muted">Two reads by your browser: a NEAR view call and an {chain} RPC call.</span>
-      </div>
       <div aria-live="polite" className="stack" style={{ ["--gap" as string]: "8px" }}>
         {verdict ? (
           <>

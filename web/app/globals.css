@@ -29,7 +29,12 @@
   --t2-soft: #ece6f8;
   --sealed-a: #d6d9d3;
   --sealed-b: #e7e9e4;
+  /* Neutral and pending pills: in dark mode the sunk background is darker than a card, so they get a lifted fill. */
+  --pill: var(--bg-sunk);
+  --pill-line: var(--line);
   --shadow: 0 1px 0 rgb(12 14 15 / 4%), 0 8px 24px -12px rgb(12 14 15 / 12%);
+  /* The edge of a table that scrolls sideways: stronger in dark mode, where a faint one would not show. */
+  --scroll-shadow: rgb(12 14 15 / 14%);
   --focus: #0a6690;
 
   --font-sans: var(--font-instrument), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -85,7 +90,10 @@
     --t2-soft: #1d1730;
     --sealed-a: #22262a;
     --sealed-b: #191c1f;
+    --pill: #1d2023;
+    --pill-line: var(--line-strong);
     --shadow: 0 1px 0 rgb(0 0 0 / 40%), 0 10px 30px -14px rgb(0 0 0 / 70%);
+    --scroll-shadow: rgb(0 0 0 / 60%);
     --focus: #5bbdea;
   }
 }
@@ -115,7 +123,10 @@
   --t2-soft: #1d1730;
   --sealed-a: #22262a;
   --sealed-b: #191c1f;
+  --pill: #1d2023;
+  --pill-line: var(--line-strong);
   --shadow: 0 1px 0 rgb(0 0 0 / 40%), 0 10px 30px -14px rgb(0 0 0 / 70%);
+  --scroll-shadow: rgb(0 0 0 / 60%);
   --focus: #5bbdea;
 }
 
@@ -147,7 +158,17 @@ body {
 img,
 svg {
   display: block;
+}
+
+/* Images and fluid SVGs scale down with their box. An icon (an SVG with a width attribute) keeps its size:
+   a percentage max-width would let it collapse to a dot in table cells and wrapped flex rows. */
+img,
+svg:not([width]) {
   max-width: 100%;
+}
+
+svg[width] {
+  flex: none;
 }
 
 a {
@@ -297,8 +318,16 @@ pre {
   padding-block: clamp(40px, 6vw, 88px);
 }
 
-.section + .section {
+.section + .section,
+.block {
   border-top: 1px solid var(--line);
+}
+
+/* On a padded .page box, a section's rule spans its content, not the gutters. */
+.section + .section.page,
+.block.page {
+  border-top: 0;
+  background: linear-gradient(var(--line), var(--line)) top center / calc(100% - 2 * var(--gutter)) 1px no-repeat;
 }
 
 .eyebrow {
@@ -325,6 +354,11 @@ pre {
 
 .xsmall {
   font-size: var(--fs-xs);
+}
+
+/* A token that must not split across lines: a flag, a timestamp. */
+.nowrap {
+  white-space: nowrap;
 }
 
 .prose {
@@ -539,12 +573,19 @@ pre {
   border-bottom: 0;
 }
 
+/* A table wider than its box scrolls inside it, and a soft shadow on an edge says there is more that way.
+   The two covers scroll with the table and hide each shadow once its edge is reached. */
 .table-wrap {
   position: relative;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--bg-elev);
+  background:
+    linear-gradient(to right, var(--bg-elev) 30%, transparent) left / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--bg-elev) 30%, transparent) right / 24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left / 10px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right / 10px 100% no-repeat scroll;
+  background-color: var(--bg-elev);
 }
 
 /* The sealed proof: an object you can see but not read. */
@@ -855,9 +896,14 @@ main {
   margin: 0;
 }
 
-.breadcrumbs li + li::before {
+/* The separator ends each crumb but the last, so a wrapped line never starts with "/". */
+.breadcrumbs li {
+  white-space: nowrap;
+}
+
+.breadcrumbs li:not(:last-child)::after {
   content: "/";
-  margin-right: 6px;
+  margin-left: 6px;
   color: var(--line-strong);
 }
 
@@ -874,7 +920,6 @@ main {
 
 .block {
   padding-block: clamp(28px, 4vw, 48px);
-  border-top: 1px solid var(--line);
 }
 
 .block-head {
@@ -888,6 +933,12 @@ main {
 
 .block-lede {
   max-width: 72ch;
+}
+
+/* A section's lede explains what follows: body size, not caption size. */
+.block-head .block-lede {
+  font-size: var(--fs-base);
+  color: var(--ink-2);
 }
 
 .anchor {
@@ -911,6 +962,11 @@ main {
   background: var(--bg-sunk);
   font-size: var(--fs-sm);
   color: var(--ink-2);
+}
+
+/* The icon sits on the first line of text, however many lines follow. */
+.callout > svg {
+  margin-top: 2px;
 }
 
 .callout-warn {

@@ -39,6 +39,8 @@ export const RELEASE = extract as unknown as ReleaseExtract;
 /** guard.antibody.testnet, the verdict consumer: a DAO treasury the Acme project owns, watching program 5. */
 export const GUARD = {
   results_file: "docs/results/testnet-2026-11-04.json",
+  /** verdict_consumer.note: "added on 2026-11-06 … on the same run"; docs/verdict-guard.md: "after the story ran". */
+  added: "2026-11-06",
   watched_program: 5,
   owner: "acme.antibody.testnet",
   code_hash: "7Wotb7nnbSnZnC8Dbx6iSCB785Dojai2HoVq7AqCbsdh",

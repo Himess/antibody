@@ -9,7 +9,7 @@ import { Time } from "@/components/ui/Time";
 import { AccountLink, TxLink } from "@/components/ui/TxLink";
 import type { FeedRow, ProgramDetail, Result, T2Badge, T2Panel } from "@/lib/api";
 import { t2NotYet } from "@/lib/api";
-import { isZero, slotName, whoLabel, type ProgramKind, type SlotView } from "./helpers";
+import { feedIsTries, isZero, slotName, whoLabel, type ProgramKind, type SlotView } from "./helpers";
 import { wnear } from "@/lib/format";
 import { Cell } from "./Cell";
 import styles from "./programs.module.css";
@@ -40,7 +40,8 @@ function FeedRowView({
   promotedIn: number | undefined;
   txOf: (event: string, commit: number) => { tx: string; explorer?: string } | undefined;
 }) {
-  const who = whoLabel(r.hunter);
+  const who = whoLabel(r.hunter, r.program_id);
+  const paidTo = whoLabel(r.beneficiary, r.program_id);
   const keys = r.verdict?.keys ?? [];
   const committed = txOf("commit", r.commit_id);
   const paid = txOf("paid", r.commit_id);
@@ -51,7 +52,9 @@ function FeedRowView({
           <span className={styles.progName}>Commit {r.commit_id}</span>
         </Link>
         <span className={styles.sub}>
-          #{r.index} in commit order · round {r.round}
+          <span className="nowrap">
+            #{r.index} · round {r.round}
+          </span>
         </span>
       </Cell>
       <Cell label="Who">
@@ -60,14 +63,14 @@ function FeedRowView({
         {r.beneficiary && r.beneficiary !== r.hunter ? (
           <span className={styles.sub}>
             paid to {r.beneficiary}
-            {whoLabel(r.beneficiary) ? ` (${whoLabel(r.beneficiary)})` : ""}
+            {paidTo ? ` (${paidTo})` : ""}
           </span>
         ) : null}
       </Cell>
       <Cell label="When">
         <Time t={r.committed_at} />
         {committed ? (
-          <span className={styles.sub}>
+          <span className={`${styles.sub} nowrap`}>
             <TxLink hash={committed.tx} href={committed.explorer} />
           </span>
         ) : null}
@@ -102,7 +105,7 @@ function FeedRowView({
       <Cell label="Payout">
         <span className="num">{r.paid_raw && !isZero(r.paid_raw) ? wnear(r.paid_raw) : "—"}</span>
         {paid && r.paid_raw && !isZero(r.paid_raw) ? (
-          <span className={styles.sub}>
+          <span className={`${styles.sub} nowrap`}>
             <TxLink hash={paid.tx} href={paid.explorer} />
           </span>
         ) : null}
@@ -115,35 +118,56 @@ function FeedRowView({
  * 7. The sealed feed: who committed when, the state, the verdict and the payout. Never the proof: it stays
  * sealed until disclosure, and the project reads only the proofs it pays for.
  */
-export function CommitFeed({ d, id, kind, slots, t2 }: { d: ProgramDetail; id: number; kind: ProgramKind; slots: SlotView[]; t2: Result<T2Panel> }) {
+export function CommitFeed({
+  d,
+  id,
+  kind,
+  slots,
+  t2,
+  practiceProgram,
+}: {
+  d: ProgramDetail;
+  id: number;
+  kind: ProgramKind;
+  slots: SlotView[];
+  t2: Result<T2Panel>;
+  practiceProgram: number | null;
+}) {
   const rows = [...(d.commits ?? [])].sort((a, b) => a.index - b.index);
-  const practice = kind === "practice" || kind === "fork";
+  // Titled by what its rows are: practice tries, or (our fixture agents' commits included) the sealed feed.
+  const tries = feedIsTries(rows, kind, practiceProgram === id);
   const events = d.events ?? [];
   const txOf = (event: string, commit: number) => {
     const e = events.find((x) => x.event === event && x.data?.commit_id === commit);
     return e ? { tx: e.tx, explorer: e.explorer } : undefined;
   };
   const withT2 = rows.filter((r) => r.verdict?.t2).length;
+  // As on the landing: near-t2 on testnet with no record yet is still "not yet on testnet", never "0 with a T2 record".
+  const t2Records = t2.ok && Array.isArray(t2.data?.records) ? t2.data.records.length : 0;
   const promoted = new Map<number, number>();
   for (const round of d.program?.rounds ?? []) for (const c of round.promoted ?? []) promoted.set(c, round.round);
 
   return (
     <Section
       id="feed"
-      title={practice ? "The tries" : "The sealed feed"}
+      title={tries ? "The tries" : "The sealed feed"}
       lede={
-        practice
-          ? "Every proof committed to this tutorial, practice tries labelled as such. Rules: who, when, the state, the verdict and the payout; never the proof."
-          : "Every commit in order. Rules: who, when, the state, the verdict and the payout; never the proof. A proof stays sealed until disclosure, and the project reads only the proofs it pays for."
+        tries
+          ? "Every proof committed to this tutorial, practice tries labelled as such: who, when, the state, the verdict and the payout; never the proof."
+          : "Every commit in order: who, when, the state, the verdict and the payout; never the proof. A proof stays sealed until disclosure, and the project reads only the proofs it pays for."
       }
       actions={
-        t2.ok ? (
+        withT2 > 0 ? (
           <Pill tone="t2" size="sm">
             {withT2} with a T2 record
           </Pill>
-        ) : t2NotYet(t2) ? (
+        ) : (t2.ok && t2Records === 0) || t2NotYet(t2) ? (
           <Pill tone="pending" size="sm" title="T2: a validity proof of a disclosed verdict. No privacy claim; payouts do not depend on it.">
             T2: not yet on testnet
+          </Pill>
+        ) : t2.ok ? (
+          <Pill tone="pending" size="sm" title="near-t2 is on testnet; none of these commits has a record yet">
+            T2: no record yet
           </Pill>
         ) : (
           <Pill tone="pending" size="sm">
@@ -156,7 +180,7 @@ export function CommitFeed({ d, id, kind, slots, t2 }: { d: ProgramDetail; id: n
         <div className="stack">
           <div className={`table-wrap ${styles.cardsWrap}`}>
             <table className={`table ${styles.rtable}`}>
-              <caption className="visually-hidden">{practice ? "The tries" : "The sealed feed"}, in commit order</caption>
+              <caption className="visually-hidden">{tries ? "The tries" : "The sealed feed"}, in commit order</caption>
               <thead>
                 <tr>
                   <th scope="col">Commit</th>
@@ -176,14 +200,14 @@ export function CommitFeed({ d, id, kind, slots, t2 }: { d: ProgramDetail; id: n
             </table>
           </div>
           <p className="small muted">
-            A key is a rule and the function where it broke: the first proof of each key is paid, a later one is a duplicate that
+            A key is a rule and the entry point that broke it: the first proof of each key is paid; a later one is a duplicate that
             keeps its own proof record. Each commit&apos;s page shows its proof card and how to check it.
           </p>
           <Command label="CLI command">{`antibody status --program ${id}`}</Command>
         </div>
       ) : (
         <Empty>
-          {practice ? (
+          {tries ? (
             <>
               No try yet. <Link href="/try">Run the first one</Link>: no account, no key.
             </>

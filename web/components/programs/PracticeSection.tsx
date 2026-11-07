@@ -5,6 +5,7 @@ import { LiveCheck } from "@/components/ui/LiveCheck";
 import { Section } from "@/components/ui/PageHead";
 import type { ProgramDetail } from "@/lib/api";
 import { config, sourceUrl } from "@/lib/config";
+import { tryLabel } from "./helpers";
 import styles from "./programs.module.css";
 
 const SEPOLIA = 11155111;
@@ -37,7 +38,7 @@ export function PracticeSection({ d, id, fork, practiceProgram }: { d: ProgramDe
           </p>
           <div className="row">
             <Link href="/try" className="btn btn-primary btn-sm">
-              Try it, no account <Icon name="arrow" size={12} />
+              {tryLabel(id, practiceProgram)} <Icon name="arrow" size={12} />
             </Link>
             <a href={sourceUrl("docs/practice.md")} target="_blank" rel="noreferrer noopener" className="btn btn-sm btn-ghost">
               docs/practice.md <Icon name="external" size={12} />
@@ -46,7 +47,10 @@ export function PracticeSection({ d, id, fork, practiceProgram }: { d: ProgramDe
           <Command label="CLI command">{"antibody try --name <you>"}</Command>
           <p className="xsmall muted">
             {practiceProgram === id ? (
-              "The browser try and the CLI both use this program; each try lands in the feed above. In the recorded run a try took about 44 s from vend to payout."
+              <>
+                The browser try and the CLI both use this program; each try lands in <a href="#feed">The tries</a>, below. In the
+                recorded run a try took about 44 s from vend to payout.
+              </>
             ) : practiceProgram !== null ? (
               <>
                 The browser try and the CLI use the practice vending contract&apos;s program,{" "}

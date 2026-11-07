@@ -1,5 +1,7 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { KindBadge, StateBadge, TierBadge } from "@/components/ui/Badges";
+import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Time } from "@/components/ui/Time";
@@ -9,6 +11,23 @@ import type { CommitDetail, ProgramDetail, VerdictKey } from "@/lib/api";
 import { wnear } from "@/lib/format";
 import { bondFate, numOf, slotInfo, slotName, stateData, strOf, type ProgramInfo, who } from "./model";
 import styles from "./commit.module.css";
+
+/** A gap claim a round promoted and paid: the round, and the re-run that caught it (its run, its round and the slots it broke). */
+export interface GapPaid {
+  round: number | null;
+  rerun: number | null;
+  rerunRound: number | null;
+  slots: string;
+}
+
+/** "gap claim · promoted at round 1": why a NoViolation was paid, said where the state is shown. */
+export function GapPill({ gap }: { gap: GapPaid }) {
+  return (
+    <Pill tone="info" icon={null}>
+      {gap.round !== null ? `gap claim · promoted at round ${gap.round}` : "gap claim · promoted"}
+    </Pill>
+  );
+}
 
 /** The commit at a glance: where it belongs, who sent it, its state and the verdict as a stamp. */
 export function CommitSummary({
@@ -22,6 +41,7 @@ export function CommitSummary({
   program,
   info,
   moment,
+  gap,
 }: {
   c: CommitDetail;
   label: string;
@@ -33,10 +53,15 @@ export function CommitSummary({
   program: ProgramDetail | null;
   info: ProgramInfo;
   moment: boolean;
+  /** Set when this commit is a gap claim a round promoted and paid. */
+  gap: GapPaid | null;
 }) {
   const commit = c.commit;
+  const hunterIs = who(commit.hunter, commit.program);
+  const beneficiaryIs = who(commit.beneficiary, commit.program);
   const fate = bondFate(label);
   const paidAmount = label === "Done:Paid" ? strOf(stateData(commit.state)?.amount) : null;
+  const receipt = c.proof_card?.receipt_sha256 ?? null;
   const runs: { id: number; what: string }[] = [];
   const add = (v: unknown, what: string) => {
     const n = numOf(v);
@@ -46,8 +71,40 @@ export function CommitSummary({
   add(commit.second, "second run");
   add(commit.rerun, "latest re-run");
   add(commit.wrapped, "release wrap");
+  // Run ids count up across the deployment: in id order, the runs read in the order they happened.
+  runs.sort((a, b) => a.id - b.id);
+  // The Program row's tag already says "our fixture" (and the site's notice says testnet): a callout only
+  // where it adds something, for the practice program and earlier runs.
+  const notes: ReactNode[] = [];
+  if (info.practice)
+    notes.push(
+      <div key="practice" className="callout">
+        <Icon name="info" size={16} />
+        <p>
+          On the practice program: our deliberately vulnerable tutorial, open to anyone with no account. Its payouts are testnet wNEAR, with no value.{" "}
+          <Link href="/try">Try it yourself</Link>
+        </p>
+      </div>,
+    );
+  if (info.earlier)
+    notes.push(
+      <div key="earlier" className="callout">
+        <Icon name="clock" size={16} />
+        <p>Program {commit.program} is from an earlier run on this deployment; the recorded run&apos;s programs are 5, 6 and 7.</p>
+      </div>,
+    );
+  if (moment)
+    notes.push(
+      <div key="moment" className="callout">
+        <Icon name="play" size={16} />
+        <p>
+          This commit is the one moment: its Critical was paid and the fixture paused on both chains. The moment is recorded, not live.{" "}
+          <Link href="/moment">Every step, checked</Link>
+        </p>
+      </div>,
+    );
   return (
-    <div className="page">
+    <div className={`page ${styles.summaryWrap}`}>
       <div className={`card ${styles.summary}`}>
         <dl className={`kv ${styles.facts}`}>
           <dt>Program</dt>
@@ -65,7 +122,7 @@ export function CommitSummary({
           <dd>
             <span className={styles.inline}>
               <AccountLink account={commit.hunter} />
-              {who(commit.hunter) ? <span className="small muted">{who(commit.hunter)}</span> : null}
+              {hunterIs ? <span className="small muted">{hunterIs}</span> : null}
             </span>
           </dd>
           {commit.beneficiary && commit.beneficiary !== commit.hunter ? (
@@ -74,7 +131,7 @@ export function CommitSummary({
               <dd>
                 <span className={styles.inline}>
                   <AccountLink account={commit.beneficiary} />
-                  {who(commit.beneficiary) ? <span className="small muted">{who(commit.beneficiary)}</span> : null}
+                  {beneficiaryIs ? <span className="small muted">{beneficiaryIs}</span> : null}
                 </span>
               </dd>
             </>
@@ -83,6 +140,7 @@ export function CommitSummary({
           <dd>
             <span className={styles.inline}>
               <StateBadge state={label} />
+              {gap ? <GapPill gap={gap} /> : null}
               {label ? (
                 <code className={styles.rawLabel} title="The contract's own state name">
                   {label}
@@ -141,8 +199,18 @@ export function CommitSummary({
         <div className={styles.stampCol}>
           {kind ? (
             <>
-              <VerdictStamp kind={kind} slots={keys.map((k) => k.slot)} severity={severity ?? undefined} receipt={c.proof_card?.receipt_sha256 ?? null} />
-              <p className="xsmall muted">The verdict as a stamp: its kind, the broken slots and the receipt hash that any re-run of the same input reproduces.</p>
+              <VerdictStamp kind={kind} slots={keys.map((k) => k.slot)} severity={severity ?? undefined} />
+              {receipt ? (
+                <span className={`xsmall muted ${styles.inline}`}>
+                  receipt <Hash value={receipt} head={12} label="receipt sha256" />
+                </span>
+              ) : null}
+              {gap ? (
+                <p className="xsmall muted">
+                  No rule broke, but a protected account lost more than the program&apos;s threshold
+                  {gap.rerun !== null ? `; re-run ${gap.rerun}, at round ${gap.rerunRound ?? gap.round ?? "—"}'s fix, broke ${gap.slots || "a rule"}` : ""}.
+                </p>
+              ) : null}
             </>
           ) : (
             <>
@@ -152,37 +220,7 @@ export function CommitSummary({
           )}
         </div>
       </div>
-      <div className={`${styles.notes} ${styles.spaced}`}>
-        {info.practice ? (
-          <div className="callout">
-            <Icon name="info" size={16} />
-            <p>
-              On the practice program: our deliberately vulnerable tutorial, open to anyone with no account. Its payouts are testnet wNEAR, with no
-              value. <Link href="/try">Try it yourself</Link>
-            </p>
-          </div>
-        ) : info.ours && !info.earlier ? (
-          <div className="callout">
-            <Icon name="info" size={16} />
-            <p>{info.name ? `${info.name.replace(/ — .*$/, "")} is` : "This program is"} our deliberately vulnerable test fixture, with planted bugs; wNEAR on testnet has no value.</p>
-          </div>
-        ) : null}
-        {info.earlier ? (
-          <div className="callout">
-            <Icon name="clock" size={16} />
-            <p>Program {commit.program} is from an earlier run on this deployment; the recorded run&apos;s programs are 5, 6 and 7.</p>
-          </div>
-        ) : null}
-        {moment ? (
-          <div className="callout">
-            <Icon name="play" size={16} />
-            <p>
-              This commit is the one moment: its Critical was paid and the fixture paused on both chains. The moment is recorded, not live.{" "}
-              <Link href="/moment">Every step, checked</Link>
-            </p>
-          </div>
-        ) : null}
-      </div>
+      {notes.length ? <div className={`${styles.notes} ${styles.spaced}`}>{notes}</div> : null}
     </div>
   );
 }

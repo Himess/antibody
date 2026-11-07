@@ -26,6 +26,8 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
   const knownShare = num(params.known_max_share_bps);
   const deadline = num(windows.deadline);
   const shownWindows = WINDOWS.filter((w) => typeof windows[w.key] === "number");
+  const minImpact = params.pause_min_impact_usd_micro;
+  const noMinImpact = (typeof minImpact === "string" || typeof minImpact === "number") && isZero(String(minImpact));
 
   return (
     <Section
@@ -37,7 +39,7 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
         <div className="grid grid-2">
           <div className="card stack">
             <h3 className={styles.cardTitle}>Payouts</h3>
-            <div className="table-wrap">
+            <div className={`table-wrap ${styles.inCard}`}>
               <table className="table">
                 <caption className="visually-hidden">The payout table</caption>
                 <thead>
@@ -72,24 +74,43 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
               <dt>Instant payments</dt>
               <dd>
                 <span className="num">up to {money(rules?.instant?.cap_raw)}</span>
-                <span className="xsmall muted">
-                  {" "}
-                  · paid in seconds when the verdict is T1, within {money(rules?.instant?.budget_raw)} per{" "}
-                  {duration(rules?.instant?.window_secs)}. Otherwise a payout waits the challenge window; above the cap it also
-                  needs an agreeing second run.
-                </span>
+                <details className={styles.termMore}>
+                  <summary>When a payout is instant</summary>
+                  <p className="xsmall muted">
+                    Paid in seconds when the verdict is T1, within {money(rules?.instant?.budget_raw)} per {duration(rules?.instant?.window_secs)}.
+                    Otherwise a payout waits the challenge window; above the cap it also needs an agreeing second run.
+                  </p>
+                </details>
               </dd>
               <dt>Challenge bond</dt>
               <dd className="num">{money(params.challenge_bond)}</dd>
               <dt>Protocol fee</dt>
               <dd>
-                <span className="num">{bps(params.protocol_fee_bps)}</span>
-                <span className="xsmall muted"> · taken from each payout</span>
+                {params.protocol_fee_bps === 0 ? (
+                  <>
+                    <span className="num">none</span>
+                    <span className="xsmall muted"> · pinned at 0 for this program</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="num">{bps(params.protocol_fee_bps)}</span>
+                    <span className="xsmall muted"> · taken from each payout</span>
+                  </>
+                )}
               </dd>
               <dt>Release fee</dt>
               <dd>
-                <span className="num">{money(params.release_fee)}</span>
-                <span className="xsmall muted"> · charged per release permit</span>
+                {typeof params.release_fee === "string" && params.release_fee && isZero(params.release_fee) ? (
+                  <>
+                    <span className="num">none</span>
+                    <span className="xsmall muted"> · pinned at 0 for this program</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="num">{money(params.release_fee)}</span>
+                    <span className="xsmall muted"> · charged per release permit</span>
+                  </>
+                )}
               </dd>
               {typeof params.run_deposit === "string" ? (
                 <>
@@ -116,8 +137,8 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
                 {pauseSlots.length ? (
                   <>
                     A T1 proof of {pauseSlots.map((b) => slots.find((s) => s.bit === b)?.name ?? `slot ${b}`).join(", ")}, on a
-                    light-client anchor, pauses the protocol on every chain the project registered (one pause ticket per round), from
-                    a minimum impact of {usdMicro(params.pause_min_impact_usd_micro)}.
+                    light-client anchor, pauses the protocol on every chain the project registered (one pause ticket per round),
+                    {noMinImpact ? " with no minimum impact." : ` from a minimum impact of ${usdMicro(minImpact)}.`}
                   </>
                 ) : (
                   "No rule pauses anything."
@@ -156,8 +177,8 @@ export function TermsSection({ d, slots }: { d: ProgramDetail; slots: SlotView[]
         <div className="card stack">
           <h3 className={styles.cardTitle}>The windows</h3>
           {shownWindows.length || deadline ? (
-            <div className={`table-wrap ${styles.cardsWrap}`}>
-              <table className={`table ${styles.rtable}`}>
+            <div className={`table-wrap ${styles.cardsWrap} ${styles.inCard}`}>
+              <table className={`table ${styles.rtable} ${styles.windows}`}>
                 <caption className="visually-hidden">The program&apos;s windows</caption>
                 <thead>
                   <tr>

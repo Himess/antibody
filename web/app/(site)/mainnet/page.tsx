@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FullHash } from "@/components/checks/FullHash";
 import { Md } from "@/components/checks/Md";
 import styles from "@/components/checks/checks.module.css";
+import { Cell } from "@/components/programs/Cell";
+import rt from "@/components/programs/programs.module.css";
 import { Command } from "@/components/ui/Command";
 import { Icon } from "@/components/ui/Icon";
 import { LiveCheck } from "@/components/ui/LiveCheck";
@@ -36,6 +38,9 @@ function Ext({ href, children, className }: { href: string; children: ReactNode;
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+/** The site's one name for NEAR's signing network: the API's text says "Chain Signatures". */
+const mpc = (s: string) => s.replace(/\bChain Signatures\b/g, "the MPC network");
+
 export default async function MainnetPage() {
   const r = await api.mainnet();
   const data = r.ok ? r.data : null;
@@ -51,6 +56,7 @@ export default async function MainnetPage() {
   return (
     <>
       <PageHead
+        crumbs={[{ href: "/mainnet", label: "How mainnet works" }]}
         eyebrow="How mainnet works"
         title="What a mainnet program would change"
         lede={
@@ -83,14 +89,14 @@ export default async function MainnetPage() {
         </section>
       ) : (
         <>
-          <Section id="same" title="What stays the same" lede={data?.status ? <Md text={`${cap(data.status)}.`} /> : undefined}>
+          <Section id="same" title="What stays the same" lede={data?.status ? <Md text={`${cap(mpc(data.status))}.`} /> : undefined}>
             {data?.same?.length ? (
               <ul className={styles.items}>
                 {data.same.map((s, i) => (
                   <li key={i}>
                     <Icon name="check" size={14} />
                     <span>
-                      <Md text={cap(s)} />
+                      <Md text={cap(mpc(s))} />
                     </span>
                   </li>
                 ))}
@@ -102,8 +108,9 @@ export default async function MainnetPage() {
 
           <Section id="changes" title="What changes" lede="Each part a mainnet program would use, against what testnet uses now.">
             {data?.changes?.length ? (
-              <div className="table-wrap">
-                <table className="table">
+              <div className={`table-wrap ${rt.cardsWrap}`}>
+                <table className={`table ${rt.rtable}`}>
+                  <caption className="visually-hidden">Each part a mainnet program would use, on testnet now and on mainnet</caption>
                   <thead>
                     <tr>
                       <th scope="col">Part</th>
@@ -114,15 +121,15 @@ export default async function MainnetPage() {
                   <tbody>
                     {data.changes.map((c) => (
                       <tr key={c.part}>
-                        <td className={styles.nowrap}>
+                        <Cell label="Part" lead>
                           <strong>{cap(c.part)}</strong>
-                        </td>
-                        <td className={styles.cell}>
-                          <Md text={c.testnet} />
-                        </td>
-                        <td className={styles.cell}>
-                          <Md text={c.mainnet} />
-                        </td>
+                        </Cell>
+                        <Cell label="Testnet, now" className={styles.cell}>
+                          <Md text={mpc(c.testnet)} />
+                        </Cell>
+                        <Cell label="Mainnet" className={styles.cell}>
+                          <Md text={mpc(c.mainnet)} />
+                        </Cell>
                       </tr>
                     ))}
                   </tbody>
@@ -135,7 +142,7 @@ export default async function MainnetPage() {
               <div className="callout" style={{ marginTop: 16 }}>
                 <Icon name="clock" size={16} />
                 <p>
-                  <strong>Latency.</strong> <Md text={`${cap(data.latency)}.`} />
+                  <strong>Latency.</strong> <Md text={`${cap(mpc(data.latency))}.`} />
                 </p>
               </div>
             ) : null}

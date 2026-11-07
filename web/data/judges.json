@@ -254,7 +254,7 @@
   {
    "n": 1,
    "kind": "submission",
-   "claim": "An AI agent's sealed proof, submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
+   "claim": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
    "check": "`antibody status --commit 13`",
    "expected": "`Violation`, tier `T1`, `Done:Paid`, paid 0.1 wNEAR",
    "evidence": "commit [CynCsx8P…](https://testnet.nearblocks.io/txns/CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP), reveal [8yEJyYXg…](https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY), pay [4W4CYBQu…](https://testnet.nearblocks.io/txns/4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ)",
@@ -805,7 +805,7 @@
    "kind": "one_moment",
    "claim": "The one moment: A's verdict pays A and pauses the fixture on both chains",
    "check": "`antibody judge --program 5` (the permits); the times: `python3 scripts/docs/recorded.py one_moment.seconds_from_commit --file docs/results/testnet-2026-11-04.json`",
-   "expected": "2 pause permits; from A's commit block: verdict 18.5 s, T1 29.1 s, paid 71.0 s (its block), pause permits signed at 62.7 s and 62.7 s, paused on 11155111 at 90.6 s and on 84532 at 87.2 s (each chain's own clock; the MPC network signed the permits)",
+   "expected": "2 pause permits; from A's commit block: verdict 18.5 s, T1 29.1 s, paid 71.0 s (its block), pause permits signed at 62.7 s and 62.7 s, paused on 11155111 at 90.6 s and on 84532 at 87.2 s (NEAR steps at their blocks, each pause when the relayer got its receipt; the MPC network signed the permits)",
    "evidence": "11155111: —, 84532: —, 11155111: [0x224f6f77…](https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4), 84532: [0x2bcb96c8…](https://sepolia.basescan.org/tx/0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b)",
    "commands": [
     "antibody judge --program 5",
@@ -1591,6 +1591,10 @@
    {
     "title": "TEE trust is tiered, not removed.",
     "text": "T1 needs DCAP collateral; above the cap a second run and a window are required."
+   },
+   {
+    "title": "Worker images.",
+    "text": "A worker image OutLayer approves later counts for existing programs only after the image delay (2 days on testnet); until then a run on it gets no T1, and its payout waits the challenge window (docs/runbooks/worker-images.md)."
    },
    {
     "title": "Old anchors.",

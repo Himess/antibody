@@ -32,7 +32,7 @@ import {
 } from "./flow";
 import { borshString, checkName, keyFromSeed, publicKeyString, publicVendSeed, TGAS, vendArgs } from "./near-tx";
 import { commitment, openWithKey, practiceContentKey, type Rng } from "./seal";
-import { nextHourMs, parseVendingConfigFull } from "./vending";
+import { nextHourMs, parseVendingConfigFull, parseVendingHour, vendsLeft } from "./vending";
 
 type Json = Record<string, unknown>;
 
@@ -637,6 +637,31 @@ describe("the helpers a try reads the chain with", () => {
     expect(nextHourMs(Date.UTC(2026, 10, 7, 12, 59, 59))).toBe(Date.UTC(2026, 10, 7, 13, 0, 0));
   });
 
+  it("reads the hour's vend count from the vending contract's own state, as testnet holds it", () => {
+    // The start of practice.antibody.testnet's STATE (view_state, block 276623227): get_config's fields, then
+    // hour 498325 (2026-11-06 13:00 UTC) and in_hour 1, then the accounts map's prefix "a" and the account code.
+    const state = base64.decode(
+      "EAAAAGFudGlib2R5LnRlc3RuZXQXAAAAYm91bnR5LmFudGlib2R5LnRlc3RuZXQMAAAAd3JhcC50ZXN0bmV0BgAAABgAAAAAAAB/axCW1Eo7AAAAAAAAAAAA2iuFHwu0VAAAAAAAAAAAQLK6yeAZHgIAAAAAAAAAAKDexa3JNTYAAAAAAAAABgAAAAcAAACVmgcAAAAAAAEAAAABAAAAYUYJAAA=",
+    );
+    const cfg = parseVendingConfigFull(state);
+    expect([cfg.antibody, cfg.programId, cfg.vaults, cfg.terms?.perHour, cfg.vended]).toEqual([ANTIBODY, 6, 24, 6, 7]);
+    const h = parseVendingHour(state, cfg);
+    expect(h).toEqual({ hour: 498325, inHour: 1 });
+    if (!h) return;
+    // The count is the hour's only while that hour lasts: vend starts a new one.
+    expect(vendsLeft(6, h, Date.UTC(2026, 10, 6, 13, 59, 59))).toBe(5);
+    expect(vendsLeft(6, h, Date.UTC(2026, 10, 6, 14, 0, 0))).toBe(6);
+    expect(vendsLeft(6, { hour: 498325, inHour: 6 }, Date.UTC(2026, 10, 6, 13, 30))).toBe(0);
+    // A tab clock a little behind the chain's hour still counts it.
+    expect(vendsLeft(6, h, Date.UTC(2026, 10, 6, 12, 59, 58))).toBe(5);
+    // Another program, a truncated state, or a count over the limit: unknown, never a guess.
+    expect(parseVendingHour(state, { ...cfg, programId: 7 })).toBeUndefined();
+    expect(parseVendingHour(state.subarray(0, 150), cfg)).toBeUndefined();
+    const over = state.slice();
+    over[151] = 7;
+    expect(parseVendingHour(over, cfg)).toBeUndefined();
+  });
+
   it("names commit states and runs as cmd.rs state_label and run_view do", () => {
     const c20 = fixture<{ commit: Json }>("commit-20.json").commit;
     expect(commitStateLabel(c20.state)).toBe("Done:Paid");
@@ -780,29 +805,31 @@ describe("the browser try", () => {
     expect(methods(chain)).toEqual(["vend", "commit", "reveal", "allocate", "pay", "close", "reclaim"]);
   });
 
-  it("takes the T0 path when T1 does not come: waits 300 s, then pays after the challenge window", async () => {
+  it("takes the T0 path when T1 does not come: settles as soon as the challenge window allows", async () => {
     const { chain, flow } = setup();
     chain.t1 = false;
     await flow.start("judge-t0");
     const s = flow.snapshot;
     expect(s.error).toBeUndefined();
-    expect(s.t0Note).toBe("no T1 within 300 s: the verdict stays T0 and is paid after the 60 s challenge window");
+    expect(s.t0Note).toBe("no T1 within the 60 s challenge window: the verdict stays T0 and is paid after it");
     expect(s.steps.t1).toMatchObject({ status: "skipped", detail: s.t0Note });
     expect(s.log.some((l) => l.level === "warn" && l.text === s.t0Note)).toBe(true);
     expect([s.tier, s.state]).toEqual(["T0", "Done:Paid"]);
     const answered = (s.verdict?.answeredAt ?? 0) * 1000;
     const allocate = chain.sent.find((t) => t.method === "allocate");
-    expect((allocate?.at ?? 0) - answered).toBeGreaterThanOrEqual(300_000);
+    // Not before the contract allows a T0 payout, and not the CLI's 300 s later.
+    expect(allocate?.at ?? 0).toBeGreaterThanOrEqual(answered + 65_000);
+    expect((allocate?.at ?? 0) - answered).toBeLessThan(80_000);
     expect(s.t0PayAfter).toBe(answered + 65_000);
   });
 
-  it("on the T0 path waits until the answer, the challenge window and 5 s have passed", async () => {
+  it("with the answer's time unknown, still waits at most t1Secs before the T0 path", async () => {
     const { chain, flow } = setup({ timing: { t1Secs: 20 } });
     chain.t1 = false;
     await flow.start("judge-t0b");
     const s = flow.snapshot;
     expect(s.state).toBe("Done:Paid");
-    expect(s.t0Note).toBe("no T1 within 20 s: the verdict stays T0 and is paid after the 60 s challenge window");
+    expect(s.t0Note).toBe("no T1 within the 60 s challenge window: the verdict stays T0 and is paid after it");
     const answered = (s.verdict?.answeredAt ?? 0) * 1000;
     const allocate = chain.sent.find((t) => t.method === "allocate");
     expect(allocate?.at ?? 0).toBeGreaterThanOrEqual(answered + 65_000);
@@ -934,7 +961,8 @@ describe("the browser try", () => {
   it("stops following on request: no settlement from the tab, and the account closes", async () => {
     const { chain, flow } = setup();
     chain.t1 = false;
-    chain.timers.push({ at: chain.t + 90_000, fn: () => flow.stopFollowing() });
+    // Before the challenge window ends (the T0 path settles at the answer + 65 s).
+    chain.timers.push({ at: chain.t + 40_000, fn: () => flow.stopFollowing() });
     await flow.start("judge-stop");
     const s = flow.snapshot;
     expect(s.error).toBeUndefined();

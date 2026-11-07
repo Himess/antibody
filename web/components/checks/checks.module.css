@@ -34,11 +34,12 @@
   background: var(--bg-elev);
 }
 
+/* The site's step number ("01"), as the numbered steps draw it. */
 .pathNo {
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: var(--fs-lg);
-  line-height: 1;
+  font-size: var(--fs-md);
+  line-height: 1.4;
   color: var(--accent-ink);
 }
 
@@ -129,11 +130,23 @@
 
 .claimHead {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: baseline;
   padding: 16px 16px 12px;
   border-bottom: 1px solid var(--line);
+}
+
+/* The claim's result, once its check has run (in the card or from the index); under the title on a phone. */
+.claimResult {
+  align-self: center;
+}
+
+@media (max-width: 719.98px) {
+  .claimResult {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 @media (min-width: 720px) {
@@ -185,6 +198,7 @@
 .facts {
   display: grid;
   gap: 14px;
+  align-content: start;
   margin: 0;
   min-width: 0;
 }
@@ -244,6 +258,130 @@
   flex-wrap: wrap;
   gap: 4px 14px;
   font-size: var(--fs-sm);
+}
+
+/* README's limits that bound a claim, each a link to its full text in Limits. */
+.limitLinks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+/* What an EVM read reads, over its check. */
+.evmSubject {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------ the claims index */
+
+.index {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 28px;
+  min-width: 0;
+}
+
+.indexHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.tally {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.indexList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+}
+
+.indexRow {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.indexRow + .indexRow {
+  border-top: 1px solid var(--line);
+}
+
+.indexNo {
+  align-self: start;
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.indexMain {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The claim on two lines at most on a phone, one on a wide screen; its card has the whole text. */
+.indexTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 560;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.indexTitle:hover {
+  text-decoration: underline;
+}
+
+.indexMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.indexAct {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (min-width: 900px) {
+  .indexRow {
+    grid-template-columns: 26px minmax(0, 1fr) minmax(13.5rem, auto);
+  }
+  .indexMain {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 12px;
+  }
+  .indexTitle {
+    -webkit-line-clamp: 1;
+  }
+  .indexAct {
+    grid-column: auto;
+  }
 }
 
 .more {
@@ -330,9 +468,10 @@
 
 /* ------------------------------------------------------------ tables */
 
+/* break-word, not anywhere: a column never shrinks to one letter per line; a long value scrolls the table. */
 .cell {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .nowrap {
@@ -461,6 +600,12 @@
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--bg-sunk);
+}
+
+/* Not read yet: a placeholder the check fills. */
+.anchorRowIdle {
+  border-style: dashed;
+  background: transparent;
 }
 
 .anchorRow dt {
@@ -599,6 +744,13 @@
   min-width: 0;
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
+}
+
+/* A count pill that jumps to its list ("5 warnings" → the alerts). */
+.pillLink {
+  display: inline-flex;
+  border-radius: 999px;
+  text-decoration: none;
 }
 
 .refresh {

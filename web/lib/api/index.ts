@@ -25,18 +25,50 @@ export * from "./types";
 export type Result<T> = { ok: true; data: T; at: number } | { ok: false; error: string; status?: number; at: number };
 
 /**
+ * How long one read may take in all, retry included. A run or commit the API has not read for a while can
+ * take over 12 s to answer the first time; a page shows a read as not loaded only after this.
+ */
+const BUDGET_MS = { server: 25_000, browser: 20_000 };
+
+/** A failure that is not an answer (no connection, a 5xx) is worth one more try; a 4xx is the answer. */
+const retryable = (r: Result<unknown>) => !r.ok && (r.status === undefined || r.status >= 500);
+
+/**
  * GET an API path. On the server, answers are kept in the Data Cache for `revalidate` seconds (pages read
- * the API with short revalidation); in the browser, they are always fresh.
+ * the API with short revalidation); in the browser, they are always fresh. A failed read is tried once
+ * more while its time budget lasts.
  */
 export async function get<T>(path: string, revalidate = 15): Promise<Result<T>> {
-  const url = `${config.apiBase}${path}`;
+  const server = typeof window === "undefined";
+  if (typeof window === "undefined") await atRequestTime();
   const at = Date.now();
+  const budget = server ? BUDGET_MS.server : BUDGET_MS.browser;
+  const first = await getOnce<T>(path, revalidate, server, budget, at);
+  const left = budget - (Date.now() - at) - 400;
+  if (!retryable(first) || left < 3_000) return first;
+  await new Promise((r) => setTimeout(r, 400));
+  return getOnce<T>(path, revalidate, server, left, at);
+}
+
+/**
+ * On the server, a read waits for a request. During a build's prerender, `connection()` stops the render
+ * here: every page that reads the API renders at request time anyway (the nonce CSP needs that), and the
+ * build never waits on the API. A cold API once made a build's prerender of /programs pass 60 s. The Data
+ * Cache still keeps each answer for `revalidate` seconds.
+ */
+async function atRequestTime() {
+  const { connection } = await import("next/server");
+  await connection();
+}
+
+async function getOnce<T>(path: string, revalidate: number, server: boolean, timeoutMs: number, at: number): Promise<Result<T>> {
+  const url = `${config.apiBase}${path}`;
   try {
-    const server = typeof window === "undefined";
+    // Our own signal also opts the request out of fetch deduplication, so a retry is a fresh request.
     const res = await fetch(url, {
       headers: { accept: "application/json" },
       ...(server ? { next: { revalidate } } : { cache: "no-store" as const }),
-      signal: AbortSignal.timeout(server ? 12_000 : 20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await res.text();
     let body: unknown = null;

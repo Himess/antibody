@@ -6,14 +6,15 @@ import { Hash } from "@/components/ui/Hash";
 import { Pill } from "@/components/ui/Pill";
 import { Time } from "@/components/ui/Time";
 import { AccountLink, TxLink } from "@/components/ui/TxLink";
+import { VerdictStamp } from "@/components/ui/Verdict";
 import type { IndexedEvent, ProgramDetail } from "@/lib/api";
 import { seconds } from "@/lib/format";
-import { isObj, MODE_WORDS, slotInfo, slotName, strOf, usd, who, type Answered } from "./model";
+import { isObj, isVerdictMode, MODE_WORDS, numOf, slotInfo, slotName, strOf, topSeverity, usd, who, type Answered } from "./model";
 import styles from "./commit.module.css";
 
-function Account({ account, project }: { account: string | null; project: string | null }) {
+function Account({ account, project, program }: { account: string | null; project: string | null; program: number | null }) {
   if (!account) return <span className="muted">—</span>;
-  const w = project && account === project ? "the program's project" : who(account);
+  const w = project && account === project ? "the program's project" : who(account, program);
   return (
     <span className={styles.inline}>
       <AccountLink account={account} />
@@ -22,7 +23,7 @@ function Account({ account, project }: { account: string | null; project: string
   );
 }
 
-/** What the facts' mode-specific `extra` carries: a disclosure wrap, a sealing key, a round check, … */
+/** A verify run's mode-specific `extra`: a disclosure wrap, or none. */
 function Extra({ extra }: { extra: unknown }): ReactNode {
   if (!isObj(extra)) return <span className="small muted">none</span>;
   const parts: ReactNode[] = [];
@@ -30,13 +31,7 @@ function Extra({ extra }: { extra: unknown }): ReactNode {
     if (k === "WrapD")
       parts.push(
         <span key={k} className="small">
-          a disclosure wrap (<code>wrap_d</code>): one key per tag and round opens the proof at disclosure
-        </span>,
-      );
-    else if (k === "SealingKey" && isObj(v))
-      parts.push(
-        <span key={k} className={`small ${styles.inline}`}>
-          the program&apos;s sealing key <Hash value={strOf(v.pk)} head={12} label="sealing public key" /> epoch <code>{strOf(v.epoch) ?? "—"}</code>
+          a disclosure wrap (<code>wrap_d</code>): if its tag and round are disclosed, their key opens the proof
         </span>,
       );
     else
@@ -48,6 +43,68 @@ function Extra({ extra }: { extra: unknown }): ReactNode {
       );
   }
   return parts.length ? <span className="stack" style={{ ["--gap" as string]: "4px" }}>{parts}</span> : <span className="small muted">none</span>;
+}
+
+/** What a run that judges no proof produced (spec §5.2: `sealing_pk`, `round_check`, `wrap`, `disclosed`, `distinct`). */
+function Produced({ mode, extra, project }: { mode: string | null; extra: unknown; project: string | null }): ReactNode {
+  const x = isObj(extra) ? extra : {};
+  const wrap = isObj(x.Wrap) ? strOf(x.Wrap.wrap) : null;
+  if (mode === "release_wrap" && wrap)
+    return (
+      <span className="stack" style={{ ["--gap" as string]: "4px" }}>
+        <span className="small">
+          The proof&apos;s content key, wrapped to the project&apos;s key{project ? <> ({project})</> : null}: {wrap.length / 2} bytes{" "}
+          <Hash value={wrap} head={16} label="the release wrap" />
+        </span>
+        <span className="xsmall muted">
+          Only the project&apos;s key opens it: <code>antibody program read</code> unwraps the content key, opens the proof and re-runs it locally.
+        </span>
+      </span>
+    );
+  const sk = isObj(x.SealingKey) ? x.SealingKey : null;
+  if (mode === "activate" && sk)
+    return (
+      <span className={`small ${styles.inline}`}>
+        The program&apos;s sealing public key <Hash value={strOf(sk.pk)} head={16} label="sealing public key" /> · key epoch <code>{strOf(sk.epoch) ?? "—"}</code>
+      </span>
+    );
+  const rc = isObj(x.RoundCheck) ? x.RoundCheck : null;
+  if (mode === "check_round" && rc)
+    return (
+      <span className="stack" style={{ ["--gap" as string]: "4px" }}>
+        <span className={styles.inline}>
+          <Pill tone={rc.ok === true ? "ok" : "bad"} size="sm">
+            {rc.ok === true ? "valid round" : "round refused"}
+          </Pill>
+          <Pill tone={rc.canaries_ok === true ? "ok" : "bad"} size="sm">
+            {rc.canaries_ok === true ? "canaries succeed" : "canaries fail"}
+          </Pill>
+        </span>
+        <span className="xsmall muted">
+          The TEE checked the proposed fix at the anchor: only target code changed, every rule kept, <code>check()</code> holds, the canaries still succeed,
+          and each release replaces a proxy&apos;s implementation.
+        </span>
+      </span>
+    );
+  const disclosed = isObj(x.Disclosed) && Array.isArray(x.Disclosed.keys) ? x.Disclosed.keys : null;
+  if (mode === "disclose" && disclosed)
+    return (
+      <ul className={styles.keyList}>
+        {disclosed.map((d, i) =>
+          Array.isArray(d) ? (
+            <li key={i}>
+              <span className="small">round {numOf(d[0]) ?? "—"}, tag</span>
+              <Hash value={strOf(d[1])} head={12} label="disclosed tag" />
+              <span className="small">key</span>
+              <Hash value={strOf(d[2])} head={12} label="disclosure key" />
+            </li>
+          ) : null,
+        )}
+      </ul>
+    );
+  if (mode === "distinct" && isObj(x.Distinct))
+    return <span className="small">{x.Distinct.distinct === true ? "Distinct: the patch stops the earlier proof but not this one." : "Not distinct."}</span>;
+  return <Extra extra={extra} />;
 }
 
 export function RunFacts({
@@ -84,62 +141,98 @@ export function RunFacts({
   answered?: IndexedEvent;
 }) {
   const took = a?.at && startedAt ? a.at - startedAt : null;
+  const verdict = isVerdictMode(mode);
+  // A run that judges no proof answers with a fixed NoViolation: its kind is shown only when it says more.
+  const kindShown = verdict || Boolean(failed) || (a ? a.kind !== "NoViolation" : true);
+  const project = strOf(program?.program?.project);
+  const severity = a ? topSeverity(program, a.keys) : null;
   return (
-    <div className="card">
+    <div className={`card ${styles.summary}`}>
       <dl className={`kv ${styles.facts}`}>
         <dt>Mode</dt>
         <dd>
           <code>{mode ?? "—"}</code>
           {mode && MODE_WORDS[mode] ? <div className="small muted">{MODE_WORDS[mode]}</div> : null}
         </dd>
-        <dt>Kind</dt>
-        <dd>
-          {failed ? (
-            <span className={styles.inline}>
-              <Pill tone="warn">failed</Pill>
-              <code className="small">{failed}</code>
-            </span>
-          ) : a ? (
-            <span className={styles.inline}>
-              <KindBadge kind={a.kind} />
-              {a.reason ? <code className="small">{a.reason}</code> : null}
-            </span>
-          ) : (
-            <Pill tone="pending">in flight</Pill>
-          )}
-        </dd>
-        <dt>Keys</dt>
-        <dd>
-          {a?.keys.length ? (
-            <ul className={styles.keyList}>
-              {a.keys.map((k) => {
-                const s = slotInfo(program, k.slot);
-                return (
-                  <li key={`${k.slot}-${k.tag}`}>
-                    <span className="small">
-                      {slotName(program, k.slot)}
-                      {s.severity ? ` · ${s.severity}` : ""}
-                      {s.added ? " (added by a round)" : ""}
-                    </span>
-                    <Hash value={k.tag} head={12} label={`tag of slot ${k.slot}`} />
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <span className="small muted">{a ? "none: no rule broke" : "—"}</span>
-          )}
-        </dd>
-        <dt>Impact</dt>
-        <dd>
-          <span className="num">{usd(a?.impact)}</span> <span className={styles.unit}>fixture USD</span>
-          <div className="xsmall muted">min(protocol loss, attacker gain), at the manifest&apos;s committed prices, in the fixture&apos;s own dollars.</div>
-        </dd>
-        <dt>Protected harm</dt>
-        <dd>
-          <span className="num">{usd(a?.harm)}</span> <span className={styles.unit}>fixture USD</span>
-          <div className="xsmall muted">Loss on the accounts the program declared protected: above its threshold, a proof that breaks no rule is a gap claim.</div>
-        </dd>
+        {kindShown ? (
+          <>
+            <dt>Kind</dt>
+            <dd>
+              {failed ? (
+                <span className={styles.inline}>
+                  <Pill tone="warn">failed</Pill>
+                  <code className="small">{failed}</code>
+                </span>
+              ) : a ? (
+                <span className={styles.inline}>
+                  <KindBadge kind={a.kind} />
+                  {a.reason ? <code className="small">{a.reason}</code> : null}
+                </span>
+              ) : (
+                <Pill tone="pending">in flight</Pill>
+              )}
+            </dd>
+          </>
+        ) : null}
+        {verdict ? (
+          <>
+            <dt>Keys</dt>
+            <dd>
+              {a?.keys.length ? (
+                <ul className={styles.keyList}>
+                  {a.keys.map((k) => {
+                    const s = slotInfo(program, k.slot);
+                    return (
+                      <li key={`${k.slot}-${k.tag}`}>
+                        <span className="small">
+                          {slotName(program, k.slot)}
+                          {s.severity ? ` · ${s.severity}` : ""}
+                          {s.added ? " (added by a round)" : ""}
+                        </span>
+                        <Hash value={k.tag} head={12} label={`tag of slot ${k.slot}`} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <span className="small muted">{a ? (mode === "rerun" ? "none: at this round's code it breaks no rule" : "none: no rule broke") : "—"}</span>
+              )}
+            </dd>
+            {mode === "rerun" ? (
+              <>
+                <dt>Impact</dt>
+                <dd>
+                  <span className="small muted">not published for a re-run</span>
+                  <div className="xsmall muted">
+                    A re-run runs the project&apos;s fix against a proof it may not have paid for: its facts name only the keys that still break, never
+                    the impact or the harm.
+                  </div>
+                </dd>
+              </>
+            ) : (
+              <>
+                <dt>Impact</dt>
+                <dd>
+                  <span className="num">{usd(a?.impact)}</span> <span className={styles.unit}>fixture USD</span>
+                  <div className="xsmall muted">min(protocol loss, attacker gain), at the manifest&apos;s committed prices, in the fixture&apos;s own dollars.</div>
+                </dd>
+                <dt>Protected harm</dt>
+                <dd>
+                  <span className="num">{usd(a?.harm)}</span> <span className={styles.unit}>fixture USD</span>
+                  <div className="xsmall muted">Loss on the accounts the program declared protected: above its threshold, a proof that breaks no rule is a gap claim.</div>
+                </dd>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <dt>What it produced</dt>
+            <dd>
+              {a ? <Produced mode={mode} extra={a.extra} project={project} /> : <span className="muted">{failed ? "nothing: the run failed" : "not yet"}</span>}
+              <div className="xsmall muted">Not a verdict: this run does not judge a proof, so it has no kind, keys or impact of its own.</div>
+            </dd>
+          </>
+        )}
         <dt>Tier</dt>
         <dd>
           <span className={styles.inline}>
@@ -161,7 +254,7 @@ export function RunFacts({
           <Hash value={a?.output} head={16} label="output sha256" />
           <div className="xsmall muted">The SHA-256 of the facts near-antibody received: the TDX quote binds it.</div>
         </dd>
-        {a ? (
+        {a && verdict ? (
           <>
             <dt>Mode extras</dt>
             <dd>
@@ -199,17 +292,27 @@ export function RunFacts({
         </dd>
         <dt>Paid for by</dt>
         <dd>
-          <Account account={payer} project={strOf(program?.program?.project)} />
+          <Account account={payer} project={project} program={programId} />
         </dd>
         {signer && signer !== payer ? (
           <>
             <dt>Signed by</dt>
             <dd>
-              <Account account={signer} project={strOf(program?.program?.project)} />
+              <Account account={signer} project={project} program={programId} />
             </dd>
           </>
         ) : null}
       </dl>
+      {verdict && a ? (
+        <div className={styles.stampCol}>
+          <VerdictStamp kind={a.kind} slots={a.keys.map((k) => k.slot)} severity={severity ?? undefined} />
+          {a.receipt ? (
+            <span className={`xsmall muted ${styles.inline}`}>
+              receipt <Hash value={a.receipt} head={12} label="receipt sha256" />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

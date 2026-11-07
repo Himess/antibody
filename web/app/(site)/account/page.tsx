@@ -8,13 +8,14 @@ import { api } from "@/lib/api";
 export const metadata: Metadata = {
   title: "Your account",
   description:
-    "Connect a NEAR testnet wallet: your credit at near-antibody, your commits and payouts, your agents, and the transactions to change them, each reviewed before your wallet signs. The page keeps no key and never asks for a message signature.",
+    "Connect a NEAR testnet wallet: your credit at near-antibody, your commits and payouts, your agents, and the transactions to change them, each reviewed before your wallet signs. With no wallet, read any account. The page keeps no key and never asks for a message signature.",
 };
 
 /**
  * The account page. The server part renders what needs no wallet (what the page can sign, how the wallet
  * connects, why reading paid proofs stays in the CLI); the client part connects a wallet and reads the
- * account. The contracts the page signs for are fixed in its code; /health is read only to compare.
+ * account, or reads any account read-only (`?view=<id>`). The contracts the page signs for are fixed in its
+ * code; /health is read only to compare.
  */
 export default async function AccountPage() {
   const health = await api.health();
@@ -25,7 +26,7 @@ export default async function AccountPage() {
         crumbs={[{ href: "/account", label: "Account" }]}
         eyebrow="Account · NEAR testnet"
         title="Your account"
-        lede="Your credit at near-antibody, your commits and payouts, your agents, and the transactions that change them, signed by your own wallet after you review each one. Testnet only: wNEAR has no value."
+        lede="Your credit at near-antibody, your commits and payouts, your agents, and the transactions that change them, signed by your own wallet after you review each one."
       >
         {health.ok ? null : (
           <Pill tone="warn" size="sm" title={health.error}>

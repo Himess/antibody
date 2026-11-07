@@ -7,13 +7,26 @@ import { ChainsSection } from "@/components/programs/ChainsSection";
 import { CommitFeed } from "@/components/programs/CommitFeed";
 import { contractsOf, getProgram, getPrograms, getT2 } from "@/components/programs/data";
 import { GuardSection } from "@/components/programs/GuardSection";
-import { parseProgramId, programKind, RECORDED_RUN, runGroup, slotsOf, type ProgramKind } from "@/components/programs/helpers";
+import {
+  feedIsTries,
+  isStagingRun,
+  parseProgramId,
+  programKind,
+  RECORDED_RUN,
+  runGroup,
+  slotsOf,
+  STAGING_RUN,
+  tryLabel,
+  type ProgramKind,
+} from "@/components/programs/helpers";
 import { KnownIssues } from "@/components/programs/KnownIssues";
 import { LedgerSection } from "@/components/programs/LedgerSection";
 import { OnThisPage } from "@/components/programs/OnThisPage";
 import { Overview } from "@/components/programs/Overview";
 import { PracticeSection } from "@/components/programs/PracticeSection";
 import { AnchorBadge, PhaseBadge, ProgramKindBadge, RunBadge } from "@/components/programs/ProgramBadges";
+import { ProgramName } from "@/components/programs/ProgramName";
+import styles from "@/components/programs/programs.module.css";
 import { GUARD } from "@/components/programs/recorded";
 import { RoundsSection } from "@/components/programs/RoundsSection";
 import { RulesSection } from "@/components/programs/RulesSection";
@@ -22,6 +35,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PageHead } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { ErrorState } from "@/components/ui/States";
+import { sourceUrl } from "@/lib/config";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -30,6 +44,15 @@ const DESCRIBE: Record<ProgramKind, string> = {
   practice: "The practice program, a tutorial on NEAR testnet",
   fork: "The practice program in fork mode, a tutorial on NEAR testnet",
   program: "A program on NEAR testnet",
+};
+
+/**
+ * The page's own lede, in plain words (the manifest's description is quoted under Overview). Acme Lend has
+ * none: the fixture callout right under the badges says what it is.
+ */
+const LEDE: Partial<Record<ProgramKind, string>> = {
+  practice: "A tutorial whose bug and proof are public: anyone can run a try on testnet, with no account and no key.",
+  fork: "The practice program in fork mode: its vaults exist only inside the verifier, which deploys them from the manifest on the anchor's state.",
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -62,7 +85,7 @@ export default async function ProgramPage({ params }: Props) {
     if (list.ok && !(list.data?.programs ?? []).some((p) => p.program_id === pid)) notFound();
     return (
       <>
-        <PageHead crumbs={crumbs} eyebrow={`Program ${pid}`} title={`Program ${pid}`} />
+        <PageHead crumbs={crumbs} title={`Program ${pid}`} />
         <section className="page block">
           <ErrorState what={`program ${pid}`} error={r.ok ? "the API answered without the program" : r.error} />
         </section>
@@ -78,6 +101,7 @@ export default async function ProgramPage({ params }: Props) {
   const group = runGroup(pid);
   const moment = recordedMoments.moments.some((m) => m.program_id === pid);
   const guard = pid === GUARD.watched_program;
+  const tries = feedIsTries(d.commits ?? [], kind, contracts.practiceProgram === pid);
   const toc = [
     { id: "overview", label: "Overview" },
     ...(practice ? [{ id: "try", label: "Try it" }] : []),
@@ -86,25 +110,38 @@ export default async function ProgramPage({ params }: Props) {
     { id: "anchor", label: "Anchor" },
     { id: "known", label: "Known issues" },
     { id: "chains", label: "Chains" },
-    { id: "feed", label: practice ? "Tries" : "Sealed feed" },
+    { id: "feed", label: tries ? "Tries" : "Sealed feed" },
     { id: "rounds", label: "Rounds" },
     { id: "ledger", label: "Ledger" },
     ...(guard ? [{ id: "guard", label: "Who acts on it" }] : []),
   ];
+  const lede = LEDE[kind];
 
   return (
     <>
-      <PageHead crumbs={crumbs} eyebrow={`Program ${pid}`} title={name} lede={d.meta?.description || undefined}>
+      <PageHead
+        crumbs={crumbs}
+        title={<ProgramName name={name} />}
+        lede={
+          lede || practice ? (
+            <>
+              {lede ? <p>{lede}</p> : null}
+              {practice ? (
+                <p className={styles.headAction}>
+                  <Link href="/try" className="btn btn-primary">
+                    {tryLabel(pid, contracts.practiceProgram)} <Icon name="arrow" size={14} />
+                  </Link>
+                </p>
+              ) : null}
+            </>
+          ) : undefined
+        }
+      >
         <ProgramKindBadge kind={kind} long />
         <PhaseBadge phase={d.program?.phase} />
         <Pill>round {typeof d.program?.round === "number" ? d.program.round : "—"}</Pill>
         <AnchorBadge check={d.rules?.anchor?.check} />
         <RunBadge id={pid} />
-        {practice ? (
-          <Link href="/try" className="btn btn-sm">
-            Try it, no account <Icon name="arrow" size={12} />
-          </Link>
-        ) : null}
       </PageHead>
 
       <div className="page stack" style={{ ["--gap" as string]: "10px" }}>
@@ -121,9 +158,19 @@ export default async function ProgramPage({ params }: Props) {
           <div className="callout" role="note">
             <Icon name="clock" size={16} />
             <span>
-              An earlier run on the same locked deployment, kept on NEAR. The recorded run ({RECORDED_RUN.date}) is programs{" "}
-              <Link href="/programs/5">5 (Acme Lend)</Link>, <Link href="/programs/6">6 (practice)</Link> and{" "}
-              <Link href="/programs/7">7 (fork mode)</Link>.
+              {isStagingRun(pid) ? (
+                <>
+                  The staging run of {STAGING_RUN.date}, on the same contracts before the lock: its{" "}
+                  <a href={sourceUrl(STAGING_RUN.results_file)} target="_blank" rel="noreferrer noopener">
+                    results file <Icon name="external" size={11} className={styles.inlineIcon} />
+                  </a>{" "}
+                  records near-antibody with <code>locked: false</code>.
+                </>
+              ) : (
+                "An earlier run on the same contracts, before the recorded one, kept on NEAR."
+              )}{" "}
+              The recorded run on the locked deployment ({RECORDED_RUN.date}) is programs <Link href="/programs/5">5 (Acme Lend)</Link>,{" "}
+              <Link href="/programs/6">6 (practice)</Link> and <Link href="/programs/7">7 (fork mode)</Link>.
             </span>
           </div>
         ) : null}
@@ -147,7 +194,7 @@ export default async function ProgramPage({ params }: Props) {
       <AnchorSection d={d} id={pid} lightClient={contracts.lightClient} />
       <KnownIssues d={d} slots={slots} id={pid} antibody={contracts.antibody} />
       <ChainsSection d={d} id={pid} kind={kind} moment={moment} />
-      <CommitFeed d={d} id={pid} kind={kind} slots={slots} t2={t2} />
+      <CommitFeed d={d} id={pid} kind={kind} slots={slots} t2={t2} practiceProgram={contracts.practiceProgram} />
       <RoundsSection d={d} id={pid} slots={slots} antibody={contracts.antibody} />
       <LedgerSection d={d} id={pid} antibody={contracts.antibody} />
       {guard ? <GuardSection guard={contracts.verdictGuard} /> : null}

@@ -6,7 +6,7 @@ export default function RunNotFound() {
     <>
       <PageHead
         crumbs={[{ href: "/programs", label: "Programs" }]}
-        eyebrow="Verification run"
+        eyebrow="Run"
         title="No such run"
         lede="near-antibody has no run with this id. Run ids are numbers, counted from 0 across every program: activations, verifications, re-runs and release wraps alike."
       />

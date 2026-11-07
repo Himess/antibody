@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { KindBadge, TierBadge } from "@/components/ui/Badges";
 import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
@@ -13,8 +14,8 @@ import type { FeedRow, ProgramDetail, Round } from "@/lib/api";
 import { chainName, explorers, sourceUrl } from "@/lib/config";
 import { Cell } from "./Cell";
 import { PermitStatus, PermitTx, targetNames } from "./ChainsSection";
-import { getReflex } from "./data";
-import { findEvent, normHex, proposalOf, rowsWithTag, slotName, whoLabel, type SlotView } from "./helpers";
+import { getReflex, getRun } from "./data";
+import { findEvent, normHex, num, proposalOf, rowsWithTag, slotName, whoLabel, type SlotView } from "./helpers";
 import { LocationView } from "./Location";
 import { RELEASE } from "./recorded";
 import styles from "./programs.module.css";
@@ -54,12 +55,87 @@ function TagItem({ tag, rows, slots }: { tag: string; rows: FeedRow[]; slots: Sl
             <span key={h.commit_id}>
               {i === 0 ? "proven by " : i === 1 ? "; duplicate " : ", "}
               <Link href={`/commits/${h.commit_id}`}>commit {h.commit_id}</Link>
-              {whoLabel(h.hunter) ? ` (${whoLabel(h.hunter)})` : ""}
+              {whoLabel(h.hunter, h.program_id) ? ` (${whoLabel(h.hunter, h.program_id)})` : ""}
             </span>
           ))}
         </span>
       ) : null}
     </li>
+  );
+}
+
+interface Rerun {
+  run: number;
+  commit: number | null;
+}
+
+/**
+ * The re-runs at a round's fix: the program's `run_requested` events in mode `rerun`, after the round's
+ * check run and before the next check (a later proposal's), in run order.
+ */
+function rerunsOf(d: ProgramDetail, checkRun: number | null): Rerun[] {
+  if (checkRun === null) return [];
+  const requested = (d.events ?? []).filter((e) => e.event === "run_requested");
+  const runOf = (data: Record<string, unknown> | undefined) => num(data?.run_id);
+  const next =
+    requested
+      .filter((e) => e.data?.mode === "check_round")
+      .map((e) => runOf(e.data))
+      .filter((n): n is number => n !== null && n > checkRun)
+      .sort((a, b) => a - b)[0] ?? null;
+  return requested
+    .filter((e) => e.data?.mode === "rerun")
+    .map((e) => ({ run: runOf(e.data), commit: num(e.data?.commit_id) }))
+    .filter((x): x is Rerun => x.run !== null && x.run > checkRun && (next === null || x.run < next))
+    .sort((a, b) => a.run - b.run);
+}
+
+/** Each re-run's verdict, read from its run: a proof that breaks nothing at the fix counts as fixed. */
+async function RoundReruns({ reruns, rows }: { reruns: Rerun[]; rows: FeedRow[] }) {
+  const runs = await Promise.all(reruns.map((x) => getRun(x.run)));
+  const verdicts = runs.map((r) => (r.ok ? r.data?.run : null));
+  const fixed = verdicts.filter((v) => v?.kind === "NoViolation").length;
+  const unread = verdicts.filter((v) => !v?.kind).length;
+  return (
+    <div className="stack" style={{ ["--gap" as string]: "8px" }}>
+      <p className="small">
+        <strong className="num">
+          {reruns.length} {reruns.length === 1 ? "re-run" : "re-runs"}
+        </strong>{" "}
+        ({fixed} fixed{unread ? `, ${unread} not read right now` : ""}): each re-ran a sealed proof under this round&apos;s code.
+      </p>
+      <ul className={styles.reruns}>
+        {reruns.map((x, i) => {
+          const v = verdicts[i];
+          const row = x.commit !== null ? rows.find((c) => c.commit_id === x.commit) : undefined;
+          const who = row ? whoLabel(row.hunter, row.program_id) : null;
+          return (
+            <li key={x.run}>
+              <span className="small">
+                <Link href={`/runs/${x.run}`}>run {x.run}</Link>
+                {x.commit !== null ? (
+                  <>
+                    {" "}
+                    re-ran <Link href={`/commits/${x.commit}`}>commit {x.commit}</Link>
+                    {who ? ` (${who})` : ""}
+                  </>
+                ) : null}
+              </span>
+              <span className={styles.keyRow}>
+                {v?.kind ? (
+                  <>
+                    <KindBadge kind={v.kind} size="sm" />
+                    <TierBadge tier={v.tier} size="sm" />
+                  </>
+                ) : (
+                  <span className="xsmall muted">verdict not read</span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -72,7 +148,7 @@ async function RoundPermits({ d, id, round }: { d: ProgramDetail; id: number; ro
   if (!items.length) return <p className="small muted">The reflex panel lists no release permit for this round yet.</p>;
   const recorded = id === RELEASE.program_id ? RELEASE.release.permits : [];
   return (
-    <div className={`table-wrap ${styles.cardsWrap}`}>
+    <div className={`table-wrap ${styles.cardsWrap} ${styles.inCard}`}>
       <table className={`table ${styles.rtable}`}>
         <caption className="visually-hidden">Release permits of round {round}</caption>
         <thead>
@@ -121,9 +197,11 @@ async function RoundPermits({ d, id, round }: { d: ProgramDetail; id: number; ro
 }
 
 function RoundCard({ r, index, d, id, rows, slots, antibody }: { r: Round; index: number; d: ProgramDetail; id: number; rows: FeedRow[]; slots: SlotView[]; antibody: string }) {
-  const proposed = findEvent(d, "round_proposed", (x) => x.round === r.round);
+  // The proposal this round opened with: the last one for its number.
+  const proposed = (d.events ?? []).filter((e) => e.event === "round_proposed" && e.data?.round === r.round).at(-1);
   const opened = findEvent(d, "round_opened", (x) => x.round === r.round);
-  const checkRun = typeof proposed?.data?.run_id === "number" ? (proposed.data.run_id as number) : null;
+  const checkRun = num(proposed?.data?.run_id);
+  const reruns = rerunsOf(d, checkRun);
   const manifest = (d.meta?.round_manifests ?? []).find((m) => m.sha256 === r.manifest_sha256) ?? d.meta?.round_manifests?.[r.round - 1];
   const releases = d.meta?.round_releases?.[r.round - 1] ?? [];
   const names = targetNames(d);
@@ -149,7 +227,10 @@ function RoundCard({ r, index, d, id, rows, slots, antibody }: { r: Round; index
               <Icon name="check" size={14} />
               <div className="stack" style={{ ["--gap" as string]: "4px" }}>
                 <span className="small">
-                  <strong>Fixed by this round&apos;s code</strong> ({released.length} {released.length === 1 ? "key" : "keys"} released)
+                  <strong>Fixed by this round&apos;s code</strong>
+                  {released.length
+                    ? ` (${released.length === 1 ? "1 key, released from its holder" : `${released.length} keys, released from their holders`})`
+                    : ""}
                 </span>
                 {released.length ? (
                   <ul className={styles.tagList}>
@@ -191,7 +272,7 @@ function RoundCard({ r, index, d, id, rows, slots, antibody }: { r: Round; index
                       <span key={c}>
                         {i ? ", " : ""}
                         <Link href={`/commits/${c}`}>commit {c}</Link>
-                        {row && whoLabel(row.hunter) ? ` (${whoLabel(row.hunter)})` : ""}
+                        {row && whoLabel(row.hunter, row.program_id) ? ` (${whoLabel(row.hunter, row.program_id)})` : ""}
                       </span>
                     );
                   })
@@ -265,6 +346,19 @@ function RoundCard({ r, index, d, id, rows, slots, antibody }: { r: Round; index
       </div>
 
       <div className="stack" style={{ ["--gap" as string]: "10px" }}>
+        <h4 className={styles.subhead}>Re-runs at this fix</h4>
+        {reruns.length ? (
+          <Suspense fallback={<Loading label="Reading the re-runs" />}>
+            <RoundReruns reruns={reruns} rows={rows} />
+          </Suspense>
+        ) : (
+          <p className="small muted">
+            {checkRun === null ? "The API lists no check run for this round, so its re-runs cannot be found here." : "No re-run was asked for at this fix."}
+          </p>
+        )}
+      </div>
+
+      <div className="stack" style={{ ["--gap" as string]: "10px" }}>
         <h4 className={styles.subhead}>Release permits</h4>
         {r.release_gate === false ? (
           <p className="small muted">None: the gate stayed shut.</p>
@@ -310,7 +404,7 @@ function ReleaseChecks() {
         </a>{" "}
         under <code>release.checks</code>.
       </p>
-      <div className={`table-wrap ${styles.cardsWrap}`}>
+      <div className={`table-wrap ${styles.cardsWrap} ${styles.inCard}`}>
         <table className={`table ${styles.rtable}`}>
           <caption className="visually-hidden">Recorded post-release checks</caption>
           <thead>
@@ -360,7 +454,7 @@ function ReleaseChecks() {
           const want = normHex(c.expected);
           const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getStorageAt", params: [c.address, RELEASE.eip1967_implementation_slot, "latest"] });
           return (
-            <div key={`${c.chain_id}-${c.address}`} className="card-flat stack" style={{ ["--gap" as string]: "8px" }}>
+            <div key={`${c.chain_id}-${c.address}`} className={`stack ${styles.slotCheck}`} style={{ ["--gap" as string]: "8px" }}>
               <p className="small">
                 <strong>
                   {chainName(c.chain_id)}, {c.proxy}
@@ -377,7 +471,7 @@ function ReleaseChecks() {
         })}
       </div>
       {reverts.length ? (
-        <Command label="Recorded value">{`python3 scripts/docs/recorded.py 'release.checks.*.b_exploit_reverts'`}</Command>
+        <Command label="Recorded value">{`python3 scripts/docs/recorded.py 'release.checks.*.b_exploit_reverts' --file ${RELEASE.results_file}`}</Command>
       ) : null}
     </div>
   );
@@ -427,7 +521,7 @@ export function RoundsSection({ d, id, slots, antibody }: { d: ProgramDetail; id
         {id === RELEASE.program_id && rounds.some((r) => r.release_gate) ? <ReleaseChecks /> : null}
         {rounds.length ? (
           <p className="small muted">
-            The re-runs that decided each gate are on each commit&apos;s page. How rounds work:{" "}
+            Each re-run is a TEE run with its own page: its verdict and its T1 check. How rounds work:{" "}
             <a href={sourceUrl("docs/rounds.md")} target="_blank" rel="noreferrer noopener">
               docs/rounds.md <Icon name="external" size={11} className={styles.inlineIcon} />
             </a>

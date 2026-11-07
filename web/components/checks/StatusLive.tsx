@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Cell } from "@/components/programs/Cell";
+import rt from "@/components/programs/programs.module.css";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
 import { Section } from "@/components/ui/PageHead";
@@ -12,6 +14,7 @@ import { AccountLink, TxLink } from "@/components/ui/TxLink";
 import { get, type Result, type Status } from "@/lib/api";
 import { chainName } from "@/lib/config";
 import { wnear } from "@/lib/format";
+import { Md } from "./Md";
 import styles from "./checks.module.css";
 
 const POLL_MS = 30_000;
@@ -39,6 +42,43 @@ function unixOf(iso: string | null): number | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
   return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+}
+
+/** A permit id as a number to sort by ("10" after "9"); the API sends them as strings. */
+const permitNo = (v: unknown): number => {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+};
+
+const ISO_TIME = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
+
+/**
+ * An alert's message as the page writes its own text: "2 permits", not "2 permit(s)", and each RFC 3339
+ * time in UTC with its relative time. Code spans stay code.
+ */
+function AlertMessage({ text }: { text: string }) {
+  const plural = text.replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
+  return (
+    <>
+      {plural.split(ISO_TIME).map((part, i) =>
+        i % 2 ? (
+          <Time key={i} t={unixOf(part)} />
+        ) : (
+          <Fragment key={i}>
+            <Md text={part} />
+          </Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/** The operating accounts by their role in floats.json. */
+const ROLE_NAME: Record<string, string> = { keeper: "the keeper", "t1-relayer": "the T1 relayer", "t2-prover": "the T2 prover" };
+
+function listed(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 const SERVICES: { key: string; what: string }[] = [
@@ -116,6 +156,8 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   const [busy, setBusy] = useState(false);
   const lastFetch = useRef(initial.at);
   const inFlight = useRef(false);
+  /** When the API read the status the server rendered (Unix seconds): a cached page can be minutes old. */
+  const firstRead = useRef(initial.ok && initial.data ? num(initial.data.at) : null);
 
   const refresh = useCallback(async () => {
     if (inFlight.current) return;
@@ -137,6 +179,9 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   }, []);
 
   useEffect(() => {
+    // The server's copy can be minutes old (the page is cached): read again at once if it is older than a poll.
+    const read = firstRead.current;
+    const first = read === null || Date.now() - read * 1000 > POLL_MS ? window.setTimeout(() => void refresh(), 0) : null;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
     }, POLL_MS);
@@ -145,6 +190,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      if (first !== null) window.clearTimeout(first);
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -180,12 +226,19 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   const notices = alerts.length - critical - warnings;
   const ok = current.ok === true && critical === 0;
 
+  const now = num(current.at);
   const t1 = has(c, "t1") ? obj(c.t1) : null;
   const until = t1 ? str(t1.outlayer_collateral_valid_until) : null;
   const untilUnix = unixOf(until);
-  const expired = untilUnix !== null && num(current.at) !== null ? untilUnix <= (num(current.at) as number) : null;
+  const expired = untilUnix !== null && now !== null ? untilUnix <= now : null;
   const collateral = t1 ? str(t1.collateral) : null;
-  const windows = t1 ? arr(t1.outlayer_collateral).map(obj) : [];
+  // Each platform's copy against the reading's own time: the valid ones first, latest expiry first.
+  const windows = (t1 ? arr(t1.outlayer_collateral).map(obj) : [])
+    .map((w) => {
+      const at = unixOf(str(w.valid_until));
+      return { fmspc: str(w.fmspc), until: at, expired: at !== null && now !== null ? at <= now : null };
+    })
+    .sort((a, b) => Number(a.expired === true) - Number(b.expired === true) || (b.until ?? 0) - (a.until ?? 0));
   const failing = t1 ? arr(t1.failing) : [];
 
   const images = has(c, "images") ? obj(c.images) : null;
@@ -203,9 +256,28 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   const credit = practice ? num(practice.credit_near) : null;
 
   const floats = arr(c.floats).map(obj);
-  const pending = arr(c.permits_pending).map(obj);
-  const applied = arr(c.permits_applied).map(obj);
-  const programs = arr(c.programs).map(obj);
+  const floatRoles = floats.map((f) => str(f.role) ?? "");
+  const floatNames = floatRoles.map((r) => ROLE_NAME[r] ?? r).filter(Boolean);
+  // Permits in number order (the API sends their ids as strings): pending first, then applied.
+  const byPermit = (a: Obj, b: Obj) => permitNo(a.permit) - permitNo(b.permit) || (num(a.chain_id) ?? 0) - (num(b.chain_id) ?? 0);
+  const pending = arr(c.permits_pending).map(obj).sort(byPermit);
+  const applied = arr(c.permits_applied).map(obj).sort(byPermit);
+  // This run's programs first (Acme Lend, practice, fork mode), then any opened after it, then earlier runs', each by id.
+  const programs = arr(c.programs)
+    .map(obj)
+    .sort((a, b) => (num(a.program_id) ?? 0) - (num(b.program_id) ?? 0));
+  const roleOf = (p: Obj) => {
+    const id = num(p.program_id);
+    return id !== null ? runRoles[String(id)] : undefined;
+  };
+  const runIds = Object.keys(runRoles).map(Number).filter(Number.isFinite);
+  const firstRunId = runIds.length ? Math.min(...runIds) : Number.POSITIVE_INFINITY;
+  const later = (p: Obj) => !roleOf(p) && (num(p.program_id) ?? -1) > firstRunId;
+  const programGroups = [
+    { title: "This run's programs", note: "", rows: programs.filter((p) => roleOf(p)) },
+    { title: "Opened after the recorded run", note: "opened after the recorded run", rows: programs.filter(later) },
+    { title: "Earlier runs on the same contracts", note: "an earlier run", rows: programs.filter((p) => !roleOf(p) && !later(p)) },
+  ].filter((g) => g.rows.length);
   const prover = has(c, "t2_prover") ? obj(c.t2_prover) : null;
 
   return (
@@ -219,10 +291,22 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
               <span className={styles.overallWord}>
                 {ok ? "No critical alert" : critical ? `${critical} critical alert${critical === 1 ? "" : "s"}` : "Not ok"}
               </span>
-              <span className="small muted">
-                {warnings} warning{warnings === 1 ? "" : "s"}
-                {notices ? `, ${notices} notice${notices === 1 ? "" : "s"}` : ""}
-              </span>
+              {warnings ? (
+                <a href="#alerts" className={styles.pillLink}>
+                  <Pill tone="warn">
+                    {warnings} warning{warnings === 1 ? "" : "s"}
+                  </Pill>
+                </a>
+              ) : (
+                <span className="small muted">no warnings</span>
+              )}
+              {notices ? (
+                <a href="#alerts" className={styles.pillLink}>
+                  <Pill tone="info">
+                    {notices} notice{notices === 1 ? "" : "s"}
+                  </Pill>
+                </a>
+              ) : null}
             </div>
             <div className={styles.refresh}>
               <span className="small muted">
@@ -260,7 +344,9 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                   <Level level={a.level} />
                 </div>
                 <div className={styles.alertText}>
-                  <span>{a.message}</span>
+                  <span>
+                    <AlertMessage text={a.message} />
+                  </span>
                   <span className="xsmall muted mono">
                     {a.component} · {a.key}
                   </span>
@@ -302,41 +388,65 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                     </span>
                   </dd>
                 </div>
-                <div>
-                  <dt>OutLayer&apos;s copies valid until</dt>
-                  <dd className="stack" style={{ ["--gap" as string]: "4px" }}>
-                    {untilUnix !== null ? <Time t={untilUnix} /> : <span className="muted">—</span>}
-                    {expired === true ? (
-                      <span className="small">
-                        <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
-                          expired
-                        </Pill>{" "}
-                        {collateral === "outlayer" ? "and the relayer uses only those copies" : "T1 relays use fresh Intel PCS collateral"}
-                      </span>
-                    ) : expired === false ? (
-                      <Pill tone="ok" size="sm">
-                        valid
-                      </Pill>
-                    ) : null}
-                  </dd>
-                </div>
                 {windows.length ? (
                   <div>
-                    <dt>Per platform</dt>
+                    <dt>OutLayer&apos;s copies, per platform</dt>
                     <dd>
                       <ul className={styles.items}>
                         {windows.map((w, i) => (
-                          <li key={`${str(w.fmspc)}-${i}`}>
-                            <Icon name="clock" size={13} />
-                            <span>
-                              FMSPC <code>{str(w.fmspc) ?? "—"}</code>: valid until {str(w.valid_until)?.replace("T", " ").replace("Z", " UTC") ?? "—"}
+                          <li key={`${w.fmspc}-${i}`}>
+                            <Icon name={w.expired ? "alert" : "clock"} size={13} />
+                            <span className="stack" style={{ ["--gap" as string]: "4px", alignItems: "flex-start" }}>
+                              <span>
+                                FMSPC <code>{w.fmspc ?? "—"}</code>
+                              </span>
+                              <span className="row" style={{ ["--gap" as string]: "6px" }}>
+                                {w.expired === true ? (
+                                  <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
+                                    expired
+                                  </Pill>
+                                ) : w.expired === false ? (
+                                  <Pill tone="ok" size="sm">
+                                    valid
+                                  </Pill>
+                                ) : null}
+                                <span className="xsmall">
+                                  {w.expired ? "since" : "until"} <Time t={w.until} />
+                                </span>
+                              </span>
+                              {w.expired ? (
+                                <span className="xsmall muted">
+                                  {collateral === "outlayer"
+                                    ? "The T1 relayer uses only OutLayer's copies."
+                                    : "T1 relays for this platform use fresh Intel PCS collateral."}
+                                </span>
+                              ) : null}
                             </span>
                           </li>
                         ))}
                       </ul>
                     </dd>
                   </div>
-                ) : null}
+                ) : (
+                  <div>
+                    <dt>OutLayer&apos;s copies valid until</dt>
+                    <dd className="stack" style={{ ["--gap" as string]: "4px", alignItems: "flex-start" }}>
+                      {untilUnix !== null ? <Time t={untilUnix} /> : <span className="muted">—</span>}
+                      {expired === true ? (
+                        <span className="small">
+                          <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
+                            expired
+                          </Pill>{" "}
+                          {collateral === "outlayer" ? "and the relayer uses only those copies" : "T1 relays use fresh Intel PCS collateral"}
+                        </span>
+                      ) : expired === false ? (
+                        <Pill tone="ok" size="sm">
+                          valid
+                        </Pill>
+                      ) : null}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Runs it could not confirm</dt>
                   <dd>
@@ -510,8 +620,9 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
           <div className={styles.cardBox}>
             <h3>Operating accounts&apos; floats</h3>
             {floats.length ? (
-              <div className="table-wrap">
-                <table className="table">
+              <div className={`table-wrap ${rt.cardsWrap} ${rt.inCard}`}>
+                <table className={`table ${rt.rtable}`}>
+                  <caption className="visually-hidden">Each operating account&apos;s liquid NEAR against its float</caption>
                   <thead>
                     <tr>
                       <th scope="col">Account</th>
@@ -526,13 +637,17 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                       const min = num(f.float_near);
                       return (
                         <tr key={`${str(f.account)}-${i}`}>
-                          <td className={styles.cell}>
+                          <Cell label="Account" lead className={styles.cell}>
                             <strong className="small">{str(f.role) ?? "—"}</strong>
                             <div className="mono xsmall">{str(f.account) ?? "—"}</div>
-                          </td>
-                          <td className="num">{nearAmt(liquid)}</td>
-                          <td className="num">{nearAmt(min, 2)}</td>
-                          <td>
+                          </Cell>
+                          <Cell label="Liquid" className="num">
+                            {nearAmt(liquid)}
+                          </Cell>
+                          <Cell label="Float" className="num">
+                            {nearAmt(min, 2)}
+                          </Cell>
+                          <Cell label="State">
                             {liquid === null || min === null ? (
                               "—"
                             ) : liquid >= min ? (
@@ -548,7 +663,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                                 under a quarter
                               </Pill>
                             )}
-                          </td>
+                          </Cell>
                         </tr>
                       );
                     })}
@@ -558,7 +673,11 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
             ) : (
               <Empty>No operating account reports a float here.</Empty>
             )}
-            <p className="xsmall muted">The keeper, the T1 relayer and the T2 prover keep NEAR liquid for gas: under the float is a warning, under a quarter of it is critical.</p>
+            <p className="xsmall muted">
+              {floatNames.length ? `${listed(floatNames).replace(/^t/, "T")} keep${floatNames.length === 1 ? "s" : ""} NEAR liquid for gas` : "Each operating account keeps NEAR liquid for gas"}
+              {floatRoles.includes("t2-prover") ? "" : " (the T2 prover too, once near-t2 is on testnet)"}: under the float is a warning, under a quarter
+              of it is critical.
+            </p>
           </div>
         </div>
       </Section>
@@ -568,126 +687,138 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
         title="Permits"
         lede="Pause and release permits near-guardian signed, by their state on each chain. One counts as applied when a recorded run relayed it or its adapter reports it used; the others are pending."
       >
-        <div className={styles.grid2}>
-          <div className="stack" style={{ ["--gap" as string]: "10px" }}>
-            <h3 className={styles.subhead}>
-              Pending <span className="muted num">({pending.length})</span>
-            </h3>
-            {pending.length ? (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Permit</th>
-                      <th scope="col">Chain</th>
-                      <th scope="col">Relayer&apos;s state</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pending.map((p, i) => (
-                      <tr key={`${str(p.permit) ?? i}-${num(p.chain_id)}`}>
-                        <td className="num">{str(p.permit) ?? String(num(p.permit) ?? "—")}</td>
-                        <td>{num(p.chain_id) !== null ? chainName(num(p.chain_id) as number) : "—"}</td>
-                        <td>
-                          <code>{str(p.status) ?? "—"}</code>
-                        </td>
+        {pending.length || applied.length ? (
+          <div className="stack" style={{ ["--gap" as string]: "12px" }}>
+            <p className="row" style={{ ["--gap" as string]: "8px" }}>
+              <Pill tone={pending.length ? "pending" : "neutral"} size="sm">
+                {pending.length} pending
+              </Pill>
+              <Pill tone="ok" size="sm">
+                {applied.length} applied
+              </Pill>
+            </p>
+            <div className={`table-wrap ${rt.cardsWrap}`}>
+              <table className={`table ${rt.rtable}`}>
+                <caption className="visually-hidden">Each permit near-guardian signed, pending first, then applied, in number order</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Permit</th>
+                    <th scope="col">Chain</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Evidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pending.map((p, i) => {
+                    const chain = num(p.chain_id);
+                    return (
+                      <tr key={`pending-${str(p.permit) ?? i}-${chain}`}>
+                        <Cell label="Permit" lead className="num">
+                          <strong>Permit {str(p.permit) ?? String(num(p.permit) ?? "—")}</strong>
+                        </Cell>
+                        <Cell label="Chain">{chain !== null ? chainName(chain) : "—"}</Cell>
+                        <Cell label="State">
+                          <Pill tone="pending" size="sm">
+                            pending
+                          </Pill>
+                        </Cell>
+                        <Cell label="Evidence" className={styles.cell}>
+                          <span className="xsmall muted">relayer&apos;s state</span> <code>{str(p.status) ?? "—"}</code>
+                        </Cell>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <Empty>No permit is waiting for its chain.</Empty>
-            )}
+                    );
+                  })}
+                  {applied.map((p, i) => {
+                    const chain = num(p.chain_id);
+                    return (
+                      <tr key={`applied-${str(p.permit) ?? i}-${chain}`}>
+                        <Cell label="Permit" lead className="num">
+                          <strong>Permit {str(p.permit) ?? String(num(p.permit) ?? "—")}</strong>
+                        </Cell>
+                        <Cell label="Chain">{chain !== null ? chainName(chain) : "—"}</Cell>
+                        <Cell label="State">
+                          <Pill tone="ok" size="sm">
+                            applied
+                          </Pill>
+                        </Cell>
+                        <Cell label="Evidence" className={styles.cell}>
+                          <code>{str(p.status) ?? "applied"}</code>{" "}
+                          {str(p.tx) && chain !== null ? <TxLink hash={str(p.tx)} chainId={chain} /> : null}
+                          {str(p.source) ? <div className="xsmall muted mono">{str(p.source)}</div> : null}
+                        </Cell>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="stack" style={{ ["--gap" as string]: "10px" }}>
-            <h3 className={styles.subhead}>
-              Applied <span className="muted num">({applied.length})</span>
-            </h3>
-            {applied.length ? (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Permit</th>
-                      <th scope="col">Chain</th>
-                      <th scope="col">Evidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {applied.map((p, i) => {
-                      const chain = num(p.chain_id);
-                      return (
-                        <tr key={`${str(p.permit) ?? i}-${chain}`}>
-                          <td className="num">{str(p.permit) ?? String(num(p.permit) ?? "—")}</td>
-                          <td>{chain !== null ? chainName(chain) : "—"}</td>
-                          <td className={styles.cell}>
-                            <code>{str(p.status) ?? "applied"}</code>{" "}
-                            {str(p.tx) && chain !== null ? <TxLink hash={str(p.tx)} chainId={chain} /> : null}
-                            {str(p.source) ? <div className="xsmall muted mono">{str(p.source)}</div> : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <Empty>None listed as applied.</Empty>
-            )}
-          </div>
-        </div>
+        ) : (
+          <Empty>The API lists no permit.</Empty>
+        )}
       </Section>
 
       <Section id="escrow" title="Escrow" lede="Each program's available escrow against its largest payout: an open program below it raises a warning.">
         {programs.length ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Program</th>
-                  <th scope="col">Phase, round</th>
-                  <th scope="col">Available</th>
-                  <th scope="col">Largest payout</th>
-                  <th scope="col">Covered</th>
-                </tr>
-              </thead>
-              <tbody>
-                {programs.map((p, i) => {
-                  const id = num(p.program_id);
-                  const available = str(p.available_raw);
-                  const largest = str(p.largest_payout_raw);
-                  const covered = available !== null && largest !== null ? Number(available) >= Number(largest) : null;
-                  const role = id !== null ? runRoles[String(id)] : undefined;
-                  return (
-                    <tr key={id ?? i}>
-                      <td className={styles.cell}>
-                        {id !== null ? <Link href={`/programs/${id}`}>Program {id}</Link> : "—"}
-                        <div className="xsmall muted">{role ? `this run: ${role}` : "an earlier run"}</div>
-                      </td>
-                      <td>
-                        <code>{str(p.phase) ?? "—"}</code>, round {num(p.round) ?? "—"}
-                      </td>
-                      <td className="num">{wnear(available)}</td>
-                      <td className="num">{wnear(largest)}</td>
-                      <td>
-                        {covered === null ? (
-                          "—"
-                        ) : covered ? (
-                          <Pill tone="ok" size="sm">
-                            yes
-                          </Pill>
-                        ) : (
-                          <Pill tone="warn" size="sm">
-                            below
-                          </Pill>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="stack" style={{ ["--gap" as string]: "18px" }}>
+            {programGroups.map((g) => (
+                <div key={g.title} className="stack" style={{ ["--gap" as string]: "10px" }}>
+                  <h3 className={styles.subhead}>{g.title}</h3>
+                  <div className={`table-wrap ${rt.cardsWrap}`}>
+                    <table className={`table ${rt.rtable}`}>
+                      <caption className="visually-hidden">{g.title}: available escrow against the largest payout</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Program</th>
+                          <th scope="col">Phase, round</th>
+                          <th scope="col">Available</th>
+                          <th scope="col">Largest payout</th>
+                          <th scope="col">Covered</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.rows.map((p, i) => {
+                          const id = num(p.program_id);
+                          const available = str(p.available_raw);
+                          const largest = str(p.largest_payout_raw);
+                          const covered = available !== null && largest !== null ? Number(available) >= Number(largest) : null;
+                          const role = roleOf(p);
+                          return (
+                            <tr key={id ?? i}>
+                              <Cell label="Program" lead className={styles.cell}>
+                                {id !== null ? <Link href={`/programs/${id}`}>Program {id}</Link> : "—"}
+                                <div className="xsmall muted">{role ? `this run: ${role}` : g.note}</div>
+                              </Cell>
+                              <Cell label="Phase, round">
+                                <code>{str(p.phase) ?? "—"}</code>, round {num(p.round) ?? "—"}
+                              </Cell>
+                              <Cell label="Available" className="num">
+                                {wnear(available)}
+                              </Cell>
+                              <Cell label="Largest payout" className="num">
+                                {wnear(largest)}
+                              </Cell>
+                              <Cell label="Covered">
+                                {covered === null ? (
+                                  "—"
+                                ) : covered ? (
+                                  <Pill tone="ok" size="sm">
+                                    yes
+                                  </Pill>
+                                ) : (
+                                  <Pill tone="warn" size="sm">
+                                    below
+                                  </Pill>
+                                )}
+                              </Cell>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
           </div>
         ) : (
           <Empty>The API listed no programs.</Empty>

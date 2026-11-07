@@ -50,7 +50,7 @@ export function ThemeToggle() {
       aria-label={`Theme: ${theme}. Switch to ${next}.`}
       title={`Theme: ${theme}`}
     >
-      <Icon name={theme === "dark" ? "moon" : theme === "light" ? "sun" : "layers"} size={16} />
+      <Icon name={theme === "dark" ? "moon" : theme === "light" ? "sun" : "monitor"} size={16} />
     </button>
   );
 }

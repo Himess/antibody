@@ -1,4 +1,6 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
+import { RECORDED_RUN } from "@/components/programs/helpers";
 import { Hash } from "@/components/ui/Hash";
 import { Empty } from "@/components/ui/States";
 import { TxLink } from "@/components/ui/TxLink";
@@ -8,10 +10,13 @@ import { cap, isoOf, seconds, utc, wnear } from "@/lib/format";
 import {
   cleanKeys,
   evData,
+  isVerdictMode,
   kindWords,
+  modeName,
   modeOfEvent,
   numOf,
   offset,
+  recordedNote,
   runOfEvent,
   secondsBetween,
   slotName,
@@ -59,14 +64,44 @@ export interface TimelineInput {
   disclosed: boolean;
   windows: { reveal: number | null; challenge: number | null; disclosure: number | null };
   program: ProgramDetail | null;
+  /** The program's id, read even when its record did not load: it tells an earlier run's practice try. */
+  programId?: number | null;
+  /** On the practice program, a try may be sealed under a public content key: no "nobody can read it". */
+  practice?: boolean;
+  /** Transactions this commit shares with other commits (an allocation pass settles several): tx → their ids. */
+  sharedTx?: Record<string, number[]>;
+  /** One run's steps only (the run page): no promise about the commit's later states. */
+  runOnly?: boolean;
+  /** What the offsets are measured from (default: the commit's block; a program's own run: its request). */
+  baseWhat?: string;
 }
 
-const byWith = (project: string | null) => (account: string | null | undefined) => {
-  if (!account) return "the hunter";
-  if (project && account === project) return `the project (${account})`;
-  const w = who(account);
-  return w ? `${w} (${account})` : account;
+/** Who acted, with the account kept on one line where it fits ("our fixture agent A (agent-a.antibody.testnet)"). */
+function actor(project: string | null, program: number | null, account: string | null | undefined, capital: boolean): ReactNode {
+  if (!account) return capital ? "The hunter" : "the hunter";
+  const w = project && account === project ? "the project" : who(account, program);
+  const acct = <span className={styles.acct}>{w ? `(${account})` : account}</span>;
+  return w ? (
+    <>
+      {capital ? cap(w) : w} {acct}
+    </>
+  ) : (
+    acct
+  );
+}
+
+const programOf = (x: TimelineInput) => x.programId ?? x.program?.program?.id ?? null;
+
+const actorWith = (x: TimelineInput) => (account: string | null | undefined, capital = false) => actor(x.project, programOf(x), account, capital);
+
+/** This commit is the recorded run's (the program and the hunter match, as for its note under "What it settled"). */
+const recordedRun = (x: TimelineInput) => {
+  const program = programOf(x);
+  return program !== null && recordedNote(x.commitId, program, x.hunter) !== null;
 };
+
+/** Glues a short tail to the words before it (" · T0" never starts a line). */
+const NB = " · ";
 
 function keysText(program: ProgramDetail | null, v: unknown): string {
   const keys = cleanKeys(v);
@@ -75,7 +110,7 @@ function keysText(program: ProgramDetail | null, v: unknown): string {
 
 /** One event's step. Grouped events (a reveal and its run request, …) are built by `buildSteps`. */
 function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, number>, promotedRound: number | null): Step {
-  const by = byWith(x.project);
+  const by = actorWith(x);
   const d = evData(e);
   const run = runOfEvent(e);
   const mode = modeOfEvent(e);
@@ -91,7 +126,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         detail: (
           <>
             A sealed proof{x.bond ? ` and a ${wnear(x.bond)} bond` : ""}, by {by(strOf(d.hunter) ?? x.hunter)}
-            {x.round ? `, in round ${x.round}` : ""}. Nobody, the project included, can read it before its verdict.
+            {x.round ? `, in round ${x.round}` : ""}.{x.practice ? "" : " Nobody, the project included, can read it before its verdict."}
           </>
         ),
       };
@@ -104,7 +139,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           mark: "neutral",
           ev: e,
           title: `Release wrap requested · run ${run ?? "—"}`,
-          detail: <>{payer ? cap(`${by(payer)} asked`) : "The project asked"} the TEE to wrap this proof&apos;s content key to the project&apos;s own key.</>,
+          detail: <>{payer ? <>{by(payer, true)} asked</> : "The project asked"} the TEE to wrap this proof&apos;s content key to the project&apos;s own key.</>,
         };
       if (mode === "second")
         return {
@@ -120,7 +155,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         tone: mode === "verify" ? "main" : "minor",
         mark: "neutral",
         ev: e,
-        title: `Run ${run ?? "—"} requested${mode && mode !== "verify" ? ` · ${mode}` : ""}`,
+        title: `Run ${run ?? "—"} requested${mode && mode !== "verify" ? ` · ${modeName(mode)}` : ""}`,
         detail: payer ? <>Requested and paid for by {by(payer)}.</> : undefined,
       };
     }
@@ -128,6 +163,16 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
       const kind = strOf(d.kind);
       const keys = keysText(x.program, d.keys);
       const receipt = strOf(d.receipt_sha256);
+      // A run that judges no proof (an activation, a round check, …) answers with a fixed NoViolation: no verdict to name.
+      if (!isVerdictMode(mode) && kind === "NoViolation")
+        return {
+          key,
+          tone: "minor",
+          mark: "neutral",
+          ev: e,
+          title: `${cap(modeName(mode))} answered${NB}T0`,
+          detail: "OutLayer's operator delivered the TEE's output to near-antibody (tier T0): its output, not a verdict.",
+        };
       if (mode === "rerun") {
         const r = run !== null ? rerunRound.get(run) : undefined;
         const at = r !== undefined ? `round ${r}'s fix` : "the fix";
@@ -152,7 +197,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         tone: mode === "verify" ? "main" : "minor",
         mark: kind === "Violation" ? "accent" : "neutral",
         ev: e,
-        title: `The TEE's answer: ${kindWords(kind)}${keys ? ` · ${keys}` : ""} · T0`,
+        title: `The TEE's answer: ${kindWords(kind)}${keys ? ` · ${keys}` : ""}${NB}T0`,
         detail: (
           <>
             OutLayer&apos;s operator delivered the TEE&apos;s output to near-antibody (tier T0).
@@ -173,7 +218,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           tone: "minor",
           mark: "t1",
           ev: e,
-          title: `${mode === "rerun" ? "Re-run" : mode === "release_wrap" ? "Release wrap" : mode === "second" ? "Second run" : `Run (${mode})`} T1-confirmed · run ${run ?? "—"}`,
+          title: `${cap(modeName(mode))} T1-confirmed · run ${run ?? "—"}`,
         };
       return {
         key,
@@ -283,12 +328,11 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
         detail: (
           <>
             {instant
-              ? "Instantly: T1, under the instant cap and within its window's instant budget."
+              ? "Instant payout: T1, under the instant cap and within its window's instant budget."
               : promotedRound !== null
                 ? `At its original priority, after its promotion at round ${promotedRound}.`
                 : "After its challenge window, with no challenge open."}{" "}
-            Credited to{" "}
-            {by(strOf(d.beneficiary) ?? x.beneficiary)}
+            Credited to {by(strOf(d.beneficiary) ?? x.beneficiary)}
             {fee && fee !== "0" ? `; protocol fee ${wnear(fee)}` : ""}.
           </>
         ),
@@ -308,6 +352,15 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
               how it decides
             </a>
             ).
+            {recordedRun(x) ? (
+              <span className={styles.aside}>
+                The guard was added on 2026-11-06, after the recorded run, and read its commits then (
+                <a href={sourceUrl(RECORDED_RUN.results_file)} target="_blank" rel="noreferrer noopener">
+                  results file
+                </a>
+                , <code>verdict_consumer.note</code>).
+              </span>
+            ) : null}
           </>
         ),
       };
@@ -335,7 +388,7 @@ function buildSteps(x: TimelineInput): Step[] {
 
   const promoted = all.find((e) => e.event === "gap_promoted" || e.event === "promoted");
   const promotedRound = promoted ? numOf(evData(promoted).round) : null;
-  const by = byWith(x.project);
+  const by = actorWith(x);
   const rerunRound = new Map<number, number>();
   for (const e of all) {
     const r = runOfEvent(e);
@@ -379,7 +432,7 @@ function buildSteps(x: TimelineInput): Step[] {
                 (request sha256 <Hash value={sha} head={12} label="request sha256" />)
               </>
             ) : null}
-            .{payer && payer !== x.hunter ? ` The run was paid for by ${by(payer)}.` : ""}
+            .{payer && payer !== x.hunter ? <> The run was paid for by {by(payer)}.</> : null}
           </>
         ),
       });
@@ -455,6 +508,12 @@ function buildSteps(x: TimelineInput): Step[] {
   // What has not happened yet, said plainly.
   const has = (name: string) => all.some((e) => e.event === name);
   const pending = (key: string, title: string, detail: string): Step => ({ key: `pending-${key}`, tone: "pending", mark: "neutral", title, detail });
+  if (x.runOnly) {
+    // `label` is the run's own status here: "" while it is in flight.
+    if (x.label === "" && !has("run_answered") && !has("run_failed"))
+      steps.push(pending("answer", "The TEE's answer", "The run is in flight: OutLayer's operator delivers the TEE's output to near-antibody."));
+    return steps;
+  }
   if (x.label === "Committed") {
     steps.push(
       pending(
@@ -493,6 +552,11 @@ function buildSteps(x: TimelineInput): Step[] {
   return steps;
 }
 
+/** "and", for short lists of links: "14, 16 and 17". */
+function andList(items: ReactNode[]): ReactNode[] {
+  return items.flatMap((it, i) => (i === 0 ? [it] : [i === items.length - 1 ? " and " : ", ", it]));
+}
+
 export function Timeline(props: TimelineInput) {
   const steps = buildSteps(props);
   if (!steps.some((s) => s.ev)) {
@@ -500,6 +564,7 @@ export function Timeline(props: TimelineInput) {
   }
   const items: ReactNode[] = [];
   let prev: number | null = null;
+  let prevDay: string | null = null;
   for (const s of steps) {
     const at = s.ev?.block_ts_ns ?? null;
     const gap = secondsBetween(prev, at);
@@ -511,26 +576,61 @@ export function Timeline(props: TimelineInput) {
       );
     }
     if (at) prev = at;
-    items.push(<Row key={s.key} step={s} baseNs={props.baseNs} />);
+    // Each step prints its UTC time; the date too on the first step and whenever the day changes.
+    const when = at ? utc(at, "ns") : null;
+    const day = when ? when.slice(0, 10) : null;
+    const showDay = day !== null && day !== prevDay;
+    if (day) prevDay = day;
+    const shared = s.ev && s.ev.event !== "commit" ? props.sharedTx?.[s.ev.tx] : undefined;
+    items.push(
+      <Row
+        key={s.key}
+        step={s}
+        baseNs={props.baseNs}
+        baseWhat={props.baseWhat ?? "the commit's block"}
+        day={showDay ? day : null}
+        time={when ? when.slice(11) : null}
+        shared={shared}
+      />,
+    );
   }
   return (
-    <ol className={styles.list} aria-label="Every step of this commit, with its NEAR transaction and its time from the commit's block">
+    <ol
+      className={styles.list}
+      aria-label={`Every step of this ${props.runOnly ? "run" : "commit"}, with its NEAR transaction and its time from ${props.baseWhat ?? "the commit's block"}`}
+    >
       {items}
     </ol>
   );
 }
 
-function Row({ step, baseNs }: { step: Step; baseNs: number | null }) {
+function Row({
+  step,
+  baseNs,
+  baseWhat,
+  day,
+  time,
+  shared,
+}: {
+  step: Step;
+  baseNs: number | null;
+  baseWhat: string;
+  /** The UTC date, on the first step and when the day changes. */
+  day: string | null;
+  /** The UTC time of day ("15:42:29 UTC"). */
+  time: string | null;
+  shared?: number[];
+}) {
   const e = step.ev;
   const s = e ? secondsBetween(baseNs, e.block_ts_ns) : null;
-  const isBase = e?.event === "commit";
+  const isBase = e?.event === "commit" || (s !== null && s === 0);
   return (
     <li className={`${styles.step} ${styles[step.tone]} ${styles[step.mark]}`}>
       <span className={`${styles.time} num`}>
         {e ? (
-          <time dateTime={isoOf(e.block_ts_ns, "ns")} title={utc(e.block_ts_ns, "ns")}>
+          <time dateTime={isoOf(e.block_ts_ns, "ns")}>
             {isBase ? "0.0 s" : offset(s)}
-            <span className="visually-hidden">{isBase ? " (the commit's block)" : " after the commit's block"}</span>
+            <span className="visually-hidden">{isBase ? ` (${baseWhat})` : ` after ${baseWhat}`}</span>
           </time>
         ) : (
           <span className={styles.waiting}>next</span>
@@ -545,12 +645,30 @@ function Row({ step, baseNs }: { step: Step; baseNs: number | null }) {
           {step.tone === "pending" ? <span className="visually-hidden"> (not yet)</span> : null}
         </p>
         {step.detail ? <div className={styles.detail}>{step.detail}</div> : null}
+        {shared?.length ? (
+          <div className={styles.detail}>
+            One allocation transaction settled this commit and commit{shared.length > 1 ? "s" : ""}{" "}
+            {andList(
+              shared.map((id) => (
+                <Link key={id} href={`/commits/${id}`}>
+                  {id}
+                </Link>
+              )),
+            )}
+            : the same hash appears on each.
+          </div>
+        ) : null}
       </div>
       <div className={styles.tx}>
         {e ? (
           <>
             <TxLink hash={e.tx} href={e.explorer} />
-            <span className="xsmall muted num">block {Number(e.block_height).toLocaleString("en-US")}</span>
+            <span className={`xsmall muted num ${styles.meta}`}>
+              {day ? <span className={styles.nowrap}>{day}</span> : null}
+              <span className={styles.nowrap}>
+                {time ? `${time} · ` : ""}block {Number(e.block_height).toLocaleString("en-US")}
+              </span>
+            </span>
           </>
         ) : (
           <span className="xsmall muted">no transaction yet</span>

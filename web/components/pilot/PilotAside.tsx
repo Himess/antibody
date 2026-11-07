@@ -11,19 +11,19 @@ export function PilotAside() {
         <ol className={styles.next} role="list">
           <li>
             <span className={styles.nextNo} aria-hidden>
-              1
+              01
             </span>
             <span>Our API checks your request as this form does, and keeps it in a private file on our server.</span>
           </li>
           <li>
             <span className={styles.nextNo} aria-hidden>
-              2
+              02
             </span>
             <span>We get a notice of it. Nothing else: no mailing list, no account.</span>
           </li>
           <li>
             <span className={styles.nextNo} aria-hidden>
-              3
+              03
             </span>
             <span>We reply to the contact you gave, about a pilot or early access.</span>
           </li>

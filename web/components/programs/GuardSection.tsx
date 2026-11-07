@@ -88,8 +88,8 @@ export function GuardSection({ guard }: { guard: string }) {
           </h3>
           <p className="small">
             Owned by the Acme project and locked: its full-access key is deleted. Anyone may report a commit; the guard reads
-            near-antibody itself and trusts the reporter for nothing. Only the first T1-confirmed Critical of the program it
-            watches, on a light-client anchor, freezes it.
+            near-antibody itself and trusts the reporter for nothing. It freezes only on a T1-confirmed Critical of the program it
+            watches, on a light-client anchor, and only for the first finding of its key.
           </p>
           <ol className={styles.plain}>
             <li>
@@ -126,12 +126,16 @@ export function GuardSection({ guard }: { guard: string }) {
               </span>
             </li>
           </ol>
+          <p className="small">
+            The guard was added on {GUARD.added}, after the recorded run, and that run&apos;s commits were reported to it then: so
+            it froze almost two days after A&apos;s verdict, not seconds after.
+          </p>
           <p className="xsmall muted">
             Recorded in{" "}
             <a href={sourceUrl(GUARD.results_file)} target="_blank" rel="noreferrer noopener">
               the results file <Icon name="external" size={10} className={styles.inlineIcon} />
             </a>{" "}
-            under <code>verdict_consumer</code>. The decision is one pure function,{" "}
+            under <code>verdict_consumer</code> (its <code>note</code> gives the date). The decision is one pure function,{" "}
             <a href={sourceUrl("contracts/verdict-guard/src/lib.rs", 65)} target="_blank" rel="noreferrer noopener">
               critical_finding <Icon name="external" size={10} className={styles.inlineIcon} />
             </a>

@@ -2,18 +2,23 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Moment } from "@/lib/api/types";
-import { laneName, lanesOf, momentEnd, stepsWithCommit, type Lane } from "@/lib/moment";
-import { shortHash } from "@/lib/format";
+import { cap, shortHash } from "@/lib/format";
+import { committer, laneName, lanesOf, momentEnd, PLAY_EVENT, possessive, stepsWithCommit, type Lane, type Step } from "@/lib/moment";
 import { Icon } from "../ui/Icon";
 import styles from "./OneMoment.module.css";
 
-type Step = ReturnType<typeof stepsWithCommit>[number];
-
 const laneClass = (lane: Lane) => (lane === "near" ? styles.near : lane === "evm:84532" ? styles.base : styles.sepolia);
 
+const timeText = (s: Step) => `${s.seconds.toFixed(1)} s`;
+
+/** What a node's link says after what it shows (WCAG 2.5.3): the chain, the transaction, where it goes. */
+const more = (s: Step) =>
+  ` on ${laneName(s.chain)}${s.tx ? `, transaction ${s.tx}` : ""}${s.explorer ? ", opens an explorer in a new tab" : ""}`;
+
 /**
- * The one moment, from A's commit block: every node a transaction, animated and scrubbable. The recorded
- * seconds are each chain's own block time (the results file's `seconds_from_commit`).
+ * The one moment, from the commit's block: every node a transaction, animated and scrubbable. The seconds
+ * are the recorded ones (`/v1/moments`): NEAR steps at their blocks, each pause when the relayer got its
+ * chain's receipt. Wide screens get lanes left to right; phones get the same lanes top to bottom.
  */
 export function OneMoment({
   moment,
@@ -28,6 +33,7 @@ export function OneMoment({
 }) {
   const steps = useMemo(() => stepsWithCommit(moment), [moment]);
   const lanes = useMemo(() => lanesOf(moment), [moment]);
+  const who = possessive(committer(moment).name);
   const end = momentEnd(moment);
   const span = Math.ceil((end + 4) / 10) * 10;
   const [t, setT] = useState(end);
@@ -66,6 +72,24 @@ export function OneMoment({
     return () => io.disconnect();
   }, [autoplay]);
 
+  // "Watch the one moment" replays it from the commit; with reduced motion it shows the final state.
+  useEffect(() => {
+    if (variant === "present") return;
+    const onPlay = () => {
+      played.current = true;
+      last.current = null;
+      if (reduced.current) {
+        setPlaying(false);
+        setT(end);
+        return;
+      }
+      setT(0);
+      setPlaying(true);
+    };
+    window.addEventListener(PLAY_EVENT, onPlay);
+    return () => window.removeEventListener(PLAY_EVENT, onPlay);
+  }, [variant, end]);
+
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
@@ -91,19 +115,25 @@ export function OneMoment({
     return () => cancelAnimationFrame(raf);
   }, [playing, speed, end]);
 
-  // Presentation mode: Space plays or pauses, R replays, arrows step.
+  // Presentation mode: Space or a click plays or pauses, R replays, arrows step, F toggles full screen.
   useEffect(() => {
     if (variant !== "present") return;
+    const toggle = () => {
+      if (playing) setPlaying(false);
+      else play();
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === " ") {
         e.preventDefault();
-        if (playing) setPlaying(false);
-        else play();
+        toggle();
       } else if (e.key.toLowerCase() === "r") {
         setT(0);
         last.current = null;
         setPlaying(true);
+      } else if (e.key.toLowerCase() === "f") {
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+        else if (document.documentElement.requestFullscreen) void document.documentElement.requestFullscreen().catch(() => {});
       } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         setPlaying(false);
         const times = steps.map((s) => s.seconds_exact);
@@ -113,8 +143,17 @@ export function OneMoment({
         });
       }
     };
+    // A click or a tap anywhere on the stage, except on a link or a control.
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest("a, button, input, label")) return;
+      toggle();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("click", onClick);
+    };
   }, [variant, playing, play, steps, end]);
 
   const current = [...steps].reverse().find((s) => s.seconds_exact <= t + 1e-6) ?? steps[0];
@@ -123,16 +162,19 @@ export function OneMoment({
   const evm = steps.filter((s) => s.chain.startsWith("evm:"));
 
   return (
-    <div ref={root} className={`${styles.root} ${styles[variant]}`}>
+    <div ref={root} className={`${styles.root} ${styles[variant] ?? ""}`}>
       <div className={styles.readout} aria-live="off">
         <div className={styles.clock}>
-          <span className={styles.clockLabel}>from A&apos;s commit block</span>
-          <span className={`${styles.clockValue} num`}>{t.toFixed(1)}<span className={styles.unit}> s</span></span>
+          <span className={styles.clockLabel}>from {who} commit block</span>
+          <span className={`${styles.clockValue} num`}>
+            {t.toFixed(1)}
+            <span className={styles.unit}> s</span>
+          </span>
         </div>
         <div className={styles.now}>
           <span className={`${styles.chip} ${laneClass(current.chain)}`}>{laneName(current.chain)}</span>
           <strong>{current.label}</strong>
-          {current.detail?.by ? <span className={styles.nowBy}>{String(current.detail.by)}</span> : null}
+          {current.detail?.by ? <span className={styles.nowBy}>{cap(String(current.detail.by))}</span> : null}
         </div>
       </div>
 
@@ -188,6 +230,8 @@ export function OneMoment({
         </div>
       </div>
 
+      {variant !== "present" ? <PhoneChart steps={steps} lanes={lanes} t={t} end={end} /> : null}
+
       <div className={styles.controls}>
         <button type="button" className="btn btn-sm" onClick={() => (playing ? setPlaying(false) : play())} aria-label={playing ? "Pause the replay" : "Play the replay"}>
           <Icon name={playing ? "pause" : "play"} size={14} />
@@ -217,7 +261,7 @@ export function OneMoment({
         </label>
       </div>
 
-      {variant !== "present" ? <StepList steps={steps} t={t} compact={variant === "hero"} /> : null}
+      {variant === "hero" ? <StepList steps={steps} /> : null}
     </div>
   );
 }
@@ -225,14 +269,12 @@ export function OneMoment({
 function Node({ step, left, done, place }: { step: Step; left: string; done: boolean; place: "above" | "below" }) {
   const minor = Boolean(step.detail?.minor);
   // The accessible name starts with what the node shows (WCAG 2.5.3), then the chain and the transaction.
-  const more = ` on ${laneName(step.chain)}${step.tx ? `, transaction ${step.tx}` : ""}${step.explorer ? ", opens an explorer in a new tab" : ""}`;
   const body = (
     <>
       <span className={styles.dot} aria-hidden />
       <span className={`${styles.nodeText} ${place === "below" ? styles.belowText : styles.aboveText}`}>
-        <span className={`${styles.nodeTime} num`}>{step.seconds === 0 ? "0" : step.seconds.toFixed(1)} s</span>{" "}
-        <span className={styles.nodeLabel}>{step.label}</span>
-        <span className="visually-hidden">{more}</span>
+        <span className={`${styles.nodeTime} num`}>{timeText(step)}</span> <span className={styles.nodeLabel}>{step.label}</span>
+        <span className="visually-hidden">{more(step)}</span>
       </span>
     </>
   );
@@ -248,30 +290,133 @@ function Node({ step, left, done, place }: { step: Step; left: string; done: boo
   );
 }
 
-function StepList({ steps, t, compact }: { steps: Step[]; t: number; compact: boolean }) {
+/** The phone chart's geometry, in CSS pixels: time runs down, rails on the left, one label per step on the right. */
+const V = { pad: 14, tickW: 24, axis: 32, rail: 44, gap: 20, label: 16, row: 24, pps: 5, maxH: 480 };
+
+/** Phones: the same lanes top to bottom, nodes placed by their seconds, the pause permits fanning out to each chain. */
+function PhoneChart({ steps, lanes, t, end }: { steps: Step[]; lanes: Lane[]; t: number; end: number }) {
+  const pps = Math.min(V.pps, V.maxH / end);
+  const y = (s: number) => V.pad + s * pps;
+  const x = (lane: Lane) => V.rail + Math.max(0, lanes.indexOf(lane)) * V.gap;
+  const labelX = x(lanes[lanes.length - 1]) + V.label;
+  // Each label sits level with its node unless it would crowd the one above; then it moves down, joined by its leader.
+  const tops: number[] = [];
+  for (const s of steps) tops.push(Math.max(y(s.seconds_exact), (tops[tops.length - 1] ?? -Infinity) + V.row));
+  const height = Math.ceil(Math.max(y(end), tops[tops.length - 1] ?? 0) + V.pad);
+  const nearEnd = Math.max(...steps.filter((s) => s.chain === "near").map((s) => s.seconds_exact));
+  const signed = steps.find((s) => s.key === "permits_signed");
+  const ticks = Array.from({ length: Math.floor(end / 10) + 1 }, (_, i) => i * 10);
+  const yt = y(Math.min(t, end));
+  const nx = x("near");
   return (
-    <ol className={`${styles.list} ${compact ? styles.compact : ""}`} aria-label="Steps, each with its transaction">
-      {steps.map((s) => {
-        const done = t >= s.seconds_exact - 1e-6;
-        return (
-          <li key={s.key} className={`${styles.item} ${done ? styles.itemDone : ""} ${s.detail?.minor ? styles.itemMinor : ""}`}>
-            <span className={`${styles.itemTime} num`}>{s.seconds === 0 ? "0.0" : s.seconds.toFixed(1)} s</span>
-            <span className={styles.itemBody}>
-              <span className={styles.itemLabel}>{s.label}</span>
-              <span className={`${styles.chip} ${laneClass(s.chain)}`}>{laneName(s.chain)}</span>
-            </span>
-            {s.explorer ? (
-              <a className={`${styles.itemTx} mono`} href={s.explorer} target="_blank" rel="noreferrer noopener" title={s.tx ?? undefined}>
-                {shortHash(s.tx, 10)}
-                <span className="visually-hidden">{`, ${s.label}: transaction ${s.tx}, opens an explorer in a new tab`}</span>
-                <Icon name="external" size={12} />
-              </a>
-            ) : (
-              <span className="muted small">—</span>
-            )}
-          </li>
-        );
-      })}
+    <div className={styles.phone} role="group" aria-label={`Timeline from 0 to ${end.toFixed(1)} seconds after the commit`}>
+      <div className={styles.legend} aria-hidden>
+        {lanes.map((l) => (
+          <span key={l} className={`${styles.key} ${laneClass(l)}`}>
+            {laneName(l)}
+          </span>
+        ))}
+      </div>
+      <div className={styles.vbody} style={{ height }}>
+        {ticks.map((s) => (
+          <span key={s} className={styles.vtick} style={{ top: y(s), width: V.tickW }} aria-hidden>
+            {s} s
+          </span>
+        ))}
+        <svg className={styles.vsvg} width={labelX} height={height} viewBox={`0 0 ${labelX} ${height}`} aria-hidden focusable="false">
+          {ticks.map((s) => (
+            <line key={s} className={styles.vgrid} x1={V.axis} x2={labelX - 8} y1={y(s)} y2={y(s)} />
+          ))}
+          <g className={styles.near}>
+            <line className={styles.vrail} x1={nx} x2={nx} y1={y(0)} y2={y(nearEnd)} />
+            <line className={styles.vfill} x1={nx} x2={nx} y1={y(0)} y2={y(Math.min(t, nearEnd))} />
+          </g>
+          {lanes.slice(1).map((lane) => {
+            const mine = steps.filter((s) => s.chain === lane);
+            if (!mine.length) return null;
+            const from = signed?.seconds_exact ?? mine[0].seconds_exact;
+            const to = Math.max(...mine.map((s) => s.seconds_exact));
+            const lx = x(lane);
+            const y0 = y(from);
+            const y1 = y0 + 16;
+            const y2 = y(to);
+            const going = t >= from - 1e-6;
+            const lit = t >= to - 1e-6;
+            return (
+              <g key={lane} className={laneClass(lane)}>
+                <path className={`${styles.wire} ${lit ? styles.wireLit : going ? styles.wireGoing : ""}`} d={`M${nx},${y0} C${nx},${y0 + 10} ${lx},${y0 + 6} ${lx},${y1}`} />
+                <line className={styles.vrail} x1={lx} x2={lx} y1={y1} y2={y2} />
+                {yt > y1 ? <line className={styles.vfill} x1={lx} x2={lx} y1={y1} y2={Math.min(yt, y2)} /> : null}
+              </g>
+            );
+          })}
+          {steps.map((s, i) => {
+            const minor = Boolean(s.detail?.minor);
+            const cx = x(s.chain);
+            const cy = y(s.seconds_exact);
+            const r = minor ? 4 : 6.5;
+            const done = t >= s.seconds_exact - 1e-6;
+            return (
+              <g key={s.key} className={`${laneClass(s.chain)} ${done ? styles.vdone : ""} ${s.chain === "near" ? "" : styles.vevm}`}>
+                <path className={styles.vlead} d={`M${cx + r + 3},${cy} L${labelX - 6},${tops[i]}`} />
+                <circle className={styles.vdot} cx={cx} cy={cy} r={r} />
+              </g>
+            );
+          })}
+          <line className={styles.vhead} x1={V.axis} x2={labelX - 8} y1={yt} y2={yt} />
+          <circle className={styles.vheadDot} cx={V.axis} cy={yt} r={3.5} />
+        </svg>
+        {steps.map((s, i) => (
+          <PhoneLabel key={s.key} step={s} top={tops[i]} left={labelX} done={t >= s.seconds_exact - 1e-6} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhoneLabel({ step, top, left, done }: { step: Step; top: number; left: number; done: boolean }) {
+  const cls = `${styles.vlabel} ${done ? styles.done : ""} ${step.detail?.minor ? styles.minor : ""}`;
+  const style = { top: top - V.row / 2, left };
+  const body = (
+    <>
+      <span className={`${styles.vtime} num`}>{timeText(step)}</span>
+      <span className={styles.vname}>{step.label}</span>
+      <span className="visually-hidden">{more(step)}</span>
+    </>
+  );
+  return step.explorer ? (
+    <a className={cls} style={style} href={step.explorer} target="_blank" rel="noreferrer noopener">
+      {body}
+    </a>
+  ) : (
+    <span className={cls} style={style}>
+      {body}
+    </span>
+  );
+}
+
+/** The landing's list under the chart (wide screens): two columns, each read top to bottom in time order. */
+function StepList({ steps }: { steps: Step[] }) {
+  return (
+    <ol className={styles.list} style={{ ["--rows" as string]: Math.ceil(steps.length / 2) }} aria-label="Steps, each with its transaction">
+      {steps.map((s) => (
+        <li key={s.key} className={`${styles.item} ${s.detail?.minor ? styles.itemMinor : ""}`}>
+          <span className={`${styles.itemTime} num`}>{timeText(s)}</span>
+          <span className={styles.itemBody}>
+            <span className={styles.itemLabel}>{s.label}</span>
+            <span className={`${styles.chip} ${laneClass(s.chain)}`}>{laneName(s.chain)}</span>
+          </span>
+          {s.explorer ? (
+            <a className={`${styles.itemTx} mono`} href={s.explorer} target="_blank" rel="noreferrer noopener" title={s.tx ?? undefined}>
+              {shortHash(s.tx, 10)}
+              <span className="visually-hidden">{`, ${s.label}: transaction ${s.tx}, opens an explorer in a new tab`}</span>
+              <Icon name="external" size={12} />
+            </a>
+          ) : (
+            <span className="muted small">—</span>
+          )}
+        </li>
+      ))}
     </ol>
   );
 }

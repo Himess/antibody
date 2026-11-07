@@ -90,10 +90,13 @@
   display: grid;
 }
 
+/* On a phone the number sits beside the title and the body, commands included, takes the full width;
+   from 720 px the numbers stand in their own column. */
 .step {
   display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  gap: 4px 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 10px;
+  align-items: baseline;
   padding: 20px 0;
   border-top: 1px solid var(--line);
 }
@@ -105,7 +108,7 @@
 @media (min-width: 720px) {
   .step {
     grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: 6px 20px;
+    gap: 12px 20px;
     padding: 26px 0;
   }
 }
@@ -119,10 +122,17 @@
 }
 
 .stepBody {
+  grid-column: 1 / -1;
   display: grid;
   gap: 12px;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 720px) {
+  .stepBody {
+    grid-column: 2;
+  }
 }
 
 .stepTitle {
@@ -173,6 +183,12 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Options of very different lengths, one with a live check: each card fits its content, so the check's
+   answer grows its own card, not the one beside it. */
+.optionsFit {
+  align-items: start;
+}
+
 @media (min-width: 900px) {
   .options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -221,9 +237,11 @@
 
 /* ------------------------------------------------------------ claims and evidence */
 
+/* Each claim fits its content: a check's answer grows its own card, not the one beside it. */
 .claims {
   display: grid;
   gap: 16px;
+  align-items: start;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -414,6 +432,25 @@
 
 .mcpBlock h3 {
   font-size: var(--fs-md);
+}
+
+/* The two numbered setup steps: an ordered list spaced as the column's other blocks. */
+.mcpSteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A step's number beside its title, as in the numbered steps. */
+.mcpHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
 .tools {
@@ -630,6 +667,25 @@
   color: var(--ink-3);
 }
 
+/* The commits behind a row's numbers, each a link to its commit page. */
+.from {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+.from a {
+  color: var(--ink-2);
+}
+
+.from a:hover {
+  color: var(--accent-ink);
+}
+
 .legend {
   display: grid;
   gap: 4px;
@@ -702,10 +758,13 @@
   display: grid;
 }
 
+/* As the steps: on a phone the number sits beside the title, the status takes its own line under it and
+   the text the full width; from 720 px the status stands at the right of the title. */
 .rmItem {
   display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  gap: 4px 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: baseline;
   padding: 16px 0;
   border-top: 1px solid var(--line);
 }
@@ -714,10 +773,22 @@
   border-bottom: 1px solid var(--line);
 }
 
+.rmStatus,
+.rmBody {
+  grid-column: 1 / -1;
+}
+
 @media (min-width: 720px) {
   .rmItem {
-    grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: 4px 20px;
+    grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+    gap: 6px 20px;
+  }
+  .rmStatus {
+    grid-column: 3;
+    justify-content: flex-end;
+  }
+  .rmBody {
+    grid-column: 2 / -1;
   }
 }
 
@@ -733,14 +804,6 @@
   gap: 6px;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
-}
-
-.rmHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 16px;
 }
 
 .rmTitle {

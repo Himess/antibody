@@ -27,9 +27,10 @@ export default async function TryPage() {
         eyebrow="Practice program · NEAR testnet"
         title="Try it, no account"
         lede={
+          // How long it takes depends on T1 today: the Start card right under this says it, from live data.
           <>
-            Commit a sealed proof, have it verified in a TEE and see it paid, from this page, in about a minute. Your browser makes the key, seals the proof and signs every
-            transaction of the try.
+            Commit a sealed proof, have it verified in a TEE and see it paid, from this page. Your browser makes the key, seals the proof and signs every transaction of the
+            try.
           </>
         }
       />

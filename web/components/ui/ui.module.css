@@ -1,6 +1,8 @@
-.copy {
-  /* Its visually hidden live region is positioned: keep it inside the button, so it never widens a
-     scrolling table or a phone's page. */
+/* A small icon control beside a value (copy, or open in an explorer): a 26 px target (WCAG 2.5.8). */
+.copy,
+.iconLink {
+  /* The copy button's visually hidden live region is positioned: keep it inside the button, so it never
+     widens a scrolling table or a phone's page. */
   position: relative;
   display: inline-grid;
   place-items: center;
@@ -13,7 +15,8 @@
   cursor: pointer;
   flex: none;
 }
-.copy:hover {
+.copy:hover,
+.iconLink:hover {
   color: var(--ink);
   background: var(--bg-sunk);
 }
@@ -29,14 +32,20 @@
   font-size: 0.92em;
   white-space: nowrap;
 }
-/* A full value (a hash shown whole, a long account) wraps anywhere rather than overflow a phone. */
+/* A full value (a hash shown whole, a long account) wraps rather than overflow a phone. It wraps beside its
+   link icon and copy button, which stay on its right. */
+.wrap .hashBody {
+  min-width: 0;
+}
 .wrap .hashText {
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-all;
 }
-.wrap {
-  display: inline;
+/* A dotted name (an account) breaks only after a dot (<wbr>), never inside a word. */
+.wrap .dotted {
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .hashLink {
   display: inline-flex;
@@ -56,14 +65,18 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* Its own width even as a grid item or in a flex column: a pill never stretches into a bar. */
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
   padding: 2px 9px 2px 7px;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--pill-line);
   font-size: var(--fs-xs);
   font-weight: 560;
   line-height: 1.6;
   white-space: nowrap;
-  background: var(--bg-sunk);
+  background: var(--pill);
   color: var(--ink-2);
 }
 .pillSm {
@@ -96,9 +109,15 @@
   background: var(--t2-soft);
   border-color: color-mix(in srgb, var(--t2) 25%, transparent);
 }
+/* A Medium severity: the amber of High, outlined rather than filled (blue stays the T1 tier's). */
+.tone-caution {
+  color: var(--warn);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
 .tone-pending {
   color: var(--ink-2);
-  background: var(--bg-sunk);
+  background: var(--pill);
   border-style: dashed;
 }
 .tone-accent {
@@ -130,7 +149,20 @@
   flex: 1;
   min-width: 0;
   overflow-x: auto;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Each line wraps under itself, its continuation lines hanging 2ch in, so a long command still reads as one
+   and nothing is cut off. The copied text is unchanged. */
+.line {
+  display: block;
+  min-height: 1.6em;
+  padding-left: 2ch;
+  text-indent: -2ch;
+}
+/* A short token (a flag, an account, a file name) never splits after one of its hyphens. */
+.tok {
+  white-space: nowrap;
 }
 .prompt {
   color: var(--ink-3);
@@ -147,11 +179,34 @@
   color: var(--ink-2);
   font-size: var(--fs-sm);
 }
+.state > svg {
+  margin-top: 2px;
+}
 .stateError {
   border-style: solid;
   border-color: color-mix(in srgb, var(--bad) 35%, var(--line));
   background: var(--bad-soft);
   color: var(--ink);
+}
+/* A part of a page that did not load, or a read that timed out: a note, not an alarm. */
+.stateWarn {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--line));
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+.stateDetails summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+.stateDetails code {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
 }
 
 .stamp {
@@ -175,6 +230,11 @@
 .stampMeta {
   font-size: var(--fs-2xs);
   opacity: 0.9;
+}
+/* The receipt hash reads exactly as it does everywhere else: hex is lowercase. */
+.stampHash {
+  text-transform: none;
+  letter-spacing: 0.02em;
 }
 
 .sealedCard {

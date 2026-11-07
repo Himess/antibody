@@ -30,7 +30,7 @@ async function RuleStrength({ id }: { id: number }) {
   if (!rs || typeof rs.caught !== "number" || typeof rs.total !== "number") return null;
   const classes = Object.entries(rs.by_class ?? {});
   return (
-    <div className="card-flat stack">
+    <div className="card stack">
       <h3 className={styles.cardTitle}>Rule strength</h3>
       <p className="small">
         The rules caught{" "}
@@ -156,7 +156,8 @@ export function RulesSection({ d, kind, slots, id }: { d: ProgramDetail; kind: P
         )}
         <p className="small muted">
           The budget caps what one rule pays per round, so many entry points into one root cause cannot drain the escrow. A
-          finding&apos;s key is the rule and the function where it broke: the first proof of each key is paid.
+          finding&apos;s key is the rule and the entry point that broke it (by default, the target and function): the first proof
+          of each key is paid.
         </p>
         <Targets d={d} kind={kind} />
         <Suspense fallback={<Skeleton height={120} />}>

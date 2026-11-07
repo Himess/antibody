@@ -48,6 +48,33 @@
   max-width: 70ch;
 }
 
+/* Every section of the landing opens the same way: eyebrow, heading, lede. */
+.head {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  max-width: 62ch;
+  margin-bottom: 28px;
+}
+
+.head > * {
+  min-width: 0;
+}
+
+.headRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 28px;
+}
+
+.headRow .head,
+.split .head {
+  margin-bottom: 0;
+}
+
 .split {
   display: grid;
   gap: 28px;
@@ -102,6 +129,7 @@
 
 .tiers :global(.card) {
   --gap: 10px;
+  align-items: flex-start;
 }
 
 .tiers h3 {
@@ -138,6 +166,10 @@
   color: var(--ink-3);
 }
 
+.sources {
+  margin-top: 12px;
+}
+
 .stats dd {
   margin: 0;
   font-family: var(--font-mono);
@@ -166,6 +198,16 @@
   --inv-bg: var(--ink);
   --inv-mid: color-mix(in srgb, var(--bg) 72%, var(--ink));
   --inv-line: color-mix(in srgb, var(--bg) 22%, var(--ink));
+}
+
+:global(:root[data-theme="dark"]) .contrast {
+  --inv-bg: color-mix(in srgb, var(--ink) 84%, var(--bg));
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .contrast {
+    --inv-bg: color-mix(in srgb, var(--ink) 84%, var(--bg));
+  }
 }
 
 @media (min-width: 860px) {
@@ -205,9 +247,10 @@
 
 .cardBar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
+  gap: 2px 12px;
   font-weight: 600;
   font-size: var(--fs-sm);
 }

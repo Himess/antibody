@@ -20,7 +20,7 @@ export function Amount({ raw, unit = "wNEAR" }: { raw: string | bigint | null | 
 
 const advice: Record<FailureKind, string | null> = {
   rejected: null,
-  "not-installed": "Wallets that work here: Meteor Wallet (extension or web), Intear Wallet (web), Nightly (extension) and the NEAR CLI.",
+  "not-installed": "A web wallet in the list needs nothing installed; the NEAR CLI signs in your terminal.",
   "popup-blocked": "The wallet opens its own window to ask you. Your browser's address bar shows a blocked pop-up icon.",
   load: "The connector script comes from the address listed under “How the wallet connects”. A blocker or a strict network can stop it.",
   network: "This page works on NEAR testnet only. Testnet accounts end in .testnet (or are implicit accounts).",

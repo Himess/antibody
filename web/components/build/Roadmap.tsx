@@ -12,7 +12,7 @@ const ROADMAP: Item[] = [
   {
     title: "Antibody for pull requests",
     detail:
-      "A GitHub Action, then a GitHub App, on repositories whose owner installs it. Immune memory: every paid proof of a program re-runs against each pull request's build (sealed ones inside the TEE, where the result is all anyone sees), and the check goes red if one still breaks a rule. A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical. Sealed proofs never appear in public logs.",
+      "A CI check, then a repository app, on repositories whose owner installs it. Immune memory: every paid proof of a program re-runs against each pull request's build (sealed ones inside the TEE, where the result is all anyone sees), and the check goes red if one still breaks a rule. A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical. Sealed proofs never appear in public logs.",
   },
   { title: "NEAR contracts as a second target VM", detail: "Proofs against NEAR wasm contracts from committed, proven state." },
   {
@@ -46,13 +46,14 @@ const ROADMAP: Item[] = [
 
 /**
  * near-t2's status on this deployment, from /v1/t2. Until the API names a near-t2 contract it answers an
- * error, shown as "not yet on testnet"; once records exist, the same code counts them.
+ * error, shown as "not yet on testnet", and so is a near-t2 with no record yet (never a zero count); once
+ * records exist, the same code counts them.
  */
 export async function T2Status() {
   const r = await api.t2();
   if (r.ok) {
     const records = Array.isArray(r.data?.records) ? r.data.records : [];
-    if (!records.length) return <Pill tone="pending" size="sm">on testnet · no records yet</Pill>;
+    if (!records.length) return <Pill tone="pending" size="sm">not yet on testnet</Pill>;
     const confirmed = records.filter((x) => x?.outcome === "confirmed").length;
     const contradicts = records.filter((x) => x?.outcome === "contradicts").length;
     return (
@@ -78,35 +79,35 @@ export function Roadmap() {
           <span className={styles.rmNo} aria-hidden>
             {String(i + 1).padStart(2, "0")}
           </span>
-          <div className={styles.rmBody}>
-            <div className={styles.rmHead}>
-              <h3 className={styles.rmTitle}>{item.title}</h3>
-              <span className={styles.labelRow}>
-                {item.parts?.some((p) => p.done) ? <Pill tone="info" size="sm">partly done</Pill> : <NotYet />}
-                {item.t2 ? (
-                  <Suspense fallback={<Pill tone="pending" size="sm">reading testnet…</Pill>}>
-                    <T2Status />
-                  </Suspense>
-                ) : null}
-              </span>
-            </div>
-            {item.detail ? <p className={styles.rmText}>{item.detail}</p> : null}
-            {item.parts ? (
-              <ul className={styles.rmParts}>
-                {item.parts.map((p) => (
-                  <li key={p.text}>
-                    {p.done ? <Done /> : <NotYet>next</NotYet>}
-                    <span>{p.text}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+          <h3 className={styles.rmTitle}>{item.title}</h3>
+          <span className={`${styles.labelRow} ${styles.rmStatus}`}>
+            {item.parts?.some((p) => p.done) ? <Pill tone="info" size="sm">partly done</Pill> : <NotYet />}
             {item.t2 ? (
-              <p className="xsmall muted">
-                How T2 works and what it checks: <DocLink path="docs/zk.md">docs/zk.md</DocLink>.
-              </p>
+              <Suspense fallback={<Pill tone="pending" size="sm">reading testnet…</Pill>}>
+                <T2Status />
+              </Suspense>
             ) : null}
-          </div>
+          </span>
+          {item.detail || item.parts || item.t2 ? (
+            <div className={styles.rmBody}>
+              {item.detail ? <p className={styles.rmText}>{item.detail}</p> : null}
+              {item.parts ? (
+                <ul className={styles.rmParts}>
+                  {item.parts.map((p) => (
+                    <li key={p.text}>
+                      {p.done ? <Done /> : <NotYet>next</NotYet>}
+                      <span>{p.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {item.t2 ? (
+                <p className="xsmall muted">
+                  How T2 works and what it checks: <DocLink path="docs/zk.md">docs/zk.md</DocLink>.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>

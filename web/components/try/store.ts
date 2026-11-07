@@ -4,10 +4,11 @@
  * counter per host, for "your browser did everything"), the API's event stream, the platform CSPRNG and
  * the tab's sessionStorage. Components read it with `useSyncExternalStore`.
  */
+import { base64 } from "@scure/base";
 import { config } from "@/lib/config";
 import { NearRpc } from "@/lib/near/rpc";
 import { type CommitView, commitStateLabel, type OpenStream, type SavedTry, type TryStorage, TryFlow, type TrySnapshot, VENDING } from "@/lib/practice/flow";
-import { parseVendingConfigFull } from "@/lib/practice/vending";
+import { parseVendingConfigFull, parseVendingHour, STATE_KEY_BASE64, type VendingHour } from "@/lib/practice/vending";
 
 export const STORAGE_KEY = "antibody.try.v1";
 
@@ -61,6 +62,8 @@ export interface Preflight {
   antibody: string;
   perHour?: number;
   vended?: number;
+  /** The hourly count, from the vending contract's own state (undefined: it could not be read). */
+  vendHour?: VendingHour;
   /** yoctoNEAR the vending contract lends each practice account (`close` returns what is left). */
   gasFundsYocto?: string;
   programKey?: string;
@@ -211,9 +214,27 @@ class Store {
     this.notify();
   }
 
+  /** The vending contract's hourly count, from its `STATE` (a `view_state` query); undefined when it cannot be read. */
+  private async vendingState(vending: string): Promise<Uint8Array | undefined> {
+    try {
+      const r = await this.clients().rpc.call<{ values?: { key?: string; value?: string }[] }>("query", {
+        request_type: "view_state",
+        finality: "optimistic",
+        account_id: vending,
+        prefix_base64: STATE_KEY_BASE64,
+      });
+      const v = r.values?.find((x) => x.key === STATE_KEY_BASE64)?.value;
+      return v ? base64.decode(v) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** practice.rs `target`: the program the vending contract vends for, and whether a stale commit holds its queue. */
   async preflight(nowS: number, vending = VENDING): Promise<Preflight> {
     const { rpc } = this.clients();
+    // The hourly count is read alongside get_config and the program, not after them; a failure only leaves it unknown.
+    const state = this.vendingState(vending);
     const cfg = parseVendingConfigFull((await rpc.viewFunction(vending, "get_config", new Uint8Array(0))).bytes);
     const p = (await rpc.viewFunction(cfg.antibody, "get_program", { program_id: cfg.programId })).json<{
       key?: string;
@@ -223,7 +244,16 @@ class Store {
       commits?: number;
       params?: { windows?: { challenge?: number; reveal?: number } };
     } | null>();
-    const out: Preflight = { programId: cfg.programId, antibody: cfg.antibody, perHour: cfg.terms?.perHour, vended: cfg.vended, gasFundsYocto: cfg.terms?.gasFunds.toString() };
+    const raw = await state;
+    const vendHour = raw ? parseVendingHour(raw, cfg) : undefined;
+    const out: Preflight = {
+      programId: cfg.programId,
+      antibody: cfg.antibody,
+      perHour: cfg.terms?.perHour,
+      vended: cfg.vended,
+      vendHour,
+      gasFundsYocto: cfg.terms?.gasFunds.toString(),
+    };
     if (!p) return out;
     const reveal = p.params?.windows?.reveal;
     Object.assign(out, {
