@@ -11,7 +11,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TxLink } from "@/components/ui/TxLink";
 import { config, sourceUrl } from "@/lib/config";
 import { cap, utc } from "@/lib/format";
-import { committer, getMoments, laneName, latestMoment, possessive, stepsWithCommit, timedNote, txNote } from "@/lib/moment";
+import { committer, getMoments, laneName, possessive, recordedMoment, stepsWithCommit, timedNote, txNote } from "@/lib/moment";
 import styles from "./moment.module.css";
 
 export const metadata: Metadata = {
@@ -23,7 +23,8 @@ export const metadata: Metadata = {
 export default async function MomentPage({ searchParams }: { searchParams: Promise<{ run?: string }> }) {
   const sp = await searchParams;
   const { data, live } = await getMoments();
-  const m = data.moments.find((x) => x.id === sp.run) ?? latestMoment(data);
+  // The recorded full run unless a run is picked: drills are listed below it, each labelled.
+  const m = data.moments.find((x) => x.id === sp.run) ?? recordedMoment(data);
   const steps = stepsWithCommit(m);
   const { name } = committer(m);
   const asked = steps.find((s) => s.key === "pause_asked");
@@ -56,7 +57,7 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
         </div>
       </section>
 
-      <Section id="runs" title="The runs" lede="Each full run of the one moment, from its results file. The panel shows the latest, or the run you pick.">
+      <Section id="runs" title="The runs" lede="Each run of the one moment, from its results file: the recorded full run, then the automated drills that run the same loop on testnet. The panel shows the recorded run, or the run you pick.">
         <ul className={styles.runs}>
           {data.moments.map((r) => (
             <li key={r.id} className={r.id === m.id ? styles.current : undefined}>
@@ -64,7 +65,7 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
                 <span className="mono">{r.id}</span>
               </Link>
               <Pill size="sm" tone={r.kind === "drill" ? "ok" : "neutral"} icon={r.kind === "drill" ? "bolt" : "clock"}>
-                {r.kind === "drill" ? "scheduled drill" : "recorded"}
+                {r.kind === "drill" ? "automated drill" : "recorded"}
               </Pill>
               {r.id === m.id ? (
                 <Pill size="sm" tone="accent" icon="eye">

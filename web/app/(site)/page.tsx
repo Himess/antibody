@@ -6,10 +6,10 @@ import { runGroup } from "@/components/programs/helpers";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Sealed, VerdictStamp } from "@/components/ui/Verdict";
-import { api, t2NotYet } from "@/lib/api";
+import { api, t2NotYet, type Moment } from "@/lib/api";
 import { config, sourceUrl } from "@/lib/config";
-import { amount, provenance, seconds } from "@/lib/format";
-import { committer, getMoments, latestMoment, possessive } from "@/lib/moment";
+import { amount, provenance, seconds, utc } from "@/lib/format";
+import { committer, getMoments, latestDrill, pausedBy, possessive, recordedMoment, stepOf } from "@/lib/moment";
 import styles from "./home.module.css";
 
 /** "11 to our fixture agents, 6 to practice tries": the parts that are not zero, joined. */
@@ -27,7 +27,8 @@ export default async function Home() {
     api.leaderboard(),
     api.t2(),
   ]);
-  const m = latestMoment(moments);
+  const m = recordedMoment(moments);
+  const drill = latestDrill(moments);
   const who = possessive(committer(m).name);
   const asked = m.steps.find((s) => s.key === "pause_asked");
   const paidStep = m.steps.find((s) => s.key === "paid");
@@ -89,6 +90,7 @@ export default async function Home() {
               Seconds run from {who} commit block: NEAR steps at their blocks, each pause when the relayer got its chain&apos;s
               receipt. This run is recorded, not live: your own try is the live one.
             </p>
+            {drill ? <DrillLine drill={drill} /> : null}
             <div className="row">
               <Link href="/moment" className="btn btn-sm">
                 Every step, checked <Icon name="arrow" size={12} />
@@ -315,5 +317,20 @@ export default async function Home() {
         </div>
       </section>
     </>
+  );
+}
+
+/** The newest automated drill: the same loop, run again on testnet, with its own record. */
+function DrillLine({ drill }: { drill: Moment }) {
+  const paid = stepOf(drill, "paid");
+  const paused = pausedBy(drill);
+  const date = utc(drill.commit.block_ts_ns || drill.started_unix * 1e9, "ns").slice(0, 10);
+  return (
+    <p className="small">
+      <Link href={`/moment?run=${encodeURIComponent(drill.id)}`}>Latest automated drill</Link>, {date}:{" "}
+      {drill.all_ok && paid
+        ? `paid at ${paid.seconds.toFixed(1)} s${paused !== null ? `, every chain paused by ${paused.toFixed(1)} s` : ""}, from its commit's block.`
+        : "it did not complete; its record says where it stopped."}
+    </p>
   );
 }

@@ -15,6 +15,23 @@ export async function getMoments(): Promise<{ data: Moments; live: boolean }> {
 
 export const latestMoment = (m: Moments): Moment => m.moments.find((x) => x.id === m.latest) ?? m.moments[0];
 
+const newest = (xs: Moment[]) => [...xs].sort((a, b) => b.started_unix - a.started_unix)[0];
+
+/** The hero: the newest recorded full run. A drill runs the same loop every day and is listed under it, labelled. */
+export const recordedMoment = (m: Moments): Moment => newest(m.moments.filter((x) => x.kind === "recorded")) ?? latestMoment(m);
+
+/** The newest automated drill, when one has run. */
+export const latestDrill = (m: Moments): Moment | null => newest(m.moments.filter((x) => x.kind === "drill")) ?? null;
+
+/** A run's step, by key: \"verified\", \"t1\", \"paid\", \"paused_<chain id>\"... */
+export const stepOf = (m: Moment, key: string) => m.steps.find((s) => s.key === key);
+
+/** When the last chain paused, if every chain did. */
+export const pausedBy = (m: Moment) => {
+  const paused = m.steps.filter((s) => s.key.startsWith("paused_"));
+  return m.paused_everywhere && paused.length ? Math.max(...paused.map((s) => s.seconds)) : null;
+};
+
 /** The landing's "Watch the one moment" fires this; the panel replays it (unless motion is reduced). */
 export const PLAY_EVENT = "antibody:play-moment";
 
