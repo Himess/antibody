@@ -6,6 +6,7 @@ import { Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { Empty } from "@/components/ui/States";
 import { TxLink } from "@/components/ui/TxLink";
+import { Sealed } from "@/components/ui/Verdict";
 import type { ProgramDetail } from "@/lib/api";
 import { findEvent, rowsWithTag, slotName, usdMicro, whoLabel, type SlotView } from "./helpers";
 import styles from "./programs.module.css";
@@ -52,6 +53,7 @@ export function KnownIssues({ d, slots, id, antibody }: { d: ProgramDetail; slot
                       )}
                     </div>
                   </div>
+                  <Sealed seed={(k.tags ?? []).join("") || `known-${i}`} label="Content sealed for good" lines={2} />
                   <dl className={`kv ${styles.kvStack}`}>
                     <dt>Rules</dt>
                     <dd className="small">{(k.slots ?? []).map((b) => `${slotName(slots, b)} (slot ${b})`).join(", ") || "—"}</dd>
@@ -84,7 +86,7 @@ export function KnownIssues({ d, slots, id, antibody }: { d: ProgramDetail; slot
                           <span key={r.commit_id}>
                             {j ? ", " : ""}
                             <Link href={`/commits/${r.commit_id}`}>commit {r.commit_id}</Link>
-                            {whoLabel(r.hunter) ? ` (${whoLabel(r.hunter)})` : ""}
+                            {whoLabel(r.hunter, r.program_id) ? ` (${whoLabel(r.hunter, r.program_id)})` : ""}
                           </span>
                         ))
                       ) : (

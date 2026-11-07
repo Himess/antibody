@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { RUN_BINDING } from "@/components/checks/trust-data";
 import { TierBadge } from "@/components/ui/Badges";
 import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
@@ -9,8 +10,32 @@ import { TxLink } from "@/components/ui/TxLink";
 import type { IndexedEvent } from "@/lib/api";
 import { chainName, sourceUrl } from "@/lib/config";
 import { RequestIdFinder } from "./RequestIdFinder";
-import { evData, isObj, kindWords, numOf, strOf, type T2Find } from "./model";
+import { evData, isObj, isVerdictMode, keyFile, kindWords, modeName, numOf, strOf, type KeyState, type T2Find } from "./model";
 import styles from "./commit.module.css";
+
+/** What a run that judges no proof outputs, in a few words (spec §5.2, mode-specific fields). */
+const PRODUCED: Record<string, string> = {
+  activate: "the program's sealing public key",
+  check_round: "its check of the proposed round",
+  release_wrap: "the proof's content key, wrapped to the project's key",
+  disclose: "the disclosure keys of the tags it was asked for",
+  distinct: "whether the two proofs are distinct bugs",
+};
+
+/** "A round check", "An activation". */
+const aMode = (mode: string | null) => {
+  const n = modeName(mode);
+  return `${/^[aeiou]/i.test(n) ? "An" : "A"} ${n}`;
+};
+
+/** What T1 adds for each kind of run (spec §6: structural facts need T1; §11.4: a confirmed wrap stands). */
+function t1Adds(mode: string | null): string {
+  if (!mode || mode === "verify" || mode === "second") return "Instant payouts need T1.";
+  if (mode === "release_wrap") return "A T1-confirmed wrap stands; a wrap no quote confirmed may be requested again.";
+  if (mode === "rerun" || mode === "activate" || mode === "check_round" || mode === "disclose")
+    return `${aMode(mode)}'s result counts only once its run is T1-confirmed.`;
+  return "";
+}
 
 /** What a T2 proof's public values bind (docs/zk.md, "near-t2"), as near-antibody records them. */
 export interface Bound {
@@ -42,6 +67,10 @@ export interface TierInput {
   wasmSha: string | null;
   t2: T2Find;
   bound: Bound;
+  /** The run's mode (verify when omitted): only verify, second and rerun runs are verdicts T2 can prove. */
+  mode?: string | null;
+  /** Who can open the proof besides the TEE (a published key makes the run one of T2's four). */
+  keyState?: KeyState;
 }
 
 function Row({
@@ -81,6 +110,12 @@ export function Tiers(x: TierInput) {
   const t0 = Boolean(x.answered) || Boolean(x.tier);
   const t1 = x.tier === "T1" || x.tier === "T2" || Boolean(x.t1);
   const requestSha = strOf(evData(x.requested).request_sha256) ?? x.bound.requestSha;
+  const mode = x.mode ?? null;
+  const verdict = isVerdictMode(mode);
+  const produced = mode ? PRODUCED[mode] : undefined;
+  // Run 33's OutLayer request, as the T1 results file records it (docs/results/t1-collateral-2026-11-06.json).
+  const known =
+    x.runId === RUN_BINDING.run && x.requested?.tx === RUN_BINDING.revealTx ? { requestId: RUN_BINDING.requestId, source: RUN_BINDING.source } : null;
   return (
     <div className={styles.tiers}>
       <Row
@@ -121,13 +156,16 @@ export function Tiers(x: TierInput) {
         ) : (
           <p className="small muted">
             {t0 ? "OutLayer's operator delivered the TEE worker's output to near-antibody" : "OutLayer's operator delivers the TEE worker's output to near-antibody"}
-            {x.kind ? `: ${kindWords(x.kind)}` : ""}
+            {verdict || (x.kind && x.kind !== "NoViolation") ? (x.kind ? `: ${kindWords(x.kind)}` : "") : produced ? `: ${produced}` : ""}
             {x.receipt ? (
               <>
                 , receipt <Hash value={x.receipt} head={12} label="receipt sha256" />
               </>
             ) : null}
-            . On its own, a T0 verdict settles a submission only after its challenge window.
+            .{" "}
+            {verdict
+              ? "On its own, a T0 verdict settles a submission only after its challenge window."
+              : `${aMode(mode)} judges no proof: its answer is not a verdict.`}
           </p>
         )}
       </Row>
@@ -155,7 +193,7 @@ export function Tiers(x: TierInput) {
               </p>
             ) : null}
             {x.requested && x.signer ? (
-              <RequestIdFinder tx={x.requested.tx} signer={x.signer} requestSha={requestSha} blobSha={x.bound.blobSha} wasmSha={x.wasmSha} />
+              <RequestIdFinder tx={x.requested.tx} signer={x.signer} requestSha={requestSha} blobSha={x.bound.blobSha} wasmSha={x.wasmSha} known={known} />
             ) : (
               <Command label="T1 check">{"antibody tee check --request-id <the run's OutLayer request>"}</Command>
             )}
@@ -178,9 +216,16 @@ export function Tiers(x: TierInput) {
       >
         <p className="small muted">
           {t1
-            ? "OutLayer's attestation names the pinned verifier wasm and the sha256 of the request near-antibody sent and of the output it received; NEAR's DCAP verifier accepted the run's Intel TDX quote over it. Instant payouts need T1."
+            ? [
+                "OutLayer's attestation names the pinned verifier wasm and the sha256 of the request near-antibody sent and of the output it received; NEAR's DCAP verifier accepted the run's Intel TDX quote over it.",
+                t1Adds(mode),
+              ]
+                .filter(Boolean)
+                .join(" ")
             : x.answered
-              ? "Not T1-confirmed: the verdict stands on its T0 answer and its challenge window. The T1 relayer sends each answered run's quote, and anyone may."
+              ? verdict
+                ? "Not T1-confirmed: the verdict stands on its T0 answer and its challenge window. The T1 relayer sends each answered run's quote, and anyone may."
+                : ["Not T1-confirmed yet.", t1Adds(mode), "The T1 relayer sends each answered run's quote, and anyone may."].filter(Boolean).join(" ")
               : "Once the TEE answers, the T1 relayer (or anyone) relays the run's quote to near-antibody, which verifies it on chain."}
         </p>
       </Row>
@@ -189,12 +234,28 @@ export function Tiers(x: TierInput) {
         badge={<TierBadge tier="T2" />}
         title="A validity proof of the disclosed verdict"
         reached={Boolean(x.t2.record && x.t2.record.outcome === "confirmed")}
-        state={<T2State t2={x.t2} />}
-        checks={<T2Checks x={x} />}
+        state={verdict || x.t2.record ? <T2State t2={x.t2} /> : <Pill size="sm">no verdict to prove</Pill>}
+        checks={verdict || x.t2.record ? <T2Checks x={x} /> : <T2Docs />}
       >
-        <T2About t2={x.t2} />
+        {verdict || x.t2.record ? (
+          <T2About t2={x.t2} keyState={x.keyState} />
+        ) : (
+          <p className="small muted">
+            T2 proves a verdict: the verifier&apos;s re-run of a disclosed proof. {aMode(mode)} judges no proof, so it has nothing for T2 to prove.
+          </p>
+        )}
       </Row>
     </div>
+  );
+}
+
+function T2Docs() {
+  return (
+    <p className="xsmall muted">
+      <a href={sourceUrl("docs/zk.md")} target="_blank" rel="noreferrer noopener">
+        How T2 works (docs/zk.md)
+      </a>
+    </p>
   );
 }
 
@@ -230,8 +291,9 @@ function T2State({ t2 }: { t2: T2Find }) {
   );
 }
 
-function T2About({ t2 }: { t2: T2Find }) {
+function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
   const r = t2.record;
+  const fixture = keyState?.kind === "published" ? keyState.fixture : null;
   if (r?.outcome === "confirmed")
     return (
       <p className="small muted">
@@ -249,30 +311,33 @@ function T2About({ t2 }: { t2: T2Find }) {
     );
   }
   if (t2.notYet)
-    return (
+    return fixture ? (
+      <p className="small muted">
+        T2 is not yet on testnet. This run is one of the four whose content key is published (
+        <a href={sourceUrl(keyFile(fixture))} target="_blank" rel="noreferrer noopener">
+          <code>{fixture}</code>
+        </a>
+        ): its SP1 proof waits on SP1&apos;s prover network, and near-t2 will check it against near-antibody&apos;s records. No privacy claim; no payout
+        depends on it.
+      </p>
+    ) : (
       <p className="small muted">
         T2 is not yet on testnet. Once near-t2 is deployed, an SP1 proof that the verifier, re-run on this run&apos;s exact input, gives the same receipt is
         checked on NEAR against near-antibody&apos;s records, after the proof is disclosed. No privacy claim; no payout depends on it.
       </p>
     );
-  if (t2.error) return <ErrorState what="near-t2's records" error={t2.error} />;
+  if (t2.error) return <ErrorState what="near-t2's records" error={t2.error} partial />;
   return (
     <p className="small muted">
-      near-t2 has no record of this run yet. A T2 proof re-runs the disclosed proof, so it follows disclosure; practice tries are proven by the T2 prover
-      service, since their content key is public.
+      near-t2 has no record of this run yet. A T2 proof re-runs a disclosed proof, so it follows disclosure, or a published key; a practice try sealed with
+      the public practice key is proven by the T2 prover service with nothing handed over.
     </p>
   );
 }
 
 function T2Checks({ x }: { x: TierInput }) {
   const r = x.t2.record;
-  const docs = (
-    <p className="xsmall muted">
-      <a href={sourceUrl("docs/zk.md")} target="_blank" rel="noreferrer noopener">
-        How T2 works (docs/zk.md)
-      </a>
-    </p>
-  );
+  const docs = <T2Docs />;
   if (!r) {
     return (
       <>

@@ -139,6 +139,8 @@ export function PilotForm({ defaultRole }: { defaultRole?: Role }) {
   }
 
   const listed = FIELD_ORDER.filter((f) => errors[f]);
+  // The hints follow the role: a project's contracts and launch, or the person's own work.
+  const forProject = values.role === "project";
   const text = (field: TextField) => ({
     value: values[field],
     error: errors[field],
@@ -209,14 +211,28 @@ export function PilotForm({ defaultRole }: { defaultRole?: Role }) {
       </fieldset>
 
       <div className={styles.pair}>
-        <TextInput field="name" label="Name" autoComplete="name" {...text("name")} />
+        <TextInput field="name" label="Name" hint="Your name or a handle." autoComplete="name" {...text("name")} />
         <TextInput field="contact" label="Contact" hint="Email, Telegram or X: where we reply." autoComplete="email" spellCheck={false} {...text("contact")} />
       </div>
       <div className={styles.pair}>
         <TextInput field="project" label="Project or site" hint="A name or a link." optional autoComplete="organization" {...text("project")} />
-        <TextInput field="chains" label="Chains" hint="The chains your contracts run on." optional autoComplete="off" {...text("chains")} />
+        <TextInput
+          field="chains"
+          label="Chains"
+          hint={forProject ? "The chains your contracts run on." : "The chains you work on."}
+          optional
+          autoComplete="off"
+          {...text("chains")}
+        />
       </div>
-      <TextInput field="timeline" label="Timeline" hint="For example, a launch or an upgrade date." optional autoComplete="off" {...text("timeline")} />
+      <TextInput
+        field="timeline"
+        label="Timeline"
+        hint={forProject ? "For example, a launch or an upgrade date." : "When you would start."}
+        optional
+        autoComplete="off"
+        {...text("timeline")}
+      />
       <TextInput
         field="notes"
         label="Notes"

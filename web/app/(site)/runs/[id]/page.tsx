@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   DEFAULT_ANTIBODY,
+  evData,
   findT2,
+  isObj,
+  isVerdictMode,
+  keyState,
   kindWords,
+  modeName,
   numOf,
   parseId,
+  programInfo,
   runEvent,
+  runOfEvent,
   runOutcome,
   slotName,
   sortedEvents,
@@ -16,11 +24,12 @@ import {
 } from "@/components/commit/model";
 import { RawRun, RunFacts } from "@/components/commit/RunFacts";
 import { Tiers, type Bound } from "@/components/commit/Tiers";
+import { Timeline } from "@/components/commit/Timeline";
 import { KindBadge, TierBadge } from "@/components/ui/Badges";
 import { PageHead, Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { ErrorState } from "@/components/ui/States";
-import { api, t2NotYet, type ProgramDetail } from "@/lib/api";
+import { api, t2NotYet, type IndexedEvent, type ProgramDetail } from "@/lib/api";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -31,17 +40,45 @@ const crumbs = (id: number, program: number | null, commit: number | null) => [
   { href: `/runs/${id}`, label: `Run ${id}` },
 ];
 
+/** A round check's answer, from its facts' `RoundCheck` (spec §8.1). */
+function roundCheck(a: Answered | null): { ok: boolean; canaries: boolean } | null {
+  const rc = a && isObj(a.extra) && isObj(a.extra.RoundCheck) ? a.extra.RoundCheck : null;
+  return rc ? { ok: rc.ok === true, canaries: rc.canaries_ok === true } : null;
+}
+
+/**
+ * The round a round check's proposal opened, with its release gate (`program.rounds`): the proposal is the
+ * `round_proposed` event that names this run, and a round opens with the last proposal for its number.
+ */
+function checkedRound(run: number, program: ProgramDetail | null, events: IndexedEvent[]): { round: number; holds: boolean } | null {
+  const proposed = events.find((e) => e.event === "round_proposed" && runOfEvent(e) === run);
+  const round = numOf(evData(proposed).round);
+  if (round === null) return null;
+  const last = events.filter((e) => e.event === "round_proposed" && numOf(evData(e).round) === round).at(-1);
+  if (last && runOfEvent(last) !== run) return null;
+  const opened = program?.program?.rounds?.find((r) => r.round === round);
+  return opened && typeof opened.release_gate === "boolean" ? { round, holds: opened.release_gate } : null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = parseId((await params).id);
   if (id === null) return { title: "Run not found" };
   const r = await api.run(id);
   if (!r.ok) return { title: `Run ${id}` };
   const o = runOutcome(r.data.raw?.outcome);
-  const mode = strOf(r.data.raw?.mode) ?? strOf(r.data.run?.mode) ?? "run";
-  const kind = o.status === "answered" ? kindWords(o.a.kind) : o.status === "failed" ? "Failed" : "In flight";
+  const mode = strOf(r.data.raw?.mode) ?? strOf(r.data.run?.mode);
+  // A run that judges no proof answers with a fixed NoViolation: its title names no verdict.
+  const kind =
+    o.status === "failed"
+      ? "Failed"
+      : o.status === "pending"
+        ? "In flight"
+        : isVerdictMode(mode) || o.a.kind !== "NoViolation"
+          ? kindWords(o.a.kind)
+          : null;
   const tier = strOf(r.data.tier) ?? strOf(r.data.run?.tier);
-  const title = `Run ${id} · ${mode} · ${kind}${tier ? ` · ${tier}` : ""}`;
-  const description = `A verification run on NEAR testnet: mode ${mode}, ${kind}${tier ? `, tier ${tier}` : ""}, program ${r.data.raw?.program ?? "—"}${r.data.raw?.commit !== null && r.data.raw?.commit !== undefined ? `, commit ${r.data.raw.commit}` : ""}.`;
+  const title = `Run ${id} · ${modeName(mode)}${kind ? ` · ${kind}` : ""}${tier ? ` · ${tier}` : ""}`;
+  const description = `A ${modeName(mode)} run on NEAR testnet${kind ? `: ${kind}` : ""}${tier ? `, tier ${tier}` : ""}, program ${r.data.raw?.program ?? "—"}${r.data.raw?.commit !== null && r.data.raw?.commit !== undefined ? `, commit ${r.data.raw.commit}` : ""}.`;
   return {
     title,
     description,
@@ -67,10 +104,21 @@ function lede(x: { id: number; mode: string | null; a: Answered | null; failed: 
       return `The release wrap for ${x.commit !== null ? `commit ${x.commit}` : "a paid finding"}: after payment, the proof's content key wrapped to the project's own key, so the project reads exactly what it paid for.`;
     case "activate":
       return `Program ${x.program ?? "—"}'s activation: the TEE derived the program's keys and output its sealing public key.`;
-    case "check_round":
-      return `The check of round ${x.round ?? "—"}'s proposed fix for program ${x.program ?? "—"}: ${verdict}.`;
+    case "check_round": {
+      const rc = roundCheck(x.a);
+      const said = x.failed
+        ? verdict
+        : rc
+          ? rc.ok
+            ? `a valid round${rc.canaries ? ", its canaries still succeeding" : ", but a canary fails"}`
+            : "refused"
+          : x.a && x.a.kind !== "NoViolation"
+            ? kindWords(x.a.kind)
+            : "in flight";
+      return `The TEE's check of round ${x.round ?? "—"}'s proposed fix for program ${x.program ?? "—"}: ${said}.`;
+    }
     case "disclose":
-      return `A disclosure run for program ${x.program ?? "—"}.`;
+      return `A disclosure run for program ${x.program ?? "—"}: the TEE released the disclosure keys of the tags it was asked for.`;
     default:
       return `Run ${x.id} of program ${x.program ?? "—"}: ${verdict}.`;
   }
@@ -85,7 +133,7 @@ export default async function RunPage({ params }: Props) {
     if (unknownId(rr)) notFound();
     return (
       <>
-        <PageHead crumbs={crumbs(id, null, null)} eyebrow="Verification run" title={`Run ${id}`} />
+        <PageHead crumbs={crumbs(id, null, null)} eyebrow="Run" title={`Run ${id}`} />
         <div className="page">
           <ErrorState what={`run ${id}`} error={rr.error} />
         </div>
@@ -106,13 +154,19 @@ export default async function RunPage({ params }: Props) {
   const commitEvents = commit ? sortedEvents(commit.events) : [];
   const programEvents = program ? sortedEvents(program.events) : [];
   const requested = runEvent(commitEvents, "run_requested", id) ?? runEvent(programEvents, "run_requested", id);
-  const answered = runEvent(commitEvents, "run_answered", id);
-  const t1Ev = runEvent(commitEvents, "t1_confirmed", id);
+  // A program's own run (an activation, a round check) has no commit: its later events are read from the
+  // event log right after its request.
+  const near =
+    commitId === null && requested ? await api.events(Math.max(0, (numOf(requested.seq) ?? 1) - 1), 60) : null;
+  const logEvents = near && near.ok ? sortedEvents(near.data?.events) : [];
+  const answered = runEvent(commitEvents, "run_answered", id) ?? runEvent(logEvents, "run_answered", id);
+  const t1Ev = runEvent(commitEvents, "t1_confirmed", id) ?? runEvent(logEvents, "t1_confirmed", id);
 
   const o = runOutcome(raw?.outcome);
   const a = o.status === "answered" ? o.a : null;
   const failed = o.status === "failed" ? o.reason : null;
   const mode = strOf(raw?.mode) ?? strOf(d.run?.mode);
+  const verdict = isVerdictMode(mode);
   const round = numOf(raw?.round);
   const teeTier = a?.tier ?? strOf(d.run?.tier);
   const t2find = findT2(id, d.t2, t2, t2NotYet(t2));
@@ -121,6 +175,23 @@ export default async function RunPage({ params }: Props) {
   const contract = (health.ok && strOf(health.data.contracts?.antibody)) || DEFAULT_ANTIBODY;
   const wasmSha = health.ok ? (strOf(health.data.contracts?.release?.verifier?.wasm_hash) ?? null) : null;
   const requestSha = strOf(raw?.request_sha256);
+  const info = programId !== null ? programInfo(programId, program) : null;
+  const keys = keyState({
+    disclosed: commitEvents.some((e) => e.event === "disclosed"),
+    commitId,
+    runId: id,
+    programId,
+    receipt: a?.receipt,
+    practice: info?.practice ?? false,
+  });
+
+  // The run's own steps, timed from its commit's block (a program's own run: from its request).
+  const commitEv = commitEvents.find((e) => e.event === "commit");
+  const runSteps: IndexedEvent[] =
+    commitId !== null
+      ? commitEvents.filter((e) => e.event === "commit" || runOfEvent(e) === id)
+      : [...(requested ? [requested] : []), ...logEvents.filter((e) => runOfEvent(e) === id && e.seq !== requested?.seq)];
+  const baseNs = commitEv?.block_ts_ns ?? requested?.block_ts_ns ?? null;
 
   const r0 = round ?? 0;
   const bound: Bound = {
@@ -138,6 +209,8 @@ export default async function RunPage({ params }: Props) {
     programKey: strOf(program?.program?.key),
   };
 
+  const gate = mode === "check_round" ? checkedRound(id, program, programEvents) : null;
+
   const t2Note = t2Confirmed ? (
     <Pill tone="t2" size="sm">
       T2 confirmed
@@ -146,26 +219,24 @@ export default async function RunPage({ params }: Props) {
     <Pill tone="bad" size="sm">
       T2 contradicts
     </Pill>
-  ) : t2find.notYet ? (
+  ) : t2find.notYet && verdict ? (
     <Pill tone="pending" size="sm">
       T2: not yet on testnet
     </Pill>
   ) : null;
 
-  const verdictModes = mode === "verify" || mode === "second" || mode === "rerun" || mode === "check_round";
-
   return (
     <>
       <PageHead
         crumbs={crumbs(id, programId, commitId)}
-        eyebrow={`Verification run · ${mode ?? "unknown mode"}${programId !== null ? ` · program ${programId}` : ""}`}
+        eyebrow={`Run · ${modeName(mode)}${programId !== null ? ` · program ${programId}` : ""}`}
         title={`Run ${id}`}
         lede={lede({ id, mode, a, failed, commit: commitId, program: programId, round, p: program })}
       >
         {failed ? (
           <Pill tone="warn">failed</Pill>
         ) : a ? (
-          verdictModes ? (
+          verdict || a.kind !== "NoViolation" ? (
             <KindBadge kind={a.kind} />
           ) : (
             <Pill tone="ok">answered</Pill>
@@ -174,18 +245,30 @@ export default async function RunPage({ params }: Props) {
           <Pill tone="pending">in flight</Pill>
         )}
         <TierBadge tier={tierShown} />
-        {mode ? <span className="tag">{mode}</span> : null}
+        {gate && programId !== null ? (
+          <Link href={`/programs/${programId}#rounds`} className="small tap">
+            Round {gate.round}: release gate {gate.holds ? "holds" : "shut"}
+          </Link>
+        ) : null}
       </PageHead>
 
       {pr && !pr.ok ? (
         <div className="page" style={{ marginBottom: 16 }}>
-          <ErrorState what={`program ${programId}`} error={pr.error}>
+          <ErrorState what={`program ${programId}`} error={pr.error} partial>
             <span className="small">Slot names come from the program; the run&apos;s own record below stands without it.</span>
           </ErrorState>
         </div>
       ) : null}
 
-      <Section id="facts" title="What the TEE answered" lede="The run as near-antibody records it: every hash below is checkable against NEAR.">
+      <Section
+        id="facts"
+        title="What the TEE answered"
+        lede={
+          verdict
+            ? "The run as near-antibody records it: every hash below is checkable against NEAR."
+            : `The run as near-antibody records it: ${/^[aeiou]/.test(modeName(mode)) ? "an" : "a"} ${modeName(mode)}'s output, not a verdict. Every hash below is checkable against NEAR.`
+        }
+      >
         <RunFacts
           mode={mode}
           a={a}
@@ -205,6 +288,36 @@ export default async function RunPage({ params }: Props) {
         />
       </Section>
 
+      {runSteps.length ? (
+        <Section
+          id="timeline"
+          title="Timeline"
+          lede={`Every step is a NEAR transaction, timed by block from ${commitId !== null ? `commit ${commitId}'s block` : "the run's request"}.`}
+        >
+          <Timeline
+            commitId={commitId ?? 0}
+            hunter={commit?.commit?.hunter ?? ""}
+            project={strOf(program?.program?.project)}
+            beneficiary={commit?.commit?.beneficiary ?? ""}
+            bond={commit?.commit?.bond ?? null}
+            round={numOf(commit?.commit?.round) ?? 0}
+            events={runSteps}
+            pauseEvents={[]}
+            permits={[]}
+            baseNs={baseNs}
+            label={o.status === "pending" ? "" : o.status}
+            hasKeys={false}
+            disclosed={keys.kind === "disclosed"}
+            windows={{ reveal: null, challenge: null, disclosure: null }}
+            program={program}
+            programId={programId}
+            practice={info?.practice ?? false}
+            runOnly
+            baseWhat={commitId !== null ? "the commit's block" : "the run's request"}
+          />
+        </Section>
+      ) : null}
+
       <Section id="tiers" title="Who vouches for it" lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them.">
         <Tiers
           runId={id}
@@ -220,6 +333,8 @@ export default async function RunPage({ params }: Props) {
           wasmSha={wasmSha}
           t2={t2find}
           bound={bound}
+          mode={mode}
+          keyState={keys}
         />
       </Section>
 

@@ -1,3 +1,5 @@
+import { Cell } from "@/components/programs/Cell";
+import cards from "@/components/programs/programs.module.css";
 import { Command } from "@/components/ui/Command";
 import { Icon } from "@/components/ui/Icon";
 import { Section } from "@/components/ui/PageHead";
@@ -61,8 +63,8 @@ export function SignableCalls() {
       }
     >
       <div className="stack">
-        <div className="table-wrap">
-          <table className={`table ${styles.callsTable}`}>
+        <div className={`table-wrap ${cards.cardsWrap}`}>
+          <table className={`table ${cards.rtable} ${styles.callsTable}`}>
             <caption className="visually-hidden">Transactions the account page can ask a wallet to sign</caption>
             <thead>
               <tr>
@@ -76,16 +78,24 @@ export function SignableCalls() {
             <tbody>
               {CALLS.map((c) => (
                 <tr key={c.action}>
-                  <td>{c.action}</td>
-                  <td>
+                  <Cell label="Action" lead>
+                    {c.action}
+                  </Cell>
+                  <Cell label="Call">
                     <span className={styles.cellStack}>
                       <span className="mono">{c.to}</span>
                       <span className="mono xsmall">{c.method}</span>
                     </span>
-                  </td>
-                  <td className={styles.codeCell}>{c.args}</td>
-                  <td className="small">{c.attached}</td>
-                  <td className="small num">{c.gas}</td>
+                  </Cell>
+                  <Cell label="Arguments" className={styles.argsCell}>
+                    <span className={styles.codeText}>{c.args}</span>
+                  </Cell>
+                  <Cell label="Attached" className="small">
+                    {c.attached}
+                  </Cell>
+                  <Cell label="Gas" className="small num nowrap">
+                    {c.gas}
+                  </Cell>
                 </tr>
               ))}
             </tbody>
@@ -102,13 +112,15 @@ export function SignableCalls() {
           <p className="callout callout-ok">
             <Icon name="shield" size={16} />
             <span>
-              Never asked for: a message signature, a new access key, a transfer to another account, or a call to any other contract. Signing in only tells
-              the page your account id.
+              Never asked for: a message signature, a new access key, a plain transfer, or a call to any other contract. The NEAR and wNEAR you deposit are
+              credited to your own account, at near-antibody or at wrap.testnet. Signing in only tells the page your account id.
             </span>
           </p>
         </div>
-        <h3>Before you sign: the code at these contracts</h3>
-        <ContractCheck />
+        <div className={styles.subBlock}>
+          <h3>Before you sign: the code at these contracts</h3>
+          <ContractCheck />
+        </div>
       </div>
     </Section>
   );
@@ -186,8 +198,9 @@ export function HowItConnects() {
           <div className="card-flat stack" style={{ ["--gap" as string]: "6px" }}>
             <h3>The connector</h3>
             <p className="small muted">
-              NEAR Connect (npm <span className="mono">@hot-labs/near-connect</span> 0.12.0, pinned), part of this site&apos;s code and loaded on this page
-              only, when you connect or a saved session is restored. This page draws its own wallet list instead of the connector&apos;s.
+              A NEAR wallet connector library, version 0.12.0, pinned in <Src path="web/package.json">package.json</Src>. It is part of this site&apos;s
+              code and loads on this page only, when you connect or a saved session is restored. This page draws its own wallet list instead of the
+              connector&apos;s.
             </p>
           </div>
           <div className="card-flat stack" style={{ ["--gap" as string]: "6px" }}>
@@ -201,13 +214,13 @@ export function HowItConnects() {
           <div className="card-flat stack" style={{ ["--gap" as string]: "6px" }}>
             <h3>Pinned, and fenced by the CSP</h3>
             <p className="small muted">
-              Three of the four scripts are fixed to a commit; Intear Wallet serves its own. The Content-Security-Policy allows each script by its exact path,
-              and the iframe inherits that policy, so its requests are held to the same list.
+              Three of the four scripts are fixed to a commit; one wallet serves its own, marked in the table. The Content-Security-Policy allows each script
+              by its exact path, and the iframe inherits that policy, so its requests are held to the same list.
             </p>
           </div>
         </div>
-        <div className="table-wrap">
-          <table className="table">
+        <div className={`table-wrap ${cards.cardsWrap}`}>
+          <table className={`table ${cards.rtable}`}>
             <caption className="visually-hidden">The wallets offered, their connector scripts and what they contact</caption>
             <thead>
               <tr>
@@ -222,13 +235,13 @@ export function HowItConnects() {
                 const s = hostPath(w.script.url);
                 return (
                   <tr key={w.id}>
-                    <td>
+                    <Cell label="Wallet" lead>
                       <span className={styles.cellStack}>
                         <strong>{w.name}</strong>
                         <span className="xsmall muted">{w.kind}</span>
                       </span>
-                    </td>
-                    <td>
+                    </Cell>
+                    <Cell label="Script">
                       <span className={styles.cellStack}>
                         <span className="mono xsmall" style={{ overflowWrap: "anywhere" }}>
                           {s.host}
@@ -238,16 +251,18 @@ export function HowItConnects() {
                           {w.script.pinned ? `fixed at commit ${w.script.commit}` : "served by the wallet; not pinned"} · {w.script.bytes}
                         </span>
                       </span>
-                    </td>
-                    <td className="small">
+                    </Cell>
+                    <Cell label="Contacts" className="small">
                       {w.contacts.map((c) => (
                         <span key={c.origin} className={styles.cellStack}>
                           <span className="mono xsmall">{c.origin.replace(/^https?:\/\//, "")}</span>
                           <span className="xsmall muted">{c.why}</span>
                         </span>
                       ))}
-                    </td>
-                    <td className="mono xsmall">{w.opens.length ? w.opens.map((o) => o.replace(/^https:\/\//, "")).join(", ") : "—"}</td>
+                    </Cell>
+                    <Cell label="May open">
+                      <span className="mono xsmall">{w.opens.length ? w.opens.map((o) => o.replace(/^https:\/\//, "")).join(", ") : "—"}</span>
+                    </Cell>
                   </tr>
                 );
               })}

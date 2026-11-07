@@ -104,6 +104,14 @@ export function PermitTx({ p, chainId, recorded }: { p: ReflexPermit; chainId: n
         </a>
       </span>
     );
+  // Applied on chain (the adapter says so) with no recorded relay transaction: say exactly that.
+  if (!p.tx && (p.status === "applied" || p.status === "confirmed"))
+    return (
+      <span className="stack" style={{ ["--gap" as string]: "2px" }}>
+        <span className="small">relay transaction not recorded</span>
+        <span className="xsmall muted">applied, per {p.source || "the adapter"}</span>
+      </span>
+    );
   if (!p.tx) return <span className="small muted">not on chain yet</span>;
   return (
     <span className="stack" style={{ ["--gap" as string]: "2px" }}>
@@ -146,14 +154,13 @@ function ChainCard({ c, names, recorded }: { c: Chain; names: Map<string, string
         </dd>
       </dl>
       {permits.length ? (
-        <div className={`table-wrap ${styles.cardsWrap}`}>
+        <div className={`table-wrap ${styles.cardsWrap} ${styles.inCard}`}>
           <table className={`table ${styles.rtable}`}>
             <caption className="visually-hidden">Permits on {chainName(c.chain_id)}</caption>
             <thead>
               <tr>
                 <th scope="col">Permit</th>
                 <th scope="col">What it does</th>
-                <th scope="col">Round</th>
                 <th scope="col">Status</th>
                 <th scope="col">Transaction</th>
               </tr>
@@ -166,9 +173,7 @@ function ChainCard({ c, names, recorded }: { c: Chain; names: Map<string, string
                   </Cell>
                   <Cell label="What">
                     <PermitWhat p={p} names={names} />
-                  </Cell>
-                  <Cell label="Round">
-                    <span className="num">{p.round}</span>
+                    <span className={`${styles.sub} num`}>round {p.round}</span>
                   </Cell>
                   <Cell label="Status">
                     <PermitStatus status={recordedOf(p)?.status ?? p.status} />
@@ -190,7 +195,18 @@ function ChainCard({ c, names, recorded }: { c: Chain; names: Map<string, string
 
 async function ChainsBody({ d, id, kind, moment }: { d: ProgramDetail; id: number; kind: ProgramKind; moment: boolean }) {
   const r = await getReflex(id);
-  if (!r.ok) return <ErrorState what="the chains (the reflex panel)" error={r.error} />;
+  if (!r.ok)
+    return (
+      <div className="stack">
+        <ErrorState what="the chains (the reflex panel)" error={r.error}>
+          <span className="small">
+            The API reads each chain&apos;s adapter live, which can be slow; this page retries on its next load. The same permits,
+            from a terminal:
+          </span>
+        </ErrorState>
+        <Command label="CLI command">{`antibody judge --program ${id}`}</Command>
+      </div>
+    );
   const chains = r.data?.chains ?? [];
   if (!chains.length)
     return (
@@ -211,7 +227,8 @@ async function ChainsBody({ d, id, kind, moment }: { d: ProgramDetail; id: numbe
           pause and upgrade; it can never unpause.
         </p>
       ) : null}
-      <div className="grid grid-2">
+      {/* One chain per row: each permit table keeps its transaction column in view. */}
+      <div className="stack">
         {chains.map((c) => (
           <ChainCard key={c.chain_id} c={c} names={names} recorded={recorded} />
         ))}

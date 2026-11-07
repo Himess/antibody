@@ -5,11 +5,11 @@ import { type FormEvent, useEffect, useId, useRef, useState, useSyncExternalStor
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { sourceUrl } from "@/lib/config";
-import { utc } from "@/lib/format";
+import { relative, utc } from "@/lib/format";
 import { type SavedTry, suggestName, type TrySnapshot } from "@/lib/practice/flow";
 import { checkName } from "@/lib/practice/near-tx";
 import { nextHourMs } from "@/lib/practice/vending";
-import { BeforeStart, type PreState } from "./BeforeStart";
+import { BeforeStart, type PreState, type Readiness, readiness, resetAt } from "./BeforeStart";
 import { BrowserLedger } from "./BrowserLedger";
 import type { TryInitial } from "./initial";
 import { RecordedTries } from "./RecordedTries";
@@ -58,12 +58,98 @@ function StreamPill({ s }: { s: TrySnapshot }) {
 function FailureHelp({ s }: { s: TrySnapshot }) {
   const kind = s.error?.kind;
   if (kind === "capacity")
-    return <p className="small">This hour&apos;s practice accounts are vended. The count resets at the top of the hour (UTC); meanwhile the recorded tries below show the loop, and the CLI runs the same try.</p>;
+    return (
+      <p className="small">
+        This hour&apos;s practice accounts are vended, whichever client asks (the CLI too). The count resets at the top of the hour (UTC); meanwhile the recorded tries
+        below show the same loop.
+      </p>
+    );
   if (kind === "faucet")
     return <p className="small">The practice faucet cannot pay for a try now; the operator refills it. Meanwhile: the recorded tries below, or the CLI with your own testnet account.</p>;
   if (kind === "rpc") return <p className="small">The public NEAR RPCs did not answer: they rate-limit. Wait a minute and start again with a new name, or use the CLI below.</p>;
   if (kind === "verdict") return <p className="small">The run did not give a verdict. Start again with a new name; the loop is the same.</p>;
   return <p className="small">Start again with a new name, or run the same try from the CLI below.</p>;
+}
+
+/** "program 6", once the vending contract has named it. */
+const programShort = (r: Readiness) => (r.data ? `program ${r.data.programId}` : "the practice program");
+
+/** When T1 may not come before: the last of the worker images still inside their delay. */
+function T1Until({ r, now }: { r: Readiness; now: number | null }) {
+  const last = r.pending[r.pending.length - 1];
+  return (
+    <>
+      <time dateTime={new Date(last.countsFrom * 1000).toISOString()}>{utc(last.countsFrom)}</time>
+      {now !== null ? ` (${relative(last.countsFrom, now)})` : ""}
+    </>
+  );
+}
+
+/** How long a try takes now, and what may stop it, said beside the Start button. */
+function Expectation({ id, initial, r, now }: { id: string; initial: TryInitial; r: Readiness; now: number | null }) {
+  const held = r.data?.held;
+  return (
+    <div id={id} className={styles.expect}>
+      {r.pending.length ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="clock" size={15} />
+          <span>
+            <strong>About a minute and a half now.</strong> T1 may not come before <T1Until r={r} now={now} />, when the last of OutLayer&apos;s new worker images counts for{" "}
+            {programShort(r)}. Without T1, the verdict stays T0 and the try is paid when the {r.challenge}&nbsp;s challenge window ends.
+          </span>
+        </p>
+      ) : (
+        <p className={styles.expectLine}>
+          <Icon name="clock" size={15} />
+          {initial.status.ok ? (
+            <span>
+              <strong>About a minute:</strong> the recorded tries took 43.7 s and 39.9 s from vend to payout.
+            </span>
+          ) : (
+            <span>
+              <strong>About a minute</strong> when T1 follows the verdict within seconds, about a minute and a half when it does not (paid when the challenge window ends): our status could not be read, so which is unknown.
+            </span>
+          )}
+        </p>
+      )}
+      {r.left === 0 ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="alert" size={15} />
+          <span>
+            <strong>No practice account is left this hour:</strong> vending resumes at {resetAt(now ?? initial.readAt)}. The <a href="#recorded">recorded tries</a> show the same
+            loop.
+          </span>
+        </p>
+      ) : null}
+      {r.closed ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="alert" size={15} />
+          <span>
+            <strong>
+              {programShort(r).charAt(0).toUpperCase() + programShort(r).slice(1)} is {r.data?.phase}:
+            </strong>{" "}
+            a try cannot commit to it now.
+          </span>
+        </p>
+      ) : null}
+      {r.lowBalance || r.keyGone || r.lowAllowance ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="alert" size={15} />
+          <span>
+            <strong>The practice faucet is low,</strong> so a try may be refused now.
+          </span>
+        </p>
+      ) : null}
+      {held ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="clock" size={15} />
+          <span>
+            <strong>Your payout may wait until {utc(held.expiresAt)}:</strong> commit {held.commitId}, not yet revealed, holds the program&apos;s queue until then.
+          </span>
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function TryApp({ initial }: { initial: TryInitial }) {
@@ -76,6 +162,7 @@ export function TryApp({ initial }: { initial: TryInitial }) {
   const inputId = useId();
   const hintId = useId();
   const errorId = useId();
+  const expectId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const runHeading = useRef<HTMLHeadingElement>(null);
   const runShown = useRef(false);
@@ -108,6 +195,7 @@ export function TryApp({ initial }: { initial: TryInitial }) {
   const nameFailed = s?.phase === "failed" && s.error?.kind === "name" && s.signed === 0;
   const showForm = !s || s.phase === "idle" || nameFailed;
   const showRun = !showForm && s !== null;
+  const r = readiness(initial, pre, now);
 
   // Move focus to the run as it starts, so a screen reader follows it.
   useEffect(() => {
@@ -144,126 +232,135 @@ export function TryApp({ initial }: { initial: TryInitial }) {
 
   return (
     <div className={`page ${styles.wrap}`}>
-      <section className={styles.intro} aria-labelledby="what-title">
-        <div className="stack">
-          <h2 id="what-title">What will happen</h2>
-          <ol className={styles.what}>
-            <li>
-              <span>
-                Your browser makes a throwaway key. The public vend key, deliberately public and allowed only to vend and reclaim, creates{" "}
-                <code className={styles.wrapAny}>&lt;name&gt;{SUFFIX}</code> for it; the vending contract pays.
-              </span>
-            </li>
-            <li>
-              <span>It reads the practice program from the vending contract, builds the published tutorial proof against your own vault, seals it, then commits and reveals it.</span>
-            </li>
-            <li>
-              <span>OutLayer&apos;s TEE re-runs the proof on the program&apos;s pinned base and answers on NEAR (T0); T1 follows once the run&apos;s TDX quote is verified on NEAR.</span>
-            </li>
-            <li>
-              <span>Your browser settles the claim (allocate and pay, both permissionless) and closes the account: its NEAR goes back to the vending contract.</span>
-            </li>
-          </ol>
-          <p className={`small muted ${styles.whatFoot}`}>
-            The practice program is a tutorial: its bug and its proof are public, and nothing here is a real vulnerability. NEAR testnet only: wNEAR has no value. About a
-            minute; the recorded tries took 43.7 s and 39.9 s from vend to payout.{" "}
-            <a href={sourceUrl("docs/practice.md")} target="_blank" rel="noreferrer noopener">
-              How the practice program works <Icon name="external" size={11} style={{ display: "inline" }} />
-            </a>
-          </p>
-        </div>
-        <BeforeStart initial={initial} pre={pre} now={now} />
-      </section>
-
       {showForm ? (
-        <section className="card stack" aria-labelledby="start-title" style={{ ["--gap" as string]: "16px" }}>
-          <div className="stack" style={{ ["--gap" as string]: "6px" }}>
-            <h2 id="start-title">Start a try</h2>
-            <p className="small muted">No wallet, no NEAR account, no key to install: everything below happens in this tab, with real testnet transactions.</p>
-          </div>
-          {open ? (
-            <div className={`callout callout-warn ${styles.saved}`} role="status">
-              <div className="stack" style={{ ["--gap" as string]: "8px" }}>
-                <p className={styles.wrapAny}>
-                  <strong>A try from this tab is still open:</strong> <span className="mono">{open.record.account}</span>
-                  {open.record.commitId !== undefined ? `, commit ${open.record.commitId}` : ", not yet committed"}. This tab kept its key, so it can{" "}
-                  {open.stale ? "close the account" : "resume the try or close the account"}.
-                </p>
-                <div className={styles.actions}>
-                  {!open.stale ? (
-                    <button type="button" className="btn btn-sm btn-primary" onClick={() => tryStore.resume(open.record, initial.streamAfter)}>
-                      <Icon name="play" size={13} /> Resume the try
+        <div className={styles.top}>
+          <section className={`card stack ${styles.start}`} aria-labelledby="start-title" style={{ ["--gap" as string]: "16px" }}>
+            <div className="stack" style={{ ["--gap" as string]: "6px" }}>
+              <h2 id="start-title">Start a try</h2>
+              <p className="small muted">No wallet and no account: this tab does everything, with real testnet transactions.</p>
+            </div>
+            {open ? (
+              <div className={`callout callout-warn ${styles.saved}`} role="status">
+                <div className="stack" style={{ ["--gap" as string]: "8px" }}>
+                  <p>
+                    <strong>A try from this tab is still open:</strong> <span className={`mono ${styles.acct}`}>{open.record.account}</span>
+                    {open.record.commitId !== undefined ? `, commit ${open.record.commitId}` : ", not yet committed"}. This tab kept its key, so it can{" "}
+                    {open.stale ? "close the account" : "resume the try or close the account"}.
+                  </p>
+                  <div className={styles.actions}>
+                    {!open.stale ? (
+                      <button type="button" className="btn btn-sm btn-primary" onClick={() => tryStore.resume(open.record, initial.streamAfter)}>
+                        <Icon name="play" size={13} /> Resume the try
+                      </button>
+                    ) : null}
+                    <button type="button" className="btn btn-sm" onClick={() => tryStore.closeSaved(open.record)}>
+                      Close the account
                     </button>
-                  ) : null}
-                  <button type="button" className="btn btn-sm" onClick={() => tryStore.closeSaved(open.record)}>
-                    Close the account
-                  </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-          {last && last.commitId !== undefined ? (
-            <p className={`small muted ${styles.wrapAny}`}>
-              Your last try in this tab: <span className="mono">{last.account}</span>, <Link href={`/commits/${last.commitId}`}>commit {last.commitId}</Link>
-              {last.finalState ? `, ${last.finalState}` : ""}; its account is closed.
-            </p>
-          ) : null}
-          <form className={styles.form} onSubmit={onStart} noValidate>
-            <div>
-              <label className="label" htmlFor={inputId}>
-                Practice account name
-              </label>
-              <div className={styles.nameRow}>
-                <input
-                  ref={inputRef}
-                  id={inputId}
-                  className={styles.nameInput}
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value.trim().toLowerCase());
-                    setTouched(true);
-                    // A new name: the "taken" answer about the last one no longer applies.
+            ) : null}
+            {last && last.commitId !== undefined ? (
+              <p className="small muted">
+                Your last try in this tab: <span className={`mono ${styles.acct}`}>{last.account}</span>, <Link href={`/commits/${last.commitId}`}>commit {last.commitId}</Link>
+                {last.finalState ? `, ${last.finalState}` : ""}; its account is closed.
+              </p>
+            ) : null}
+            <form className={styles.form} onSubmit={onStart} noValidate>
+              <div>
+                <label className="label" htmlFor={inputId}>
+                  Practice account name
+                </label>
+                <div className={styles.nameRow}>
+                  <input
+                    ref={inputRef}
+                    id={inputId}
+                    className={styles.nameInput}
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value.trim().toLowerCase());
+                      setTouched(true);
+                      // A new name: the "taken" answer about the last one no longer applies.
+                      if (nameFailed) tryStore.reset();
+                    }}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    maxLength={32}
+                    inputMode="text"
+                    aria-invalid={fieldError ? true : undefined}
+                    aria-describedby={fieldError ? `${hintId} ${errorId}` : hintId}
+                  />
+                  <span className={styles.nameSuffix} aria-hidden>
+                    {SUFFIX}
+                  </span>
+                </div>
+                <p id={hintId} className="xsmall muted" style={{ marginTop: 6 }}>
+                  Your account will be{" "}
+                  <span className={`mono ${styles.acct}`}>
+                    {name || "<name>"}
+                    {SUFFIX}
+                  </span>
+                  : 1 to 32 of a–z, 0–9, - and _, used once (a closed account keeps its name).
+                </p>
+                {fieldError ? (
+                  <p id={errorId} className={styles.fieldError} role="alert">
+                    {fieldError}
+                  </p>
+                ) : null}
+              </div>
+              <div className={styles.actions}>
+                <button type="submit" className="btn btn-primary" aria-describedby={expectId}>
+                  <Icon name="play" size={14} /> Start the try
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setName(suggestName());
+                    setTouched(false);
                     if (nameFailed) tryStore.reset();
                   }}
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  maxLength={32}
-                  inputMode="text"
-                  aria-invalid={fieldError ? true : undefined}
-                  aria-describedby={fieldError ? `${hintId} ${errorId}` : hintId}
-                />
-                <span className={styles.nameSuffix} aria-hidden>
-                  {SUFFIX}
-                </span>
+                >
+                  <Icon name="refresh" size={13} /> Suggest another name
+                </button>
               </div>
-              <p id={hintId} className="xsmall muted" style={{ marginTop: 6 }}>
-                Your account will be <span className="mono">{name || "<name>"}{SUFFIX}</span>: 1 to 32 of a–z, 0–9, - and _, used once (a closed account keeps its name).
-              </p>
-              {fieldError ? (
-                <p id={errorId} className={styles.fieldError} role="alert">
-                  {fieldError}
-                </p>
-              ) : null}
-            </div>
-            <div className={styles.actions}>
-              <button type="submit" className="btn btn-primary">
-                <Icon name="play" size={14} /> Start the try
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setName(suggestName());
-                  setTouched(false);
-                  if (nameFailed) tryStore.reset();
-                }}
-              >
-                <Icon name="refresh" size={13} /> Suggest another name
-              </button>
-            </div>
-          </form>
-        </section>
+              <Expectation id={expectId} initial={initial} r={r} now={now} />
+            </form>
+          </section>
+
+          <section className={`stack ${styles.whatBlock}`} aria-labelledby="what-title">
+            <h2 id="what-title">What will happen</h2>
+            <ol className={styles.what}>
+              <li>
+                <span>
+                  Your browser makes a throwaway key. The public vend key, deliberately public and allowed only to vend and reclaim, creates{" "}
+                  <code className={styles.acct}>&lt;name&gt;{SUFFIX}</code> for it; the vending contract pays.
+                </span>
+              </li>
+              <li>
+                <span>It reads the practice program from the vending contract, builds the published tutorial proof against your own vault, seals it, then commits and reveals it.</span>
+              </li>
+              <li>
+                <span>
+                  OutLayer&apos;s TEE re-runs the proof on the program&apos;s pinned base and answers on NEAR (T0). T1 follows once the run&apos;s TDX quote is verified on NEAR;
+                  if it has not come when the challenge window ends, the verdict stays T0 and is paid then.
+                </span>
+              </li>
+              <li>
+                <span>Your browser settles the claim (allocate and pay, both permissionless) and closes the account: its NEAR goes back to the vending contract.</span>
+              </li>
+            </ol>
+            <p className={`small muted ${styles.whatFoot}`}>
+              The practice program is a tutorial: its bug and its proof are public, and nothing here is a real vulnerability. NEAR testnet only: wNEAR has no value.{" "}
+              <a href={sourceUrl("docs/practice.md")} target="_blank" rel="noreferrer noopener">
+                How the practice program works <Icon name="external" size={11} style={{ display: "inline" }} />
+              </a>
+            </p>
+          </section>
+
+          <BeforeStart initial={initial} pre={pre} r={r} now={now} className={styles.before} />
+        </div>
       ) : null}
 
       {showRun && s ? (
@@ -308,6 +405,15 @@ export function TryApp({ initial }: { initial: TryInitial }) {
                 <span className="small">
                   {s.held.message}
                   {s.held.expiresAt !== undefined ? ` Its reveal window ends at ${utc(s.held.expiresAt)}.` : ""}
+                </span>
+              </div>
+            ) : null}
+            {s.phase === "running" && s.steps.t1.status === "running" && !s.t0Note && r.pending.length ? (
+              <div className="callout callout-warn">
+                <Icon name="clock" size={16} />
+                <span className="small">
+                  T1 may not come before <T1Until r={r} now={now} />: OutLayer&apos;s new worker images do not all count for {programShort(r)} until then. If T1 has not come{" "}
+                  when the {r.challenge}&nbsp;s challenge window ends, the try takes the T0 path and is paid then.
                 </span>
               </div>
             ) : null}
@@ -360,7 +466,7 @@ export function TryApp({ initial }: { initial: TryInitial }) {
         </section>
       ) : null}
 
-      {showForm ? <BrowserLedger s={s} hosts={hosts} streamEvents={streamEvents} /> : null}
+      {showForm ? <BrowserLedger idle s={s} hosts={hosts} streamEvents={streamEvents} /> : null}
 
       <RecordedTries />
     </div>

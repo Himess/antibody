@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CommitSummary } from "@/components/commit/CommitSummary";
+import { CommitSummary, GapPill, type GapPaid } from "@/components/commit/CommitSummary";
+import { LiveRefresh } from "@/components/commit/LiveRefresh";
 import {
   cleanKeys,
   DEFAULT_ANTIBODY,
@@ -8,11 +9,15 @@ import {
   evData,
   findT2,
   hasWrapD,
+  isPaidGap,
+  keyState,
   kindWords,
+  modeOfEvent,
   numOf,
   parseId,
   programInfo,
   runEvent,
+  runOfEvent,
   runOutcome,
   secondsBetween,
   shortState,
@@ -41,6 +46,9 @@ import { cap, seconds, stateLabel, wnear } from "@/lib/format";
 
 type Props = { params: Promise<{ id: string }> };
 
+/** The events an allocation pass writes: one transaction may settle several commits at once. */
+const ALLOCATION = new Set(["holder", "forfeited", "duplicate", "known_match", "gap_claim"]);
+
 const crumbs = (id: number, program?: number) => [
   { href: "/programs", label: "Programs" },
   ...(program !== undefined ? [{ href: `/programs/${program}`, label: `Program ${program}` }] : []),
@@ -54,8 +62,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!r.ok) return { title: `Commit ${id}` };
   const label = r.data.row?.state || stateLabelOf(r.data.commit?.state);
   const kind = r.data.proof_card?.facts?.kind ?? r.data.row?.verdict?.kind ?? null;
-  const title = `Commit ${id} · ${kindWords(kind)} · ${shortState(label)}`;
-  const description = `Program ${r.data.commit?.program ?? "—"}, round ${r.data.commit?.round ?? "—"}: a sealed proof by ${r.data.commit?.hunter ?? "a hunter"} on NEAR testnet. Verdict ${kindWords(kind)}, tier ${r.data.proof_card?.facts?.tier ?? "—"}; state ${label || "—"}. Every step links its transaction.`;
+  const gap = isPaidGap(label, kind);
+  const title = `Commit ${id} · ${kindWords(kind)} · ${gap ? "gap claim, paid" : shortState(label)}`;
+  const description = `Program ${r.data.commit?.program ?? "—"}, round ${r.data.commit?.round ?? "—"}: a sealed proof by ${r.data.commit?.hunter ?? "a hunter"} on NEAR testnet. Verdict ${kindWords(kind)}, tier ${r.data.proof_card?.facts?.tier ?? "—"}; state ${label || "—"}${gap ? " (a gap claim a later round promoted)" : ""}. Every step links its transaction.`;
   return {
     title,
     description,
@@ -75,7 +84,7 @@ function summary(x: {
   baseNs: number | null;
   t1: boolean;
 }): string {
-  const S = subject(x.c.commit.hunter);
+  const S = subject(x.c.commit.hunter, x.c.commit.program);
   const d = stateData(x.c.commit.state);
   const slots = x.keys.map((k) => slotName(x.program, k.slot)).join(" and ");
   const sev = topSeverity(x.program, x.keys);
@@ -90,7 +99,7 @@ function summary(x: {
       if (promoted)
         return `${S}'s proof was a duplicate until round ${numOf(evData(promoted).round) ?? "—"}'s fix stopped the earlier claim but not this one: promoted, and paid ${amount}.`;
       const s = secondsBetween(x.baseNs, paid?.block_ts_ns);
-      return `${S}'s sealed proof broke ${sev ? `a ${cap(sev)} rule: ` : ""}${slots || "a rule"}. Verified in the TEE${x.t1 ? ", T1-confirmed" : ""} and paid ${amount}${d?.instant === true ? " instantly, under the cap" : " after its challenge window"}${s !== null ? `, ${seconds(s)} from its commit's block` : ""}.`;
+      return `${S}'s sealed proof broke ${sev ? `a ${cap(sev)} rule: ` : ""}${slots || "a rule"}. Verified in the TEE${x.t1 ? ", T1-confirmed" : ""} and paid ${amount}${d?.instant === true ? ", an instant payout (T1, under the cap)" : " after its challenge window"}${s !== null ? `, ${seconds(s)} from its commit's block` : ""}.`;
     }
     case "Duplicate":
     case "Done:DuplicateConfirmed":
@@ -135,16 +144,27 @@ export default async function CommitPage({ params }: Props) {
   const commit = c.commit;
   const programId = commit.program;
   const runId = numOf(commit.run);
-  const [pr, fr, rr, rx] = await Promise.all([
+  const events = sortedEvents(c.events);
+  // One allocation transaction can settle several commits: read the log around it to say which.
+  const alloc = events.find((e) => ALLOCATION.has(e.event));
+  const [pr, fr, rr, rx, near] = await Promise.all([
     api.program(programId),
     api.feed(programId),
     runId !== null ? api.run(runId) : Promise.resolve(null),
     commit.ticket ? api.reflex(programId) : Promise.resolve(null),
+    alloc ? api.events(Math.max(0, (numOf(alloc.seq) ?? 0) - 25), 50) : Promise.resolve(null),
   ]);
 
   const program = pr.ok ? pr.data : null;
   const info: ProgramInfo = programInfo(programId, program);
-  const events = sortedEvents(c.events);
+  const sharedTx: Record<string, number[]> = {};
+  if (alloc && near?.ok) {
+    const others = sortedEvents(near.data?.events)
+      .filter((e) => e.tx === alloc.tx)
+      .map((e) => numOf(evData(e).commit_id))
+      .filter((n): n is number => n !== null && n !== id);
+    if (others.length) sharedTx[alloc.tx] = [...new Set(others)].sort((a, b) => a - b);
+  }
   const programEvents = program ? sortedEvents(program.events) : [];
   const pauseEvents = programEvents.filter(
     (e) => (e.event === "pause_ticket" || e.event === "permit_requested") && numOf(evData(e).ticket) === id && numOf(evData(e).program_id) === programId,
@@ -172,6 +192,34 @@ export default async function CommitPage({ params }: Props) {
 
   const disclosedEv = events.find((e) => e.event === "disclosed");
   const sealed = c.proof_card?.sealed_until_disclosure !== false && !disclosedEv;
+  const proofKeys = keyState({
+    disclosed: !sealed,
+    commitId: id,
+    runId,
+    programId,
+    receipt: c.proof_card?.receipt_sha256,
+    practice: info.practice,
+  });
+
+  // A gap claim a round promoted and paid: said where the state is, with the re-run that caught it.
+  const gapPromoted = events.find((e) => e.event === "gap_promoted");
+  const caught = events.find((e) => e.event === "run_answered" && modeOfEvent(e) === "rerun" && strOf(evData(e).kind) === "Violation");
+  const caughtRun = caught ? runOfEvent(caught) : null;
+  const caughtReq = caughtRun !== null ? events.find((e) => e.event === "rerun_requested" && runOfEvent(e) === caughtRun) : undefined;
+  const gap: GapPaid | null =
+    label === "Done:Paid" && (gapPromoted || isPaidGap(label, kind))
+      ? {
+          round: numOf(evData(gapPromoted).round),
+          rerun: caughtRun,
+          rerunRound: numOf(evData(caughtReq).round),
+          slots: cleanKeys(evData(caught).keys)
+            .map((k) => slotName(program, k.slot))
+            .join(", "),
+        }
+      : null;
+  const live = !label.startsWith("Done:") && label !== "";
+  const runIds = [commit.run, commit.second, commit.rerun, commit.wrapped].map(numOf).filter((n): n is number => n !== null);
+  const lastSeq = events.reduce((m, e) => Math.max(m, numOf(e.seq) ?? 0), 0);
   const rows = fr.ok && Array.isArray(fr.data?.submissions) ? fr.data.submissions : Array.isArray(program?.commits) ? program.commits : null;
   const feedError = fr.ok ? null : fr.error;
 
@@ -217,6 +265,7 @@ export default async function CommitPage({ params }: Props) {
     <>
       <PageHead crumbs={crumbs(id, programId)} eyebrow={`Commit · program ${programId} · round ${commit.round ?? "—"}`} title={`Commit ${id}`} lede={lede}>
         <StateBadge state={label} />
+        {gap ? <GapPill gap={gap} /> : null}
         {kind || label !== "Committed" ? <KindBadge kind={kind} /> : null}
         <TierBadge tier={tierShown} />
         {severity ? <SeverityBadge severity={severity} /> : null}
@@ -226,135 +275,153 @@ export default async function CommitPage({ params }: Props) {
           </Pill>
         ) : null}
         {info.earlier ? <Pill icon="clock">earlier run</Pill> : null}
+        {live ? <LiveRefresh commitId={id} runs={runIds.join(",")} after={lastSeq} /> : null}
       </PageHead>
-      <nav className={`page ${styles.jumpNav}`} aria-label="On this page">
-        <ul className={styles.jump}>
-          <li>
-            <a href="#outcome">Outcome</a>
-          </li>
-          <li>
-            <a href="#timeline">Timeline</a>
-          </li>
-          <li>
-            <a href="#proof">The proof</a>
-          </li>
-          <li>
-            <a href="#tiers">Tiers</a>
-          </li>
-          <li>
-            <a href="#siblings">Other commits</a>
-          </li>
-        </ul>
-      </nav>
+      <div className={styles.withJump}>
+        <nav className={styles.jumpNav} aria-label="On this page">
+          <ul className={`page ${styles.jump}`}>
+            <li>
+              <a href="#outcome">What it settled</a>
+            </li>
+            <li>
+              <a href="#timeline">Timeline</a>
+            </li>
+            <li>
+              <a href="#proof">The proof</a>
+            </li>
+            <li>
+              <a href="#tiers">Who vouches</a>
+            </li>
+            <li>
+              <a href="#siblings">Other commits</a>
+            </li>
+          </ul>
+        </nav>
 
-      <CommitSummary
-        c={c}
-        label={label}
-        kind={kind}
-        keys={keys}
-        tier={tierShown}
-        t2Contradicts={t2Contradicts}
-        severity={severity}
-        program={program}
-        info={info}
-        moment={moment}
-      />
-      {!pr.ok ? (
-        <div className={`page ${styles.spaced}`}>
-          <ErrorState what={`program ${programId}`} error={pr.error}>
-            <span className="small">Slot names, the pause ticket and the known issues come from the program; the rest of this page stands without it.</span>
-          </ErrorState>
-        </div>
-      ) : null}
-
-      <Section id="outcome" title="What it settled" lede={`The terms program ${programId} committed, applied to this verdict: the bond, the payout, and why.`}>
-        <Outcome
+        <CommitSummary
           c={c}
           label={label}
-          keys={keys}
           kind={kind}
+          keys={keys}
+          tier={tierShown}
+          t2Contradicts={t2Contradicts}
+          severity={severity}
           program={program}
-          programEvents={programEvents}
-          events={events}
-          rows={rows}
-          feedError={feedError}
-          earlier={earlier}
-          contract={contract}
+          info={info}
+          moment={moment}
+          gap={gap}
         />
-      </Section>
-
-      <Section id="timeline" title="Timeline" lede="Every step is a NEAR transaction. Times are block times, measured from the commit's block; hover a time for its UTC.">
-        <Timeline
-          commitId={id}
-          hunter={commit.hunter}
-          project={strOf(program?.program?.project)}
-          beneficiary={commit.beneficiary}
-          bond={commit.bond ?? null}
-          round={round}
-          events={events}
-          pauseEvents={pauseEvents}
-          permits={permits}
-          baseNs={baseNs}
-          label={label}
-          hasKeys={keys.length > 0}
-          disclosed={!sealed}
-          windows={{
-            reveal: numOf(windows?.reveal),
-            challenge: numOf(windows?.challenge),
-            disclosure: numOf(windows?.disclosure_max_delay),
-          }}
-          program={program}
-        />
-      </Section>
-
-      <Section id="proof" title="The proof" lede="What anyone can see of a sealed proof, and how to check each part of it.">
-        <ProofCard
-          commitId={id}
-          runId={runId}
-          receipt={c.proof_card?.receipt_sha256 ?? null}
-          commitment={strOf(commit.commitment)}
-          blobSha={commit.blob_sha256 ?? null}
-          sealed={sealed}
-          wrapD={wrapD}
-          outcome={label === "Done:Paid" ? "paid" : isDuplicate ? "duplicate" : label === "Done:Known" ? "known" : "other"}
-          checks={Array.isArray(c.proof_card?.check) ? c.proof_card.check.filter((s): s is string => typeof s === "string") : []}
-          requested={requested}
-          disclosed={disclosedEv}
-          contract={contract}
-        />
-      </Section>
-
-      <Section
-        id="tiers"
-        title="Who vouches for the verdict"
-        lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them."
-      >
-        {rr && !rr.ok ? (
-          <div style={{ marginBottom: 16 }}>
-            <ErrorState what={`run ${runId}`} error={rr.error}>
-              <span className="small">The tiers below use the commit&apos;s own record and events.</span>
+        {!pr.ok ? (
+          <div className={`page ${styles.spaced}`}>
+            <ErrorState what={`program ${programId}`} error={pr.error} partial>
+              <span className="small">Slot names, the pause ticket and the known issues come from the program; the rest of this page stands without it.</span>
             </ErrorState>
           </div>
         ) : null}
-        <Tiers
-          runId={runId}
-          tier={teeTier}
-          kind={kind}
-          receipt={c.proof_card?.receipt_sha256 ?? null}
-          answered={answered}
-          t1={t1Ev}
-          requested={requested}
-          signer={strOf(requested?.signer) ?? strOf(run?.raw?.signer) ?? commit.hunter}
-          contract={contract}
-          wasmSha={wasmSha}
-          t2={t2find}
-          bound={bound}
-        />
-      </Section>
 
-      <Section id="siblings" title={`Other commits in program ${programId}`} lede="The sealed feed: who committed when, the state and the verdict. Never a proof's content.">
-        <Siblings rows={rows} current={id} programId={programId} error={feedError} />
-      </Section>
+        <Section id="outcome" title="What it settled" lede={`The terms program ${programId} committed, applied to this verdict: the bond, the payout, and why.`}>
+          <Outcome
+            c={c}
+            label={label}
+            keys={keys}
+            kind={kind}
+            program={program}
+            programEvents={programEvents}
+            events={events}
+            rows={rows}
+            feedError={feedError}
+            earlier={earlier}
+            contract={contract}
+            keyState={proofKeys}
+          />
+        </Section>
+
+        <Section
+          id="timeline"
+          title="Timeline"
+          lede="Every step is a NEAR transaction. Times are block times, measured from the commit's block; each step's UTC time is beside its transaction."
+        >
+          <Timeline
+            commitId={id}
+            hunter={commit.hunter}
+            project={strOf(program?.program?.project)}
+            beneficiary={commit.beneficiary}
+            bond={commit.bond ?? null}
+            round={round}
+            events={events}
+            pauseEvents={pauseEvents}
+            permits={permits}
+            baseNs={baseNs}
+            label={label}
+            hasKeys={keys.length > 0}
+            disclosed={!sealed}
+            windows={{
+              reveal: numOf(windows?.reveal),
+              challenge: numOf(windows?.challenge),
+              disclosure: numOf(windows?.disclosure_max_delay),
+            }}
+            program={program}
+            programId={programId}
+            practice={info.practice}
+            sharedTx={sharedTx}
+          />
+        </Section>
+
+        <Section id="proof" title="The proof" lede="What anyone can see of a sealed proof, who can open it, and how to check each part of it.">
+          <ProofCard
+            commitId={id}
+            runId={runId}
+            receipt={c.proof_card?.receipt_sha256 ?? null}
+            commitment={strOf(commit.commitment)}
+            blobSha={commit.blob_sha256 ?? null}
+            keys={proofKeys}
+            wrapD={wrapD}
+            runStatus={outcome ? outcome.status : null}
+            outcome={label === "Done:Paid" ? "paid" : isDuplicate ? "duplicate" : label === "Done:Known" ? "known" : "other"}
+            checks={Array.isArray(c.proof_card?.check) ? c.proof_card.check.filter((s): s is string => typeof s === "string") : []}
+            requested={requested}
+            disclosed={disclosedEv}
+            contract={contract}
+            programKey={strOf(program?.program?.key)}
+            hunter={commit.hunter}
+            programId={programId}
+          />
+        </Section>
+
+        <Section
+          id="tiers"
+          title="Who vouches for the verdict"
+          lede="Each tier is a separate check you can run yourself. T0 and T1 decide payouts; T2 sits beside them."
+        >
+          {rr && !rr.ok ? (
+            <div style={{ marginBottom: 16 }}>
+              <ErrorState what={`run ${runId}`} error={rr.error} partial>
+                <span className="small">The tiers below use the commit&apos;s own record and events. Reload to retry.</span>
+              </ErrorState>
+            </div>
+          ) : null}
+          <Tiers
+            runId={runId}
+            tier={teeTier}
+            kind={kind}
+            receipt={c.proof_card?.receipt_sha256 ?? null}
+            answered={answered}
+            t1={t1Ev}
+            requested={requested}
+            signer={strOf(requested?.signer) ?? strOf(run?.raw?.signer) ?? commit.hunter}
+            contract={contract}
+            wasmSha={wasmSha}
+            t2={t2find}
+            bound={bound}
+            mode="verify"
+            keyState={proofKeys}
+          />
+        </Section>
+
+        <Section id="siblings" title={`Other commits in program ${programId}`} lede="The sealed feed: who committed when, the state and the verdict. Never a proof's content.">
+          <Siblings rows={rows} current={id} programId={programId} error={feedError} />
+        </Section>
+      </div>
     </>
   );
 }

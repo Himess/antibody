@@ -380,61 +380,198 @@ a.node:hover .nodeLabel {
   height: 32px;
 }
 
-/* ------------------------------------------------------------ step list: the vertical timeline on phones */
+/* ------------------------------------------------------------ the phone chart: the same lanes, top to bottom */
 
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.phone {
   display: grid;
-  border-top: 1px solid var(--line);
+  gap: 12px;
 }
 
-.item {
-  position: relative;
-  display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) auto;
-  grid-template-areas: "time body tx";
+@media (min-width: 760px) {
+  .phone {
+    display: none;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+/* The lanes' key: each chain's colour, named. */
+.key {
+  display: inline-flex;
   align-items: center;
-  gap: 4px 12px;
-  padding: 10px 0 10px 18px;
-  border-bottom: 1px solid var(--line);
-  opacity: 0.5;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--lane);
+  white-space: nowrap;
+}
+
+.key::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lane);
+}
+
+.vbody {
+  position: relative;
+}
+
+.vtick {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  line-height: 1;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.vsvg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.vgrid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.vrail {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.vfill {
+  stroke: var(--lane);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.vlead {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+
+.vdot {
+  fill: var(--bg-elev);
+  stroke: var(--lane);
+  stroke-width: 2;
+  transition: fill 0.25s var(--ease);
+}
+
+.vdone .vdot {
+  fill: var(--lane);
+}
+
+.vevm.vdone .vdot {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.vhead {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.vheadDot {
+  fill: var(--accent);
+}
+
+.vlabel {
+  position: absolute;
+  right: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+  color: var(--ink);
+  text-decoration: none;
+  opacity: 0.45;
   transition: opacity 0.25s var(--ease);
 }
 
-.item::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 0;
-  bottom: 0;
-  border-left: 2px solid var(--line);
-}
-
-.item::after {
-  content: "";
-  position: absolute;
-  left: -1px;
-  top: calc(50% - 5px);
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--line-strong);
-  background: var(--bg-elev);
-}
-
-.itemDone {
+.vlabel.done {
   opacity: 1;
 }
 
-.itemDone::before {
-  border-left-color: var(--accent);
+.vtime {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
 }
 
-.itemDone::after {
-  border-color: var(--accent);
-  background: var(--accent);
+.vname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+
+.vlabel.minor .vtime {
+  font-size: var(--fs-2xs);
+  font-weight: 500;
+}
+
+.vlabel.minor .vname {
+  color: var(--ink-3);
+}
+
+a.vlabel:hover .vname {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+a.vlabel:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------ the landing's step list (wide screens) */
+
+.list {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Two columns, each read top to bottom: the DOM order, the reading order and time agree. */
+@media (min-width: 760px) {
+  .list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 4), auto);
+    grid-auto-flow: column;
+    column-gap: 28px;
+  }
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .itemMinor .itemLabel {
@@ -443,14 +580,12 @@ a.node:hover .nodeLabel {
 }
 
 .itemTime {
-  grid-area: time;
   font-family: var(--font-mono);
   font-weight: 600;
   font-size: var(--fs-sm);
 }
 
 .itemBody {
-  grid-area: body;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -464,7 +599,6 @@ a.node:hover .nodeLabel {
 }
 
 .itemTx {
-  grid-area: tx;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -476,24 +610,6 @@ a.node:hover .nodeLabel {
 
 .itemTx:hover {
   color: var(--accent-ink);
-}
-
-@media (min-width: 760px) {
-  .compact {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 28px;
-    border-top: 0;
-  }
-  .compact .item {
-    opacity: 1;
-  }
-  .compact .item::before,
-  .compact .item::after {
-    display: none;
-  }
-  .compact .item {
-    padding-left: 0;
-  }
 }
 
 /* ------------------------------------------------------------ presentation mode (1080p, 16:9) */
@@ -579,18 +695,4 @@ a.node:hover .nodeLabel {
 
 .present .axis {
   height: 28px;
-}
-
-/* Phones: the transaction goes under the step. */
-@media (max-width: 480px) {
-  .item {
-    grid-template-columns: 56px minmax(0, 1fr);
-    grid-template-areas:
-      "time body"
-      "time tx";
-    align-items: start;
-  }
-  .itemTx {
-    justify-self: start;
-  }
 }

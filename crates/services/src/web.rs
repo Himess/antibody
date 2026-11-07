@@ -162,7 +162,7 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
         "commit": {"tx": commit_tx, "explorer": commit_tx.as_deref().map(near_explorer), "block_height": commit_ev.as_ref().map(|e| e["block_height"].clone()),
                    "block_ts_ns": commit_ts, "at_utc": utc(commit_ts)},
         "clock": om["clock"],
-        "notes": ["The pause is asked for before the payment.", "Each chain's time is its own block time, measured from the commit's NEAR block."],
+        "notes": ["The pause is asked for before the payment.", "NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."],
         "steps": steps,
     }))
 }

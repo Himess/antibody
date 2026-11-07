@@ -13,7 +13,7 @@ export function SiteFooter() {
               <LogoMark size={20} />
               <strong>Antibody</strong>
             </span>
-            <p className="small muted">Bug bounties that pay on proof. Pay on proof. Pause on proof. Ship only what survived.</p>
+            <p className="small muted">Pay on proof. Pause on proof. Ship only what survived.</p>
             <p className="xsmall muted">
               Everything here runs on NEAR testnet, Sepolia and Base Sepolia. wNEAR on testnet has no value. Acme Lend and the
               practice vaults are deliberately vulnerable test fixtures, with textbook bugs labelled in their code.
@@ -40,8 +40,12 @@ export function SiteFooter() {
           <a href={`${config.repo}/blob/main/JUDGES.md`} target="_blank" rel="noreferrer noopener">
             JUDGES.md
           </a>
-          <Link href="/status">Status</Link>
-          <span className="mono footer-api">API {config.apiBase.replace(/^https?:\/\//, "")}</span>
+          <span className="footer-api">
+            API{" "}
+            <a href={`${config.apiBase}/health`} target="_blank" rel="noreferrer noopener" className="mono xsmall">
+              {config.apiBase.replace(/^https?:\/\//, "")}
+            </a>
+          </span>
         </div>
       </div>
     </footer>

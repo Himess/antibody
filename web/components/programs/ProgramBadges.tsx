@@ -1,7 +1,7 @@
 import type { IconName } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import type { Tone } from "@/lib/format";
-import { anchorConfirmed, KIND_TEXT, phaseOf, RECORDED_RUN, runGroup, type ProgramKind } from "./helpers";
+import { anchorConfirmed, isStagingRun, KIND_TEXT, phaseOf, RECORDED_RUN, runGroup, STAGING_RUN, type ProgramKind } from "./helpers";
 
 const KIND_LOOK: Record<ProgramKind, { tone: Tone; icon: IconName | null }> = {
   fixture: { tone: "warn", icon: "alert" },
@@ -46,18 +46,24 @@ export function AnchorBadge({ check, size, long = false }: { check?: string | nu
   );
 }
 
-/** Which run a program belongs to: this run (recorded), an earlier run on the same deployment, or later. */
+/** Which run a program belongs to: this run (recorded), the staging run before the lock, an earlier run, or later. */
 export function RunBadge({ id, size }: { id: number; size?: "sm" | "md" }) {
   const g = runGroup(id);
   if (g === "this-run")
     return (
-      <Pill icon="clock" size={size} title={`From the run recorded in ${RECORDED_RUN.results_file}`}>
+      <Pill icon="clock" size={size} title={`From the run recorded in ${RECORDED_RUN.results_file}, on the locked deployment`}>
         recorded run, {RECORDED_RUN.date}
+      </Pill>
+    );
+  if (g === "earlier" && isStagingRun(id))
+    return (
+      <Pill icon="clock" size={size} title={`The staging run on the same contracts, before the lock: ${STAGING_RUN.results_file}`}>
+        staging run, {STAGING_RUN.date}
       </Pill>
     );
   if (g === "earlier")
     return (
-      <Pill icon="clock" size={size} title="An earlier run on the same locked deployment">
+      <Pill icon="clock" size={size} title="An earlier run on the same contracts, before the recorded one">
         earlier run
       </Pill>
     );

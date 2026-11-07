@@ -10,17 +10,20 @@ const ROLE: Record<HostRole, string> = {
 
 const ORDER: HostRole[] = ["rpc", "archival", "api"];
 
-/** "Your browser did everything": what was made here, what stayed here, and every host this tab talked to. */
-export function BrowserLedger({ s, hosts, streamEvents }: { s: TrySnapshot | null; hosts: HostUse[]; streamEvents: number }) {
+/**
+ * "Your browser did everything": what was made here, what stayed here, and every host this tab talked to.
+ * Before a try (`idle`), the same in the future tense: nothing is signed yet.
+ */
+export function BrowserLedger({ s, hosts, streamEvents, idle = false }: { s: TrySnapshot | null; hosts: HostUse[]; streamEvents: number; idle?: boolean }) {
   const sorted = [...hosts].sort((a, b) => ORDER.indexOf(a.role) - ORDER.indexOf(b.role) || b.requests - a.requests);
   const signed = s?.signed ?? 0;
   return (
     <div className={`card ${styles.panel}`}>
-      <h3>Your browser did everything</h3>
+      <h3>{idle ? "What your browser will do" : "Your browser did everything"}</h3>
       <ul className={styles.bullets}>
         <li>
           <strong>Made here:</strong> the throwaway ed25519 key, the salt, the seal (X25519, HKDF-SHA256, ChaCha20-Poly1305) and{" "}
-          {signed === 1 ? "1 transaction signature" : `${signed} transaction signatures`}.
+          {idle ? "every transaction signature of the try" : signed === 1 ? "1 transaction signature" : `${signed} transaction signatures`}.
         </li>
         <li>
           <strong>Kept here:</strong> the practice key, in this tab&apos;s memory and sessionStorage, so a reload can resume the try or close the account. It is never sent;

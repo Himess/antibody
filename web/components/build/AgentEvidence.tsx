@@ -57,7 +57,7 @@ export async function RecordedAgentRun() {
       </dl>
       <p className="xsmall muted">
         Seconds from the commit&apos;s block on NEAR testnet. Paid {wnear(m.paid_raw)}
-        {m.instant ? ", instantly, under the cap" : ""}.
+        {m.instant ? ", an instant payout (T1, under the cap)" : ""}.
       </p>
       <ul className={styles.txList}>
         <li>
@@ -69,8 +69,14 @@ export async function RecordedAgentRun() {
       </ul>
       <Check
         check={{ kind: "api", path: `/v1/commits/${m.commit_id}` }}
-        expect={{ path: "row.state", equals: "Done:Paid", says: "Done:Paid: a T1-confirmed Violation, paid" }}
+        expect={{ path: "row.state", equals: "Done:Paid", says: "state Done:Paid" }}
+        label="Read the state"
+      />
+      <Check
+        check={{ kind: "api", path: `/v1/commits/${m.commit_id}` }}
+        expect={{ path: "row.verdict.tier", equals: "T1", says: "tier T1: the TDX quote verified on NEAR" }}
         cli={`antibody status --commit ${m.commit_id}`}
+        label="Read the tier"
       />
       <p className="small">
         <Link href={`/commits/${m.commit_id}`}>Commit {m.commit_id}, step by step</Link> · <Link href="/moment">The one moment</Link>

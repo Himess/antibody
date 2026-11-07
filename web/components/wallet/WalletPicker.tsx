@@ -76,7 +76,7 @@ export function WalletPicker({ open, wallets, onClose, onPick }: { open: boolean
                 <li key={w.id}>
                   <button type="button" className={styles.walletBtn} onClick={() => onPick(w)}>
                     <span className={styles.mono40} aria-hidden>
-                      {w.name.slice(0, 1).toUpperCase()}
+                      {w.id === "near-cli" ? <Icon name="terminal" size={18} /> : w.name.slice(0, 1).toUpperCase()}
                     </span>
                     <span>
                       <span className={styles.walletName}>{w.name}</span>

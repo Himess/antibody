@@ -4,7 +4,11 @@ import { Icon } from "@/components/ui/Icon";
 import type { Role } from "@/components/pilot/validate";
 import styles from "./build.module.css";
 
-/** The call to the pilot and early-access form, with the role the visitor most likely has chosen. */
+/**
+ * The call to the pilot and early-access form, with the role the visitor most likely has chosen. A
+ * secondary marked `equal` is the other answer to the title's question, drawn as a button beside the first
+ * rather than as a quiet link.
+ */
 export function PilotCta({
   id,
   role,
@@ -18,7 +22,7 @@ export function PilotCta({
   title: string;
   children: ReactNode;
   cta: string;
-  secondary?: { href: string; label: string };
+  secondary?: { href: string; label: string; equal?: boolean };
 }) {
   return (
     <section id={id} className="page block" aria-labelledby={`${id}-title`}>
@@ -33,8 +37,9 @@ export function PilotCta({
             {cta} <Icon name="arrow" size={14} />
           </Link>
           {secondary ? (
-            <Link href={secondary.href} className="btn btn-ghost">
+            <Link href={secondary.href} className={secondary.equal ? "btn" : "btn btn-ghost"}>
               {secondary.label}
+              {secondary.equal ? <Icon name="arrow" size={14} /> : null}
             </Link>
           ) : null}
         </div>

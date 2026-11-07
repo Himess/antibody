@@ -44,28 +44,50 @@ interface Snapshot {
 
 const asLoad = <T,>(r: { ok: true; data: T } | { ok: false; error: string }): Load<T> => (r.ok ? { status: "ok", data: r.data } : { status: "error", error: r.error });
 
-/** Reads everything; `fresh` reads the account's views from NEAR rather than the API's short cache. */
-async function readAll(id: string, fresh: boolean): Promise<Snapshot> {
-  const [a, act, h, b] = await Promise.all([loadAccount(id, fresh), loadActivity(id), loadHistory(id), loadNearBalance(id)]);
+const NO_HISTORY: History = { agents: [], withdrawals: [], truncated: false };
+
+/**
+ * Reads everything; `fresh` reads the account's views from NEAR rather than the API's short cache. The event
+ * log (registered agents, withdrawals) feeds only the actions, so a read-only view skips it.
+ */
+async function readAll(id: string, fresh: boolean, withHistory: boolean): Promise<Snapshot> {
+  const [a, act, h, b] = await Promise.all([
+    loadAccount(id, fresh),
+    loadActivity(id),
+    withHistory ? loadHistory(id) : Promise.resolve({ ok: true as const, data: NO_HISTORY }),
+    loadNearBalance(id),
+  ]);
   return { account: asLoad(a), activity: asLoad(act), history: asLoad(h), balance: asLoad(b) };
 }
 
-/** The connected account: its numbers, its commits, the actions it can take, its agents. */
+/**
+ * An account: its numbers and its commits; with a connected wallet (`session`), also the actions it can take
+ * and its agents. With no session it is a read-only view of any account: the same public reads, nothing to
+ * sign.
+ */
 export function AccountOverview({
+  accountId,
   session,
-  onDisconnect,
+  onClose,
+  closeLabel = "Close",
   blocked,
   apiContracts,
   focusOnMount,
 }: {
-  session: Session;
-  onDisconnect: () => void;
+  accountId: string;
+  /** The connected wallet, or null for a read-only view. */
+  session: Session | null;
+  /** Disconnects the wallet, or closes the read-only view. */
+  onClose: () => void;
+  /** The read-only view's close button. */
+  closeLabel?: string;
   blocked: Blocked;
   apiContracts: ApiContracts;
-  /** After a connect the person started (not a restored session), focus moves to the account. */
+  /** After a connect or a pick the person made here (not a restored session), focus moves to the account. */
   focusOnMount: boolean;
 }) {
-  const id = session.accountId;
+  const id = accountId;
+  const own = session !== null;
   const [account, setAccount] = useState<Load<AccountData>>({ status: "loading" });
   const [activity, setActivity] = useState<Load<Activity>>({ status: "loading" });
   const [history, setHistory] = useState<Load<History>>({ status: "loading" });
@@ -86,7 +108,7 @@ export function AccountOverview({
 
   useEffect(() => {
     let live = true;
-    readAll(id, false)
+    readAll(id, false, own)
       .then((s) => {
         if (live) apply(s);
       })
@@ -96,18 +118,18 @@ export function AccountOverview({
     return () => {
       live = false;
     };
-  }, [id, apply]);
+  }, [id, own, apply]);
 
   const refresh = useCallback(
     async (fresh: boolean) => {
       setBusy(true);
       try {
-        apply(await readAll(id, fresh));
+        apply(await readAll(id, fresh, own));
       } finally {
         setBusy(false);
       }
     },
-    [id, apply],
+    [id, own, apply],
   );
 
   const data = account.status === "ok" ? account.data : null;
@@ -119,16 +141,20 @@ export function AccountOverview({
     <>
       <Section
         id="account"
-        eyebrow={`Connected with ${session.walletName}`}
+        eyebrow={session ? `Connected with ${session.walletName}` : "Read-only view"}
         title="Account"
-        lede="Credit held for you at near-antibody, and what your wallet holds. Amounts show up to 6 decimals; the exact raw values are in the checks below."
+        lede={
+          own
+            ? "Credit held for you at near-antibody, and what your wallet holds. Amounts show up to 6 decimals; the exact raw values are in the checks below."
+            : "Credit held for this account at near-antibody, read from the public API or NEAR. Read-only: nothing here asks a wallet to sign. Amounts show up to 6 decimals; the exact raw values are in the checks below."
+        }
         actions={
           <>
             <button type="button" className="btn btn-sm" onClick={() => refresh(true)} disabled={busy} aria-busy={busy}>
               <Icon name="refresh" size={13} /> {busy ? "Reading…" : "Refresh from NEAR"}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onDisconnect}>
-              <Icon name="x" size={13} /> Disconnect
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>
+              <Icon name="x" size={13} /> {own ? "Disconnect" : closeLabel}
             </button>
           </>
         }
@@ -136,12 +162,17 @@ export function AccountOverview({
         <div className="stack">
           <div className={styles.who}>
             <div className="stack" style={{ ["--gap" as string]: "6px" }}>
-              {/* Focused once connected: the connect button it replaces is gone. */}
+              {/* Focused after a connect or a pick made here: the control that led here is gone or far above. */}
               <span ref={heading} tabIndex={-1} className={styles.accountId}>
-                <span className="visually-hidden">Connected account: </span>
+                <span className="visually-hidden">{own ? "Connected account: " : "Account, read-only: "}</span>
                 {id}
               </span>
               <div className="row" style={{ ["--gap" as string]: "8px" }}>
+                {own ? null : (
+                  <Pill tone="neutral" icon="eye">
+                    read-only
+                  </Pill>
+                )}
                 <Provenance account={id} />
                 {isAgent ? <Pill tone="info" icon="cpu">agent</Pill> : null}
                 {credit?.committed ? (
@@ -149,15 +180,15 @@ export function AccountOverview({
                     commits as itself
                   </Pill>
                 ) : null}
-                <AccountLink account={id} />
+                <AccountLink account={id} site={false} />
               </div>
             </div>
           </div>
 
           {account.status === "loading" ? (
-            <Loading label="Reading your account" />
+            <Loading label={own ? "Reading your account" : "Reading the account"} />
           ) : account.status === "error" ? (
-            <ErrorState what="your account" error={account.error} />
+            <ErrorState what={own ? "your account" : "this account"} error={account.error} />
           ) : (
             <>
               <dl className={styles.tiles} aria-live="polite">
@@ -176,14 +207,14 @@ export function AccountOverview({
                   <dd className={styles.tileNote}>Pays storage and verification runs</dd>
                 </div>
                 <div>
-                  <dt>wNEAR in your wallet</dt>
+                  <dt>{own ? "wNEAR in your wallet" : "wNEAR balance"}</dt>
                   <dd>
                     <Amount raw={data?.tokenBalance ?? null} />
                   </dd>
                   <dd className={styles.tileNote}>On {WNEAR}</dd>
                 </div>
                 <div>
-                  <dt>NEAR in your wallet</dt>
+                  <dt>{own ? "NEAR in your wallet" : "NEAR balance"}</dt>
                   <dd>
                     {balance.status === "ok" && balance.data ? (
                       <Amount raw={balance.data.amount} unit="NEAR" />
@@ -193,7 +224,9 @@ export function AccountOverview({
                       <span className="muted">—</span>
                     )}
                   </dd>
-                  <dd className={styles.tileNote}>{balance.status === "error" ? "The RPC did not answer" : "Read by your browser from NEAR"}</dd>
+                  <dd className={styles.tileNote}>
+                    {balance.status === "error" ? "The RPC did not answer" : balance.status === "ok" && !balance.data ? "No such account on NEAR testnet" : "Read by your browser from NEAR"}
+                  </dd>
                 </div>
               </dl>
               <p className="xsmall muted">
@@ -211,11 +244,11 @@ export function AccountOverview({
                 <div className={styles.checks}>
                   <LiveCheck
                     check={{ kind: "near-view", contract: ANTIBODY, method: "get_account", args: { account_id: id } }}
-                    expect={{ path: "tokens", equals: credit?.tokens ?? "0", says: `tokens is your token credit (${credit?.tokens ?? "0"} raw)` }}
+                    expect={{ path: "tokens", equals: credit?.tokens ?? "0", says: `tokens is ${own ? "your" : "its"} token credit (${credit?.tokens ?? "0"} raw)` }}
                     cli={`antibody status --of ${id}`}
                   />
                   <LiveCheck check={{ kind: "near-view", contract: ANTIBODY, method: "agent_statement", args: { agent: id } }} expect={{ path: "registered", equals: isAgent, says: isAgent ? "registered: true" : "registered: false" }} />
-                  <LiveCheck check={{ kind: "near-view", contract: WNEAR, method: "ft_balance_of", args: { account_id: id } }} expect={{ equals: data?.tokenBalance ?? "0", says: `your wNEAR balance (${data?.tokenBalance ?? "0"} raw)` }} />
+                  <LiveCheck check={{ kind: "near-view", contract: WNEAR, method: "ft_balance_of", args: { account_id: id } }} expect={{ equals: data?.tokenBalance ?? "0", says: `${own ? "your" : "its"} wNEAR balance (${data?.tokenBalance ?? "0"} raw)` }} />
                 </div>
               </details>
             </>
@@ -224,7 +257,7 @@ export function AccountOverview({
             <div className="callout">
               <Icon name="info" size={16} />
               <span>
-                You opened{" "}
+                {own ? "You" : "This account"} opened{" "}
                 {activity.data.programs
                   .filter((p) => p.project === id)
                   .map((p, i, all) => (
@@ -233,7 +266,7 @@ export function AccountOverview({
                       {i < all.length - 1 ? ", " : ""}
                     </span>
                   ))}
-                . To read a proof you paid for, use the CLI: <a href="#read-proofs">why it stays there</a>.
+                . {own ? "To read a proof you paid for, use the CLI" : "A project reads its paid proofs in the CLI"}: <a href="#read-proofs">why it stays there</a>.
               </span>
             </div>
           ) : null}
@@ -242,20 +275,24 @@ export function AccountOverview({
 
       {statement?.registered || credit?.agent ? <AgentStatementView statement={statement} record={credit?.agent ?? null} /> : null}
 
-      <ActivityTable account={id} activity={activity} />
+      <ActivityTable account={id} activity={activity} own={own} />
 
-      <Actions session={session} account={account} history={history} blocked={blocked} apiContracts={apiContracts} onSettled={() => refresh(true)} />
+      {session ? (
+        <>
+          <Actions session={session} account={account} history={history} blocked={blocked} apiContracts={apiContracts} onSettled={() => refresh(true)} />
 
-      <Agents
-        session={session}
-        account={account}
-        history={history}
-        programs={activity.status === "ok" ? activity.data.programs : null}
-        isAgent={isAgent}
-        blocked={blocked}
-        apiContracts={apiContracts}
-        onSettled={() => refresh(true)}
-      />
+          <Agents
+            session={session}
+            account={account}
+            history={history}
+            programs={activity.status === "ok" ? activity.data.programs : null}
+            isAgent={isAgent}
+            blocked={blocked}
+            apiContracts={apiContracts}
+            onSettled={() => refresh(true)}
+          />
+        </>
+      ) : null}
     </>
   );
 }

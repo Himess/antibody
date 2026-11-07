@@ -18,10 +18,11 @@ import {
   earlierClaim,
   evData,
   isObj,
-  kindWords,
+  keyFile,
   knownMatch,
   modeOfEvent,
   numOf,
+  publishedFixture,
   recordedNote,
   runOfEvent,
   slotInfo,
@@ -31,6 +32,7 @@ import {
   strOf,
   usd,
   who,
+  type KeyState,
 } from "./model";
 import { TagMatch } from "./TagMatch";
 import styles from "./commit.module.css";
@@ -49,11 +51,13 @@ export interface OutcomeInput {
   /** The earlier claim's own record, for a duplicate. */
   earlier: Result<CommitDetail> | null;
   contract: string;
+  /** Who can open this commit's proof besides the TEE (the proof card's state). */
+  keyState: KeyState;
 }
 
 const ev = (events: IndexedEvent[], name: string) => events.find((e) => e.event === name);
-const byWho = (account: string | null | undefined) => {
-  const w = who(account);
+const byWho = (account: string | null | undefined, program: number) => {
+  const w = who(account, program);
   return w ? `${w} (${account})` : (account ?? "—");
 };
 
@@ -93,6 +97,7 @@ function Bond({ x }: { x: OutcomeInput }) {
     "Done:GapOpen": "Returned when the gap claim was recorded.",
   };
   const refunded = x.label === "Done:Refunded" ? strOf(stateData(x.c.commit.state)?.reason) : null;
+  const forfeits = fate === "forfeited" ? strOf(x.program?.program?.ledger?.forfeits) : null;
   const text =
     words[x.label] ??
     (fate === "held"
@@ -120,6 +125,11 @@ function Bond({ x }: { x: OutcomeInput }) {
         )}
       </div>
       <p className="small muted">{text}</p>
+      {forfeits ? (
+        <p className="small muted">
+          Program {id} has received <span className="num">{wnear(forfeits)}</span> in forfeited bonds, in all.
+        </p>
+      ) : null}
       {at && fate !== "held" ? (
         <p className="small">
           In <TxLink hash={at.tx} href={at.explorer} />
@@ -211,8 +221,8 @@ function Payout({ x }: { x: OutcomeInput }) {
       <p className="small muted">{text}</p>
       {paidEv ? (
         <p className="small">
-          To {byWho(strOf(evData(paidEv).beneficiary) ?? x.c.commit.beneficiary)}, in <TxLink hash={paidEv.tx} href={paidEv.explorer} />{" "}
-          <span className="xsmall muted">
+          To {byWho(strOf(evData(paidEv).beneficiary) ?? x.c.commit.beneficiary, x.c.commit.program)}, in <TxLink hash={paidEv.tx} href={paidEv.explorer} />{" "}
+          <span className={`xsmall muted ${styles.nowrap}`}>
             <Time t={paidEv.block_ts_ns} unit="ns" showRelative={false} />
           </span>
         </p>
@@ -232,7 +242,7 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
     return (
       <Evidence eyebrow="A duplicate is never paid" title={title}>
         {x.feedError ? (
-          <ErrorState what="the program's feed (where the earlier claim is found)" error={x.feedError} />
+          <ErrorState what="the program's feed (where the earlier claim is found)" error={x.feedError} partial />
         ) : (
           <Empty>
             {of !== null ? `near-antibody names commit ${of} as the earlier claim, but it is not in the program's feed yet.` : "No earlier claim with an equal key is in the program's feed yet."}
@@ -245,6 +255,8 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
   const e = x.earlier?.ok ? x.earlier.data : null;
   const before = typeof r.committed_at === "number" && typeof x.c.commit.committed_at === "number" ? x.c.commit.committed_at - r.committed_at : null;
   const theirSealed = e ? e.proof_card?.sealed_until_disclosure !== false : true;
+  const theirKey = publishedFixture({ commitId: r.commit_id, runId: r.run_id, programId: x.c.commit.program, receipt: e?.proof_card?.receipt_sha256 });
+  const myKey = x.keyState.kind === "published" ? x.keyState.fixture : null;
   const m = claim.matches[0];
   return (
     <Evidence
@@ -256,14 +268,13 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
       }
       lede={
         <>
-          By {byWho(r.hunter)}, committed <Time t={r.committed_at} showRelative={false} />
+          By {byWho(r.hunter, x.c.commit.program)}, committed <Time t={r.committed_at} showRelative={false} />
           {before !== null && before > 0 ? ` (${seconds(before)} before this one)` : ""}. Commit order is priority: the first proof of a key is the one paid.
         </>
       }
     >
       <div className="row" style={{ ["--gap" as string]: "8px" }}>
-        <StateBadge state={r.state} />
-        {r.paid_raw && r.paid_raw !== "0" ? <Pill tone="ok">paid {wnear(r.paid_raw)}</Pill> : null}
+        {r.paid_raw && r.paid_raw !== "0" ? <Pill tone="ok">paid {wnear(r.paid_raw)}</Pill> : <StateBadge state={r.state} />}
         {dup ? (
           <span className="small">
             near-antibody recorded it as the earlier claim in <TxLink hash={dup.tx} href={dup.explorer} />
@@ -282,17 +293,18 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
       ) : (
         <Empty>The feed shows no key in common between these two commits.</Empty>
       )}
-      <p className="small muted">
-        A tag is a PRF of the rule and the entry point under the program&apos;s key, which only the TEE holds. Equal tags say &quot;same rule, same root
-        cause&quot;, and nothing else.
-      </p>
+      <p className="small muted">A tag is a PRF of the rule and the entry point under the program&apos;s key, which only the TEE holds.</p>
       <div className={styles.pair}>
         <div className={styles.sealedWrap}>
           <p className="small">
             <strong>The earlier claim&apos;s proof</strong>
           </p>
           {theirSealed ? (
-            <Sealed seed={e?.commit.blob_sha256 ?? e?.commit.commitment ?? m?.theirs.tag ?? "0"} label="Sealed until disclosure" lines={3} />
+            <Sealed
+              seed={e?.commit.blob_sha256 ?? e?.commit.commitment ?? m?.theirs.tag ?? "0"}
+              label={theirKey ? "Sealed · key published" : "Sealed until disclosure"}
+              lines={3}
+            />
           ) : (
             <div className="callout callout-ok">Disclosed: anyone can open it and re-run it.</div>
           )}
@@ -308,15 +320,27 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
               </dd>
             </dl>
           ) : x.earlier && !x.earlier.ok ? (
-            <ErrorState what={`commit ${r.commit_id}`} error={x.earlier.error} />
+            <ErrorState what={`commit ${r.commit_id}`} error={x.earlier.error} partial />
           ) : null}
+          {theirSealed && theirKey ? <KeyNote fixture={theirKey} /> : null}
         </div>
         <div className={styles.sealedWrap}>
           <p className="small">
             <strong>This proof</strong>
           </p>
-          <Sealed seed={x.c.commit.blob_sha256 ?? x.c.commit.commitment ?? "0"} label="Sealed until disclosure" lines={3} />
+          <Sealed seed={x.c.commit.blob_sha256 ?? x.c.commit.commitment ?? "0"} label={myKey ? "Sealed · key published" : "Sealed until disclosure"} lines={3} />
+          <dl className={`kv small ${styles.facts}`}>
+            <dt>Receipt</dt>
+            <dd>
+              <Hash value={x.c.proof_card?.receipt_sha256} head={12} label="this proof's receipt sha256" />
+            </dd>
+            <dt>Blob sha256</dt>
+            <dd>
+              <Hash value={x.c.commit.blob_sha256} head={12} label="this proof's blob sha256" />
+            </dd>
+          </dl>
           <p className="xsmall muted">Kept as a proof record: its keys, its receipt and its transactions. At disclosure it opens with the claim it duplicates.</p>
+          {myKey ? <KeyNote fixture={myKey} /> : null}
         </div>
       </div>
       {m && x.c.commit.run !== null && x.c.commit.run !== undefined && r.run_id !== null ? (
@@ -343,13 +367,26 @@ function slotLabel(p: ProgramDetail | null, slot: number) {
   return `${slotName(p, slot)}${i.severity ? ` · ${i.severity}` : ""}`;
 }
 
+/** A proof whose content key our fixture agent published for the T2 study (docs/zk.md). */
+function KeyNote({ fixture }: { fixture: string }) {
+  return (
+    <p className="xsmall muted">
+      Not disclosed on chain; its content key is published for the T2 study (
+      <a href={sourceUrl(keyFile(fixture))} target="_blank" rel="noreferrer noopener">
+        <code>{keyFile(fixture)}</code>
+      </a>
+      ).
+    </p>
+  );
+}
+
 function KnownEvidence({ x }: { x: OutcomeInput }) {
   const km = knownMatch(x.program, x.keys);
   const title = "The known issue";
   if (!km) {
     return (
       <Evidence eyebrow="A known issue is never paid again" title={title}>
-        {x.program ? <Empty>No known issue of this program carries this commit&apos;s tag in the program&apos;s record.</Empty> : <ErrorState what="the program's known issues" />}
+        {x.program ? <Empty>No known issue of this program carries this commit&apos;s tag in the program&apos;s record.</Empty> : <ErrorState what="the program's known issues" partial />}
       </Evidence>
     );
   }
@@ -471,43 +508,12 @@ function GapEvidence({ x }: { x: OutcomeInput }) {
   );
 }
 
-function ForfeitEvidence({ x }: { x: OutcomeInput }) {
-  const f = ev(x.events, "forfeited");
-  const forfeits = x.program?.program?.ledger?.forfeits;
-  return (
-    <Evidence
-      eyebrow="A proof that breaks nothing earns nothing"
-      title={`${kindWords(x.kind ?? strOf(evData(f).kind) ?? "NoViolation")}: the bond went to program ${x.c.commit.program}'s escrow`}
-      lede="The verifier runs the proof's calls against the rules the program committed; it never reads a report. No rule broke, so nothing is owed, and the bond is forfeited to the program's escrow, where it pays future findings."
-    >
-      <dl className={`kv ${styles.facts}`}>
-        <dt>Forfeited</dt>
-        <dd>
-          <span className={styles.inline}>
-            <strong className="num">{wnear(x.c.commit.bond)}</strong>
-            {f ? <TxLink hash={f.tx} href={f.explorer} /> : null}
-          </span>
-        </dd>
-        {forfeits ? (
-          <>
-            <dt>The escrow</dt>
-            <dd className="small">
-              Program {x.c.commit.program} has received <span className="num">{wnear(forfeits)}</span> in forfeited bonds, in all.
-            </dd>
-          </>
-        ) : null}
-      </dl>
-    </Evidence>
-  );
-}
-
 // ------------------------------------------------------------------ the section body
 
 export function Outcome(x: OutcomeInput) {
   const isDuplicate = x.label === "Duplicate" || x.label === "Done:DuplicateConfirmed" || x.events.some((e) => e.event === "duplicate");
   const isKnown = x.label === "Done:Known" || x.events.some((e) => e.event === "known_match");
   const isGap = x.events.some((e) => e.event === "gap_claim") || x.label === "GapClaim" || x.label === "Done:GapOpen";
-  const isForfeit = x.label === "Done:Forfeited";
   const note = recordedNote(x.c.commit.id, x.c.commit.program, x.c.commit.hunter);
   const expect = stateExpect(x.label, x.c.commit.state);
   return (
@@ -519,27 +525,41 @@ export function Outcome(x: OutcomeInput) {
       {note ? (
         <div className={`callout ${styles.spaced}`}>
           <Icon name="info" size={16} />
-          <p>
-            <strong>In the recorded run</strong> of 2026-11-04 (
-            <a href={sourceUrl("JUDGES.md")} target="_blank" rel="noreferrer noopener">
-              JUDGES.md, row{note.rows.length > 1 ? "s" : ""} {note.rows.join(", ")}
-            </a>
-            ): {note.text}
-          </p>
+          <div className={styles.noteBody}>
+            <p>
+              <strong>In the recorded run</strong> of 2026-11-04 (
+              <a href={sourceUrl("JUDGES.md")} target="_blank" rel="noreferrer noopener">
+                JUDGES.md, row{note.rows.length > 1 ? "s" : ""} {note.rows.join(", ")}
+              </a>
+              ): {note.text}
+            </p>
+            {note.quote ? (
+              <figure className={styles.quote}>
+                <blockquote>
+                  <code>{note.quote.text}</code>
+                </blockquote>
+                <figcaption className="xsmall muted">
+                  {note.quote.what} (
+                  <a href={sourceUrl(note.quote.file)} target="_blank" rel="noreferrer noopener">
+                    {note.quote.file.split("/").pop()}
+                  </a>
+                  ).
+                </figcaption>
+              </figure>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {isDuplicate ? <DuplicateEvidence x={x} /> : null}
       {isKnown ? <KnownEvidence x={x} /> : null}
       {isGap ? <GapEvidence x={x} /> : null}
-      {isForfeit ? <ForfeitEvidence x={x} /> : null}
       {expect ? (
         <div className={`${styles.checks} ${styles.spaced}`}>
-          <p className={styles.checksTitle}>Check the state on NEAR</p>
           <LiveCheck
             check={{ kind: "near-view", contract: x.contract, method: "get_commit", args: { commit_id: x.c.commit.id } }}
             expect={expect}
             cli={`antibody status --commit ${x.c.commit.id}`}
-            label="Read the commit from NEAR"
+            label={x.label === "Done:Paid" ? "Check the payout on NEAR" : "Check the state on NEAR"}
           />
         </div>
       ) : null}

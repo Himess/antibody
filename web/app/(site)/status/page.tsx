@@ -22,6 +22,7 @@ export default async function StatusPage() {
   return (
     <>
       <PageHead
+        crumbs={[{ href: "/status", label: "Status" }]}
         eyebrow="Status"
         title="Our own health"
         lede={<p>We show our own health: these are the services&apos; own state files and view calls.</p>}

@@ -13,6 +13,7 @@ export const getReflex = cache((id: number) => api.reflex(id));
 export const getHealth = cache(() => api.health());
 export const getT2 = cache(() => api.t2());
 export const getJudge = cache(() => api.judge());
+export const getRun = cache((id: number) => api.run(id));
 
 /** The contracts the checks call, from /health, with the locked deployment's names as the fallback. */
 export async function contractsOf() {

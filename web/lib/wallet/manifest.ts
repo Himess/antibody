@@ -68,7 +68,7 @@ export const WALLET_INFO: WalletInfo[] = [
   {
     id: "nightly-wallet",
     name: "Nightly",
-    kind: "Browser extension",
+    kind: "Desktop browser extension",
     script: {
       url: "https://raw.githubusercontent.com/hot-dao/near-selector/9cee11c04cfd42f5a420688f808d4aca612b5fde/repository/nightly.js",
       pinned: true,
@@ -152,7 +152,7 @@ export const PINNED_WALLETS: WalletManifest[] = [
     id: "nightly-wallet",
     name: "Nightly",
     icon: monogram("N"),
-    description: "Browser extension",
+    description: "Desktop browser extension",
     website: "https://nightly.app",
     version: `1.0.0+${scriptOf("nightly-wallet").commit}`,
     executor: scriptOf("nightly-wallet").url,

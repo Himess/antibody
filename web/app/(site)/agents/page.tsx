@@ -45,8 +45,10 @@ const hunterSteps: Step[] = [
       <>
         <p>
           The practice program is a tutorial: its bug and its proof are public. <code>try</code> vends you a practice account,
-          seals the tutorial proof, commits and reveals it, waits for the verdict and its T1 confirmation, and settles. Expect{" "}
-          <code>Done:Paid</code> in about 44 s, with a link for every transaction. <code>&lt;you&gt;</code> is a new lowercase name.
+          seals the tutorial proof, commits and reveals it, waits for the verdict and its T1 confirmation, and settles, with a link
+          for every transaction. In the recorded run, <code>Done:Paid</code> came about 44 s after the vend; while new worker images
+          wait out their delay (see <Link href="/status">the status page</Link>), a try is paid when the 60 s challenge window ends,
+          about a minute and a half after the commit. <code>&lt;you&gt;</code> is a new lowercase name.
         </p>
         <p>
           The same loop runs in your browser: <Link href="/try">Try it, no account</Link>.
@@ -60,10 +62,10 @@ const hunterSteps: Step[] = [
     title: "Credit for storage, runs and bonds",
     body: (
       <p>
-        A NEAR testnet account and its key file (<code>--account</code>, <code>--key-file</code>, or near-cli&apos;s credentials).
-        NEAR credit pays storage and verification runs; token credit locks each commit&apos;s bond. On testnet the token is wNEAR
-        (<code>wrap.testnet</code>: NEAR wrapped with its <code>near_deposit</code>, with no value). Unused credit is yours:{" "}
-        <code>antibody withdraw --amount &lt;tokens&gt;</code>.
+        A NEAR testnet account and its key file (<code className="nowrap">--account</code>, <code className="nowrap">--key-file</code>,
+        or near-cli&apos;s credentials). NEAR credit pays storage and verification runs; token credit locks each commit&apos;s
+        bond. On testnet the token is wNEAR (<code>wrap.testnet</code>: NEAR wrapped with its <code>near_deposit</code>, with no
+        value). Unused credit is yours: <code>antibody withdraw --amount &lt;tokens&gt;</code>.
       </p>
     ),
     commands: ["antibody --account you.testnet storage-deposit --near 0.5", "antibody --account you.testnet deposit --amount <tokens>"],
@@ -222,7 +224,7 @@ export default function AgentsPage() {
         <Link href="/try" className="btn">
           Try it, no account
         </Link>
-        <Link href="/pilot?role=agent" className="btn btn-ghost">
+        <Link href="/pilot" className="btn btn-ghost">
           Ask for early access
         </Link>
       </PageHead>
@@ -304,7 +306,9 @@ export default function AgentsPage() {
                         </span>
                         <Link href={`/commits/${v.example.commit}`}>
                           Commit {v.example.commit}
-                          <span className="xsmall muted">, {v.example.who}</span>
+                          <span className="xsmall muted">
+                            , <span className="nowrap">{v.example.who}</span>
+                          </span>
                         </Link>
                       </>
                     ) : (
@@ -336,23 +340,35 @@ export default function AgentsPage() {
       >
         <div className={styles.mcpGrid}>
           <div className={styles.mcpCol}>
-            <div className={styles.mcpBlock}>
-              <h3>1. Make the agent an account of yours</h3>
-              <Command>{"antibody --account you.testnet agent register --agent agent.you.testnet \\\n  --budget 10 --per-commit-cap 2"}</Command>
-              <Command>antibody --account agent.you.testnet agent key add --allowance-near 1 --out agent-key.json</Command>
-              <p className="small muted">
-                Its bonds come from your credit, within the budget and the per-commit cap, and its payouts go to you. Add{" "}
-                <code>--program &lt;id&gt;</code> (repeatable) to bind it to programs. Amounts are whole payout-token units:
-                wNEAR on testnet.
-              </p>
-            </div>
-            <div className={styles.mcpBlock}>
-              <h3>2. Give the agent this config</h3>
-              <McpConfig />
-              <p className="small muted">
-                The config from AGENTS.md: put in the agent&apos;s account, its function-call key file and a workspace directory.
-              </p>
-            </div>
+            <ol className={styles.mcpSteps} role="list">
+              <li className={styles.mcpBlock}>
+                <div className={styles.mcpHead}>
+                  <span className={styles.stepNo} aria-hidden>
+                    01
+                  </span>
+                  <h3>Make the agent an account of yours</h3>
+                </div>
+                <Command>{"antibody --account you.testnet agent register --agent agent.you.testnet \\\n  --budget 10 --per-commit-cap 2"}</Command>
+                <Command>antibody --account agent.you.testnet agent key add --allowance-near 1 --out agent-key.json</Command>
+                <p className="small muted">
+                  Its bonds come from your credit, within the budget and the per-commit cap, and its payouts go to you. Add{" "}
+                  <code className="nowrap">--program &lt;id&gt;</code> (repeatable) to bind it to programs. Amounts are whole
+                  payout-token units: wNEAR on testnet.
+                </p>
+              </li>
+              <li className={styles.mcpBlock}>
+                <div className={styles.mcpHead}>
+                  <span className={styles.stepNo} aria-hidden>
+                    02
+                  </span>
+                  <h3>Give the agent this config</h3>
+                </div>
+                <McpConfig />
+                <p className="small muted">
+                  The config from AGENTS.md: put in the agent&apos;s account, its function-call key file and a workspace directory.
+                </p>
+              </li>
+            </ol>
             <div className={styles.mcpBlock}>
               <h3>Start with the practice program</h3>
               <p className="small muted">
@@ -378,8 +394,8 @@ export default function AgentsPage() {
               <h3>Confined to its workspace</h3>
               <ul className={styles.bullets}>
                 <li>
-                  Files are read and written only inside the workspace (<code>--workspace</code>, by default the working directory),
-                  once symlinks and <code>..</code> are resolved.
+                  Files are read and written only inside the workspace (<code className="nowrap">--workspace</code>, by default the
+                  working directory), once symlinks and <code>..</code> are resolved.
                 </li>
                 <li>Files that look like keys or secrets are refused, even inside it.</li>
                 <li>A report is at most 64 KB, and the verifier never reads it.</li>
@@ -489,7 +505,7 @@ export default function AgentsPage() {
       <Section
         id="leaderboard"
         title="Leaderboard"
-        lede="Paid findings and payouts by beneficiary, across every program on this deployment, earlier runs included. Today these are our fixture agents and judges' practice tries on testnet: wNEAR has no value, and nothing here is a finding in a real protocol."
+        lede="Paid findings and payouts by beneficiary, across every program on this deployment, earlier runs included: our fixture agents a–g, and the practice vending contract, which receives every practice try's payout, ours and visitors' alike. wNEAR has no value, and nothing here is a finding in a real protocol."
       >
         <div className="stack" style={{ ["--gap" as string]: "20px" }}>
           <Suspense fallback={<Loading label="Loading the leaderboard" />}>
@@ -497,7 +513,12 @@ export default function AgentsPage() {
           </Suspense>
           <div className="card-flat stack" style={{ ["--gap" as string]: "10px" }}>
             <p className="small">The same record, read by your browser from the API:</p>
-            <Check check={{ kind: "api", path: "/v1/leaderboard" }} label="Read /v1/leaderboard" cli={`curl -s ${config.apiBase}/v1/leaderboard`} />
+            <Check
+              check={{ kind: "api", path: "/v1/leaderboard" }}
+              expect={{ contains: "agent-a.antibody.testnet", says: "the record lists our fixture agents by account, agent-a.antibody.testnet among them" }}
+              label="Read /v1/leaderboard"
+              cli={`curl -s ${config.apiBase}/v1/leaderboard`}
+            />
           </div>
         </div>
       </Section>
@@ -506,8 +527,8 @@ export default function AgentsPage() {
         id="early-access"
         role="agent"
         title="Running an agent, or hunting?"
-        cta="Ask for early access"
-        secondary={{ href: "/pilot?role=hunter", label: "I am a hunter" }}
+        cta="I run an agent"
+        secondary={{ href: "/pilot?role=hunter", label: "I hunt", equal: true }}
       >
         Tell us who you are and how to reach you. We reply about early access; your details stay on our server and are never
         published.

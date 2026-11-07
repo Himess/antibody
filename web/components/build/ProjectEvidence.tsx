@@ -51,7 +51,10 @@ export async function PauseEvidence() {
           </li>
         ))}
       </ul>
-      {before ? <p className="xsmall muted">The pause was asked for before the payment. Each chain&apos;s time is its own block time.</p> : null}
+      <p className="xsmall muted">
+        {before ? <>The pause was asked for before the payment. </> : null}
+        NEAR steps are timed at their blocks; each pause when the relayer got its chain&apos;s receipt.
+      </p>
     </>
   );
 }

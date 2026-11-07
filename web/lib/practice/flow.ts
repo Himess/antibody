@@ -59,7 +59,10 @@ export const MAX_INLINE_BLOB = 15 * 1024;
 export interface Timing {
   /** cmd.rs `wait_verdict(…, 240)`. */
   verdictSecs: number;
-  /** practice.rs `wait_t1(…, 300)`: then the T0 path. */
+  /**
+   * The longest wait for T1 when the answer's time is unknown (practice.rs `wait_t1(…, 300)`). With it known,
+   * the try waits for T1 only until a T0 payout is allowed: the answer, the challenge window and 5 s.
+   */
   t1Secs: number;
   /** practice.rs `settle`: views read a moment behind the allocation just executed. */
   settleSecs: number;
@@ -993,7 +996,7 @@ export class TryFlow {
     const tx = txHash(out);
     this.persist({ runId, revealTx: tx });
     this.set({ runId });
-    this.done("reveal", `run ${runId}: the sealed blob is public now, and only the TEE could open it`, { tx, signer: account });
+    this.done("reveal", `run ${runId}: the sealed blob is on chain, under the try's public content key, so anyone, T2's prover included, can open it`, { tx, signer: account });
     this.timeStep("reveal", out, "run_requested");
     // The answer may be in the same outcome.
     const answered = eventIn(out, "run_answered");
@@ -1058,11 +1061,17 @@ export class TryFlow {
     this.done("verdict", `${words}: ${how}`, { tx, at, exact: at !== undefined && exact });
   }
 
-  /** practice.rs `wait_t1` (300 s), then the T0 path exactly as `try_it` takes it. */
+  /**
+   * Wait for T1, the run's TDX quote verified on NEAR, until a T0 payout is allowed: the answer, the
+   * program's challenge window and 5 s. T1 first: settled at once, under the instant cap. No T1 by then: the
+   * verdict stays T0 and is settled then, as the contract allows (practice.rs `try_it` takes the same T0
+   * path, after waiting 300 s for T1; a visitor waits only as long as the contract makes them).
+   */
   private async stepT1(): Promise<void> {
     if (this.s.tier === "T1" && this.s.steps.t1.status === "done") return;
     this.begin("t1", "Waiting for T1: the run's TDX quote, verified on NEAR");
     const t0 = this.d.now();
+    const window = await this.challengeWindow();
     let lastPoll = -Infinity;
     for (;;) {
       if (this.seen.failed) throw new FlowError("verdict", `run ${this.s.runId} failed: ${this.seen.failed}`);
@@ -1085,6 +1094,8 @@ export class TryFlow {
             const at = r.verdict.answeredAt !== undefined ? r.verdict.answeredAt * 1000 : undefined;
             this.verdictIn(r.verdict, undefined, at, at !== undefined);
           }
+          if (this.s.verdict && r.verdict.answeredAt !== undefined && this.s.verdict.answeredAt === undefined)
+            this.set({ verdict: { ...this.s.verdict, answeredAt: r.verdict.answeredAt } });
           if (r.verdict.tier === "T1") {
             this.set({ tier: "T1" });
             continue;
@@ -1095,13 +1106,17 @@ export class TryFlow {
         this.skip("t1", "you stopped following before T1");
         return;
       }
-      if (this.d.now() - t0 > this.t.t1Secs * 1000) return this.t0Path();
-      await this.nap(this.pollEvery());
+      const answered = this.s.verdict?.answeredAt;
+      const payAfter = answered !== undefined ? (answered + window + 5) * 1000 : undefined;
+      if (payAfter !== undefined && this.d.now() >= payAfter) return this.t0Path(window, payAfter);
+      if (payAfter === undefined && this.d.now() - t0 > this.t.t1Secs * 1000) return this.t0Path(window, undefined);
+      if (payAfter !== undefined && this.s.t0PayAfter !== payAfter) this.set({ t0PayAfter: payAfter });
+      await this.nap(Math.min(this.pollEvery(), payAfter !== undefined ? Math.max(250, payAfter - this.d.now()) : this.pollEvery()));
     }
   }
 
-  /** practice.rs `try_it`: no T1 within 300 s, so the verdict stays T0 and is paid after the challenge window. */
-  private async t0Path(): Promise<void> {
+  /** The program's challenge window, in seconds (60 on the practice program). */
+  private async challengeWindow(): Promise<number> {
     let window = this.s.challengeSecs ?? 60;
     try {
       const p = (await this.d.rpc.viewFunction(this.s.antibody ?? "", "get_program", { program_id: this.s.programId })).json<ProgramView | null>();
@@ -1109,11 +1124,19 @@ export class TryFlow {
     } catch {
       // the window read with the program
     }
-    const r = await this.pollRun();
-    const answered = r?.verdict?.answeredAt ?? this.s.verdict?.answeredAt ?? 0;
-    if (this.s.verdict && r?.verdict?.answeredAt !== undefined) this.set({ verdict: { ...this.s.verdict, answeredAt: r.verdict.answeredAt } });
-    const payAfter = (answered + window + 5) * 1000;
-    const note = `no T1 within ${this.t.t1Secs} s: the verdict stays T0 and is paid after the ${window} s challenge window`;
+    return window;
+  }
+
+  /** No T1 before a T0 payout is allowed: the verdict stays T0 and is paid after the challenge window. */
+  private async t0Path(window: number, known: number | undefined): Promise<void> {
+    let payAfter = known;
+    if (payAfter === undefined) {
+      const r = await this.pollRun();
+      const answered = r?.verdict?.answeredAt ?? this.s.verdict?.answeredAt ?? 0;
+      if (this.s.verdict && r?.verdict?.answeredAt !== undefined) this.set({ verdict: { ...this.s.verdict, answeredAt: r.verdict.answeredAt } });
+      payAfter = (answered + window + 5) * 1000;
+    }
+    const note = `no T1 within the ${window} s challenge window: the verdict stays T0 and is paid after it`;
     this.set({ t0Note: note, t0PayAfter: payAfter, tier: this.s.tier ?? "T0" });
     this.note("warn", note);
     this.skip("t1", note);

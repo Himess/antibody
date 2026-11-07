@@ -15,7 +15,8 @@ export type Step = {
 
 /**
  * Numbered steps, each a title, a few lines and the exact commands. The list is announced as an ordered
- * list (its numbers are drawn for the eye only).
+ * list (its numbers are drawn for the eye only). On a phone the number sits beside the title and the body
+ * takes the full width, so commands lose no width to the numbers.
  */
 export function Steps({ steps, label }: { steps: Step[]; label: string }) {
   return (
@@ -25,25 +26,27 @@ export function Steps({ steps, label }: { steps: Step[]; label: string }) {
           <span className={styles.stepNo} aria-hidden>
             {String(i + 1).padStart(2, "0")}
           </span>
-          <div className={styles.stepBody}>
-            <h3 className={styles.stepTitle}>{s.title}</h3>
-            {s.body ? <div className={styles.stepText}>{s.body}</div> : null}
-            {s.commands?.length ? (
-              <div className={styles.cmds}>
-                {s.commands.map((c, j) => {
-                  const cmd = typeof c === "string" ? c : c.cmd;
-                  const note = typeof c === "string" ? null : c.note;
-                  return (
-                    <div key={j} className={styles.cmd}>
-                      <Command>{cmd}</Command>
-                      {note ? <p className={styles.cmdNote}>{note}</p> : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
-            {s.after}
-          </div>
+          <h3 className={styles.stepTitle}>{s.title}</h3>
+          {s.body || s.commands?.length || s.after ? (
+            <div className={styles.stepBody}>
+              {s.body ? <div className={styles.stepText}>{s.body}</div> : null}
+              {s.commands?.length ? (
+                <div className={styles.cmds}>
+                  {s.commands.map((c, j) => {
+                    const cmd = typeof c === "string" ? c : c.cmd;
+                    const note = typeof c === "string" ? null : c.note;
+                    return (
+                      <div key={j} className={styles.cmd}>
+                        <Command>{cmd}</Command>
+                        {note ? <p className={styles.cmdNote}>{note}</p> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {s.after}
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>

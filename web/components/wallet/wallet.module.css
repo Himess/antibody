@@ -33,7 +33,7 @@
   }
 }
 
-.points li {
+.points > li {
   display: grid;
   gap: 6px;
   align-content: start;
@@ -48,11 +48,92 @@
   color: var(--ink);
 }
 
+/* The items start at the column's edge, as its heading and rule do, each under a hairline. */
 .points ul {
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
   display: grid;
-  gap: 4px;
+}
+
+.points ul li {
+  padding-block: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* The connect button, and under it the way in for someone with no wallet. */
+.connectActions {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.connectAlt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  font-size: var(--fs-sm);
+}
+
+/* ---------------------------------------------------------------- reading any account, no wallet */
+
+.lookup {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.lookupTitle {
+  font-size: var(--fs-lg);
+}
+
+.lookupField {
+  max-width: 640px;
+}
+
+.examples {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 720px) {
+  .examples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.example {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-elev);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.example:hover {
+  border-color: var(--ink);
+}
+
+.exampleId {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.exampleNote {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
 }
 
 .status {
@@ -529,14 +610,27 @@
 
 /* ---------------------------------------------------------------- static sections */
 
+/* On phones these tables' rows become cards (components/programs/Cell): the action is the card's title. */
 .callsTable td:first-child {
   font-weight: 560;
   min-width: 150px;
 }
 
-.codeCell {
+.codeText {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   overflow-wrap: anywhere;
-  min-width: 180px;
+}
+
+@media (min-width: 720px) {
+  .argsCell {
+    min-width: 180px;
+  }
+}
+
+/* A titled part of a section: room above its heading, as between sections' parts elsewhere. */
+.subBlock {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
 }

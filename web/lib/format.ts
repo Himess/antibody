@@ -95,12 +95,13 @@ export function stateLabel(state: string | null | undefined): { text: string; to
   return { text: s || "—", tone: "neutral" };
 }
 
-export type Tone = "ok" | "bad" | "warn" | "info" | "pending" | "neutral" | "accent" | "t1" | "t2";
+export type Tone = "ok" | "bad" | "warn" | "caution" | "info" | "pending" | "neutral" | "accent" | "t1" | "t2";
 
+/** Severity is a warm scale of its own: red, amber, amber outlined, grey. Blue stays the T1 tier's. */
 export const severityTone: Record<string, Tone> = {
   critical: "bad",
   high: "warn",
-  medium: "info",
+  medium: "caution",
   low: "neutral",
 };
 

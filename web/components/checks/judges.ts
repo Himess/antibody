@@ -1,5 +1,6 @@
 import raw from "@/data/judges.json";
 import type { CheckSpec, Expect } from "@/components/ui/LiveCheck";
+import { chainName } from "@/lib/config";
 
 /**
  * The site's copy of JUDGES.md (web/data/judges.json), written by scripts/docs/judges.py from the same
@@ -39,6 +40,8 @@ export interface JudgeClaim {
   state?: string;
   tier?: string;
   agent?: string;
+  /** What the claim does not show, in one line, once the generator writes it. */
+  does_not_show?: string | null;
 }
 
 export interface JudgeEvmCheck {
@@ -136,6 +139,75 @@ export function specOf(c: JudgeCheck): CheckSpec {
 }
 
 export { safeUrl } from "./url";
+
+/** One browser check of a claim, with a stable id: the claims index and the claim's card share its answer. */
+export interface ClaimCheck {
+  id: string;
+  check: CheckSpec;
+  expect?: Expect;
+  cli?: string;
+  label?: string;
+  /** An EVM read: what it reads ("AcmeLend", "practice vault"). */
+  subject?: string;
+}
+
+/** An EVM check as a claim's check: read from the chain's public RPC, with its curl command. */
+export function evmCheck(e: JudgeEvmCheck, id: string): ClaimCheck {
+  return {
+    id,
+    check: { kind: "evm", chainId: e.chain_id, method: e.method, params: e.params },
+    expect: e.expect,
+    cli: e.curl,
+    label: `Read it on ${chainName(e.chain_id)}`,
+    subject: e.subject,
+  };
+}
+
+/**
+ * The checks a claim's result stands on: its first live check, or, when its check is on the EVM chains,
+ * every EVM read that backs it.
+ */
+export function primaryChecks(c: JudgeClaim, evm: JudgeEvmCheck[]): ClaimCheck[] {
+  const first = c.live?.[0];
+  if (first) return [{ id: `${c.n}`, check: specOf(first), expect: first.expect, cli: first.cli, label: first.label }];
+  return evm.filter((e) => e.claim === c.n && e.live).map((e, i) => evmCheck(e, `${c.n}.evm.${i}`));
+}
+
+/**
+ * README's limitations that bound what a claim shows, by the claim's kind (matched by the limit's own
+ * opening words, so a reworded limit drops out rather than points at the wrong one).
+ */
+const LIMITS_BY_KIND: Record<string, string[]> = {
+  submission: ["TEE trust is tiered", "One block"],
+  one_moment: ["Ethereum L1 for verification"],
+  round: ["Duplicates are judged by"],
+  release: ["Ethereum L1 for verification"],
+  practice: ["Claims are paid in commit order"],
+  rule_strength: ["Rule strength is the rules"],
+};
+
+/** The limits that bound a claim, each with its index in the Limits list (for its link). */
+export function limitsFor(c: JudgeClaim, items: { title: string; text: string }[]): { index: number; label: string; text: string }[] {
+  const wanted = [...(LIMITS_BY_KIND[c.kind] ?? []), ...(c.state === "Done:DuplicateConfirmed" ? ["Duplicates are judged by"] : [])];
+  const out: { index: number; label: string; text: string }[] = [];
+  for (const start of wanted) {
+    const index = items.findIndex((l) => (l.title ?? "").startsWith(start));
+    if (index < 0 || out.some((o) => o.index === index)) continue;
+    const title = (items[index].title ?? "").trim();
+    const whole = `${title}${/^[,.;:]/.test(items[index].text ?? "") ? "" : " "}${items[index].text ?? ""}`.trim();
+    // A title cut mid-sentence ("Rule strength is the rules' measure,") reads with its text.
+    out.push({ index, label: title.endsWith(".") ? title : whole, text: whole });
+  }
+  return out;
+}
+
+/** "1 h 16 min 30 s" for a whole number of seconds (a minute or more). */
+export function longDuration(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.round(s % 60);
+  return [h ? `${h} h` : "", m ? `${m} min` : "", sec ? `${sec} s` : ""].filter(Boolean).join(" ");
+}
 
 /** This run's programs, by id: "Acme Lend", "practice", "fork mode". */
 export function runRole(role: string | null | undefined): string | null {

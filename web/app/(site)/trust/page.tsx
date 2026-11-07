@@ -8,6 +8,9 @@ import { T2Records } from "@/components/checks/T2Records";
 import { judges, safeUrl, type JudgesData } from "@/components/checks/judges";
 import { RECEIPTS, REPRODUCE, RUN_BINDING, VERIFIER_BUILD, ZK } from "@/components/checks/trust-data";
 import styles from "@/components/checks/checks.module.css";
+import { Cell } from "@/components/programs/Cell";
+import { OnThisPage } from "@/components/programs/OnThisPage";
+import rt from "@/components/programs/programs.module.css";
 import { TierBadge } from "@/components/ui/Badges";
 import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
@@ -37,8 +40,16 @@ function Ext({ href, children, className }: { href: string; children: ReactNode;
   );
 }
 
+/** The panel's actors start lower case ("the light client"); a contract's name stays as it is ("near-antibody's owner"). */
+const actorTitle = (s: string) => (/^near-/.test(s) ? s : s.charAt(0).toUpperCase() + s.slice(1));
+
+/** README's deployment table names the MPC network's contract; /v1/guardian reads it from near-guardian's config. */
+const MPC_CONTRACT = "v1.signer-prod.testnet";
+
 export default async function TrustPage() {
-  const [trust, health, t2] = await Promise.all([api.trust(), api.health(), api.t2()]);
+  const [trust, health, t2, guardian] = await Promise.all([api.trust(), api.health(), api.t2(), api.guardian()]);
+  const guardianConfig = guardian.ok && guardian.data?.config && typeof guardian.data.config === "object" ? (guardian.data.config as Record<string, unknown>) : {};
+  const mpcContract = typeof guardianConfig.mpc === "string" && guardianConfig.mpc ? guardianConfig.mpc : MPC_CONTRACT;
   const contracts = health.ok ? health.data.contracts : undefined;
   const release = contracts?.release;
   const antibody = contracts?.antibody ?? judges.deployment?.near_antibody ?? "bounty.antibody.testnet";
@@ -47,11 +58,13 @@ export default async function TrustPage() {
   const verifier = liveVerifier ?? judges.deployment?.verifier ?? null;
   const anchor: JudgesData["anchor"] = judges.anchor ?? {};
   const lightClient = contracts?.light_client ?? anchor.light_client ?? judges.deployment?.light_client ?? "client-eth2.sepolia.testnet";
-  const t2Status = t2.ok ? (
+  // A near-t2 that holds no record yet reads as not yet on testnet: never a zero count.
+  const t2Count = t2.ok && Array.isArray(t2.data?.records) ? t2.data.records.length : 0;
+  const t2Status = t2Count ? (
     <Pill tone="t2" size="sm">
-      {t2.data.records?.length ?? 0} record{t2.data.records?.length === 1 ? "" : "s"} on testnet
+      {t2Count} record{t2Count === 1 ? "" : "s"} on testnet
     </Pill>
-  ) : t2NotYet(t2) ? (
+  ) : t2.ok || t2NotYet(t2) ? (
     <Pill tone="pending" size="sm">
       not yet on testnet
     </Pill>
@@ -68,6 +81,7 @@ export default async function TrustPage() {
   return (
     <>
       <PageHead
+        crumbs={[{ href: "/trust", label: "Trust" }]}
         eyebrow="Trust"
         title="What you trust, and how to check it"
         lede={
@@ -76,6 +90,18 @@ export default async function TrustPage() {
             testnet and Sepolia, and each comes with its terminal command.
           </p>
         }
+      />
+
+      <OnThisPage
+        items={[
+          { id: "tiers", label: "Tiers" },
+          { id: "panel", label: "Trust panel" },
+          { id: "checks", label: "Browser checks" },
+          { id: "builds", label: "Builds" },
+          { id: "three", label: "Three environments" },
+          { id: "deployment", label: "Deployment" },
+          { id: "mock", label: "What is mock" },
+        ]}
       />
 
       <Section id="tiers" title="Who vouches for a verdict" lede="Each tier is a different reason to believe the pinned verifier ran on the committed input.">
@@ -122,7 +148,7 @@ export default async function TrustPage() {
           <ul className={styles.cards} style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {trust.data.actors.map((a, i) => (
               <li key={a.actor ?? i} className={styles.cardBox}>
-                <h3>{a.actor ? a.actor.charAt(0).toUpperCase() + a.actor.slice(1) : "An actor"}</h3>
+                <h3>{a.actor ? actorTitle(a.actor) : "An actor"}</h3>
                 <dl className={styles.mini}>
                   <div>
                     <dt>Trusted for</dt>
@@ -136,10 +162,29 @@ export default async function TrustPage() {
                       <Md text={a.check} />
                     </dd>
                   </div>
-                  <div>
-                    <dt>Account</dt>
-                    <dd>{a.account ? <AccountLink account={a.account} /> : <span className="muted">none: nothing on chain to trust</span>}</dd>
-                  </div>
+                  {/MPC network/i.test(a.actor ?? "") ? (
+                    <>
+                      <div>
+                        <dt>MPC contract</dt>
+                        <dd>
+                          <AccountLink account={mpcContract} />
+                        </dd>
+                      </div>
+                      {a.account && a.account !== mpcContract ? (
+                        <div>
+                          <dt>Permits built by</dt>
+                          <dd>
+                            <AccountLink account={a.account} />
+                          </dd>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div>
+                      <dt>Account</dt>
+                      <dd>{a.account ? <AccountLink account={a.account} /> : <span className="muted">none: nothing on chain to trust</span>}</dd>
+                    </div>
+                  )}
                 </dl>
               </li>
             ))}
@@ -410,8 +455,10 @@ export default async function TrustPage() {
             <li>
               <Icon name="sigma" size={14} />
               <span>
-                <strong>The zkVM.</strong> SP1&apos;s executor re-runs the four disclosed testnet runs on the TEE&apos;s exact inputs and gives the
-                TEE&apos;s receipts, with the same public values that <code>crates/zk/core</code> computes natively.
+                <strong>The zkVM.</strong> SP1&apos;s executor re-runs four testnet runs on the TEE&apos;s exact inputs and gives the TEE&apos;s
+                receipts, with the same public values that <code>crates/zk/core</code> computes natively. Their content keys are public (our
+                fixture agents published theirs in <code>fixtures/zk</code>; a practice try&apos;s is public by construction), though on chain their
+                proofs stay sealed until disclosure.
               </span>
             </li>
             <li>
@@ -428,7 +475,8 @@ export default async function TrustPage() {
                   Run {c.run} · commit {c.commit}
                 </h3>
                 <p className="small muted">
-                  {c.who}, program {c.program}: {c.kind === "NoViolation" ? "No violation" : `${c.kind}, slot ${c.slots.join(", ")}`}
+                  {c.who}, program {c.program}: <code>{c.kind}</code>
+                  {c.slots.length ? `, slot ${c.slots.join(", ")}` : ""}
                 </p>
                 <dl className={styles.mini}>
                   <div>
@@ -458,7 +506,7 @@ export default async function TrustPage() {
           </ul>
           <div className={styles.grid2}>
             <div className="stack" style={{ ["--gap" as string]: "8px" }}>
-              <p className="small">Re-run run 33 natively, from the chain, with its disclosed content key (no proof):</p>
+              <p className="small">Re-run run 33 natively, from the chain, with the content key our fixture agent A published (no proof):</p>
               <Command label="Native re-run">{REPRODUCE.native}</Command>
             </div>
             <div className="stack" style={{ ["--gap" as string]: "8px" }}>
@@ -478,8 +526,9 @@ export default async function TrustPage() {
         {deployed.length ? (
           <div className="stack" style={{ ["--gap" as string]: "10px" }}>
             {!deployedLive ? <p className="small muted">As the recorded run read it:</p> : null}
-            <div className="table-wrap">
-              <table className="table">
+            <div className={`table-wrap ${rt.cardsWrap}`}>
+              <table className={`table ${rt.rtable}`}>
+                <caption className="visually-hidden">Each contract&apos;s code hash and whether its account is locked</caption>
                 <thead>
                   <tr>
                     <th scope="col">Role</th>
@@ -491,14 +540,16 @@ export default async function TrustPage() {
                 <tbody>
                   {deployed.map((c) => (
                     <tr key={c.account}>
-                      <td>{c.role}</td>
-                      <td className={styles.cell}>
+                      <Cell label="Role" lead>
+                        <strong className="small">{c.role}</strong>
+                      </Cell>
+                      <Cell label="Account" className={styles.cell}>
                         <AccountLink account={c.account} />
-                      </td>
-                      <td>
+                      </Cell>
+                      <Cell label="Code hash">
                         <Hash value={c.code_hash ?? null} head={10} label="code hash" />
-                      </td>
-                      <td>
+                      </Cell>
+                      <Cell label="Locked">
                         {c.locked ? (
                           <Pill tone="ok" icon="lock" size="sm">
                             locked
@@ -508,7 +559,7 @@ export default async function TrustPage() {
                             {c.role === "payout token" ? "not ours; not locked" : "not locked"}
                           </Pill>
                         )}
-                      </td>
+                      </Cell>
                     </tr>
                   ))}
                 </tbody>

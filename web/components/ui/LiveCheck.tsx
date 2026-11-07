@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { config } from "@/lib/config";
 import { evmRead, nearRpc } from "@/lib/near/client";
 import { Command } from "./Command";
@@ -47,10 +47,33 @@ function holds(answer: unknown, e?: Expect): boolean | null {
   return null;
 }
 
+/** What the check read, in one line ("row.state = Done:Paid"), so the result is visible without the raw JSON. */
+function checkedLine(answer: unknown, e: Expect | undefined, ok: boolean | null): string | null {
+  if (!e) return null;
+  if (e.path) {
+    const v = at(answer, e.path);
+    const shown = v === undefined ? "(not in the answer)" : typeof v === "string" ? v : JSON.stringify(v);
+    const line = `${e.path} = ${shown}`;
+    return line.length > 160 ? `${line.slice(0, 160)}…` : line;
+  }
+  const needle = e.contains ?? e.endsWith;
+  return needle !== undefined ? `the answer ${ok ? "contains" : "does not contain"} "${needle}"` : null;
+}
+
 function describe(c: CheckSpec): string {
   if (c.kind === "api") return `GET ${config.apiBase}${c.path}`;
   if (c.kind === "near-view") return `view ${c.contract}.${c.method}(${JSON.stringify(c.args ?? {})})`;
   return `${c.method} on chain ${c.chainId}`;
+}
+
+/** The call with a line-break opportunity after each "(", ",", "." and ":": a number and its closing brackets stay whole. */
+function breakable(text: string): ReactNode {
+  return text.split(/(?<=[(,.:])/).map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 ? <wbr /> : null}
+      {part}
+    </Fragment>
+  ));
 }
 
 export function LiveCheck({ check, expect, cli, label = "Run this check" }: { check: CheckSpec; expect?: Expect; cli?: string; label?: string }) {
@@ -75,6 +98,7 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
     }
   };
   const verdict = state.status === "done" ? holds(state.answer, expect) : null;
+  const checked = state.status === "done" ? checkedLine(state.answer, expect, verdict) : null;
   const shown = state.status === "done" ? JSON.stringify(state.answer, null, 2) : "";
   return (
     <div className={styles.check}>
@@ -83,9 +107,9 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
           <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
           {state.status === "running" ? "Checking…" : state.status === "idle" ? label : "Run again"}
         </button>
-        <span className={`${styles.what} mono`}>{describe(check)}</span>
+        <span className={`${styles.what} mono`}>{breakable(describe(check))}</span>
       </div>
-      {expect ? <p className="xsmall muted">Expected: {expect.says}</p> : null}
+      {expect ? <p className="xsmall muted">Holds if: {expect.says}</p> : null}
       <div aria-live="polite">
         {state.status === "done" ? (
           <div className={styles.result}>
@@ -93,6 +117,12 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
               {verdict === true ? <Pill tone="ok" size="sm">holds</Pill> : verdict === false ? <Pill tone="bad" size="sm">differs</Pill> : <Pill size="sm">answered</Pill>}
               <span className="xsmall muted num">{Math.round(state.ms ?? 0)} ms · read by your browser</span>
             </div>
+            {checked ? (
+              <p className={`xsmall ${styles.checked}`}>
+                <span className="muted">Checked: </span>
+                <code>{checked}</code>
+              </p>
+            ) : null}
             <pre className={styles.raw} tabIndex={0} aria-label="Raw response">
               {shown.length > 6000 ? shown.slice(0, 6000) + "\n…" : shown}
             </pre>

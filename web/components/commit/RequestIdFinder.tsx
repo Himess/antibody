@@ -6,10 +6,11 @@ import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
-import { config } from "@/lib/config";
+import { config, sourceUrl } from "@/lib/config";
 import { shortHash } from "@/lib/format";
 import { nearArchival, nearRpc } from "@/lib/near/client";
 import { events as txEvents, type TxOutcome } from "@/lib/near/rpc";
+import { isObj, runRequestOf } from "./model";
 import styles from "./commit.module.css";
 
 /** What OutLayer's `execution_requested` event in the requesting transaction says about the run. */
@@ -23,43 +24,26 @@ interface Found {
   blobSha: string | null;
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
 function parse(out: TxOutcome): Found | null {
-  for (const ev of txEvents(out)) {
-    if (!isObj(ev) || ev.event !== "execution_requested") continue;
-    const first = Array.isArray(ev.data) ? ev.data[0] : null;
-    let rd: unknown = isObj(first) ? first.request_data : null;
-    if (typeof rd === "string") {
-      try {
-        rd = JSON.parse(rd) as unknown;
-      } catch {
-        continue;
-      }
+  const r = runRequestOf(txEvents(out));
+  if (!r) return null;
+  let blobSha: string | null = null;
+  if (r.input) {
+    try {
+      const req = JSON.parse(r.input) as unknown;
+      if (isObj(req) && isObj(req.blob) && typeof req.blob.sha256 === "string") blobSha = req.blob.sha256;
+    } catch {
+      blobSha = null;
     }
-    if (!isObj(rd)) continue;
-    const requestId = typeof rd.request_id === "number" ? rd.request_id : Number(rd.request_id);
-    if (!Number.isSafeInteger(requestId) || requestId < 0) continue;
-    const input = typeof rd.input_data === "string" ? rd.input_data : null;
-    const src = isObj(rd.code_source) && isObj(rd.code_source.WasmUrl) ? rd.code_source.WasmUrl : null;
-    let blobSha: string | null = null;
-    if (input) {
-      try {
-        const req = JSON.parse(input) as unknown;
-        if (isObj(req) && isObj(req.blob) && typeof req.blob.sha256 === "string") blobSha = req.blob.sha256;
-      } catch {
-        blobSha = null;
-      }
-    }
-    return {
-      requestId,
-      inputSha: input === null ? null : hex(sha256(new TextEncoder().encode(input))),
-      wasm: src && typeof src.hash === "string" ? src.hash : null,
-      blobSha,
-    };
   }
-  return null;
+  return {
+    requestId: r.requestId,
+    inputSha: r.input === null ? null : hex(sha256(new TextEncoder().encode(r.input))),
+    wasm: r.wasm,
+    blobSha,
+  };
 }
 
 const PLACEHOLDER = "<the run's OutLayer request>";
@@ -67,7 +51,8 @@ const PLACEHOLDER = "<the run's OutLayer request>";
 /**
  * Finds the OutLayer request behind a run in the transaction that requested it (as `antibody tee confirm
  * --tx` does), so the T1 commands below carry the real id. The browser reads the transaction from a NEAR
- * archival RPC and checks the request against near-antibody's record of the run.
+ * archival RPC and checks the request against near-antibody's record of the run. A request id already
+ * recorded in a results file (`known`) fills the commands from the start.
  */
 export function RequestIdFinder({
   tx,
@@ -75,6 +60,7 @@ export function RequestIdFinder({
   requestSha,
   blobSha,
   wasmSha,
+  known,
 }: {
   tx: string;
   signer: string;
@@ -82,6 +68,8 @@ export function RequestIdFinder({
   blobSha?: string | null;
   /** The verifier build the deployment records (/health), to compare with the one the request names. */
   wasmSha?: string | null;
+  /** The request id a results file records for this run, and that file. */
+  known?: { requestId: number; source: string } | null;
 }) {
   const [st, setSt] = useState<{ status: "idle" | "running" | "done" | "error"; found?: Found; error?: string }>({ status: "idle" });
 
@@ -104,7 +92,8 @@ export function RequestIdFinder({
   };
 
   const f = st.found;
-  const id = f ? String(f.requestId) : PLACEHOLDER;
+  const requestId = f?.requestId ?? known?.requestId ?? null;
+  const id = requestId !== null ? String(requestId) : PLACEHOLDER;
   const reqHolds = f?.inputSha && requestSha ? f.inputSha === requestSha.toLowerCase() : null;
   const blobHolds = f?.blobSha && blobSha ? f.blobSha.toLowerCase() === blobSha.toLowerCase() : null;
   const wasmHolds = f?.wasm && wasmSha ? f.wasm.toLowerCase() === wasmSha.toLowerCase() : null;
@@ -166,12 +155,23 @@ export function RequestIdFinder({
               could not read
             </Pill>
             <p className="xsmall mono">{st.error}</p>
-            <p className="xsmall muted">Public RPCs rate-limit; try again in a few seconds. The placeholder below stays until the request is found.</p>
+            <p className="xsmall muted">
+              Public RPCs rate-limit; try again in a few seconds.{requestId === null ? " The placeholder below stays until the request is found." : ""}
+            </p>
           </div>
         ) : null}
       </div>
       <Command label="T1 check">{`antibody tee check --request-id ${id}`}</Command>
-      {f ? <Command label="OutLayer's own check">{`outlayer-verify job ${f.requestId} --network ${config.network}`}</Command> : null}
+      {requestId !== null ? <Command label="OutLayer's own check">{`outlayer-verify job ${requestId} --network ${config.network}`}</Command> : null}
+      {known && !f ? (
+        <p className="xsmall muted">
+          Request {known.requestId}, as{" "}
+          <a href={sourceUrl(known.source)} target="_blank" rel="noreferrer noopener">
+            {known.source.split("/").pop()}
+          </a>{" "}
+          records it; the button reads it from the transaction itself.
+        </p>
+      ) : null}
     </div>
   );
 }

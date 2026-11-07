@@ -1,3 +1,5 @@
+import { Cell } from "@/components/programs/Cell";
+import rt from "@/components/programs/programs.module.css";
 import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
 import { LiveCheck } from "@/components/ui/LiveCheck";
@@ -37,13 +39,13 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
             <code>/v1/t2</code> answers: {r.ok ? "" : r.error}
           </span>
         </p>
-        <p className="small">
-          near-t2 is built and tested: its unit tests check the four disclosed runs&apos; public values against near-antibody&apos;s testnet records,
-          and the sandbox run confirms an honest run and records a lying MOCK TEE&apos;s contradiction. Its testnet deployment waits for the first
-          proofs from SP1&apos;s prover network. When it holds records, each appears here with near-t2&apos;s pins and a view call your browser
-          runs.
+        <p className="small" style={{ maxWidth: "72ch" }}>
+          near-t2 is built and tested: its unit tests check the public values of four testnet runs, whose content keys are published in{" "}
+          <code>fixtures/zk</code>, against near-antibody&apos;s testnet records, and the sandbox run confirms an honest run and records a lying
+          MOCK TEE&apos;s contradiction. Its testnet deployment waits for the first proofs from SP1&apos;s prover network. When it holds records, each
+          appears here with near-t2&apos;s pins and a view call your browser runs.
         </p>
-        <p className="small muted">
+        <p className="small muted" style={{ maxWidth: "72ch" }}>
           T2 is a validity proof of a disclosed verdict: it claims no privacy, and payouts in the locked deployment do not depend on it.{" "}
           <a href={sourceUrl(ZK.doc)} target="_blank" rel="noreferrer noopener">
             docs/zk.md
@@ -118,8 +120,9 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
         </div>
       </dl>
       {records.length ? (
-        <div className="table-wrap">
-          <table className="table">
+        <div className={`table-wrap ${rt.cardsWrap}`}>
+          <table className={`table ${rt.rtable}`}>
+            <caption className="visually-hidden">near-t2&apos;s records: each run&apos;s outcome and the receipt its re-run gave</caption>
             <thead>
               <tr>
                 <th scope="col">Run</th>
@@ -131,15 +134,17 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
             <tbody>
               {records.map((rec, i) => (
                 <tr key={`${rec.run_id ?? i}`}>
-                  <td className="num">{String(rec.run_id ?? "—")}</td>
-                  <td>
+                  <Cell label="Run" lead className="num">
+                    <strong>Run {String(rec.run_id ?? "—")}</strong>
+                  </Cell>
+                  <Cell label="Outcome">
                     <Outcome outcome={rec.outcome} />
                     {rec.differ?.length ? <div className="xsmall muted">differ: {rec.differ.join(", ")}</div> : null}
-                  </td>
-                  <td>
+                  </Cell>
+                  <Cell label="Receipt">
                     <Hash value={rec.receipt_sha256 ?? null} head={12} label="receipt sha256" />
-                  </td>
-                  <td>{num(rec.at) ? <Time t={num(rec.at)} /> : <span className="muted">—</span>}</td>
+                  </Cell>
+                  <Cell label="Recorded">{num(rec.at) ? <Time t={num(rec.at)} /> : <span className="muted">—</span>}</Cell>
                 </tr>
               ))}
             </tbody>

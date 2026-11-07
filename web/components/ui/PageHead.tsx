@@ -51,7 +51,7 @@ export function Section({ id, title, eyebrow, lede, children, actions }: { id: s
               {title}
             </a>
           </h2>
-          {lede ? <div className="muted small block-lede">{lede}</div> : null}
+          {lede ? <div className="block-lede">{lede}</div> : null}
         </div>
         {actions ? <div className="row">{actions}</div> : null}
       </div>

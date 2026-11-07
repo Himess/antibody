@@ -29,6 +29,7 @@ export function Overview({ d, kind, id, antibody }: { d: ProgramDetail; kind: Pr
   const sealing = str(p.sealing_pk);
   const rec = d.record;
   const label = p.project ? projectLabel(p.project, kind) : null;
+  const description = str(d.meta?.description);
 
   return (
     <Section
@@ -44,6 +45,15 @@ export function Overview({ d, kind, id, antibody }: { d: ProgramDetail; kind: Pr
               <AccountLink account={p.project} />
               {label ? <span className="xsmall muted"> · {label}</span> : null}
             </dd>
+            {description ? (
+              <>
+                <dt>Description</dt>
+                <dd className="stack" style={{ ["--gap" as string]: "4px" }}>
+                  <blockquote className={styles.quote}>{description}</blockquote>
+                  <span className="xsmall muted">as written in the committed manifest</span>
+                </dd>
+              </>
+            ) : null}
             <dt>Program key</dt>
             <dd>
               <Hash value={p.key} full label="program key" />

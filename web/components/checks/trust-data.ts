@@ -48,8 +48,10 @@ export const RUN_BINDING = {
 } as const;
 
 /**
- * The four disclosed testnet runs: the TEE's receipt (on NEAR, in each run's answer), which the native
- * re-run and SP1's executor reproduce byte for byte (fixtures/zk/<case>/expected.json).
+ * The four testnet runs whose content keys are public (fixtures/zk: our fixture agents published theirs; a
+ * practice try's is public by construction). On chain their proofs stay sealed until disclosure, so the page
+ * never calls them "disclosed". The TEE's receipt (on NEAR, in each run's answer) is what the native re-run
+ * and SP1's executor reproduce byte for byte (fixtures/zk/<case>/expected.json).
  */
 export const RECEIPTS = [
   {
@@ -96,7 +98,7 @@ export const RECEIPTS = [
 
 /**
  * The commands that reproduce run 33's receipt (docs/zk.md: Proving, Reproduce): natively from the chain
- * with its disclosed content key (no proof), and in SP1's executor from the recorded case.
+ * with the content key our fixture agent A published (no proof), and in SP1's executor from the recorded case.
  */
 export const REPRODUCE = {
   native: 'antibody zk prove --run 33 --key "$(cat fixtures/zk/a/content_key.hex)" --tx 8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY --mode none',

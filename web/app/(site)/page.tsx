@@ -1,14 +1,23 @@
 import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { MomentHeader } from "@/components/moment/MomentHeader";
+import { PlayLink } from "@/components/moment/PlayLink";
+import { runGroup } from "@/components/programs/helpers";
 import { Icon } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Sealed, VerdictStamp } from "@/components/ui/Verdict";
 import { api, t2NotYet } from "@/lib/api";
-import { sourceUrl } from "@/lib/config";
-import { amount, seconds } from "@/lib/format";
-import { getMoments, latestMoment } from "@/lib/moment";
+import { config, sourceUrl } from "@/lib/config";
+import { amount, provenance, seconds } from "@/lib/format";
+import { committer, getMoments, latestMoment, possessive } from "@/lib/moment";
 import styles from "./home.module.css";
+
+/** "11 to our fixture agents, 6 to practice tries": the parts that are not zero, joined. */
+const parts = (xs: [number, string][]) =>
+  xs
+    .filter(([n]) => n > 0)
+    .map(([n, what]) => `${n} ${what}`)
+    .join(", ");
 
 export default async function Home() {
   const [{ data: moments, live }, stats, programs, leaders, t2] = await Promise.all([
@@ -19,12 +28,32 @@ export default async function Home() {
     api.t2(),
   ]);
   const m = latestMoment(moments);
+  const who = possessive(committer(m).name);
+  const asked = m.steps.find((s) => s.key === "pause_asked");
+  const paidStep = m.steps.find((s) => s.key === "paid");
   const verdict = stats.ok ? stats.data.verdict_latency?.commit_to_answer_s : undefined;
   const paidRows = leaders.ok ? leaders.data.leaderboard : [];
   const payouts = paidRows.reduce((n, r) => n + r.paid_findings, 0);
   const paidTotal = paidRows.reduce((n, r) => n + BigInt(r.paid_raw || "0"), BigInt(0));
-  const programCount = programs.ok ? programs.data.programs.length : null;
-  const t2Records = t2.ok ? t2.data.records.filter((r) => r.outcome === "confirmed").length : 0;
+  // Who was paid, by provenance: our fixture agents (a–g), practice tries (paid to the vending contract), anyone else.
+  const paidTo = (p: ReturnType<typeof provenance>) => paidRows.filter((r) => provenance(r.account) === p).reduce((n, r) => n + r.paid_findings, 0);
+  const paidSplit = parts([
+    [paidTo("fixture-agent"), "to our fixture agents"],
+    [paidTo("practice"), "to practice tries"],
+    [paidTo("ours"), "to our other accounts"],
+    [paidTo("other"), "to other hunters"],
+  ]);
+  const programList = programs.ok ? programs.data.programs : [];
+  const inGroup = (g: ReturnType<typeof runGroup>) => programList.filter((p) => runGroup(p.program_id) === g).length;
+  const programSplit = parts([
+    [inGroup("this-run"), "in the recorded run"],
+    [inGroup("earlier"), "from earlier runs"],
+    [inGroup("later"), "since"],
+  ]);
+  // T2 shows counts only once near-t2 holds records; until then it is "not yet on testnet" (README, JUDGES.md).
+  const t2List = t2.ok && Array.isArray(t2.data?.records) ? t2.data.records : [];
+  const t2Confirmed = t2List.filter((r) => r?.outcome === "confirmed").length;
+  const t2Contradicts = t2List.filter((r) => r?.outcome === "contradicts").length;
 
   return (
     <>
@@ -41,9 +70,9 @@ export default async function Home() {
           pauses the protocol on every chain. Only a fix that every paid proof fails against is released.
         </p>
         <div className="row">
-          <a href="#moment" className="btn btn-primary">
+          <PlayLink href="#moment" className="btn btn-primary">
             <Icon name="play" size={14} /> Watch the one moment
-          </a>
+          </PlayLink>
           <Link href="/try" className="btn">
             Try it, no account <Icon name="arrow" size={14} />
           </Link>
@@ -56,8 +85,9 @@ export default async function Home() {
           <OneMoment moment={m} variant="hero" />
           <div className={styles.momentFoot}>
             <p className="small muted">
-              The pause is asked for before the payment. Each chain&apos;s time is its own block time, measured from A&apos;s
-              commit block. This run is recorded, not live: your own try is the live one.
+              {asked && paidStep && asked.seconds_exact < paidStep.seconds_exact ? "The pause is asked for before the payment. " : ""}
+              Seconds run from {who} commit block: NEAR steps at their blocks, each pause when the relayer got its chain&apos;s
+              receipt. This run is recorded, not live: your own try is the live one.
             </p>
             <div className="row">
               <Link href="/moment" className="btn btn-sm">
@@ -72,7 +102,7 @@ export default async function Home() {
       </section>
 
       <section className="section page" aria-labelledby="problem">
-        <div className="stack" style={{ ["--gap" as string]: "10px", marginBottom: 28, maxWidth: "62ch" }}>
+        <div className={styles.head}>
           <p className="eyebrow">The problem</p>
           <h2 id="problem" className={styles.h2}>Bounties judge text, and text is free to produce</h2>
           <p className="muted">
@@ -104,7 +134,7 @@ export default async function Home() {
               <span>What Antibody runs</span>
               <span className={styles.micro}>sealed · a verifier runs it</span>
             </div>
-            <Sealed seed="598272a3d1616a306140711305c227f5231357551d6fe0aac598fa29c31c8dce" label="Commit 15, sealed until disclosure" lines={3} />
+            <Sealed seed="598272a3d1616a306140711305c227f5231357551d6fe0aac598fa29c31c8dce" label="Commit 15, sealed" lines={3} />
             <div className={styles.verdictRow}>
               <Icon name="arrowDown" size={18} />
               <VerdictStamp kind="NoViolation" slots={[]} receipt="0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d" />
@@ -119,17 +149,19 @@ export default async function Home() {
 
       <section className="section page" aria-labelledby="how">
         <div className={styles.split}>
-          <div className="stack">
+          <div className={styles.head}>
             <p className="eyebrow">How it works</p>
-            <h2 id="how">Four steps, each on chain</h2>
-            <p className="muted">No one reads a report. A proof is a sequence of calls; the verifier runs it and the contract applies the terms the project committed.</p>
+            <h2 id="how" className={styles.h2}>
+              Four steps, from rules to release
+            </h2>
+            <p className="muted">The project commits its terms first; near-antibody applies them to every proof.</p>
           </div>
           <ol className={styles.steps}>
             <li>
               <span className={styles.stepNo}>1</span>
               <div>
                 <h3>A project opens a program</h3>
-                <p>An anchor block, its rules as code (an invariants contract with a severity and payout table) and an escrow, committed on NEAR before a launch or an upgrade.</p>
+                <p>An anchor block, its rules as code (an invariants contract, a severity and payout table) and an escrow, committed on NEAR before a launch or an upgrade.</p>
               </div>
             </li>
             <li>
@@ -158,15 +190,20 @@ export default async function Home() {
       </section>
 
       <section className="section page" aria-labelledby="tiers">
-        <div className="stack" style={{ ["--gap" as string]: "8px", marginBottom: 24 }}>
+        <div className={styles.head}>
           <p className="eyebrow">Who vouches for a verdict</p>
-          <h2 id="tiers">Trust tiers</h2>
+          <h2 id="tiers" className={styles.h2}>
+            Trust tiers
+          </h2>
         </div>
         <div className={`grid grid-3 ${styles.tiers}`}>
           <div className="card stack">
             <Pill tone="neutral" icon="clock">T0 · operator</Pill>
             <h3>The TEE&apos;s answer</h3>
-            <p className="muted small">OutLayer&apos;s operator delivers the TEE worker&apos;s output. A T0 payout above the instant cap waits its challenge window and a second run.</p>
+            <p className="muted small">
+              OutLayer&apos;s operator delivers the TEE worker&apos;s output. A payout on T0 waits its challenge window; above the instant cap it also
+              needs an independent second run that agrees.
+            </p>
           </div>
           <div className="card stack">
             <Pill tone="t1">T1 · hardware</Pill>
@@ -178,10 +215,15 @@ export default async function Home() {
             <h3>A validity proof of a disclosed verdict</h3>
             <p className="muted small">An SP1 proof that the verifier, re-run on the TEE&apos;s exact input, gives the TEE&apos;s receipt, verified on NEAR in about 34 Tgas. No privacy claim; no payout depends on it.</p>
             <p className="small">
-              {t2.ok ? (
-                <Pill tone="t2" size="sm">{t2Records} run{t2Records === 1 ? "" : "s"} confirmed on testnet</Pill>
-              ) : t2NotYet(t2) ? (
-                <Pill tone="pending" size="sm">not yet on testnet</Pill>
+              {t2List.length ? (
+                <Pill tone="t2" size="sm" title="near-t2's records on testnet (/v1/t2)">
+                  {t2Confirmed} run{t2Confirmed === 1 ? "" : "s"} confirmed on testnet
+                  {t2Contradicts ? ` · ${t2Contradicts} contradicted` : ""}
+                </Pill>
+              ) : t2.ok || t2NotYet(t2) ? (
+                <Pill tone="pending" size="sm" title={t2.ok ? "near-t2 is on testnet and holds no record yet" : undefined}>
+                  not yet on testnet
+                </Pill>
               ) : (
                 <Pill tone="pending" size="sm">status unavailable</Pill>
               )}
@@ -194,10 +236,12 @@ export default async function Home() {
       </section>
 
       <section className="section page" aria-labelledby="stats">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
-          <div className="stack" style={{ ["--gap" as string]: "8px" }}>
+        <div className={styles.headRow}>
+          <div className={styles.head}>
             <p className="eyebrow">Live, from the testnet event log</p>
-            <h2 id="stats">Testnet so far</h2>
+            <h2 id="stats" className={styles.h2}>
+              Testnet so far
+            </h2>
           </div>
           <Pill tone={stats.ok ? "ok" : "warn"} size="sm">{stats.ok ? "live" : "API unavailable"}</Pill>
         </div>
@@ -210,19 +254,36 @@ export default async function Home() {
           <div>
             <dt>Verdict latency, p95</dt>
             <dd className="num">{seconds(verdict?.p95)}</dd>
-            <dd className="xsmall muted">{verdict ? `${verdict.n} verdicts` : "—"}</dd>
+            <dd className="xsmall muted">{verdict ? `over the ${verdict.n} verdicts with both blocks indexed` : "—"}</dd>
           </div>
           <div>
             <dt>Paid on proof</dt>
             <dd className="num">{leaders.ok ? payouts : "—"}</dd>
             <dd className="xsmall muted">{leaders.ok ? `${amount(paidTotal.toString())} wNEAR in all` : "—"}</dd>
+            {leaders.ok && paidSplit ? <dd className="xsmall muted">{paidSplit}</dd> : null}
           </div>
           <div>
             <dt>Programs</dt>
-            <dd className="num">{programCount ?? "—"}</dd>
-            <dd className="xsmall muted">our fixtures and the practice program</dd>
+            <dd className="num">{programs.ok ? programList.length : "—"}</dd>
+            <dd className="xsmall muted">our fixtures and practice programs</dd>
+            {programSplit ? <dd className="xsmall muted">{programSplit}</dd> : null}
           </div>
         </dl>
+        <p className={`xsmall muted ${styles.sources}`}>
+          Each number, raw from our API:{" "}
+          <a href={`${config.apiBase}/v1/stats`} target="_blank" rel="noreferrer noopener">
+            /v1/stats
+          </a>{" "}
+          (latency),{" "}
+          <a href={`${config.apiBase}/v1/leaderboard`} target="_blank" rel="noreferrer noopener">
+            /v1/leaderboard
+          </a>{" "}
+          (payouts) and{" "}
+          <a href={`${config.apiBase}/v1/programs`} target="_blank" rel="noreferrer noopener">
+            /v1/programs
+          </a>
+          . Our own health: <Link href="/status">Status</Link>.
+        </p>
       </section>
 
       <section className="section page" aria-label="Who it is for">

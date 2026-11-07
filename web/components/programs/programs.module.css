@@ -2,18 +2,51 @@
 
 /* ---------------------------------------------------------------- on this page */
 
+/* Pinned under the site header (60 px and its border) while the page scrolls. */
 .toc {
-  padding-top: 12px;
-  padding-bottom: clamp(20px, 3vw, 28px);
+  position: sticky;
+  top: 61px;
+  z-index: 30;
+  margin-bottom: clamp(16px, 2.4vw, 24px);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s var(--ease);
+}
+
+.toc[data-stuck="true"] {
+  border-bottom-color: var(--line);
 }
 
 .toc ol {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 6px;
+  gap: 6px;
   list-style: none;
-  margin: 0;
-  padding: 0;
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 10px var(--gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.toc ol::-webkit-scrollbar {
+  display: none;
+}
+
+.toc li {
+  flex: none;
+}
+
+/* Phones and tablets: one row that scrolls sideways, its fading edge the cue. */
+@media (max-width: 1099.98px) {
+  .toc ol {
+    padding-right: calc(var(--gutter) + 24px);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  }
 }
 
 .toc a {
@@ -27,11 +60,19 @@
   color: var(--ink-2);
   font-size: var(--fs-xs);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .toc a:hover {
   color: var(--ink);
   border-color: var(--line-strong);
+}
+
+/* The section in view: a darker outline and fill, and aria-current for assistive technology. */
+.toc a[aria-current="location"] {
+  color: var(--ink);
+  border-color: var(--ink-3);
+  background: var(--bg-sunk);
 }
 
 /* ---------------------------------------------------------------- a table whose rows become cards on phones */
@@ -119,6 +160,87 @@
   }
 }
 
+/* ---------------------------------------------------------------- a table inside a card: no second frame */
+
+/* The card has the same background, so the wrapper keeps its own: it carries the scroll cue. */
+div.inCard {
+  border: 0;
+  border-radius: 0;
+}
+
+div.inCard th:first-child,
+div.inCard td:first-child {
+  padding-left: 0;
+}
+
+div.inCard th:last-child,
+div.inCard td:last-child {
+  padding-right: 0;
+}
+
+/* On phones its rows are hairline-separated groups, not cards inside the card. */
+@media (max-width: 719.98px) {
+  div.inCard table.rtable tr {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 10px 0;
+  }
+
+  div.inCard table.rtable tr + tr {
+    margin-top: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  div.inCard table.rtable tr:first-child {
+    padding-top: 0;
+  }
+
+  div.inCard table.rtable tr:last-child {
+    padding-bottom: 0;
+  }
+
+  div.inCard table.rtable tr td,
+  div.inCard table.rtable tr:last-child td {
+    padding: 3px 0;
+    border-bottom: 0;
+  }
+
+  div.inCard table.rtable tr td.lead,
+  div.inCard table.rtable tr:last-child td.lead {
+    padding: 0 0 4px;
+  }
+
+  /* The windows: the name and its length on one line, what it bounds under them. */
+  div.inCard table.windows tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 2px;
+    align-items: baseline;
+  }
+
+  div.inCard table.windows tr td,
+  div.inCard table.windows tr:last-child td,
+  div.inCard table.windows tr td.lead,
+  div.inCard table.windows tr:last-child td.lead {
+    display: block;
+    padding: 0;
+  }
+
+  div.inCard table.windows td::before {
+    content: none;
+  }
+
+  div.inCard table.windows td:nth-child(2) {
+    text-align: right;
+  }
+
+  div.inCard table.windows td:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Key-value lists stack (the name above its value) on narrow phones. */
 @media (max-width: 559.98px) {
   dl.kvStack {
@@ -141,9 +263,17 @@
   color: var(--ink);
 }
 
-.progLink:hover .progName {
+/* Underlined at rest, not only on hover: phones have no hover. */
+.progName {
+  font-weight: 600;
   text-decoration: underline;
   text-decoration-color: var(--line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.progLink:hover .progName {
+  text-decoration-color: currentColor;
 }
 
 .progId {
@@ -154,8 +284,12 @@
   color: var(--ink-3);
 }
 
-.progName {
-  font-weight: 600;
+.progMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 6px;
 }
 
 .sub {
@@ -165,11 +299,104 @@
   font-size: var(--fs-xs);
 }
 
-.stack6 {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+.nowrap {
+  white-space: nowrap;
+}
+
+.phaseRound {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.chev {
+  display: none;
+}
+
+.dirSummary {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  table.dirTable td.lead {
+    min-width: 240px;
+  }
+}
+
+/* Below 960 px each program is one compact card: its name and kind, then two lines; the whole card opens it. */
+@media (max-width: 959.98px) {
+  div.dirWrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  table.dirTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  table.dirTable,
+  table.dirTable tbody,
+  table.dirTable tr,
+  table.dirTable td {
+    display: block;
+    width: 100%;
+  }
+
+  table.dirTable tr {
+    position: relative;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 14px 44px 14px 16px;
+    transition: border-color 0.15s var(--ease);
+  }
+
+  table.dirTable tr:hover {
+    border-color: var(--line-strong);
+  }
+
+  table.dirTable tr + tr {
+    margin-top: 10px;
+  }
+
+  table.dirTable tr td,
+  table.dirTable tr:last-child td {
+    padding: 0;
+    border: 0;
+  }
+
+  table.dirTable td.dirWide {
+    display: none;
+  }
+
+  table.dirTable td.dirSummary {
+    display: grid;
+    gap: 2px;
+    margin-top: 10px;
+  }
+
+  .chev {
+    display: block;
+    position: absolute;
+    top: 18px;
+    right: 14px;
+    color: var(--ink-3);
+  }
+
+  .stretch::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--r-lg);
+  }
 }
 
 /* ---------------------------------------------------------------- escrow coverage */
@@ -202,13 +429,15 @@
   background: var(--warn);
 }
 
+/* The 1× mark: a dark line with a gap of the surface around it, visible over the fill in both themes. */
 .tick {
   position: absolute;
   top: -1px;
   bottom: -1px;
   width: 2px;
   margin-left: -1px;
-  background: var(--ink-2);
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--bg-elev);
 }
 
 .scale {
@@ -266,6 +495,21 @@
 .says {
   color: var(--ink-2);
   font-size: var(--fs-sm);
+}
+
+/* The page head's one action (the practice programs' try), under the lede. */
+.headAction {
+  margin-top: 14px;
+}
+
+/* Text quoted from the committed manifest. */
+.quote {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
 }
 
 .list {
@@ -326,6 +570,20 @@
   margin-bottom: 10px;
 }
 
+/* A term's conditions, one click away: the row keeps its value on one line. 24 px target (WCAG 2.5.8). */
+.termMore summary {
+  width: fit-content;
+  min-height: 24px;
+  padding: 3px 0;
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+
+.termMore p {
+  max-width: 60ch;
+}
+
 .targets {
   list-style: none;
   margin: 0;
@@ -350,49 +608,43 @@
   border-bottom: 1px solid var(--line);
 }
 
-/* ---------------------------------------------------------------- the ledger's equation */
+/* ---------------------------------------------------------------- the ledger, as a statement */
 
-.eq {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.term {
-  display: grid;
-  gap: 2px;
-  padding: 10px 12px;
-  border-radius: var(--r);
-  border: 1px solid var(--line);
-  background: var(--bg-sunk);
-  min-width: 108px;
-}
-
-.termTotal {
-  background: var(--bg-elev);
-  border-color: var(--line-strong);
-}
-
-.termLabel {
-  color: var(--ink-3);
-  font-size: var(--fs-2xs);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.termValue {
-  font-family: var(--font-mono);
+.stmt {
+  max-width: 380px;
   font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
 }
 
-.op {
-  align-self: center;
+.stmt th {
+  position: relative;
+  padding: 5px 12px 5px 18px;
+  text-align: left;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.stmt td {
+  padding: 5px 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.stmt tfoot th,
+.stmt tfoot td {
+  border-top: 1px solid var(--line-strong);
+  padding-top: 8px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.stmtOp {
+  position: absolute;
+  left: 0;
+  width: 12px;
+  text-align: center;
   color: var(--ink-3);
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
-  padding: 0 2px;
 }
 
 /* ---------------------------------------------------------------- rounds and chains */
@@ -429,6 +681,33 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
+}
+
+/* A round's re-runs: the run and the proof it re-ran, then its verdict. */
+.reruns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 600px;
+}
+
+.reruns li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 6px 0;
+}
+
+.reruns li + li {
+  border-top: 1px solid var(--line);
+}
+
+/* A live check inside a card: separated by a hairline, not boxed again. */
+.slotCheck {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 /* ---------------------------------------------------------------- the anchor check (browser) */

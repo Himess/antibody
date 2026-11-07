@@ -31,7 +31,7 @@ CHAIN_NAMES = {11155111: "Sepolia", 84532: "Base Sepolia", 1: "Ethereum", 8453: 
 
 # What each finding of the story shows (all are planted, clearly labeled fixture bugs).
 STORY = {
-    "A (MCP)": "An AI agent's sealed proof, submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
+    "A (MCP)": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
     "B": "A second planted bug (the unguarded fee sweep) is verified and paid after its window",
     "C": "A prompt injection in the report earns nothing: the verifier never reads reports; NoViolation, and the bond goes to the escrow",
     "D": "A duplicate of A is recorded with its own proof, then confirmed a duplicate at the fix",
@@ -134,7 +134,7 @@ class Doc:
         return f"{name}.{self.root}"
 
     def clock(self):
-        return "sandbox clock; MOCK MPC" if self.net == "sandbox" else "each chain's own clock; the MPC network signed the permits"
+        return "sandbox clock; MOCK MPC" if self.net == "sandbox" else "NEAR steps at their blocks, each pause when the relayer got its receipt; the MPC network signed the permits"
 
     def tx(self, h):
         if not h or not isinstance(h, str):

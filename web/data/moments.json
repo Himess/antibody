@@ -1,1 +1,153 @@
-{"latest":"testnet-2026-11-04","moments":[{"all_ok":true,"clock":"from the commit's NEAR block: T1 and the payment at their NEAR blocks (the indexer's events), the verdict at its answer's block, each permit when near-guardian signed it, each pause when its chain's receipt came back","commit":{"at_utc":"2026-11-04T15:42:11Z","block_height":276214742,"block_ts_ns":1793806931041575349,"explorer":"https://testnet.nearblocks.io/txns/CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP","tx":"CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP"},"commit_id":13,"hunter":"agent-a.antibody.testnet","id":"testnet-2026-11-04","instant":true,"kind":"recorded","network":"testnet","notes":["The pause is asked for before the payment.","Each chain's time is its own block time, measured from the commit's NEAR block."],"paid_raw":"100000000000000000000000","paused_everywhere":true,"program_id":5,"program_key":"bounty.antibody.testnet/5","results_file":"docs/results/testnet-2026-11-04.json","run_id":33,"started_unix":1793804681,"steps":[{"chain":"near","detail":{"by":"the TEE's answer (T0), in the block that resolved the run","kind":"Violation","slots":[0]},"explorer":"https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY","key":"verified","label":"Verified","seconds":18.5,"seconds_exact":18.524081315,"tx":"8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY"},{"chain":"near","detail":{"by":"the run's TDX quote, verified on NEAR"},"explorer":"https://testnet.nearblocks.io/txns/2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P","key":"t1","label":"T1-confirmed","seconds":29.1,"seconds_exact":29.125573721,"tx":"2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P"},{"chain":"near","detail":{"by":"a pause ticket: near-guardian asks the MPC network to sign a pause permit for each chain","minor":true},"explorer":"https://testnet.nearblocks.io/txns/Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU","key":"pause_asked","label":"Pause asked","seconds":58.3,"seconds_exact":58.30054016,"tx":"Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU"},{"chain":"near","detail":{"by":"the MPC network, for near-guardian: one EIP-712 permit per chain","permits":[6,7]},"explorer":"https://testnet.nearblocks.io/txns/Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU","key":"permits_signed","label":"Pause permits signed","seconds":62.7,"seconds_exact":62.686188476,"tx":"Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU"},{"chain":"near","detail":{"amount_raw":"100000000000000000000000","beneficiary":"agent-a.antibody.testnet","instant":true},"explorer":"https://testnet.nearblocks.io/txns/4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ","key":"paid","label":"Paid","seconds":71.0,"seconds_exact":70.997164896,"tx":"4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ"},{"chain":"evm:84532","detail":{"adapter":"0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b","block":"0x33e7882","by":"anyone relays the signed permit to the chain's AntibodyAdapter, which checks it and pauses the targets","chain_id":84532,"permit":7,"targets_paused":[true]},"explorer":"https://sepolia.basescan.org/tx/0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b","key":"paused_84532","label":"Base Sepolia paused","seconds":87.2,"seconds_exact":87.184424651,"tx":"0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b"},{"chain":"evm:11155111","detail":{"adapter":"0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b","block":"0xb81296","by":"anyone relays the signed permit to the chain's AntibodyAdapter, which checks it and pauses the targets","chain_id":11155111,"permit":6,"targets_paused":[true]},"explorer":"https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4","key":"paused_11155111","label":"Sepolia paused","seconds":90.6,"seconds_exact":90.580424651,"tx":"0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4"}],"verdict":{"kind":"Violation","slots":[0],"tier":"T1"},"via":"A (MCP)"}],"note":"recorded runs and scheduled drills (results files); a visitor's own practice try is the live one"}
+{
+ "latest": "testnet-2026-11-04",
+ "moments": [
+  {
+   "all_ok": true,
+   "clock": "from the commit's NEAR block: T1 and the payment at their NEAR blocks (the indexer's events), the verdict at its answer's block, each permit when near-guardian signed it, each pause when its chain's receipt came back",
+   "commit": {
+    "at_utc": "2026-11-04T15:42:11Z",
+    "block_height": 276214742,
+    "block_ts_ns": 1793806931041575400,
+    "explorer": "https://testnet.nearblocks.io/txns/CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP",
+    "tx": "CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP"
+   },
+   "commit_id": 13,
+   "hunter": "agent-a.antibody.testnet",
+   "id": "testnet-2026-11-04",
+   "instant": true,
+   "kind": "recorded",
+   "network": "testnet",
+   "notes": [
+    "The pause is asked for before the payment.",
+    "NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."
+   ],
+   "paid_raw": "100000000000000000000000",
+   "paused_everywhere": true,
+   "program_id": 5,
+   "program_key": "bounty.antibody.testnet/5",
+   "results_file": "docs/results/testnet-2026-11-04.json",
+   "run_id": 33,
+   "started_unix": 1793804681,
+   "steps": [
+    {
+     "chain": "near",
+     "detail": {
+      "by": "the TEE's answer (T0), in the block that resolved the run",
+      "kind": "Violation",
+      "slots": [
+       0
+      ]
+     },
+     "explorer": "https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY",
+     "key": "verified",
+     "label": "Verified",
+     "seconds": 18.5,
+     "seconds_exact": 18.524081315,
+     "tx": "8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY"
+    },
+    {
+     "chain": "near",
+     "detail": {
+      "by": "the run's TDX quote, verified on NEAR"
+     },
+     "explorer": "https://testnet.nearblocks.io/txns/2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P",
+     "key": "t1",
+     "label": "T1-confirmed",
+     "seconds": 29.1,
+     "seconds_exact": 29.125573721,
+     "tx": "2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P"
+    },
+    {
+     "chain": "near",
+     "detail": {
+      "by": "a pause ticket: near-guardian asks the MPC network to sign a pause permit for each chain",
+      "minor": true
+     },
+     "explorer": "https://testnet.nearblocks.io/txns/Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU",
+     "key": "pause_asked",
+     "label": "Pause asked",
+     "seconds": 58.3,
+     "seconds_exact": 58.30054016,
+     "tx": "Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU"
+    },
+    {
+     "chain": "near",
+     "detail": {
+      "by": "the MPC network, for near-guardian: one EIP-712 permit per chain",
+      "permits": [
+       6,
+       7
+      ]
+     },
+     "explorer": "https://testnet.nearblocks.io/txns/Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU",
+     "key": "permits_signed",
+     "label": "Pause permits signed",
+     "seconds": 62.7,
+     "seconds_exact": 62.686188476,
+     "tx": "Je3wYrrr5kzvX5jx6UGNuzdFG3av734zdR1D1VqRYkU"
+    },
+    {
+     "chain": "near",
+     "detail": {
+      "amount_raw": "100000000000000000000000",
+      "beneficiary": "agent-a.antibody.testnet",
+      "instant": true
+     },
+     "explorer": "https://testnet.nearblocks.io/txns/4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ",
+     "key": "paid",
+     "label": "Paid",
+     "seconds": 71,
+     "seconds_exact": 70.997164896,
+     "tx": "4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ"
+    },
+    {
+     "chain": "evm:84532",
+     "detail": {
+      "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+      "block": "0x33e7882",
+      "by": "anyone relays the signed permit to the chain's AntibodyAdapter, which checks it and pauses the targets",
+      "chain_id": 84532,
+      "permit": 7,
+      "targets_paused": [
+       true
+      ]
+     },
+     "explorer": "https://sepolia.basescan.org/tx/0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b",
+     "key": "paused_84532",
+     "label": "Base Sepolia paused",
+     "seconds": 87.2,
+     "seconds_exact": 87.184424651,
+     "tx": "0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b"
+    },
+    {
+     "chain": "evm:11155111",
+     "detail": {
+      "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+      "block": "0xb81296",
+      "by": "anyone relays the signed permit to the chain's AntibodyAdapter, which checks it and pauses the targets",
+      "chain_id": 11155111,
+      "permit": 6,
+      "targets_paused": [
+       true
+      ]
+     },
+     "explorer": "https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4",
+     "key": "paused_11155111",
+     "label": "Sepolia paused",
+     "seconds": 90.6,
+     "seconds_exact": 90.580424651,
+     "tx": "0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4"
+    }
+   ],
+   "verdict": {
+    "kind": "Violation",
+    "slots": [
+     0
+    ],
+    "tier": "T1"
+   },
+   "via": "A (MCP)"
+  }
+ ],
+ "note": "recorded runs and scheduled drills (results files); a visitor's own practice try is the live one"
+}

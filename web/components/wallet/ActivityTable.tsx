@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Cell } from "@/components/programs/Cell";
+import cards from "@/components/programs/programs.module.css";
 import { KindBadge, StateBadge, TierBadge } from "@/components/ui/Badges";
 import { Section } from "@/components/ui/PageHead";
 import { Empty, ErrorState, Loading } from "@/components/ui/States";
@@ -11,12 +13,13 @@ import type { Activity, ActivityRow } from "@/lib/wallet/types";
 import { Amount, type Load } from "./shared";
 import styles from "./wallet.module.css";
 
-function Role({ row, account }: { row: ActivityRow; account: string }) {
-  if (row.hunter === account && row.beneficiary === account) return <span>You</span>;
+/** Who committed, said to the account's owner (`own`) or about the account (a read-only view). */
+function Role({ row, account, own }: { row: ActivityRow; account: string; own: boolean }) {
+  if (row.hunter === account && row.beneficiary === account) return <span>{own ? "You" : "This account"}</span>;
   if (row.hunter === account)
     return (
       <span className={styles.cellStack}>
-        <span>You, as an agent</span>
+        <span>{own ? "You, as an agent" : "As an agent"}</span>
         <span className="xsmall muted">
           paid to <Hash value={row.beneficiary} head={28} copy={false} href={explorers.nearAccount(row.beneficiary)} label="beneficiary" />
         </span>
@@ -24,7 +27,7 @@ function Role({ row, account }: { row: ActivityRow; account: string }) {
     );
   return (
     <span className={styles.cellStack}>
-      <span>{provenance(row.hunter) === "practice" ? "A practice try" : "Your agent"}</span>
+      <span>{provenance(row.hunter) === "practice" ? "A practice try" : own ? "Your agent" : "Its agent"}</span>
       <span className="xsmall muted">
         <Hash value={row.hunter} head={28} copy={false} href={explorers.nearAccount(row.hunter)} label="hunter" />
       </span>
@@ -33,7 +36,7 @@ function Role({ row, account }: { row: ActivityRow; account: string }) {
 }
 
 /** The account's commits across programs (as hunter, or as the beneficiary of an agent's commits). */
-export function ActivityTable({ account, activity }: { account: string; activity: Load<Activity> }) {
+export function ActivityTable({ account, activity, own = true }: { account: string; activity: Load<Activity>; own?: boolean }) {
   return (
     <Section
       id="commits"
@@ -50,13 +53,13 @@ export function ActivityTable({ account, activity }: { account: string; activity
       ) : activity.status === "error" ? (
         <ErrorState what="the programs and their feeds" error={activity.error} />
       ) : (
-        <Rows account={account} activity={activity.data} />
+        <Rows account={account} activity={activity.data} own={own} />
       )}
     </Section>
   );
 }
 
-function Rows({ account, activity }: { account: string; activity: Activity }) {
+function Rows({ account, activity, own }: { account: string; activity: Activity; own: boolean }) {
   const { rows, failed } = activity;
   const paid = rows.filter((r) => r.state === "Done:Paid" && r.beneficiary === account);
   const total = paid.reduce((s, r) => s + (rawOf(r.paid_raw) ?? BigInt(0)), BigInt(0));
@@ -76,7 +79,7 @@ function Rows({ account, activity }: { account: string; activity: Activity }) {
       ) : (
         <>
           <p className="small" aria-live="polite">
-            <strong className="num">{rows.length}</strong> commit{rows.length === 1 ? "" : "s"} · <strong className="num">{paid.length}</strong> paid to you, <Amount raw={total} /> in all
+            <strong className="num">{rows.length}</strong> commit{rows.length === 1 ? "" : "s"} · <strong className="num">{paid.length}</strong> paid to {own ? "you" : "this account"}, <Amount raw={total} /> in all
             {open ? (
               <>
                 {" "}
@@ -84,8 +87,8 @@ function Rows({ account, activity }: { account: string; activity: Activity }) {
               </>
             ) : null}
           </p>
-          <div className="table-wrap">
-            <table className="table">
+          <div className={`table-wrap ${cards.cardsWrap}`}>
+            <table className={`table ${cards.rtable}`}>
               <caption className="visually-hidden">Commits of {account}, newest first</caption>
               <thead>
                 <tr>
@@ -101,10 +104,10 @@ function Rows({ account, activity }: { account: string; activity: Activity }) {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.commit_id}>
-                    <td className={styles.nowrap}>
+                    <Cell label="Commit" lead className={styles.nowrap}>
                       <Link href={`/commits/${r.commit_id}`}>Commit {r.commit_id}</Link>
-                    </td>
-                    <td>
+                    </Cell>
+                    <Cell label="Program">
                       <span className={styles.cellStack}>
                         <Link href={`/programs/${r.program_id}`}>Program {r.program_id}</Link>
                         <span className="xsmall muted">
@@ -112,23 +115,25 @@ function Rows({ account, activity }: { account: string; activity: Activity }) {
                           {r.program_id <= 4 ? " · earlier run" : ""} · round {r.round ?? "—"}
                         </span>
                       </span>
-                    </td>
-                    <td>
-                      <Role row={r} account={account} />
-                    </td>
-                    <td>
+                    </Cell>
+                    <Cell label="Who">
+                      <Role row={r} account={account} own={own} />
+                    </Cell>
+                    <Cell label="State">
                       <StateBadge state={r.state} size="sm" />
-                    </td>
-                    <td>
+                    </Cell>
+                    <Cell label="Verdict">
                       <span className="row" style={{ ["--gap" as string]: "4px" }}>
                         <KindBadge kind={r.verdict?.kind ?? null} size="sm" />
                         {r.verdict?.kind ? <TierBadge tier={r.verdict?.tier} size="sm" /> : null}
                       </span>
-                    </td>
-                    <td className={styles.nowrap}>{r.state === "Done:Paid" ? <Amount raw={r.paid_raw} /> : <span className="muted">—</span>}</td>
-                    <td className={styles.nowrap}>
+                    </Cell>
+                    <Cell label="Paid" className={styles.nowrap}>
+                      {r.state === "Done:Paid" ? <Amount raw={r.paid_raw} /> : <span className="muted">—</span>}
+                    </Cell>
+                    <Cell label="Committed" className={styles.nowrap}>
                       <Time t={r.committed_at} showRelative={false} />
-                    </td>
+                    </Cell>
                   </tr>
                 ))}
               </tbody>

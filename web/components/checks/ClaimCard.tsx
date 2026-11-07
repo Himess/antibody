@@ -3,9 +3,10 @@ import { Command } from "@/components/ui/Command";
 import { Hash } from "@/components/ui/Hash";
 import { Icon } from "@/components/ui/Icon";
 import { LiveCheck } from "@/components/ui/LiveCheck";
-import { sourceUrl } from "@/lib/config";
+import { chainName, sourceUrl } from "@/lib/config";
+import { ClaimResult, SharedCheck } from "./ClaimChecks";
 import { Md } from "./Md";
-import { safeUrl, specOf, type JudgeClaim, type JudgeLink } from "./judges";
+import { evmCheck, limitsFor, primaryChecks, safeUrl, specOf, type ClaimCheck, type JudgeClaim, type JudgeEvmCheck, type JudgeLink } from "./judges";
 import styles from "./checks.module.css";
 
 /** Where the same facts are on this site, by the claim's kind. */
@@ -37,19 +38,69 @@ function Evidence({ link }: { link: JudgeLink }) {
   );
 }
 
+/** A command as text, for comparing JUDGES.md's check cell with the command boxes. */
+const plain = (s: string | null | undefined) => (s ?? "").replace(/`/g, "").replace(/\s+/g, " ").trim();
+
+/** What an EVM read reads, over its check: "Sepolia · AcmeLend" (a contract name in mono). */
+function EvmSubject({ chainId, subject }: { chainId: number; subject?: string }) {
+  return (
+    <p className={styles.evmSubject}>
+      {chainName(chainId)}
+      {subject ? <> · {/^[A-Z][A-Za-z0-9]*$/.test(subject) ? <code>{subject}</code> : subject}</> : null}
+    </p>
+  );
+}
+
+function ClaimCheckView({ c, evm }: { c: ClaimCheck; evm?: JudgeEvmCheck }) {
+  return (
+    <div className="stack" style={{ ["--gap" as string]: "6px" }}>
+      {evm ? <EvmSubject chainId={evm.chain_id} subject={evm.subject} /> : null}
+      <SharedCheck c={c} />
+    </div>
+  );
+}
+
 /**
  * One claim of JUDGES.md, as its row states it (the same cells), with the transactions behind it, the
- * command that checks it, and the checks a browser can run on it, each showing the raw answer.
+ * limits that bound it, and the checks a browser can run on it (its EVM reads included), each showing the
+ * raw answer. Its first check shares its answer with the claims index; the card's header shows the result.
  */
-export function ClaimCard({ claim, acme, evmCount }: { claim: JudgeClaim; acme?: number; evmCount: number }) {
+export function ClaimCard({
+  claim,
+  acme,
+  evm,
+  limits,
+}: {
+  claim: JudgeClaim;
+  acme?: number;
+  /** The run's EVM checks; the card shows the ones that back this claim. */
+  evm: JudgeEvmCheck[];
+  /** README's limitations, as the Limits section lists them. */
+  limits: { title: string; text: string }[];
+}) {
   const id = `claim-${claim.n}`;
   const live = claim.live ?? [];
-  const [first, ...more] = live;
-  const shown = new Set(live.map((l) => l.cli).filter(Boolean));
+  const mine = evm.filter((e) => e.claim === claim.n);
+  const primary = primaryChecks(claim, evm);
+  const primaryEvm = live.length ? [] : mine.filter((e) => e.live);
+  const [first, ...rest] = primary;
+  // Beyond the claim's own checks: its further live checks and, when it has a live check, its EVM reads.
+  const moreLive = live.slice(1);
+  const moreEvm = live.length ? mine.filter((e) => e.live) : [];
+  const curlOnly = mine.filter((e) => !e.live);
+  const moreCount = rest.length + moreLive.length + moreEvm.length;
+  const onChainOnly = moreLive.every((m) => m.kind !== "api");
+
+  const shown = new Set([...live.map((l) => l.cli), ...mine.map((e) => e.curl)].filter(Boolean));
   const commands = (claim.commands ?? []).filter((c) => !shown.has(c));
+  // JUDGES.md's check cell, only when it says more than the command boxes already do.
+  const boxes = new Set([...shown, ...(claim.commands ?? [])].map(plain));
+  const checkSaysMore = Boolean(claim.check) && !boxes.has(plain(claim.check));
   const links = claim.links ?? [];
   const textHasLinks = /\]\(/.test(claim.evidence ?? "");
   const onSite = siteLinks(claim, acme);
+  const bounds = limitsFor(claim, limits);
+
   return (
     <li>
       <article id={id} className={styles.claim} aria-labelledby={`${id}-title`}>
@@ -60,6 +111,7 @@ export function ClaimCard({ claim, acme, evmCount }: { claim: JudgeClaim; acme?:
           <h3 id={`${id}-title`} className={styles.claimTitle}>
             <Md text={claim.claim} />
           </h3>
+          <ClaimResult checks={primary} />
         </header>
         <div className={styles.claimBody}>
           <dl className={styles.facts}>
@@ -93,12 +145,38 @@ export function ClaimCard({ claim, acme, evmCount }: { claim: JudgeClaim; acme?:
                 </dd>
               ) : null}
             </div>
-            <div>
-              <dt>Check, as JUDGES.md names it</dt>
-              <dd>
-                <Md text={claim.check} />
-              </dd>
-            </div>
+            {checkSaysMore ? (
+              <div>
+                <dt>Check, as JUDGES.md names it</dt>
+                <dd>
+                  <Md text={claim.check} />
+                </dd>
+              </div>
+            ) : null}
+            {claim.does_not_show ? (
+              <div>
+                <dt>Does not show</dt>
+                <dd>
+                  <Md text={claim.does_not_show} />
+                </dd>
+              </div>
+            ) : null}
+            {bounds.length ? (
+              <div>
+                <dt>Limits that apply</dt>
+                <dd>
+                  <ul className={styles.limitLinks}>
+                    {bounds.map((b) => (
+                      <li key={b.index}>
+                        <a href={`#limit-${b.index}`} title={plain(b.text)}>
+                          <Md text={b.label} />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            ) : null}
             {onSite.length ? (
               <div>
                 <dt>On this site</dt>
@@ -114,31 +192,41 @@ export function ClaimCard({ claim, acme, evmCount }: { claim: JudgeClaim; acme?:
           </dl>
           <div className={styles.run}>
             {first ? (
-              <LiveCheck check={specOf(first)} expect={first.expect} cli={first.cli} label={first.label} />
+              <ClaimCheckView c={first} evm={primaryEvm[0]} />
             ) : (
-              <p className="small muted">
-                {evmCount ? "This claim is checked on the EVM chains: its reads are below the claims." : "This check runs in a terminal: its command is below."}
-              </p>
+              <p className="small muted">This check runs in a terminal: its command is below.</p>
             )}
-            {more.length ? (
+            {moreCount ? (
               <details className={styles.more}>
                 <summary>
-                  {more.length === 1 ? "One more check" : `${more.length} more checks`}, read straight from the chain
+                  {moreCount === 1 ? "One more check" : `${moreCount} more checks`}
+                  {onChainOnly ? ", read straight from the chain" : ""}
                 </summary>
                 <div className={styles.moreBody}>
-                  {more.map((m, i) => (
+                  {rest.map((c, i) => (
+                    <ClaimCheckView key={c.id} c={c} evm={primaryEvm[i + 1]} />
+                  ))}
+                  {moreLive.map((m, i) => (
                     <LiveCheck key={`${m.kind}-${i}`} check={specOf(m)} expect={m.expect} cli={m.cli} label={m.label} />
                   ))}
+                  {moreEvm.map((e, i) => {
+                    const c = evmCheck(e, `${claim.n}.more.${i}`);
+                    return (
+                      <div key={c.id} className="stack" style={{ ["--gap" as string]: "6px" }}>
+                        <EvmSubject chainId={e.chain_id} subject={e.subject} />
+                        <LiveCheck check={c.check} expect={c.expect} cli={c.cli} label={c.label} />
+                      </div>
+                    );
+                  })}
                 </div>
               </details>
             ) : null}
-            {evmCount ? (
-              <p className="small">
-                <a href="#evm-checks">
-                  {evmCount === 1 ? "Its EVM check" : `Its ${evmCount} EVM checks`}, with the <code>curl</code> commands <Icon name="arrowDown" size={12} style={{ display: "inline", verticalAlign: "-2px" }} />
-                </a>
-              </p>
-            ) : null}
+            {curlOnly.map((e) => (
+              <div key={`${e.chain_id}-${e.address}`} className="stack" style={{ ["--gap" as string]: "6px" }}>
+                <EvmSubject chainId={e.chain_id} subject={e.subject} />
+                <Command label="curl command">{e.curl}</Command>
+              </div>
+            ))}
             {commands.map((c, i) => (
               <Command key={c} label={commands.length > 1 ? `CLI command ${i + 1}` : "CLI command"}>
                 {c}
