@@ -1,0 +1,124 @@
+{
+ "contract": "zk.antibody.testnet",
+ "pins": {
+  "antibody": "bounty.antibody.testnet",
+  "program_vkey": "0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203",
+  "groth16": {
+   "selector": "0x0e78f4db",
+   "vk_root": "0x5555555555555555555555555555555555555555555555555555555555555555",
+   "is_sp1_v6_10_0": true
+  },
+  "verifier": "antibody-verifier 0.1.0",
+  "verifier_wasm": "ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1",
+  "record_deposit": "20000000000000000000000"
+ },
+ "stats": {
+  "records": 2,
+  "confirmed": 1,
+  "contradicted": 1
+ },
+ "records": [
+  {
+   "run_id": 53,
+   "program_id": 6,
+   "commit_id": 20,
+   "round": 0,
+   "outcome": "confirmed",
+   "differ": [],
+   "request_sha256": "b4b3647b4c0124bd471618664aef8e82fcc793e8a597f07d7de5423722a99d84",
+   "receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+   "tee_receipt_sha256": "e51759c61d379da5947f1d38291b0efa4bd0d90634a72d9411bd9eda4fd119df",
+   "kind": "Violation",
+   "tee_kind": "Violation",
+   "slots": [
+    {
+     "slot": 0,
+     "severity": "low"
+    }
+   ],
+   "tee_slots": [
+    0
+   ],
+   "tee_tier": "T1",
+   "public_values_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "proof_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+   "submitter": "prover.antibody.testnet",
+   "at": 1793810000,
+   "block": 276220000
+  },
+  {
+   "run_id": 54,
+   "program_id": 6,
+   "commit_id": 21,
+   "round": 0,
+   "outcome": "contradicts",
+   "differ": [
+    "receipt",
+    "kind",
+    "slots"
+   ],
+   "request_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "receipt_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+   "tee_receipt_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+   "kind": "Violation",
+   "tee_kind": "NoViolation",
+   "slots": [
+    {
+     "slot": 0,
+     "severity": "low"
+    }
+   ],
+   "tee_slots": [],
+   "tee_tier": "T1",
+   "public_values_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "proof_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+   "submitter": "prover.antibody.testnet",
+   "at": 1793810300,
+   "block": 276220500
+  }
+ ],
+ "events": [
+  {
+   "seq": 2000,
+   "standard": "antibody-t2",
+   "event": "t2_confirmed",
+   "data": {
+    "run_id": 53,
+    "program_id": 6,
+    "commit_id": 20
+   },
+   "tx": "T2confirmedTx11111111111111111111111111111",
+   "explorer": "https://testnet.nearblocks.io/txns/T2confirmedTx11111111111111111111111111111",
+   "block_height": 276220000,
+   "block_ts_ns": 1793810000000000000,
+   "signer": "prover.antibody.testnet"
+  },
+  {
+   "seq": 2001,
+   "standard": "antibody-t2",
+   "event": "t2_contradicts",
+   "data": {
+    "run_id": 54,
+    "program_id": 6,
+    "commit_id": 21,
+    "differ": [
+     "receipt",
+     "kind",
+     "slots"
+    ]
+   },
+   "tx": "T2contradictsTx111111111111111111111111111",
+   "explorer": "https://testnet.nearblocks.io/txns/T2contradictsTx111111111111111111111111111",
+   "block_height": 276220500,
+   "block_ts_ns": 1793810300000000000,
+   "signer": "prover.antibody.testnet"
+  }
+ ],
+ "prover": {
+  "proofs_today": 2,
+  "paused": false,
+  "balance_prove": 9.5
+ },
+ "note": "a validity proof of a disclosed verdict: no privacy is claimed, and payouts in the locked deployment do not depend on it",
+ "docs": "docs/zk.md"
+}

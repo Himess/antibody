@@ -20,4 +20,7 @@ paths = [
   # Web vectors: practice content keys are public by construction (sha256 of a published formula,
   # docs/zk.md), and the seeds, salts and nonces are fixed test bytes (0x21…, 0x41…).
   '''golden/web-vectors\.json$''',
+  # The web app's test fixtures: snapshots of the public testnet API (hashes, tags, public keys) and the
+  # near-t2 test scenario built from them (public program vkey, placeholder hashes).
+  '''web/tests/fixtures/.*\.json$''',
 ]

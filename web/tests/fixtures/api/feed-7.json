@@ -1,0 +1,29 @@
+{
+ "program_id": 7,
+ "submissions": [
+  {
+   "beneficiary": "agent-c.antibody.testnet",
+   "commit_id": 22,
+   "committed_at": 1793809396,
+   "hunter": "agent-c.antibody.testnet",
+   "index": 0,
+   "paid_raw": "1000000000000000000000",
+   "program_id": 7,
+   "round": 0,
+   "run_id": 56,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "97602f45b5961136444cbe3fcc1648e487c0fa738be19ff0eb3009e9446091a8"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  }
+ ]
+}

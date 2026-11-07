@@ -1,0 +1,171 @@
+{
+ "commit": {
+  "attempts": 1,
+  "beneficiary": "agent-c.antibody.testnet",
+  "blob_sha256": "598272a3d1616a306140711305c227f5231357551d6fe0aac598fa29c31c8dce",
+  "bond": "1000000000000000000000",
+  "challenge": null,
+  "commitment": "38d6ed382cc123d79e8278e973223f9645447dbe0d1a7529133f525d1e5716ae",
+  "committed_at": 1793807269,
+  "hunter": "agent-c.antibody.testnet",
+  "id": 15,
+  "index": 2,
+  "program": 5,
+  "rerun": null,
+  "retry_until": 1793807876,
+  "round": 0,
+  "run": 35,
+  "second": null,
+  "second_agrees": false,
+  "state": {
+   "Done": "Forfeited"
+  },
+  "ticket": false,
+  "wrapped": null
+ },
+ "events": [
+  {
+   "block_height": 276215329,
+   "block_ts_ns": 1793807269723417410,
+   "data": {
+    "commit_id": 15,
+    "hunter": "agent-c.antibody.testnet",
+    "index": 2,
+    "program_id": 5,
+    "round": 0
+   },
+   "event": "commit",
+   "explorer": "https://testnet.nearblocks.io/txns/4ymAcWJ7wAV1tDKArS95uJz3BEeeSmQn6LSk7kJGfx7E",
+   "network": "testnet",
+   "receipt": "3vAHxejYeMvTBqF6CjL4o1PQDVebe79G7J1Qu7fko7Lh",
+   "seq": 167,
+   "signer": "agent-c.antibody.testnet",
+   "standard": "antibody",
+   "tx": "4ymAcWJ7wAV1tDKArS95uJz3BEeeSmQn6LSk7kJGfx7E"
+  },
+  {
+   "block_height": 276215340,
+   "block_ts_ns": 1793807276318626828,
+   "data": {
+    "commit_id": 15,
+    "mode": "verify",
+    "payer": "agent-c.antibody.testnet",
+    "program_id": 5,
+    "request_sha256": "6c2bcfd74c9a559532c72ca4ab86ec422c7aea800cc1f85b43a032e209b4d4c4",
+    "run_id": 35
+   },
+   "event": "run_requested",
+   "explorer": "https://testnet.nearblocks.io/txns/9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN",
+   "network": "testnet",
+   "receipt": "CGgozmdsvod2UeaVaomENTEyHgiLLozo6bQNDCUxfmv5",
+   "seq": 170,
+   "signer": "agent-c.antibody.testnet",
+   "standard": "antibody",
+   "tx": "9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN"
+  },
+  {
+   "block_height": 276215340,
+   "block_ts_ns": 1793807276318626828,
+   "data": {
+    "commit_id": 15,
+    "run_id": 35
+   },
+   "event": "reveal",
+   "explorer": "https://testnet.nearblocks.io/txns/9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN",
+   "network": "testnet",
+   "receipt": "CGgozmdsvod2UeaVaomENTEyHgiLLozo6bQNDCUxfmv5",
+   "seq": 171,
+   "signer": "agent-c.antibody.testnet",
+   "standard": "antibody",
+   "tx": "9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN"
+  },
+  {
+   "block_height": 276215362,
+   "block_ts_ns": 1793807289725597805,
+   "data": {
+    "commit_id": 15,
+    "keys": [],
+    "kind": "NoViolation",
+    "mode": "verify",
+    "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+    "run_id": 35,
+    "tier": "T0"
+   },
+   "event": "run_answered",
+   "explorer": "https://testnet.nearblocks.io/txns/9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN",
+   "network": "testnet",
+   "receipt": "DTDWzbTJ1NWFM2GNusQsy85imzRxaw64gZMreCmTux5z",
+   "seq": 174,
+   "signer": "agent-c.antibody.testnet",
+   "standard": "antibody",
+   "tx": "9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN"
+  },
+  {
+   "block_height": 276215379,
+   "block_ts_ns": 1793807298862965746,
+   "data": {
+    "commit_id": 15,
+    "mode": "verify",
+    "run_id": 35
+   },
+   "event": "t1_confirmed",
+   "explorer": "https://testnet.nearblocks.io/txns/8iwcL15PTemMHQWUTKP6f2XwhSNWRiY12F2sH2P2sPR9",
+   "network": "testnet",
+   "receipt": "AfBENRuzGDSDmdEdbrTJ1jVPC13iGBHZe1TrR4MVADvH",
+   "seq": 177,
+   "signer": "relayer.antibody.testnet",
+   "standard": "antibody",
+   "tx": "8iwcL15PTemMHQWUTKP6f2XwhSNWRiY12F2sH2P2sPR9"
+  },
+  {
+   "block_height": 276215770,
+   "block_ts_ns": 1793807523591418956,
+   "data": {
+    "commit_id": 15,
+    "kind": "NoViolation"
+   },
+   "event": "forfeited",
+   "explorer": "https://testnet.nearblocks.io/txns/A32BHiiJwDQD4DjqnZwJYdPUTJD8kP6hk8LoDLY7G29w",
+   "network": "testnet",
+   "receipt": "6rZhvEnCBnCqRJcyzCa1hQnbHbAB7nTP1bg9EyMYmkzR",
+   "seq": 210,
+   "signer": "keeper.antibody.testnet",
+   "standard": "antibody",
+   "tx": "A32BHiiJwDQD4DjqnZwJYdPUTJD8kP6hk8LoDLY7G29w"
+  }
+ ],
+ "proof_card": {
+  "check": [
+   "antibody status --commit 15",
+   "antibody tee check --request-id <the run's OutLayer request>",
+   "outlayer-verify tx 9AFUgQcMXQng9mysBXfJYJt2RKUTaiHebfhAJDfw1kHN"
+  ],
+  "facts": {
+   "impact_usd_micro": "33480361",
+   "keys": [],
+   "kind": "NoViolation",
+   "tier": "T1"
+  },
+  "receipt_sha256": "0326cfc9b4f8f727dec761c64a9f9ec0c0db46f9bf6c376526dbd3d8a744ba8d",
+  "sealed_until_disclosure": true
+ },
+ "row": {
+  "beneficiary": "agent-c.antibody.testnet",
+  "commit_id": 15,
+  "committed_at": 1793807269,
+  "hunter": "agent-c.antibody.testnet",
+  "index": 2,
+  "paid_raw": "0",
+  "program_id": 5,
+  "round": 0,
+  "run_id": 35,
+  "sealed": true,
+  "state": "Done:Forfeited",
+  "verdict": {
+   "keys": [],
+   "kind": "NoViolation",
+   "t2": null,
+   "tier": "T1"
+  }
+ }
+}

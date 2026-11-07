@@ -1,0 +1,77 @@
+{
+ "program_id": 6,
+ "submissions": [
+  {
+   "beneficiary": "practice.antibody.testnet",
+   "commit_id": 20,
+   "committed_at": 1793809238,
+   "hunter": "judge-1-p6.practice.antibody.testnet",
+   "index": 0,
+   "paid_raw": "1000000000000000000000",
+   "program_id": 6,
+   "round": 0,
+   "run_id": 53,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "cc52c19a12305290fa0b15741d08f4ec325bacf4242cdef37f4b153e13c33e51"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "practice.antibody.testnet",
+   "commit_id": 21,
+   "committed_at": 1793809286,
+   "hunter": "judge-2-p6.practice.antibody.testnet",
+   "index": 1,
+   "paid_raw": "1000000000000000000000",
+   "program_id": 6,
+   "round": 0,
+   "run_id": 54,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "799a12eb298b584978405584ad1c7e40b7dfe278333a7b29b13815821ddb75b1"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T1"
+   }
+  },
+  {
+   "beneficiary": "practice.antibody.testnet",
+   "commit_id": 23,
+   "committed_at": 1793970205,
+   "hunter": "pcs-rehearsal.practice.antibody.testnet",
+   "index": 2,
+   "paid_raw": "1000000000000000000000",
+   "program_id": 6,
+   "round": 0,
+   "run_id": 57,
+   "sealed": true,
+   "state": "Done:Paid",
+   "verdict": {
+    "keys": [
+     {
+      "slot": 0,
+      "tag": "9990e991d8bcee767113d2bfb18a2100da8db6f5f1be40db08339fb7ce91453c"
+     }
+    ],
+    "kind": "Violation",
+    "t2": null,
+    "tier": "T0"
+   }
+  }
+ ]
+}

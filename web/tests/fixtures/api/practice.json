@@ -1,0 +1,13 @@
+{
+ "docs": "docs/practice.md",
+ "program_id": 6,
+ "public_vend_key": "ed25519:Cmjd9jZ6SXAsAGGtwohymo9ZGKAjgsMxLN1sQWcy8xLF",
+ "steps": [
+  "antibody try --name <you>: vend a practice account (the public vend key, no account needed)",
+  "the tutorial proof is sealed against the pinned base witness (no RPC) and committed",
+  "it is revealed and verified in the TEE; the verdict is T1-confirmed",
+  "allocate and pay: Done:Paid, with a link for every transaction"
+ ],
+ "vending": "practice.antibody.testnet",
+ "vending_balance_yocto": "1441516056400488199999997"
+}

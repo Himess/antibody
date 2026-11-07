@@ -1,0 +1,477 @@
+{
+ "config": {
+  "antibody": "bounty.antibody.testnet",
+  "failures": 0,
+  "mpc": "v1.signer-prod.testnet",
+  "owner": "antibody.testnet",
+  "permit_ttl_secs": 604800,
+  "permits": 14,
+  "sign_fee": "1"
+ },
+ "guardian": "guardian.antibody.testnet",
+ "pending_permits": [],
+ "permits": [
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Pause": {
+     "ticket": 0
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794310883,
+   "digest": "bf0e0c8324094d587ff801fcd60b6f3d96924d628b0800fbb71315ea5d35b8ce",
+   "id": 0,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "bf06ce9686a90d5cb53cb5eff1d6aad356e07a190da7b75e698d91b92cccaadb",
+   "requested_ns": 1793706083622619592,
+   "round": 0,
+   "s": "6e9a1fd48cbaf528c2830432aa7d474caefb8189fee03f89fa3d7a67cf846606",
+   "signed_ns": 1793706089740047830,
+   "v": 28
+  },
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Pause": {
+     "ticket": 0
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794310883,
+   "digest": "61731cd9bef31263dd1fd2ffdebc7f5f72ef03043ebc96a269345fbaa12262df",
+   "id": 1,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "709727e6208da7e9cb46344b2596bdfae82e1b970e18317cbf3cb150744384c8",
+   "requested_ns": 1793706083622619592,
+   "round": 0,
+   "s": "1222ddb768277df24edabb053b89162ade18c9df364b2a8db72ef4cc3d42f89e",
+   "signed_ns": 1793706089740047830,
+   "v": 27
+  },
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Release": {
+     "code_hash": "0x44b595058b596ccaeca1f9c03a5d3910b6407350017df209d2fcece096734228",
+     "proxy": "0x16453a8a36b41e834727a28a0dd226c7dec48edd"
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794313897,
+   "digest": "731a57c9fda8d48168e3b2ce88cf1470fa68f8b7c6e3a3408233797addcf6cd0",
+   "id": 2,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "fc749ec9c377c4944f0960ffd76cffe60330eacb1e4c5cf3b8f0c7c8a790d531",
+   "requested_ns": 1793709097979551165,
+   "round": 2,
+   "s": "02c550a3121ec5909e3318b3808d089f0350e264ae4a3d89c394fa674aa80cdc",
+   "signed_ns": 1793709102781065164,
+   "v": 28
+  },
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Release": {
+     "code_hash": "0x401fd0b18f7ac9052ca15d0fbbbc3019a553b1a55f194f259f7229d7c7360c76",
+     "proxy": "0x986965bdfac410b8802e5781a99280cceb5254bc"
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794313897,
+   "digest": "17f6740ceb7eaeb08c1d4116a25f11c6f63ab2bec94e9cdfcd9742cee8a65ec2",
+   "id": 3,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "3948078340f00d0c59b12e5c0771432c90b46f49cff5dc1bce10e4ae26c0e180",
+   "requested_ns": 1793709097979551165,
+   "round": 2,
+   "s": "2cde41436bcfada3ec5281f5026d8b4ee38a9cca1793b9b1c4482ef311a3be94",
+   "signed_ns": 1793709102781065164,
+   "v": 28
+  },
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Release": {
+     "code_hash": "0x44b595058b596ccaeca1f9c03a5d3910b6407350017df209d2fcece096734228",
+     "proxy": "0x16453a8a36b41e834727a28a0dd226c7dec48edd"
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794313897,
+   "digest": "9919f9635a089e0c02d469317637d4e2d299b6ad1beecc0c26d4e15990588d86",
+   "id": 4,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "5abeac7cce0ff3ed2d2f914acdcc43bfac5785764ef1a3f278e6726b3a020bca",
+   "requested_ns": 1793709097979551165,
+   "round": 2,
+   "s": "6df2345fba08e87cfb740ea2e0588569a8590b90b0c145b273a2dc1ffe19e72c",
+   "signed_ns": 1793709102781065164,
+   "v": 28
+  },
+  {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "body": {
+    "Release": {
+     "code_hash": "0x401fd0b18f7ac9052ca15d0fbbbc3019a553b1a55f194f259f7229d7c7360c76",
+     "proxy": "0x986965bdfac410b8802e5781a99280cceb5254bc"
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794313907,
+   "digest": "80f3c17e198b5db441b6f9c41ce24a2fac476cf0facb1763b7c044668b0ec759",
+   "id": 5,
+   "program_key": "bounty.antibody.testnet/0",
+   "project": "acme.antibody.testnet",
+   "r": "5268a790839a69c452bc8250c7d72ef1089366a9acc1d289d18dce07ae459d9e",
+   "requested_ns": 1793709107649668257,
+   "round": 2,
+   "s": "2c5269ef63077634a77780721cec521e6692c02eca81917c427b9bcf19122d21",
+   "signed_ns": 1793709111796613676,
+   "v": 28
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Pause": {
+     "ticket": 13
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794411789,
+   "digest": "5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088",
+   "id": 6,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad56",
+   "requested_ns": 1793806989745288642,
+   "round": 0,
+   "s": "1dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9",
+   "signed_ns": 1793806993727763825,
+   "v": 27
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Pause": {
+     "ticket": 13
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794411789,
+   "digest": "c7df5b84f18d6d2654e66426453f08581cf540a28a761cc2ed60c2bc1a819663",
+   "id": 7,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "0a4436ec6d3ab3cae3d6664b9af4f914fe99dd4d82a8fbfbe9e5f16b0c1b8381",
+   "requested_ns": 1793806989745288642,
+   "round": 0,
+   "s": "4af0f78c92e93f494226eb24921dbd794808131c0339a3f834762650691ee6a2",
+   "signed_ns": 1793806993727763825,
+   "v": 27
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Release": {
+     "code_hash": "0x7deb43a5fd8a6aac5aee95c158e0e552f6e866407b3f4c62442b39c6c6092adb",
+     "proxy": "0xca1fafbcfc14d665d76045a018b215987f39f8a7"
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794413956,
+   "digest": "c108fe81589c61975112f592440daeb62206a5b77d59b0da62787862d2fa54bf",
+   "id": 8,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "571ff3823c530c97f4e1f52ad0df212c8e88abc372f1d05b7c67c34d8a07ba9c",
+   "requested_ns": 1793809156639181706,
+   "round": 2,
+   "s": "697662cadd755a1c8d5baa7498450e6ffb8580d06e4a579bd65993b00bf37ddb",
+   "signed_ns": 1793809161473156729,
+   "v": 27
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Release": {
+     "code_hash": "0x8281ee18b7bd2f40337fe01767721ae85dcd4f0a2b1d8b331732baf81180ec4e",
+     "proxy": "0x0433ceb84db807402de6642929ebf1450381cc46"
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794413956,
+   "digest": "073283f1d9a50f01dcee1e442612c32b0ee7abcb11db0cbe192c1aa383e9beac",
+   "id": 9,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "bfcc27df15e6115dda3114f93d67914647ba52a6d86d5239e6d65af44efcf95f",
+   "requested_ns": 1793809156639181706,
+   "round": 2,
+   "s": "7145aec94bc4e00cf2f3f7e34b0cece54a37111fbedf240efcc2d0bc034f2c4b",
+   "signed_ns": 1793809161473156729,
+   "v": 27
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Release": {
+     "code_hash": "0x7deb43a5fd8a6aac5aee95c158e0e552f6e866407b3f4c62442b39c6c6092adb",
+     "proxy": "0xca1fafbcfc14d665d76045a018b215987f39f8a7"
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794413956,
+   "digest": "133ad8031f7a5b327ea35e289a19cd887580d67797f365c9676e5c3e80b0d1c2",
+   "id": 10,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "47aa2f066e9a70deb5dd80ce249ea7d7f04fac0d0c6b66ca02fabd84cddd85c4",
+   "requested_ns": 1793809156639181706,
+   "round": 2,
+   "s": "29da9d3e32d0dc722029a29f68eaca51947ea00bb77c9a343618b8f0a87c62e6",
+   "signed_ns": 1793809161473156729,
+   "v": 28
+  },
+  {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "body": {
+    "Release": {
+     "code_hash": "0x8281ee18b7bd2f40337fe01767721ae85dcd4f0a2b1d8b331732baf81180ec4e",
+     "proxy": "0x0433ceb84db807402de6642929ebf1450381cc46"
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794413966,
+   "digest": "35b962a37f793368195c6f336da349ee46c91200e3daff35399238298867ee3e",
+   "id": 11,
+   "program_key": "bounty.antibody.testnet/5",
+   "project": "acme.antibody.testnet",
+   "r": "8a6cfe2d5c1c50ff708c01e1c2d141d2eb54f7acd95b7e141b0d46633679678b",
+   "requested_ns": 1793809166601613387,
+   "round": 2,
+   "s": "6422114d29b22cac26f9ffb049429d07c11420df2307753ea4bb5bb4609bca1b",
+   "signed_ns": 1793809171436790607,
+   "v": 28
+  },
+  {
+   "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+   "body": {
+    "Pause": {
+     "ticket": 12
+    }
+   },
+   "chain_id": 11155111,
+   "deadline": 1794415299,
+   "digest": "a92ca48062709ea7b6ceb4217252ce02db9a17597c144e6572fba5687ef71d2f",
+   "id": 12,
+   "program_key": "bounty.antibody.testnet/4",
+   "project": "acme.antibody.testnet",
+   "r": "db7c85c8edaf205cb53bc392e2325712cbb2f9adf8c533cdf70f59a54bf4022f",
+   "requested_ns": 1793810499526624423,
+   "round": 0,
+   "s": "0d00436506f4dd92339dead3403239e811e311fb9a3d66493444a52673190d03",
+   "signed_ns": 1793810506068548522,
+   "v": 27
+  },
+  {
+   "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+   "body": {
+    "Pause": {
+     "ticket": 12
+    }
+   },
+   "chain_id": 84532,
+   "deadline": 1794415299,
+   "digest": "5bd6e94cbdb6d9555e6b6c48cdc5371231d1a6ba1c5dcb48f2191bd5b7c7f96a",
+   "id": 13,
+   "program_key": "bounty.antibody.testnet/4",
+   "project": "acme.antibody.testnet",
+   "r": "0f46dd8ea2a3f0ce17a2d41de99b2a3d2c0ba2b7e6c7d2c046b353057351e42b",
+   "requested_ns": 1793810499526624423,
+   "round": 0,
+   "s": "0e4038015212c4887337cd70f6175922c6938d854a1ce2ee8fa5ccb59fb71037",
+   "signed_ns": 1793810506068548522,
+   "v": 27
+  }
+ ],
+ "relayer": {
+  "0": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482354,
+   "kind": "pause",
+   "permit_id": 0,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 0,
+   "signed_ns": 1793706089740047830,
+   "status": "signed",
+   "targets_paused": [
+    true
+   ]
+  },
+  "1": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482469,
+   "kind": "pause",
+   "permit_id": 1,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 0,
+   "signed_ns": 1793706089740047830,
+   "status": "signed",
+   "targets_paused": [
+    true
+   ]
+  },
+  "10": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482773,
+   "kind": "release",
+   "permit_id": 10,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 2,
+   "signed_ns": 1793809161473156729,
+   "status": "signed"
+  },
+  "11": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482774,
+   "kind": "release",
+   "permit_id": 11,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 2,
+   "signed_ns": 1793809171436790607,
+   "status": "signed"
+  },
+  "12": {
+   "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810509196,
+   "kind": "pause",
+   "permit_id": 12,
+   "program_key": "bounty.antibody.testnet/4",
+   "round": 0,
+   "signed_ns": 1793810506068548522,
+   "status": "signed",
+   "targets_paused": [
+    false
+   ]
+  },
+  "13": {
+   "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810509283,
+   "kind": "pause",
+   "permit_id": 13,
+   "program_key": "bounty.antibody.testnet/4",
+   "round": 0,
+   "signed_ns": 1793810506068548522,
+   "status": "signed",
+   "targets_paused": [
+    false
+   ]
+  },
+  "2": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482590,
+   "kind": "release",
+   "permit_id": 2,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 2,
+   "signed_ns": 1793709102781065164,
+   "status": "signed"
+  },
+  "3": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482591,
+   "kind": "release",
+   "permit_id": 3,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 2,
+   "signed_ns": 1793709102781065164,
+   "status": "signed"
+  },
+  "4": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482591,
+   "kind": "release",
+   "permit_id": 4,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 2,
+   "signed_ns": 1793709102781065164,
+   "status": "signed"
+  },
+  "5": {
+   "adapter": "0xa9deb4a24082753615bfc4d2b564b91ec156b78d",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482593,
+   "kind": "release",
+   "permit_id": 5,
+   "program_key": "bounty.antibody.testnet/0",
+   "round": 2,
+   "signed_ns": 1793709111796613676,
+   "status": "signed"
+  },
+  "6": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482595,
+   "kind": "pause",
+   "permit_id": 6,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 0,
+   "signed_ns": 1793806993727763825,
+   "status": "signed",
+   "targets_paused": [
+    true
+   ]
+  },
+  "7": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 84532,
+   "first_seen_ms": 1793810482687,
+   "kind": "pause",
+   "permit_id": 7,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 0,
+   "signed_ns": 1793806993727763825,
+   "status": "signed",
+   "targets_paused": [
+    true
+   ]
+  },
+  "8": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482767,
+   "kind": "release",
+   "permit_id": 8,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 2,
+   "signed_ns": 1793809161473156729,
+   "status": "signed"
+  },
+  "9": {
+   "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+   "chain_id": 11155111,
+   "first_seen_ms": 1793810482769,
+   "kind": "release",
+   "permit_id": 9,
+   "program_key": "bounty.antibody.testnet/5",
+   "round": 2,
+   "signed_ns": 1793809161473156729,
+   "status": "signed"
+  }
+ }
+}
