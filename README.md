@@ -34,6 +34,61 @@ with a bond budget, and its proofs are judged like anyone's.
 
 ## Check it
 
+**The fast path: a prebuilt binary, about a minute.** The binary has the testnet deployment built in, so it
+needs no repository, no account and no key. Each file has a sha256 and a build provenance attestation
+(`gh attestation verify <file> -R Himess/antibody`).
+
+```bash
+# Linux x86_64
+V=v0.5.0; F=antibody-x86_64-unknown-linux-gnu
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
+sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
+```
+
+```bash
+# macOS (Apple silicon)
+V=v0.5.0; F=antibody-aarch64-apple-darwin
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
+curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
+shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
+# downloaded with a browser instead of curl: xattr -d com.apple.quarantine ./antibody
+```
+
+```powershell
+# Windows x86_64 (PowerShell)
+$V="v0.5.0"; $U="https://github.com/Himess/antibody/releases/download/$V"
+Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.exe" -OutFile antibody.exe -UseBasicParsing
+Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.sha256" -OutFile antibody.sha256 -UseBasicParsing
+if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
+```
+
+Then:
+
+```bash
+./antibody judge               # (.\antibody.exe on Windows) view calls only: each contract's code hash and locked status, the pins, every program's payouts and pauses
+./antibody try --name <you>    # a new lowercase name: the practice program, end to end, with no account
+```
+
+`try` vends a practice account, seals the public tutorial proof, commits and reveals it, and settles it with a
+link for every transaction. It settles at once when T1 confirms the run (the recorded tries took 43.7 s and
+39.9 s in all), or, while new OutLayer worker images wait their delay, at T0 as soon as a final NEAR block is
+past the program's 60 s challenge window (on 2026-11-07: 90.7 s from the vend to the payout in the browser,
+96.4 s for the whole CLI try). Its output says which. The same image runs anywhere:
+`docker run --rm ghcr.io/himess/antibody:v0.5.0 judge`.
+
+**Bring your own proof**, with your own agent or by hand, still with no account:
+
+```bash
+./antibody hunt start --name <you> --vending practice.antibody.testnet   # vends an account, writes a workspace: rules, sources, a Foundry harness, the proof format
+./antibody check --program 6 --bundle hunt-<you>/proof.bundle.json       # the verifier, locally, on your proof
+./antibody hunt submit --name <you> --vending practice.antibody.testnet --poc hunt-<you>/proof.bundle.json
+```
+
+The same three steps are MCP tools for an agent (`hunt_start`, `check_poc`, `hunt_submit`; [AGENTS.md](AGENTS.md)).
+On testnet: two accounts paid on two vaults, a proof that breaks no rule ending `NoViolation` with its bond
+forfeited, and a malformed one ending `InvalidPoC` ([docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)).
+
 [JUDGES.md](JUDGES.md) lists every claim with the command that checks it, the output to expect and the
 transaction behind it, generated from a run's results file, so it cannot drift from what ran.
 
