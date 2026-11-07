@@ -60,7 +60,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const pid = parseProgramId(id);
   if (pid === null) return { title: "No such program" };
   const r = await getProgram(pid);
-  if (!r.ok) return { title: /does not exist/i.test(r.error) ? "No such program" : `Program ${pid}` };
+  if (!r.ok)
+    return /does not exist/i.test(r.error)
+      ? { title: "No such program" }
+      : { title: `Program ${pid}`, description: `Program ${pid} on near-antibody, NEAR testnet: its rules as code, escrow, anchor, rounds and commits.` };
   const name = r.data?.meta?.name || `Program ${pid}`;
   const kind = programKind(name, r.data?.meta?.description);
   return {

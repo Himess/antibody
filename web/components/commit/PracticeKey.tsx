@@ -70,7 +70,16 @@ export function PracticeKey({ tx, signer, programKey, hunter, blobSha }: { tx: s
   return (
     <div className={styles.finder}>
       <div className={styles.finderHead}>
-        <button type="button" className="btn btn-sm" onClick={check} disabled={st.status === "running"} aria-busy={st.status === "running"}>
+        {/* aria-disabled, not disabled, while it reads: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (st.status !== "running") void check();
+          }}
+          aria-disabled={st.status === "running" || undefined}
+          aria-busy={st.status === "running"}
+        >
           <Icon name={st.status === "running" ? "refresh" : "key"} size={13} />
           {st.status === "running" ? "Reading…" : st.status === "idle" ? "Try the public practice key" : "Try again"}
         </button>

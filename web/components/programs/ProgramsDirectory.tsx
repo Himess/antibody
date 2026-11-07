@@ -190,11 +190,15 @@ export async function ProgramsDirectory() {
           title="Earlier runs on the same contracts"
           lede={
             <>
+              {/* The link and its ")" stay on one line: a line may break after the icon, and ")." must not start the next one. */}
               Programs 0 to 3 are the staging run of {STAGING_RUN.date}, on the same contracts before the lock (
-              <a href={sourceUrl(STAGING_RUN.results_file)} target="_blank" rel="noreferrer noopener">
-                its results file <Icon name="external" size={11} className={styles.inlineIcon} />
-              </a>
-              ). Program 4 is an earlier run, before the recorded one. Their records stay on NEAR; the recorded run on the locked
+              <span className="nowrap">
+                <a href={sourceUrl(STAGING_RUN.results_file)} target="_blank" rel="noreferrer noopener">
+                  its results file <Icon name="external" size={11} className={styles.inlineIcon} />
+                </a>
+                )
+              </span>
+              . Program 4 is an earlier run, before the recorded one. Their records stay on NEAR; the recorded run on the locked
               deployment is programs 5, 6 and 7.
             </>
           }

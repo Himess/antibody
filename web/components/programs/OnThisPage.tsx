@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
 import styles from "./programs.module.css";
 
 /**
@@ -78,9 +78,22 @@ export function OnThisPage({ items }: { items: { id: string; label: string }[] }
     }
   }, [active]);
 
+  // A focused link clears the row's fading edge: browsers scroll a focused link sideways only when it is
+  // entirely hidden. Only the row scrolls: scrollIntoView would also move the page while the row is stuck.
+  const reveal = (e: FocusEvent<HTMLOListElement>) => {
+    const ol = e.currentTarget;
+    const a = (e.target as HTMLElement).closest("a");
+    if (!a) return;
+    const edge = window.matchMedia("(max-width: 1099.98px)").matches ? 48 : 8; // the 40 px fade, plus the ring
+    const left = a.offsetLeft; // the ol is position: relative, so this ignores scrollLeft
+    const right = left + a.offsetWidth;
+    if (right > ol.scrollLeft + ol.clientWidth - edge) ol.scrollLeft = right - ol.clientWidth + edge;
+    else if (left < ol.scrollLeft + 8) ol.scrollLeft = Math.max(0, left - 24);
+  };
+
   return (
     <nav ref={nav} aria-label="On this page" className={styles.toc} data-stuck={stuck ? "true" : undefined}>
-      <ol ref={list}>
+      <ol ref={list} onFocus={reveal}>
         {items.map((i) => (
           <li key={i.id}>
             <a href={`#${i.id}`} aria-current={active === i.id ? "location" : undefined}>

@@ -221,7 +221,7 @@ export default async function Home() {
                   {t2Contradicts ? ` · ${t2Contradicts} contradicted` : ""}
                 </Pill>
               ) : t2.ok || t2NotYet(t2) ? (
-                <Pill tone="pending" size="sm" title={t2.ok ? "near-t2 is on testnet and holds no record yet" : undefined}>
+                <Pill tone="pending" size="sm" title={t2.ok ? "near-t2 is deployed and holds no record yet: T2 reads not yet on testnet until it does" : undefined}>
                   not yet on testnet
                 </Pill>
               ) : (

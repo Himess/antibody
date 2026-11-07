@@ -70,7 +70,7 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
         <div>
           <dt>near-t2</dt>
           <dd>
-            <AccountLink account={t.contract} />
+            <AccountLink account={t.contract} site={false} />
           </dd>
         </div>
         <div>
@@ -109,7 +109,7 @@ export function T2Records({ r }: { r: Result<T2Panel> }) {
         <div>
           <dt>Reads records from</dt>
           <dd>
-            <AccountLink account={str(pins.antibody)} />
+            <AccountLink account={str(pins.antibody)} site={false} />
           </dd>
         </div>
         <div>

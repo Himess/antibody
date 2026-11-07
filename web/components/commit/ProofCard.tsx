@@ -84,6 +84,7 @@ export function ProofCard({
   programKey,
   hunter,
   programId,
+  neverRevealed,
 }: {
   commitId: number;
   runId: number | null;
@@ -106,6 +107,8 @@ export function ProofCard({
   hunter: string;
   /** With the hunter, it names whose practice try a sealed blob is. */
   programId: number;
+  /** The commit expired unrevealed: no blob was ever published and no run will come, so no key can open anything. */
+  neverRevealed: boolean;
 }) {
   const seed = blobSha ?? commitment ?? receipt ?? "";
   const isOpen = keys.kind === "disclosed";
@@ -113,6 +116,8 @@ export function ProofCard({
   let about: ReactNode;
   if (isOpen) {
     about = "The verdict can now be recomputed by anyone, and a T2 proof of it made.";
+  } else if (neverRevealed) {
+    about = "Never revealed: no blob was published, so nobody can open it, and no verification run will follow. Only its commitment is on NEAR.";
   } else if (published) {
     about = (
       <>
@@ -167,7 +172,13 @@ export function ProofCard({
             <div className="xsmall muted">Committed before the reveal: a hash of the program, the round, the hunter and the blob&apos;s sha256, so it cannot be copied.</div>
           </dd>
           <dt>Blob sha256</dt>
-          <dd>{blobSha ? <Hash value={blobSha} head={16} label="sealed blob sha256" /> : <span className="small muted">no separate blob: it is inline in the request</span>}</dd>
+          <dd>
+            {blobSha ? (
+              <Hash value={blobSha} head={16} label="sealed blob sha256" />
+            ) : (
+              <span className="small muted">{neverRevealed ? "none: it was never revealed" : "no separate blob: it is inline in the request"}</span>
+            )}
+          </dd>
           <dt>Where it lives</dt>
           <dd>
             {requested ? (

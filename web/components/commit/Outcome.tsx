@@ -12,9 +12,11 @@ import { Sealed } from "@/components/ui/Verdict";
 import type { CommitDetail, FeedRow, IndexedEvent, ProgramDetail, Result, VerdictKey } from "@/lib/api";
 import { sourceUrl } from "@/lib/config";
 import { seconds, wnear } from "@/lib/format";
+import type { GapPaid } from "./CommitSummary";
 import {
   bondFate,
   cleanKeys,
+  duration,
   earlierClaim,
   evData,
   isObj,
@@ -53,6 +55,8 @@ export interface OutcomeInput {
   contract: string;
   /** Who can open this commit's proof besides the TEE (the proof card's state). */
   keyState: KeyState;
+  /** A gap claim a round promoted and paid: told by its state and kind, so it holds when its events are not indexed. */
+  gap: GapPaid | null;
 }
 
 const ev = (events: IndexedEvent[], name: string) => events.find((e) => e.event === name);
@@ -103,7 +107,7 @@ function Bond({ x }: { x: OutcomeInput }) {
     (fate === "held"
       ? "Locked until the verdict is final: refunded if the proof holds a key, is a duplicate or a known issue; forfeited to the escrow if it breaks nothing."
       : fate === "returned"
-        ? x.events.some((e) => e.event === "gap_claim")
+        ? x.gap || x.events.some((e) => e.event === "gap_claim")
           ? "Returned when the gap claim was recorded."
           : refunded
             ? `Refunded: ${refunded}.`
@@ -152,12 +156,14 @@ function Payout({ x }: { x: OutcomeInput }) {
     case "Done:Paid": {
       const amount = strOf(d?.amount) ?? strOf(evData(paidEv).amount);
       const instant = d?.instant === true || evData(paidEv).instant === true;
+      // A gap claim's promotion is known from the program's rounds even when its events are not indexed.
+      const round = numOf(evData(promoted).round) ?? x.gap?.round ?? null;
       figure = amount ? wnear(amount) : "—";
-      pill = <Pill tone="ok">{instant ? "paid · instant" : "paid · after the window"}</Pill>;
+      pill = <Pill tone="ok">{instant ? "paid · instant" : promoted || x.gap ? "paid · promoted" : "paid · after the window"}</Pill>;
       text = instant
         ? `Paid in seconds: the verdict is T1, at most the instant cap${cap ? ` (${wnear(cap)})` : ""}, within its window's instant budget.`
-        : promoted
-          ? `Promoted at round ${numOf(evData(promoted).round) ?? "—"} and paid at its original priority.`
+        : promoted || x.gap
+          ? `Promoted at round ${round ?? "—"} and paid at its original priority.`
           : `Paid once its challenge window${challenge ? ` (${seconds(challenge, 0)})` : ""} passed with no challenge open.`;
       break;
     }
@@ -269,7 +275,7 @@ function DuplicateEvidence({ x }: { x: OutcomeInput }) {
       lede={
         <>
           By {byWho(r.hunter, x.c.commit.program)}, committed <Time t={r.committed_at} showRelative={false} />
-          {before !== null && before > 0 ? ` (${seconds(before)} before this one)` : ""}. Commit order is priority: the first proof of a key is the one paid.
+          {before !== null && before > 0 ? ` (${duration(before)} before this one)` : ""}. Commit order is priority: the first proof of a key is the one paid.
         </>
       }
     >

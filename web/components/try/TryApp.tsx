@@ -74,12 +74,15 @@ function FailureHelp({ s }: { s: TrySnapshot }) {
 /** "program 6", once the vending contract has named it. */
 const programShort = (r: Readiness) => (r.data ? `program ${r.data.programId}` : "the practice program");
 
-/** When T1 may not come before: the last of the worker images still inside their delay. */
+/**
+ * When T1 may not come before: the last of the worker images still inside their delay. It sits in running
+ * text, so the stamp is kept whole (never its date on one line and its clock on the next).
+ */
 function T1Until({ r, now }: { r: Readiness; now: number | null }) {
   const last = r.pending[r.pending.length - 1];
   return (
     <>
-      <time dateTime={new Date(last.countsFrom * 1000).toISOString()}>{utc(last.countsFrom)}</time>
+      <time className="nowrap" dateTime={new Date(last.countsFrom * 1000).toISOString()}>{utc(last.countsFrom)}</time>
       {now !== null ? ` (${relative(last.countsFrom, now)})` : ""}
     </>
   );
@@ -132,7 +135,15 @@ function Expectation({ id, initial, r, now }: { id: string; initial: TryInitial;
           </span>
         </p>
       ) : null}
-      {r.lowBalance || r.keyGone || r.lowAllowance ? (
+      {r.outOfCredit ? (
+        <p className={`callout callout-warn ${styles.expectLine}`}>
+          <Icon name="alert" size={15} />
+          <span>
+            <strong>The practice faucet cannot pay for a try now:</strong> the vending contract&apos;s credit at near-antibody is below one try&apos;s
+            run and storage.
+          </span>
+        </p>
+      ) : r.lowBalance || r.keyGone || r.lowAllowance || r.lowCredit ? (
         <p className={`callout callout-warn ${styles.expectLine}`}>
           <Icon name="alert" size={15} />
           <span>

@@ -167,14 +167,14 @@ export default async function TrustPage() {
                       <div>
                         <dt>MPC contract</dt>
                         <dd>
-                          <AccountLink account={mpcContract} />
+                          <AccountLink account={mpcContract} site={false} />
                         </dd>
                       </div>
                       {a.account && a.account !== mpcContract ? (
                         <div>
                           <dt>Permits built by</dt>
                           <dd>
-                            <AccountLink account={a.account} />
+                            <AccountLink account={a.account} site={false} />
                           </dd>
                         </div>
                       ) : null}
@@ -182,7 +182,7 @@ export default async function TrustPage() {
                   ) : (
                     <div>
                       <dt>Account</dt>
-                      <dd>{a.account ? <AccountLink account={a.account} /> : <span className="muted">none: nothing on chain to trust</span>}</dd>
+                      <dd>{a.account ? <AccountLink account={a.account} site={false} /> : <span className="muted">none: nothing on chain to trust</span>}</dd>
                     </div>
                   )}
                 </dl>
@@ -425,7 +425,7 @@ export default async function TrustPage() {
               <div>
                 <dt>Pinned by</dt>
                 <dd className="small">
-                  near-t2 {t2.ok ? <AccountLink account={t2.data.contract} /> : <>{t2Status}</>}
+                  near-t2 {t2.ok ? <AccountLink account={t2.data.contract} site={false} /> : <>{t2Status}</>}
                 </dd>
               </div>
             </dl>
@@ -457,8 +457,8 @@ export default async function TrustPage() {
               <span>
                 <strong>The zkVM.</strong> SP1&apos;s executor re-runs four testnet runs on the TEE&apos;s exact inputs and gives the TEE&apos;s
                 receipts, with the same public values that <code>crates/zk/core</code> computes natively. Their content keys are public (our
-                fixture agents published theirs in <code>fixtures/zk</code>; a practice try&apos;s is public by construction), though on chain their
-                proofs stay sealed until disclosure.
+                fixture agents and the recorded run&apos;s practice try published theirs in <code>fixtures/zk</code>; a practice try made now seals with
+                a key anyone can derive), though on chain their proofs stay sealed until disclosure.
               </span>
             </li>
             <li>
@@ -544,7 +544,7 @@ export default async function TrustPage() {
                         <strong className="small">{c.role}</strong>
                       </Cell>
                       <Cell label="Account" className={styles.cell}>
-                        <AccountLink account={c.account} />
+                        <AccountLink account={c.account} site={false} />
                       </Cell>
                       <Cell label="Code hash">
                         <Hash value={c.code_hash ?? null} head={10} label="code hash" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Cell } from "@/components/programs/Cell";
 import rt from "@/components/programs/programs.module.css";
@@ -14,7 +14,7 @@ import { AccountLink, TxLink } from "@/components/ui/TxLink";
 import { get, type Result, type Status } from "@/lib/api";
 import { chainName } from "@/lib/config";
 import { wnear } from "@/lib/format";
-import { Md } from "./Md";
+import { AlertMessage } from "./AlertMessage";
 import styles from "./checks.module.css";
 
 const POLL_MS = 30_000;
@@ -50,29 +50,6 @@ const permitNo = (v: unknown): number => {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
 };
 
-const ISO_TIME = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
-
-/**
- * An alert's message as the page writes its own text: "2 permits", not "2 permit(s)", and each RFC 3339
- * time in UTC with its relative time. Code spans stay code.
- */
-function AlertMessage({ text }: { text: string }) {
-  const plural = text.replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
-  return (
-    <>
-      {plural.split(ISO_TIME).map((part, i) =>
-        i % 2 ? (
-          <Time key={i} t={unixOf(part)} />
-        ) : (
-          <Fragment key={i}>
-            <Md text={part} />
-          </Fragment>
-        ),
-      )}
-    </>
-  );
-}
-
 /** The operating accounts by their role in floats.json. */
 const ROLE_NAME: Record<string, string> = { keeper: "the keeper", "t1-relayer": "the T1 relayer", "t2-prover": "the T2 prover" };
 
@@ -88,6 +65,9 @@ const SERVICES: { key: string; what: string }[] = [
   { key: "notifier", what: "Posts new events, and each new alert once, to the webhooks." },
   { key: "t1", what: "Relays each answered run's TDX quote to near-antibody, which verifies it on chain." },
 ];
+
+/** The escrow table's column widths, the same for each group of programs: their tables, stacked, line up. */
+const ESCROW_COLS = ["20%", "21%", "20%", "24%", "15%"];
 
 function Level({ level }: { level: string }) {
   if (level === "critical") return <Pill tone="bad">critical</Pill>;
@@ -276,7 +256,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
   const programGroups = [
     { title: "This run's programs", note: "", rows: programs.filter((p) => roleOf(p)) },
     { title: "Opened after the recorded run", note: "opened after the recorded run", rows: programs.filter(later) },
-    { title: "Earlier runs on the same contracts", note: "an earlier run", rows: programs.filter((p) => !roleOf(p) && !later(p)) },
+    { title: "Earlier runs on the same deployment", note: "an earlier run", rows: programs.filter((p) => !roleOf(p) && !later(p)) },
   ].filter((g) => g.rows.length);
   const prover = has(c, "t2_prover") ? obj(c.t2_prover) : null;
 
@@ -477,7 +457,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                   <div>
                     <dt>Registry</dt>
                     <dd>
-                      <AccountLink account={str(images.registry)} />
+                      <AccountLink account={str(images.registry)} site={false} />
                     </dd>
                   </div>
                   <div>
@@ -765,8 +745,13 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                 <div key={g.title} className="stack" style={{ ["--gap" as string]: "10px" }}>
                   <h3 className={styles.subhead}>{g.title}</h3>
                   <div className={`table-wrap ${rt.cardsWrap}`}>
-                    <table className={`table ${rt.rtable}`}>
+                    <table className={`table ${rt.rtable} ${rt.fixedCols}`}>
                       <caption className="visually-hidden">{g.title}: available escrow against the largest payout</caption>
+                      <colgroup>
+                        {ESCROW_COLS.map((w, i) => (
+                          <col key={i} style={{ width: w }} />
+                        ))}
+                      </colgroup>
                       <thead>
                         <tr>
                           <th scope="col">Program</th>

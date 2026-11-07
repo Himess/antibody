@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 /**
  * Presentation mode for the video and the stage: 16:9, no chrome, readable at 1080p, driven by the
- * recorded run. Space or a tap plays or pauses, R replays, arrows step, F goes full screen; ?speed=1 plays in real time.
+ * recorded run. Space or a tap plays or pauses, Home replays, arrows step, Enter goes full screen; ?speed=1 plays in real time.
  */
 export default async function Present({ searchParams }: { searchParams: Promise<{ speed?: string; run?: string }> }) {
   const sp = await searchParams;
@@ -44,7 +44,7 @@ export default async function Present({ searchParams }: { searchParams: Promise<
             receipt. Testnet: wNEAR has no value; Acme Lend is our deliberately vulnerable fixture.
           </span>
           <span className={styles.keys}>
-            <kbd>Space</kbd> or tap: play · <kbd>R</kbd> replay · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>F</kbd> full screen ·{" "}
+            <kbd>Space</kbd> or tap: play · <kbd>Home</kbd> replay · <kbd>←</kbd> <kbd>→</kbd> step · <kbd>Enter</kbd> full screen ·{" "}
             <Link href="/moment">exit</Link>
           </span>
         </footer>

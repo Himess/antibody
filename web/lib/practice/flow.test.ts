@@ -138,6 +138,8 @@ class FakeChain {
   answerAfter = 14_000;
   t1After = 11_000;
   answerInReveal = false;
+  /** Withholds the answer's time: no block time on the stream's run_answered, no Answered.at from get_run. */
+  answerTimeHidden = false;
   readonly timers: { at: number; fn: () => void }[] = [];
   readonly log: StreamEvent[] = [];
   seq = 3000;
@@ -183,7 +185,7 @@ class FakeChain {
   }
 
   emit(event: string, data: Json, tx: string, signer: string, standard = "antibody"): void {
-    const e: StreamEvent = { seq: this.seq++, standard, event, data, tx, signer, block_ts_ns: this.t * 1e6 };
+    const e: StreamEvent = { seq: this.seq++, standard, event, data, tx, signer, block_ts_ns: this.answerTimeHidden && event === "run_answered" ? undefined : this.t * 1e6 };
     this.log.push(e);
     this.handlers?.event(e);
   }
@@ -325,8 +327,15 @@ class FakeChain {
           return json({ agent: this.vended.has(String(a.account_id)) ? { owner: VENDING, budget: "10000000000000000000000", per_commit_cap: "1000000000000000000000" } : null, committed: false, near: "0", tokens: "0" });
         case "get_commit":
           return json(this.commits.get(Number(a.commit_id)) ?? null);
-        case "get_run":
-          return json(this.runs.get(Number(a.run_id)) ?? null);
+        case "get_run": {
+          const run = this.runs.get(Number(a.run_id)) ?? null;
+          if (!run || !this.answerTimeHidden) return json(run);
+          // A copy: the chain's own record keeps the time, for the test to compare against.
+          const copy = structuredClone(run);
+          const answered = (copy.outcome as Json | undefined)?.Answered as Json | undefined;
+          if (answered) delete answered.at;
+          return json(copy);
+        }
         case "list_commits": {
           const from = Number(a.from ?? 0);
           return json(this.order.slice(from, from + Number(a.limit ?? 20)).map((id) => this.commits.get(id)));
@@ -578,7 +587,7 @@ function memoryStorage(): TryStorage & { saves: SavedTry[] } {
   };
 }
 
-function setup(o: { stream?: boolean; timing?: Partial<Timing>; chain?: FakeChain; sleep?: (ms: number) => Promise<void> } = {}) {
+function setup(o: { stream?: boolean; timing?: Partial<Timing>; chain?: FakeChain; sleep?: (ms: number) => Promise<void>; skewMs?: number } = {}) {
   const chain = o.chain ?? new FakeChain();
   const { rng, draws } = counterRng();
   const storage = memoryStorage();
@@ -588,7 +597,7 @@ function setup(o: { stream?: boolean; timing?: Partial<Timing>; chain?: FakeChai
     apiBase: "https://api.example.test",
     streamAfter: chain.seq - 10,
     openStream: o.stream === false ? null : chain.openStream,
-    now: () => chain.t,
+    now: () => chain.t + (o.skewMs ?? 0),
     sleep: o.sleep ?? (async (ms) => chain.advance(ms)),
     random: rng,
     storage,
@@ -823,7 +832,7 @@ describe("the browser try", () => {
     expect(s.t0PayAfter).toBe(answered + 65_000);
   });
 
-  it("with the answer's time unknown, still waits at most t1Secs before the T0 path", async () => {
+  it("with a T1 wait (t1Secs) shorter than the challenge window, still pays only after the window", async () => {
     const { chain, flow } = setup({ timing: { t1Secs: 20 } });
     chain.t1 = false;
     await flow.start("judge-t0b");
@@ -834,6 +843,43 @@ describe("the browser try", () => {
     const allocate = chain.sent.find((t) => t.method === "allocate");
     expect(allocate?.at ?? 0).toBeGreaterThanOrEqual(answered + 65_000);
     expect((allocate?.at ?? 0) - answered).toBeLessThan(80_000);
+  });
+
+  it("with the answer's time unknown, waits t1Secs before the T0 path", async () => {
+    // Neither the stream nor get_run says when the run was answered, so the try cannot time the window: it
+    // waits t1Secs, set longer than the 60 s window (with a shorter wait it would allocate before the window ends).
+    const { chain, flow } = setup({ timing: { t1Secs: 90 } });
+    chain.t1 = false;
+    chain.answerTimeHidden = true;
+    await flow.start("judge-t0d");
+    const s = flow.snapshot;
+    expect(s.error).toBeUndefined();
+    expect(s.state).toBe("Done:Paid");
+    expect(s.verdict?.answeredAt).toBeUndefined();
+    expect(s.t0Note).toBe("no T1 in the 90 s this try waits for it: the verdict stays T0 and is paid after the 60 s challenge window");
+    // The chain's own record still holds the answer's time.
+    const answered = ((((chain.runs.get(Number(s.runId)) as Json).outcome as Json).Answered as Json).at as number) * 1000;
+    const allocates = chain.attempts.filter((t) => t.method === "allocate");
+    expect(allocates).toHaveLength(1);
+    expect(allocates[0].at).toBeGreaterThan(answered + 60_000);
+    const note = s.log.find((l) => l.level === "warn" && l.text === s.t0Note);
+    expect(note?.at ?? 0).toBeGreaterThanOrEqual(answered + 90_000);
+  });
+
+  it("times the T0 payout by the chain's clock: a tab clock 30 s fast waits for a final block past the window", async () => {
+    const { chain, flow } = setup({ skewMs: 30_000 });
+    chain.t1 = false;
+    await flow.start("judge-t0c");
+    const s = flow.snapshot;
+    expect(s.error).toBeUndefined();
+    expect([s.tier, s.state]).toEqual(["T0", "Done:Paid"]);
+    const answered = (s.verdict?.answeredAt ?? 0) * 1000;
+    const allocates = chain.sent.filter((t) => t.method === "allocate");
+    // One allocate, on the chain's clock after the window: none sent early to read "nothing to allocate".
+    expect(allocates).toHaveLength(1);
+    expect(allocates[0].at).toBeGreaterThanOrEqual(answered + 61_000);
+    expect(allocates[0].at - answered).toBeLessThan(80_000);
+    expect(s.steps.allocate).toMatchObject({ status: "done" });
   });
 
   it("says which unrevealed commit holds the queue and when the keeper expires it, and keeps following", async () => {

@@ -417,9 +417,10 @@ function unavailable(e: unknown): boolean {
 }
 
 function classify(e: unknown): FlowError {
-  if (e instanceof FlowError) return e;
+  // near-antibody refuses a run or storage the vending contract's credit cannot pay: the faucet, not the visitor.
+  if (e instanceof FlowError) return /not enough NEAR credit/.test(e.message) ? new FlowError("faucet", e.message, e.tx) : e;
   const m = errText(e);
-  if (/NotEnoughAllowance|NotEnoughBalance|LackBalanceForState|BalanceExceeded/.test(m)) {
+  if (/NotEnoughAllowance|NotEnoughBalance|LackBalanceForState|BalanceExceeded|not enough NEAR credit/.test(m)) {
     return new FlowError("faucet", `the practice faucet cannot pay for this (${readableFailure(m)})`);
   }
   if (unavailable(e)) return new FlowError("rpc", `the public NEAR RPCs did not answer (${m}); they rate-limit, so try again in a minute`);
@@ -1136,11 +1137,35 @@ export class TryFlow {
       if (this.s.verdict && r?.verdict?.answeredAt !== undefined) this.set({ verdict: { ...this.s.verdict, answeredAt: r.verdict.answeredAt } });
       payAfter = (answered + window + 5) * 1000;
     }
-    const note = `no T1 within the ${window} s challenge window: the verdict stays T0 and is paid after it`;
+    const note =
+      known === undefined
+        ? `no T1 in the ${this.t.t1Secs} s this try waits for it: the verdict stays T0 and is paid after the ${window} s challenge window`
+        : `no T1 within the ${window} s challenge window: the verdict stays T0 and is paid after it`;
     this.set({ t0Note: note, t0PayAfter: payAfter, tier: this.s.tier ?? "T0" });
     this.note("warn", note);
     this.skip("t1", note);
     while (this.d.now() < payAfter && !this.stopRequested) await this.nap(Math.min(5000, payAfter - this.d.now()));
+    const answered = this.s.verdict?.answeredAt;
+    if (answered !== undefined) await this.untilChainPast(answered + window + 1);
+  }
+
+  /**
+   * The challenge window ends on NEAR's clock, not this tab's: wait until a final block is past `endSecs`.
+   * A tab clock ahead of the chain would otherwise send `allocate` before the claim is final, and read
+   * "nothing to allocate". Without a block read, the tab's clock stands.
+   */
+  private async untilChainPast(endSecs: number): Promise<void> {
+    for (let i = 0; i < 40 && !this.stopRequested; i++) {
+      let chainMs: number;
+      try {
+        const ns = (await this.d.rpc.block("final")).header.timestamp_nanosec;
+        chainMs = Number(BigInt(ns) / BigInt(1_000_000));
+      } catch {
+        return;
+      }
+      if (!(chainMs > 0) || chainMs >= endSecs * 1000) return;
+      await this.nap(Math.min(5000, endSecs * 1000 - chainMs + 1000));
+    }
   }
 
   /** practice.rs `settle`: `allocate` the program's claims, then `pay` this one (both permissionless). */

@@ -97,19 +97,30 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
       setState({ status: "error", error: e instanceof Error ? e.message : String(e), ms: performance.now() - t0 });
     }
   };
+  const running = state.status === "running";
   const verdict = state.status === "done" ? holds(state.answer, expect) : null;
   const checked = state.status === "done" ? checkedLine(state.answer, expect, verdict) : null;
   const shown = state.status === "done" ? JSON.stringify(state.answer, null, 2) : "";
   return (
     <div className={styles.check}>
       <div className={styles.head}>
-        <button type="button" className="btn btn-sm" onClick={run} disabled={state.status === "running"} aria-busy={state.status === "running"}>
-          <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
-          {state.status === "running" ? "Checking…" : state.status === "idle" ? label : "Run again"}
+        {/* aria-disabled, not disabled, while it runs: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (!running) void run();
+          }}
+          aria-disabled={running || undefined}
+          aria-busy={running}
+        >
+          <Icon name={running ? "refresh" : "play"} size={13} />
+          {running ? "Checking…" : state.status === "idle" ? label : "Run again"}
         </button>
         <span className={`${styles.what} mono`}>{breakable(describe(check))}</span>
       </div>
       {expect ? <p className="xsmall muted">Holds if: {expect.says}</p> : null}
+      {/* The live region says the result; the raw answer follows it, so a screen reader does not read the JSON out. */}
       <div aria-live="polite">
         {state.status === "done" ? (
           <div className={styles.result}>
@@ -123,9 +134,6 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
                 <code>{checked}</code>
               </p>
             ) : null}
-            <pre className={styles.raw} tabIndex={0} aria-label="Raw response">
-              {shown.length > 6000 ? shown.slice(0, 6000) + "\n…" : shown}
-            </pre>
           </div>
         ) : state.status === "error" ? (
           <div className={styles.result}>
@@ -135,6 +143,11 @@ export function LiveCheck({ check, expect, cli, label = "Run this check" }: { ch
           </div>
         ) : null}
       </div>
+      {state.status === "done" ? (
+        <pre className={styles.raw} tabIndex={0} aria-label="Raw response">
+          {shown.length > 6000 ? shown.slice(0, 6000) + "\n…" : shown}
+        </pre>
+      ) : null}
       {cli ? <Command label="CLI command">{cli}</Command> : null}
     </div>
   );

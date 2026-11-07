@@ -22,7 +22,7 @@ This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the other
 - program 3 (Practice program in fork mode — a tutorial (testnet)): phase `Open`, anchor `light-client`, 1 of 1 verdicts T1-confirmed, 1 payouts, 0 pause and 0 release permits, audit ok: true
 - program 4 (Acme Lend v1 — pre-launch (testnet)): phase `Open`, anchor `light-client`, 1 of 1 verdicts T1-confirmed, 1 payouts, 0 pause and 0 release permits, audit ok: true
 - program 5 (Acme Lend v1 — pre-launch (testnet)): phase `Open`, anchor `light-client`, 7 of 7 verdicts T1-confirmed, 4 payouts, 2 pause and 4 release permits, audit ok: true
-- program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout)
+- program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0)
 - program 7 (Practice program in fork mode — a tutorial (testnet)): phase `Open`, anchor `light-client`, 1 of 1 verdicts T1-confirmed, 1 payouts, 0 pause and 0 release permits, audit ok: true
 
 ## Claims

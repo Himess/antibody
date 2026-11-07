@@ -71,6 +71,8 @@ export interface TierInput {
   mode?: string | null;
   /** Who can open the proof besides the TEE (a published key makes the run one of T2's four). */
   keyState?: KeyState;
+  /** The commit expired unrevealed: it never had a run, and never will. */
+  neverRevealed?: boolean;
 }
 
 function Row({
@@ -105,7 +107,13 @@ function Row({
 
 export function Tiers(x: TierInput) {
   if (x.runId === null) {
-    return <Empty>No verification run yet: the tiers apply once the proof is revealed and the TEE answers.</Empty>;
+    return (
+      <Empty>
+        {x.neverRevealed
+          ? "Never revealed, so never verified: there is no verdict for a tier to vouch for."
+          : "No verification run yet: the tiers apply once the proof is revealed and the TEE answers."}
+      </Empty>
+    );
   }
   const t0 = Boolean(x.answered) || Boolean(x.tier);
   const t1 = x.tier === "T1" || x.tier === "T2" || Boolean(x.t1);
@@ -232,7 +240,7 @@ export function Tiers(x: TierInput) {
 
       <Row
         badge={<TierBadge tier="T2" />}
-        title="A validity proof of the disclosed verdict"
+        title="A validity proof of a disclosed verdict"
         reached={Boolean(x.t2.record && x.t2.record.outcome === "confirmed")}
         state={verdict || x.t2.record ? <T2State t2={x.t2} /> : <Pill size="sm">no verdict to prove</Pill>}
         checks={verdict || x.t2.record ? <T2Checks x={x} /> : <T2Docs />}
@@ -298,7 +306,7 @@ function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
     return (
       <p className="small muted">
         near-t2 verified an SP1 proof that the verifier, re-run on the TEE&apos;s exact input, gives the TEE&apos;s receipt, kind and slots, and compared every
-        bound value with near-antibody&apos;s records. It claims no privacy (the proof it re-runs is disclosed), and no payout depends on it.
+        bound value with near-antibody&apos;s records. It claims no privacy (anyone can open the proof it re-runs: disclosed, or under a published or public content key), and no payout depends on it.
       </p>
     );
   if (r) {
@@ -322,7 +330,7 @@ function T2About({ t2, keyState }: { t2: T2Find; keyState?: KeyState }) {
       </p>
     ) : (
       <p className="small muted">
-        T2 is not yet on testnet. Once near-t2 is deployed, an SP1 proof that the verifier, re-run on this run&apos;s exact input, gives the same receipt is
+        T2 is not yet on testnet. Once near-t2 records proofs on testnet, an SP1 proof that the verifier, re-run on this run&apos;s exact input, gives the same receipt is
         checked on NEAR against near-antibody&apos;s records, after the proof is disclosed. No privacy claim; no payout depends on it.
       </p>
     );

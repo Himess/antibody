@@ -3,13 +3,13 @@ import { Pill } from "./Pill";
 
 /**
  * Who vouches for a verdict. T0: OutLayer's operator delivered the TEE's output. T1: its TDX quote was
- * verified on NEAR (hardware). T2: a validity proof of the disclosed verdict, verified on NEAR (math).
+ * verified on NEAR (hardware). T2: a validity proof of a disclosed verdict, verified on NEAR (math).
  */
 export function TierBadge({ tier, size }: { tier: string | null | undefined; size?: "sm" | "md" }) {
   if (!tier) return <Pill size={size}>no verdict yet</Pill>;
   if (tier === "T2")
     return (
-      <Pill tone="t2" size={size} title="T2: a validity proof (SP1) of the disclosed verdict, verified on NEAR">
+      <Pill tone="t2" size={size} title="T2: a validity proof (SP1) of a disclosed verdict, verified on NEAR">
         T2 · math
       </Pill>
     );

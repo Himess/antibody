@@ -517,10 +517,12 @@ a.node:hover .nodeLabel {
   font-weight: 600;
 }
 
+/* A name too long for its row (at 320 px, the reflow width) wraps onto a second line rather than lose its end
+   to an ellipsis: on the landing nothing else on a phone shows it. The time beside it stays on one line. */
 .vname {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.1;
   font-size: var(--fs-xs);
   color: var(--ink-2);
 }
@@ -532,6 +534,24 @@ a.node:hover .nodeLabel {
 
 .vlabel.minor .vname {
   color: var(--ink-3);
+}
+
+/* A step with a transaction reads as a link without hover, which phones lack: a dotted underline and the
+   explorer icon. */
+a.vlabel .vname {
+  text-decoration: underline dotted var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+a.vlabel svg {
+  color: var(--ink-3);
+}
+
+/* Under 375 px the icon would push a long name onto a second line; the dotted underline stays as the cue. */
+@media (max-width: 374.98px) {
+  a.vlabel svg {
+    display: none;
+  }
 }
 
 a.vlabel:hover .vname {
@@ -623,7 +643,7 @@ a.vlabel:focus-visible {
   gap: clamp(10px, 2.2vh, 32px);
 }
 
-/* On stage the keyboard drives it (Space, R, arrows): no controls in the frame. */
+/* On stage the keyboard drives it (Space, Home, arrows): no controls in the frame. */
 .present .controls {
   display: none;
 }

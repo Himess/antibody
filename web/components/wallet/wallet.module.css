@@ -263,7 +263,11 @@
   }
 }
 
+/* Focused when the view opens (a connect, a pick, a link that named the account): as wide as its name, so
+   the focus ring marks the account instead of a column-wide box that reads as a text field. */
 .accountId {
+  align-self: flex-start;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: var(--fs-lg);
   font-weight: 600;

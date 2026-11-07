@@ -58,7 +58,16 @@ export function AnchorCheck({ lightClient, block, hash }: { lightClient: string;
   return (
     <div className={styles.check}>
       <div className={styles.checkHead}>
-        <button type="button" className="btn btn-sm" onClick={run} disabled={s.status === "running"} aria-busy={s.status === "running"}>
+        {/* aria-disabled, not disabled, while it asks: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (s.status !== "running") void run();
+          }}
+          aria-disabled={s.status === "running" || undefined}
+          aria-busy={s.status === "running"}
+        >
           <Icon name={s.status === "running" ? "refresh" : "play"} size={13} />
           {s.status === "running" ? "Asking the light client…" : s.status === "idle" ? "Ask the light client" : "Ask again"}
         </button>
@@ -67,6 +76,7 @@ export function AnchorCheck({ lightClient, block, hash }: { lightClient: string;
         </span>
       </div>
       <p className="xsmall muted">Expected: byte 0 is 1 (the client holds the block), then 32 bytes equal to the anchor hash.</p>
+      {/* The live region says the result; the raw bytes follow it, so a screen reader does not read 33 numbers out. */}
       <div aria-live="polite">
         {s.status === "done" && outcome ? (
           <div className="stack" style={{ ["--gap" as string]: "8px" }}>
@@ -102,9 +112,6 @@ export function AnchorCheck({ lightClient, block, hash }: { lightClient: string;
                 <dd>0x{want}</dd>
               </div>
             </dl>
-            <pre className={styles.raw} tabIndex={0} aria-label="Raw bytes returned by the view">
-              {JSON.stringify(Array.from(s.bytes))}
-            </pre>
             {outcome.verdict === "absent" ? (
               <p className="xsmall muted">
                 The client keeps a window of recent blocks. The check that counts ran when the program was created; its
@@ -122,6 +129,11 @@ export function AnchorCheck({ lightClient, block, hash }: { lightClient: string;
           </div>
         ) : null}
       </div>
+      {s.status === "done" ? (
+        <pre className={styles.raw} tabIndex={0} aria-label="Raw bytes returned by the view">
+          {JSON.stringify(Array.from(s.bytes))}
+        </pre>
+      ) : null}
     </div>
   );
 }

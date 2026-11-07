@@ -10,7 +10,8 @@ export function TxLink({ hash, chainId, href, head = 8 }: { hash: string | null 
 
 /**
  * An account: it opens its read-only view on this site; its explorer page is the icon beside it (new tab).
- * `site={false}` where the page already is that view: the name then links to the explorer only.
+ * `site={false}` where the page already is that view, or for a contract, whose view on this site has nothing
+ * to show: the name then links to the explorer only.
  */
 export function AccountLink({ account, site = true }: { account: string | null | undefined; site?: boolean }) {
   if (!account) return <span className="muted">—</span>;

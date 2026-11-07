@@ -32,7 +32,7 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
     <>
       <PageHead
         crumbs={[{ href: "/moment", label: "The one moment" }]}
-        eyebrow="Replayed from its transactions"
+        eyebrow="Recorded on testnet · from its results file"
         title="One sealed proof, verified, paid, and the protocol paused on every chain"
         lede={
           <>

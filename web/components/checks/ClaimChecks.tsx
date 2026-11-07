@@ -18,6 +18,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface Checks {
   state: (id: string) => CheckState;
   run: (c: ClaimCheck) => Promise<CheckState>;
+  /** "Run every check" is going through the claims: only its tally speaks, not each card in turn. */
+  batch: boolean;
+  setBatch: (on: boolean) => void;
 }
 
 const ChecksContext = createContext<Checks | null>(null);
@@ -28,6 +31,7 @@ const ChecksContext = createContext<Checks | null>(null);
  */
 export function ClaimChecksProvider({ children }: { children: ReactNode }) {
   const [states, setStates] = useState<Record<string, CheckState>>({});
+  const [batch, setBatch] = useState(false);
   const running = useRef(new Set<string>());
   const run = useCallback(async (c: ClaimCheck): Promise<CheckState> => {
     if (running.current.has(c.id)) return { status: "running" };
@@ -38,7 +42,7 @@ export function ClaimChecksProvider({ children }: { children: ReactNode }) {
     setStates((s) => ({ ...s, [c.id]: out }));
     return out;
   }, []);
-  const value = useMemo<Checks>(() => ({ state: (id) => states[id] ?? IDLE, run }), [states, run]);
+  const value = useMemo<Checks>(() => ({ state: (id) => states[id] ?? IDLE, run, batch, setBatch }), [states, run, batch]);
   return <ChecksContext.Provider value={value}>{children}</ChecksContext.Provider>;
 }
 
@@ -56,23 +60,38 @@ function useCheck(c: ClaimCheck): [CheckState, () => void] {
   ];
 }
 
-/** LiveCheck, with its answer kept in the page's store: the same button, raw answer and CLI command. */
+/**
+ * LiveCheck, with its answer kept in the page's store: the same button, raw answer and CLI command. The
+ * live region says the result (holds or differs, and the value checked); the raw answer sits after it, so a
+ * screen reader does not read the whole JSON out.
+ */
 export function SharedCheck({ c }: { c: ClaimCheck }) {
+  const shared = useContext(ChecksContext);
   const [state, run] = useCheck(c);
+  const running = state.status === "running";
   const verdict = state.status === "done" ? state.holds : null;
   const checked = state.status === "done" ? checkedLine(state.answer, c.expect, verdict) : null;
   const shown = state.status === "done" ? (JSON.stringify(state.answer, null, 2) ?? String(state.answer)) : "";
   return (
     <div className={lc.check}>
       <div className={lc.head}>
-        <button type="button" className="btn btn-sm" onClick={run} disabled={state.status === "running"} aria-busy={state.status === "running"}>
-          <Icon name={state.status === "running" ? "refresh" : "play"} size={13} />
-          {state.status === "running" ? "Checking…" : state.status === "idle" ? (c.label ?? "Run this check") : "Run again"}
+        {/* aria-disabled, not disabled, while it runs: a disabled button would drop keyboard focus to the page. */}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => {
+            if (!running) run();
+          }}
+          aria-disabled={running || undefined}
+          aria-busy={running}
+        >
+          <Icon name={running ? "refresh" : "play"} size={13} />
+          {running ? "Checking…" : state.status === "idle" ? (c.label ?? "Run this check") : "Run again"}
         </button>
         <span className={`${lc.what} mono`}>{describe(c.check)}</span>
       </div>
       {c.expect ? <p className="xsmall muted">Holds if: {c.expect.says}</p> : null}
-      <div aria-live="polite">
+      <div aria-live={shared?.batch ? "off" : "polite"}>
         {state.status === "done" ? (
           <div className={lc.result}>
             <div className="row" style={{ ["--gap" as string]: "8px" }}>
@@ -95,9 +114,6 @@ export function SharedCheck({ c }: { c: ClaimCheck }) {
                 <code>{checked}</code>
               </p>
             ) : null}
-            <pre className={lc.raw} tabIndex={0} aria-label="Raw response">
-              {shown.length > 6000 ? shown.slice(0, 6000) + "\n…" : shown}
-            </pre>
           </div>
         ) : state.status === "error" ? (
           <div className={lc.result}>
@@ -109,6 +125,11 @@ export function SharedCheck({ c }: { c: ClaimCheck }) {
           </div>
         ) : null}
       </div>
+      {state.status === "done" ? (
+        <pre className={lc.raw} tabIndex={0} aria-label="Raw response">
+          {shown.length > 6000 ? shown.slice(0, 6000) + "\n…" : shown}
+        </pre>
+      ) : null}
       {c.cli ? <Command label="CLI command">{c.cli}</Command> : null}
     </div>
   );
@@ -199,18 +220,24 @@ export function ClaimIndex({ rows }: { rows: IndexRow[] }) {
 
   const runAll = async () => {
     if (!shared || progress) return;
-    for (let i = 0; i < checkable.length; i++) {
-      setProgress({ at: i + 1, total: checkable.length });
-      for (const c of checkable[i].checks) {
-        let out = await shared.run(c);
-        for (let attempt = 1; out.status === "error" && attempt <= 2; attempt++) {
-          await sleep(1500 * attempt);
-          out = await shared.run(c);
+    // The cards' live regions stay quiet meanwhile: the tally says where the run is and, at the end, the result.
+    shared.setBatch(true);
+    try {
+      for (let i = 0; i < checkable.length; i++) {
+        setProgress({ at: i + 1, total: checkable.length });
+        for (const c of checkable[i].checks) {
+          let out = await shared.run(c);
+          for (let attempt = 1; out.status === "error" && attempt <= 2; attempt++) {
+            await sleep(1500 * attempt);
+            out = await shared.run(c);
+          }
+          await sleep(200);
         }
-        await sleep(200);
       }
+    } finally {
+      setProgress(null);
+      shared.setBatch(false);
     }
-    setProgress(null);
   };
 
   const tally = progress
@@ -232,7 +259,15 @@ export function ClaimIndex({ rows }: { rows: IndexRow[] }) {
   return (
     <div className={styles.index}>
       <div className={styles.indexHead}>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => void runAll()} disabled={!shared || progress !== null} aria-busy={progress !== null}>
+        {/* Busy: aria-disabled, so keyboard focus stays on the button for the whole run (runAll ignores a second press). */}
+        <button
+          type="button"
+          className="btn btn-primary btn-sm"
+          onClick={() => void runAll()}
+          disabled={!shared}
+          aria-disabled={progress !== null || undefined}
+          aria-busy={progress !== null}
+        >
           <Icon name={progress ? "refresh" : "play"} size={13} />
           {progress ? "Checking…" : ran ? "Run every check again" : "Run every check"}
         </button>
@@ -265,8 +300,12 @@ export function ClaimIndex({ rows }: { rows: IndexRow[] }) {
                   <button
                     type="button"
                     className="btn btn-sm"
-                    onClick={() => r.checks.forEach((c) => void shared?.run(c))}
-                    disabled={!shared || progress !== null || outcomes[i].kind === "running"}
+                    onClick={() => {
+                      if (progress !== null || outcomes[i].kind === "running") return;
+                      r.checks.forEach((c) => void shared?.run(c));
+                    }}
+                    disabled={!shared}
+                    aria-disabled={progress !== null || outcomes[i].kind === "running" || undefined}
                     aria-label={`Run the check of claim ${r.n}`}
                   >
                     <Icon name="play" size={12} />

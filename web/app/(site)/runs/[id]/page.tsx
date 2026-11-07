@@ -64,7 +64,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = parseId((await params).id);
   if (id === null) return { title: "Run not found" };
   const r = await api.run(id);
-  if (!r.ok) return { title: `Run ${id}` };
+  if (!r.ok) return { title: `Run ${id}`, description: `Verification run ${id} on NEAR testnet: what OutLayer's TEE answered, its tier, and every transaction.` };
   const o = runOutcome(r.data.raw?.outcome);
   const mode = strOf(r.data.raw?.mode) ?? strOf(r.data.run?.mode);
   // A run that judges no proof answers with a fixed NoViolation: its title names no verdict.
@@ -87,12 +87,24 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-function lede(x: { id: number; mode: string | null; a: Answered | null; failed: string | null; commit: number | null; program: number | null; round: number | null; p: ProgramDetail | null }) {
+function lede(x: {
+  id: number;
+  mode: string | null;
+  a: Answered | null;
+  failed: string | null;
+  commit: number | null;
+  program: number | null;
+  round: number | null;
+  p: ProgramDetail | null;
+  /** The run is the project's own known-issue declaration (`program.known[].run`). */
+  knownIssue: boolean;
+}) {
   const slots = x.a?.keys.map((k) => slotName(x.p, k.slot)).join(" and ") ?? "";
   const verdict = x.failed ? `failed (${x.failed})` : x.a ? `${kindWords(x.a.kind)}${slots ? ` of ${slots}` : ""}` : "in flight";
   const c = x.commit !== null ? `commit ${x.commit}'s` : "a";
   switch (x.mode) {
     case "verify":
+      if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, verified in the TEE before the program opened: ${verdict}.`;
       return `The TEE's verification of ${c} sealed proof: ${verdict}.`;
     case "second":
       return `A second, independent run of ${c} proof: ${verdict}.`;
@@ -155,7 +167,7 @@ export default async function RunPage({ params }: Props) {
   const programEvents = program ? sortedEvents(program.events) : [];
   const requested = runEvent(commitEvents, "run_requested", id) ?? runEvent(programEvents, "run_requested", id);
   // A program's own run (an activation, a round check) has no commit: its later events are read from the
-  // event log right after its request.
+  // event log right after its request. A failed read leaves only the request, and the Timeline says why.
   const near =
     commitId === null && requested ? await api.events(Math.max(0, (numOf(requested.seq) ?? 1) - 1), 60) : null;
   const logEvents = near && near.ok ? sortedEvents(near.data?.events) : [];
@@ -167,6 +179,9 @@ export default async function RunPage({ params }: Props) {
   const failed = o.status === "failed" ? o.reason : null;
   const mode = strOf(raw?.mode) ?? strOf(d.run?.mode);
   const verdict = isVerdictMode(mode);
+  // A known issue is declared like a submission (a verify run) but with no commit: the program names its run.
+  const declared = program?.program?.known;
+  const knownIssue = commitId === null && mode === "verify" && Array.isArray(declared) && declared.some((k) => numOf(k?.run) === id);
   const round = numOf(raw?.round);
   const teeTier = a?.tier ?? strOf(d.run?.tier);
   const t2find = findT2(id, d.t2, t2, t2NotYet(t2));
@@ -211,6 +226,7 @@ export default async function RunPage({ params }: Props) {
 
   const gate = mode === "check_round" ? checkedRound(id, program, programEvents) : null;
 
+  // A known issue's run carries no disclosure wrap: T2, which re-runs a disclosed proof, has no "yet" for it.
   const t2Note = t2Confirmed ? (
     <Pill tone="t2" size="sm">
       T2 confirmed
@@ -219,7 +235,7 @@ export default async function RunPage({ params }: Props) {
     <Pill tone="bad" size="sm">
       T2 contradicts
     </Pill>
-  ) : t2find.notYet && verdict ? (
+  ) : t2find.notYet && verdict && !knownIssue ? (
     <Pill tone="pending" size="sm">
       T2: not yet on testnet
     </Pill>
@@ -231,7 +247,7 @@ export default async function RunPage({ params }: Props) {
         crumbs={crumbs(id, programId, commitId)}
         eyebrow={`Run · ${modeName(mode)}${programId !== null ? ` · program ${programId}` : ""}`}
         title={`Run ${id}`}
-        lede={lede({ id, mode, a, failed, commit: commitId, program: programId, round, p: program })}
+        lede={lede({ id, mode, a, failed, commit: commitId, program: programId, round, p: program, knownIssue })}
       >
         {failed ? (
           <Pill tone="warn">failed</Pill>
@@ -294,27 +310,39 @@ export default async function RunPage({ params }: Props) {
           title="Timeline"
           lede={`Every step is a NEAR transaction, timed by block from ${commitId !== null ? `commit ${commitId}'s block` : "the run's request"}.`}
         >
-          <Timeline
-            commitId={commitId ?? 0}
-            hunter={commit?.commit?.hunter ?? ""}
-            project={strOf(program?.program?.project)}
-            beneficiary={commit?.commit?.beneficiary ?? ""}
-            bond={commit?.commit?.bond ?? null}
-            round={numOf(commit?.commit?.round) ?? 0}
-            events={runSteps}
-            pauseEvents={[]}
-            permits={[]}
-            baseNs={baseNs}
-            label={o.status === "pending" ? "" : o.status}
-            hasKeys={false}
-            disclosed={keys.kind === "disclosed"}
-            windows={{ reveal: null, challenge: null, disclosure: null }}
-            program={program}
-            programId={programId}
-            practice={info?.practice ?? false}
-            runOnly
-            baseWhat={commitId !== null ? "the commit's block" : "the run's request"}
-          />
+          <div className="stack">
+            {/* A program's own run reads its later steps from the event log: without that read the Timeline
+                shows the request alone, which would pass for a run that never got further. */}
+            {near && !near.ok ? (
+              <ErrorState partial what="this run's later steps (/v1/events)" error={near.error}>
+                <span className="small">
+                  Only its request is shown: its answer and T1 steps come from the event log, which this page reads again on its next load. The
+                  run&apos;s own record and its tiers stand without them; only the links to those transactions are missing.
+                </span>
+              </ErrorState>
+            ) : null}
+            <Timeline
+              commitId={commitId ?? 0}
+              hunter={commit?.commit?.hunter ?? ""}
+              project={strOf(program?.program?.project)}
+              beneficiary={commit?.commit?.beneficiary ?? ""}
+              bond={commit?.commit?.bond ?? null}
+              round={numOf(commit?.commit?.round) ?? 0}
+              events={runSteps}
+              pauseEvents={[]}
+              permits={[]}
+              baseNs={baseNs}
+              label={o.status === "pending" ? "" : o.status}
+              hasKeys={false}
+              disclosed={keys.kind === "disclosed"}
+              windows={{ reveal: null, challenge: null, disclosure: null }}
+              program={program}
+              programId={programId}
+              practice={info?.practice ?? false}
+              runOnly
+              baseWhat={commitId !== null ? "the commit's block" : "the run's request"}
+            />
+          </div>
         </Section>
       ) : null}
 

@@ -115,7 +115,8 @@ export function OneMoment({
     return () => cancelAnimationFrame(raf);
   }, [playing, speed, end]);
 
-  // Presentation mode: Space or a click plays or pauses, R replays, arrows step, F toggles full screen.
+  // Presentation mode: Space or a click plays or pauses, Home replays, arrows step, Enter toggles full screen.
+  // No bare letter keys (WCAG 2.1.4): a word said to speech input could set one off.
   useEffect(() => {
     if (variant !== "present") return;
     const toggle = () => {
@@ -127,11 +128,13 @@ export function OneMoment({
       if (e.key === " ") {
         e.preventDefault();
         toggle();
-      } else if (e.key.toLowerCase() === "r") {
+      } else if (e.key === "Home") {
+        e.preventDefault();
         setT(0);
         last.current = null;
         setPlaying(true);
-      } else if (e.key.toLowerCase() === "f") {
+      } else if (e.key === "Enter" && !(e.target instanceof Element && e.target.closest("a, button, summary"))) {
+        // Enter on a focused link or control keeps its own meaning (the exit link, a node's explorer link).
         if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
         else if (document.documentElement.requestFullscreen) void document.documentElement.requestFullscreen().catch(() => {});
       } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -381,6 +384,7 @@ function PhoneLabel({ step, top, left, done }: { step: Step; top: number; left: 
     <>
       <span className={`${styles.vtime} num`}>{timeText(step)}</span>
       <span className={styles.vname}>{step.label}</span>
+      {step.explorer ? <Icon name="external" size={12} /> : null}
       <span className="visually-hidden">{more(step)}</span>
     </>
   );

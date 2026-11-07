@@ -87,3 +87,7 @@ export function buildInitial(status: Result<Status>, practice: Result<Practice>,
 /** The faucet thresholds `/v1/status` alerts on (docs/api.md, Monitoring). */
 export const FAUCET_MIN_BALANCE_NEAR = 0.5;
 export const FAUCET_MIN_ALLOWANCE_NEAR = 0.05;
+/** The vending contract's NEAR credit at near-antibody under which our status warns (status.rs `vending_credit_near`). */
+export const FAUCET_MIN_CREDIT_NEAR = 0.1;
+/** What one try takes from that credit: its verification run's deposit and storage (measured on testnet, 2026-11-07). */
+export const TRY_CREDIT_NEAR = 0.048;

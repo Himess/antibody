@@ -227,9 +227,9 @@
   font-size: var(--fs-md);
   font-weight: 700;
 }
+/* The stamp's full colour, not faded: faded, it fell below 4.5:1 on the landing's inverse card in dark mode. */
 .stampMeta {
   font-size: var(--fs-2xs);
-  opacity: 0.9;
 }
 /* The receipt hash reads exactly as it does everywhere else: hex is lowercase. */
 .stampHash {

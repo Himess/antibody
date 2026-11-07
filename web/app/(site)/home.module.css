@@ -236,6 +236,8 @@
   --sealed-a: color-mix(in srgb, var(--inv-fg) 16%, var(--inv-bg));
   --sealed-b: color-mix(in srgb, var(--inv-fg) 7%, var(--inv-bg));
   --accent-ink: var(--accent);
+  /* The focus ring takes the card's text colour: the page's blue is 1.3:1 on this card in dark mode, under 3:1. */
+  --focus: var(--inv-fg);
   background: var(--inv-bg);
   color: var(--inv-fg);
   border-color: var(--inv-bg);

@@ -46,9 +46,10 @@ const hunterSteps: Step[] = [
         <p>
           The practice program is a tutorial: its bug and its proof are public. <code>try</code> vends you a practice account,
           seals the tutorial proof, commits and reveals it, waits for the verdict and its T1 confirmation, and settles, with a link
-          for every transaction. In the recorded run, <code>Done:Paid</code> came about 44 s after the vend; while new worker images
-          wait out their delay (see <Link href="/status">the status page</Link>), a try is paid when the 60 s challenge window ends,
-          about a minute and a half after the commit. <code>&lt;you&gt;</code> is a new lowercase name.
+          for every transaction. In the recorded run, the whole try took about 44 s, from the vend to the account&apos;s close. While
+          new worker images wait out their delay (see <Link href="/status">the status page</Link>), no T1 can come: the CLI waits up
+          to 300 s for it, then settles at T0, while the browser try settles as soon as the 60 s challenge window allows, about a
+          minute and a half after the commit. <code>&lt;you&gt;</code> is a new lowercase name.
         </p>
         <p>
           The same loop runs in your browser: <Link href="/try">Try it, no account</Link>.

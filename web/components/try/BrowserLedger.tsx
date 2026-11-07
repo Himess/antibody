@@ -8,6 +8,11 @@ const ROLE: Record<HostRole, string> = {
   api: "our API: the live event stream (verdict and T1 as they are indexed), and the run's T2 record once near-t2 is on testnet",
 };
 
+/** Before a try, what each host will carry: nothing is signed yet. */
+const ROLE_IDLE: Partial<Record<HostRole, string>> = {
+  rpc: "NEAR RPC: the vending contract and the program, read before a try; the try's transactions go here too",
+};
+
 const ORDER: HostRole[] = ["rpc", "archival", "api"];
 
 /**
@@ -49,7 +54,7 @@ export function BrowserLedger({ s, hosts, streamEvents, idle = false }: { s: Try
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
-                <span className={styles.hostRole}>{ROLE[h.role]}</span>
+                <span className={styles.hostRole}>{(idle ? ROLE_IDLE[h.role] : undefined) ?? ROLE[h.role]}</span>
               </li>
             ))}
           </ul>
