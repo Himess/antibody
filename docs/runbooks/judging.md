@@ -52,7 +52,7 @@ antibody admin send-near --to practice.antibody.testnet --amount-near 1 --accoun
 antibody admin call --contract bounty.antibody.testnet --method storage_deposit --args '{"account_id":"keeper.antibody.testnet"}' --deposit-yocto 100000000000000000000000 --account antibody.testnet --key-file <root key file>
 ```
 
-PROVE for the T2 prover is an Ethereum-mainnet token: Semih deposits it on SP1's prover network and
+PROVE for the T2 prover is an Ethereum-mainnet token: the team deposits it by hand on SP1's prover network and
 transfers it to the requester account. Nobody here signs a mainnet transaction.
 
 Record each top-up (time, amount, transaction) in the day's operations notes.
