@@ -131,6 +131,14 @@ Replay it with every transaction: [antibody-three.vercel.app/moment](https://ant
 Check every claim yourself: [JUDGES.md](JUDGES.md) gives each one a command, the output to expect and the
 transaction behind it.
 
+The same moment runs again every day around 03:00 UTC, on a fresh Acme Lend at new addresses: the
+[daily drill](docs/drill.md) opens a program, lets agent A submit its proof over MCP, and checks the
+verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill is listed
+under the recorded run on [/moment](https://antibody-three.vercel.app/moment), and
+[/status](https://antibody-three.vercel.app/status) says whether the latest one passed. The first to pass
+ran on 2026-11-08 ([results](docs/results/drill-2026-11-08.json)); its times are longer than the recorded
+run's because its reveal waited for a rate-limited RPC.
+
 ## How a verdict is checked
 
 Every verdict carries one of three levels. The CLI and JUDGES.md print them as T0, T1 and T2.
