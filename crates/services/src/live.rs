@@ -1440,13 +1440,13 @@ impl Live {
             }
             Some(a) if a["code_hash"] != json!("11111111111111111111111111111111") && self.s["practice"]["vending"].is_null() => {
                 // An earlier run's vending contract (locked, at launch): this build's code, pointed at the
-                // new program by its owner.
+                // new program by its owner with `set_terms` alone. Its other terms (the hourly limit
+                // included) and the practice-account code it deploys stay as they are.
                 let built = bs58::encode(sha256(&std::fs::read(&wasm)?)).into_string();
                 if a["code_hash"] != json!(built) {
                     return Err(eyre!("{vending} runs code {} and this build's vending contract is {built}: delete the account (its NEAR back to {HQ}) or deploy this build's code", a["code_hash"]));
                 }
-                let terms = practice::Terms { gas_funds: PRACTICE_GAS_FUNDS, allowance: PRACTICE_ALLOWANCE, bond_budget: 10 * MILLI, per_commit_cap: MILLI, per_hour: 6 };
-                self.s["practice"]["vending"] = practice::retarget(&root_ctx, &vending, &account_wasm, ppid, 24, &terms)?;
+                self.s["practice"]["vending"] = practice::set_terms(&root_ctx, &vending, Some(ppid), None)?;
                 self.s["practice"]["vending_terms"] = json!({"program": ppid, "gas_funds": PRACTICE_GAS_FUNDS.to_string(), "allowance": PRACTICE_ALLOWANCE.to_string()});
                 // Two tries' gas funds at once, and the margin a vend needs.
                 let free = cmd::u128_of(&a["amount"]).saturating_sub(cmd::u128_of(&a["storage_usage"]) * 10u128.pow(19));

@@ -1,0 +1,65 @@
+{
+  "kind": "permit-relay",
+  "network": "testnet",
+  "summary": "Program 4's two pause permits, signed by the MPC network during the 2026-11-04 run, waited three days for an EVM relayer key in the services. With a funded key the services' permit relayer sent both on 2026-11-07, and Acme Lend v1's guard is paused on Sepolia and Base Sepolia.",
+  "program": {
+    "key": "bounty.antibody.testnet/4",
+    "name": "Acme Lend v1 — pre-launch (testnet)",
+    "note": "our own deliberately vulnerable fixture; tokens have no value"
+  },
+  "relayer": {
+    "address": "0x729649ccB1E688C2cB37465044e2788C700e825f",
+    "service": "antibody-services all (the permit relayer, with RELAYER_EVM_KEY)",
+    "note": "relaying is permissionless: the adapter checks the MPC signature, the deadline and the replay key; the relayer pays its own gas and is trusted for nothing"
+  },
+  "permits": [
+    {
+      "permit": 12,
+      "chain_id": 11155111,
+      "chain": "Sepolia",
+      "kind": "pause",
+      "round": 0,
+      "ticket": 12,
+      "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+      "signed_utc": "2026-11-04T16:41:46Z",
+      "deadline_utc": "2026-11-11T16:41:39Z",
+      "tx": "0xc3ad39bfa59498c081bfb2105bc46f0d00150f586722ceb680241261d0e54058",
+      "explorer": "https://sepolia.etherscan.io/tx/0xc3ad39bfa59498c081bfb2105bc46f0d00150f586722ceb680241261d0e54058",
+      "status": "confirmed",
+      "block": 12086925,
+      "block_utc": "2026-11-07T23:28:12Z",
+      "gas_used": 257877,
+      "fee_wei": "10830834",
+      "targets": [{"name": "AcmeGuard", "address": "0xBbbdC0695CC5b4CE66F14408b4079Dc4b816732C", "paused_after": true}]
+    },
+    {
+      "permit": 13,
+      "chain_id": 84532,
+      "chain": "Base Sepolia",
+      "kind": "pause",
+      "round": 0,
+      "ticket": 12,
+      "adapter": "0xd29e67fca96b8344063429af6e4cb554da8cec4c",
+      "signed_utc": "2026-11-04T16:41:46Z",
+      "deadline_utc": "2026-11-11T16:41:39Z",
+      "tx": "0x53644b486196064c7a6119d0e2b20a911154b950933962bb567dfc558cb2f89c",
+      "explorer": "https://sepolia.basescan.org/tx/0x53644b486196064c7a6119d0e2b20a911154b950933962bb567dfc558cb2f89c",
+      "status": "confirmed",
+      "block": 55861078,
+      "block_utc": "2026-11-07T23:28:04Z",
+      "gas_used": 87449,
+      "fee_wei": "961939000147",
+      "fee_note": "the L2 execution fee plus the OP Stack L1 data fee",
+      "targets": [{"name": "AcmeGuard", "address": "0xBbbdC0695CC5b4CE66F14408b4079Dc4b816732C", "paused_after": true}]
+    }
+  ],
+  "not_sent": {
+    "permits": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    "reason": "already used on their adapters (applied during the 2026-11-04 run): the node's gas estimate reverted, so the relayer marked them refused and sent nothing, spending no gas"
+  },
+  "checks": [
+    "cast call 0xBbbdC0695CC5b4CE66F14408b4079Dc4b816732C 'paused()(bool)' --rpc-url https://ethereum-sepolia-rpc.publicnode.com   # true",
+    "cast call 0xBbbdC0695CC5b4CE66F14408b4079Dc4b816732C 'paused()(bool)' --rpc-url https://base-sepolia-rpc.publicnode.com   # true",
+    "https://antibody-three.vercel.app/status   # the API's /v1/status: no pending permit, no relayer alert"
+  ]
+}

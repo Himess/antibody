@@ -91,11 +91,37 @@ pub fn vend_args(name: &str, public_key: &[u8; 32]) -> Vec<u8> {
 
 /// The vault the vending contract assigned to `account`.
 pub fn vault_of(ctx: &Ctx, vending: &str, account: &str) -> Result<Option<u32>> {
-    let b = ctx.near.view_raw(vending, "vault_of", &borsh_str(account))?;
+    vault_of_near(&ctx.near, vending, account)
+}
+
+/// [`vault_of`] with a bare RPC client (the status page has no signer). The vending contract keeps every
+/// account it vended, so this answers for a practice account long after it closed.
+pub fn vault_of_near(near: &Near, vending: &str, account: &str) -> Result<Option<u32>> {
+    let b = near.view_raw(vending, "vault_of", &borsh_str(account))?;
     Ok(match b.as_slice() {
         [1, a, b2, c, d, ..] => Some(u32::from_le_bytes([*a, *b2, *c, *d])),
         _ => None,
     })
+}
+
+/// Whether a commit holds (or may still take) its rule key: paid, exhausted, or not settled yet. A
+/// forfeited or invalid one leaves the key to the next proof.
+pub fn holds_key(state: &Value) -> bool {
+    match state.get("Done") {
+        None => !state.is_null(),
+        Some(done) => done.get("Paid").is_some() || done.get("Exhausted").is_some() || done == "Paid" || done == "Exhausted",
+    }
+}
+
+/// What a vending contract's program still pays for. Each instance's rule key is paid once per program
+/// and round, so an instance a commit already holds (`taken`) gives the next try on it a duplicate, with
+/// no payout. `{instances, proved, fresh, next_instance, next_is_fresh}`; a fresh program gives every
+/// instance back.
+pub fn instances_left(config: &VendingConfig, taken: &std::collections::BTreeSet<u32>) -> Value {
+    let proved = taken.iter().filter(|v| **v < config.instances).count() as u32;
+    let next = config.next_instance();
+    json!({"program": config.program, "instances": config.instances, "vended": config.vended, "per_hour": config.terms.per_hour,
+           "proved": proved, "fresh": config.instances.saturating_sub(proved), "next_instance": next, "next_is_fresh": !taken.contains(&next)})
 }
 
 /// The tutorial proof against one vault.
@@ -528,6 +554,44 @@ pub fn retarget(ctx: &Ctx, vending: &str, account_wasm: &Path, program: u32, vau
               "account_code_sha256": hex::encode(sha256(&code)), "public_vend_key": public_vend_signer(vending).public_key_str(), "tx": s}))
 }
 
+/// `set_terms`' arguments (Borsh: the program, the instances, the terms) for `config` with a new program
+/// or hourly limit: everything else as the contract has it.
+pub fn set_terms_args(config: &VendingConfig, program: Option<u32>, per_hour: Option<u32>) -> Vec<u8> {
+    let mut terms = config.terms.clone();
+    if let Some(n) = per_hour {
+        terms.per_hour = n;
+    }
+    let mut args = program.unwrap_or(config.program).to_le_bytes().to_vec();
+    args.extend(config.instances.to_le_bytes());
+    terms.borsh(&mut args);
+    args
+}
+
+/// The owner changes the hourly vend limit or the program with `set_terms` alone: the other terms, the
+/// instances and the practice-account code (`set_account_code`, which [`retarget`] also sends) stay as
+/// the contract has them. The configuration is read before and after.
+pub fn set_terms(ctx: &Ctx, vending: &str, program: Option<u32>, per_hour: Option<u32>) -> Result<Value> {
+    let owner = ctx.signer()?;
+    let before = vending_config(&ctx.near, vending)?;
+    if before.owner != owner.account_id.as_str() {
+        return Err(eyre!("{vending}'s owner is {}, not {}", before.owner, owner.account_id));
+    }
+    if program.is_none() && per_hour.is_none() {
+        return Err(eyre!("nothing to change: give --per-hour or --program"));
+    }
+    if per_hour == Some(0) {
+        return Err(eyre!("--per-hour 0 would stop every vend"));
+    }
+    let args = set_terms_args(&before, program, per_hour);
+    let out = ctx.near.send(&owner, vending, vec![Action::FunctionCall { method: "set_terms".into(), args, gas: 10 * TGAS, deposit: ONE_YOCTO }], "EXECUTED_OPTIMISTIC")?;
+    let s = cmd::ensure_ok(ctx, &out, "set_terms")?;
+    let after = vending_config(&ctx.near, vending)?;
+    Ok(json!({"vending": vending, "owner": owner.account_id,
+              "before": {"program": before.program, "instances": before.instances, "per_hour": before.terms.per_hour, "vended": before.vended},
+              "after": {"program": after.program, "instances": after.instances, "per_hour": after.terms.per_hour, "vended": after.vended},
+              "public_vend_key": public_vend_signer(vending).public_key_str(), "tx": s}))
+}
+
 /// The owner funds the vending contract: NEAR credit at near-antibody for the practice accounts' runs
 /// and storage, and `tokens` raw units of the payout token moved into its credit there for their bonds.
 pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result<Value> {
@@ -596,6 +660,50 @@ mod tests {
             r.string().unwrap();
         }
         assert_eq!(r.u32().unwrap(), 6);
+    }
+
+    /// Which commits hold an instance's key, and what is left: the practice program on 2026-11-07 had 16
+    /// vends, 10 paid tries and 2 forfeited ones.
+    #[test]
+    fn instances_left_counts_the_keys_commits_hold() {
+        assert!(holds_key(&json!({"Done": {"Paid": {"amount": "1000000000000000000000", "instant": false, "at": 1}}})));
+        assert!(holds_key(&json!({"Done": "Exhausted"})));
+        assert!(holds_key(&json!("Revealed")), "a commit still settling may take the key");
+        assert!(!holds_key(&json!({"Done": "Forfeited"})));
+        assert!(!holds_key(&json!({"Done": "Invalid"})));
+        let terms = Terms { gas_funds: 1, allowance: 1, bond_budget: 1, per_commit_cap: 1, per_hour: 6 };
+        let mut c = VendingConfig { owner: "o".into(), antibody: "a".into(), token: "t".into(), program: 6, instances: 24, terms, vended: 16 };
+        let taken: std::collections::BTreeSet<u32> = [0, 1, 2, 3, 5, 6, 8, 9, 12, 13].into_iter().collect();
+        let v = instances_left(&c, &taken);
+        assert_eq!((v["proved"].as_u64(), v["fresh"].as_u64(), v["next_instance"].as_u64(), v["next_is_fresh"].as_bool()), (Some(10), Some(14), Some(16), Some(true)));
+        // Eight vends later the count wraps to instance 0, which a paid try holds: that try is a duplicate.
+        c.vended = 24;
+        assert_eq!(instances_left(&c, &taken)["next_is_fresh"], json!(false));
+    }
+
+    /// `practice terms` changes only what it is given: the hourly limit, or the program, with the
+    /// instances and every other term as the contract has them (the same config as above).
+    #[test]
+    fn set_terms_changes_only_the_hour_or_the_program() {
+        let b = hex::decode(
+            "10000000616e7469626f64792e746573746e657417000000626f756e74792e616e7469626f64792e746573746e65740c000000777261702e746573746e65740600\
+             0000180000000000007f6b1096d44a3b000000000000000000da2b851f0bb454000000000000000040b2bac9e0191e020000000000000000a0dec5adc93536000000\
+             00000000060000000a000000",
+        )
+        .unwrap();
+        let c = VendingConfig::parse(&b).unwrap();
+        // The contract's `set_terms(program_id, vaults, terms)`: two u32, four u128, one u32.
+        let a = set_terms_args(&c, None, Some(30));
+        assert_eq!(a.len(), 4 + 4 + 64 + 4);
+        assert_eq!(&a[..8], &[6, 0, 0, 0, 24, 0, 0, 0]);
+        assert_eq!(&a[a.len() - 4..], &30u32.to_le_bytes());
+        // The four amounts are get_config's, byte for byte: the hex above from the program id on, less its
+        // hourly limit and count.
+        let terms_at = b.len() - 4 - 4 - 64;
+        assert_eq!(&a[8..72], &b[terms_at..terms_at + 64]);
+        let p = set_terms_args(&c, Some(8), None);
+        assert_eq!(&p[..4], &8u32.to_le_bytes());
+        assert_eq!(&p[p.len() - 4..], &6u32.to_le_bytes(), "the hourly limit stays");
     }
 
     #[test]

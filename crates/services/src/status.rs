@@ -47,6 +47,8 @@ pub struct Thresholds {
     pub evm_relayer_floor_wei: std::collections::BTreeMap<u64, u128>,
     pub evm_deployer_floor_wei: std::collections::BTreeMap<u64, u128>,
     pub evm_floor_default_wei: u128,
+    /// Unproved practice vaults at or under which a fresh practice program is due (a warning).
+    pub practice_fresh_vaults: u64,
 }
 
 impl Default for Thresholds {
@@ -63,8 +65,47 @@ impl Default for Thresholds {
             evm_relayer_floor_wei: Default::default(),
             evm_deployer_floor_wei: Default::default(),
             evm_floor_default_wei: 2_000_000_000_000_000,
+            // About an hour of tries at the usual six an hour.
+            practice_fresh_vaults: 6,
         }
     }
+}
+
+/// Each practice account's vault, once read (`vault_of` never changes for an account): the status page
+/// asks for the vault of every paid try, and a public RPC need not answer the same question twice.
+static VAULTS: Mutex<Option<std::collections::BTreeMap<String, u32>>> = Mutex::new(None);
+
+/// The practice program's instances left ([`antibody_cli::practice::instances_left`]): the vending
+/// contract's program and count, and the vault of every commit on that program that holds its key.
+/// None when a read fails (a notice, not an alert: a down RPC must not raise a false duplicate).
+fn practice_instances(near: &Near, antibody: &str, vending: &str) -> Option<Value> {
+    let config = antibody_cli::practice::vending_config(near, vending).ok()?;
+    let mut taken = std::collections::BTreeSet::new();
+    let mut from = 0usize;
+    loop {
+        let page = near.view(antibody, "list_commits", json!({"program_id": config.program, "from": from, "limit": 50})).ok()?;
+        let page = page.as_array().cloned().unwrap_or_default();
+        for c in page.iter().filter(|c| antibody_cli::practice::holds_key(&c["state"])) {
+            let hunter = c["hunter"].as_str().unwrap_or_default().to_string();
+            let known = VAULTS.lock().ok().and_then(|m| m.as_ref().and_then(|m| m.get(&hunter).copied()));
+            let vault = match known {
+                Some(v) => Some(v),
+                None => {
+                    let v = antibody_cli::practice::vault_of_near(near, vending, &hunter).ok()?;
+                    if let (Some(v), Ok(mut m)) = (v, VAULTS.lock()) {
+                        m.get_or_insert_with(Default::default).insert(hunter, v);
+                    }
+                    v
+                }
+            };
+            taken.extend(vault);
+        }
+        from += page.len();
+        if page.len() < 50 {
+            break;
+        }
+    }
+    Some(antibody_cli::practice::instances_left(&config, &taken))
 }
 
 impl Thresholds {
@@ -334,8 +375,21 @@ pub fn compute_with(
         if credit_near < t.vending_credit_near {
             alert("warn", "practice", "vending-credit".into(), format!("the vending contract's NEAR credit at near-antibody is {credit_near:.3}: `antibody practice fund`"));
         }
+        // Its instances (the tutorial vaults): each one's key is paid once per program, so once a vault is
+        // proved, the next try assigned to it is a duplicate with no payout. A fresh practice program gives
+        // every vault back (docs/runbooks/worker-images.md, then `antibody practice terms --program`).
+        let instances = practice_instances(near, &dep.antibody, &pr.vending);
+        if let Some(v) = &instances {
+            let (program, fresh, n) = (v["program"].as_u64().unwrap_or_default(), v["fresh"].as_u64().unwrap_or_default(), v["instances"].as_u64().unwrap_or_default());
+            if v["next_is_fresh"] == json!(false) {
+                alert("critical", "practice", "practice-vault-proved".into(), format!("the next try gets vault {}, already proved on program {program}: it would be a duplicate with no payout. Open a fresh practice program", v["next_instance"]));
+            } else if fresh <= t.practice_fresh_vaults {
+                alert("warn", "practice", "practice-vaults-low".into(), format!("{fresh} of {n} vaults left unproved on program {program}: open a fresh practice program before they run out"));
+            }
+        }
         components.insert("practice".into(), json!({"vending": pr.vending, "program": pr.program, "balance_near": balance,
-                                                   "public_vend_key_allowance_near": allowance, "credit_near": credit_near, "credit_tokens_raw": credit["tokens"]}));
+                                                   "public_vend_key_allowance_near": allowance, "credit_near": credit_near, "credit_tokens_raw": credit["tokens"],
+                                                   "instances": instances}));
     }
 
     // A `hunt` vending contract, if the deployment names one: watched like the practice one. Its key is
