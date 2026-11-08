@@ -1027,8 +1027,11 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         return Ok(json!({"skipped": true, "reason": "kill switch", "why": why, "results_file": file}));
     }
 
-    // The guards: read the balances a drill needs; skip with a reason if any is low.
-    let low = d.guard_balances()?;
+    // The guards: read the balances a drill needs; skip with a reason if any is low. Only before a drill
+    // starts: a resumed one has spent part of it already (acme's escrow is in the program), and each of its
+    // steps tops its own signer up from HQ as it goes.
+    let started = d.s["done"].as_array().is_some_and(|x| !x.is_empty());
+    let low = if started && !d.a.dry_run { Vec::new() } else { d.guard_balances()? };
     if !low.is_empty() {
         println!("drill skipped: {} balance(s) below what a drill needs", low.len());
         for l in &low {
