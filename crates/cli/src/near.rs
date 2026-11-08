@@ -10,6 +10,10 @@ use sha2::{Digest, Sha256};
 pub const TGAS: u64 = 1_000_000_000_000;
 pub const ONE_YOCTO: u128 = 1;
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+/// Attempts for a transaction the primary refuses on its rate limit (other calls stop after seven).
+const SEND_RATE_LIMIT_ATTEMPTS: u64 = 16;
+/// How long reads leave the primary alone after it answered a rate limit.
+const PRIMARY_COOL_SECS: u64 = 30;
 
 #[derive(Clone)]
 pub struct Near {
@@ -25,6 +29,9 @@ pub struct Near {
     /// Last nonce used per (account, public key), shared by clones: back-to-back and concurrent
     /// transactions from one key must not reuse a nonce read from a lagging view.
     nonces: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, u64>>>,
+    /// Until when the primary is left to transactions, shared by clones: it answered a rate limit, so reads
+    /// start at the extra RPCs meanwhile (only with `$NEAR_RPC_EXTRA` set).
+    cool_until: std::sync::Arc<std::sync::Mutex<Option<std::time::Instant>>>,
 }
 
 /// A NEAR account and one of its keys (full access or function call).
@@ -209,6 +216,22 @@ impl Near {
                 .build()
                 .expect("http client"),
             nonces: Default::default(),
+            cool_until: Default::default(),
+        }
+    }
+
+    /// The first RPC a read tries: an extra one while the primary cools down after a rate limit, so the
+    /// reads of a busy run (polls, balances, nonces) leave the primary's budget to the transactions,
+    /// which go to it only. Otherwise the primary, whose answers include the writes it just took.
+    fn read_start(&self) -> usize {
+        let cooling = self.cool_until.lock().map(|c| c.is_some_and(|t| std::time::Instant::now() < t)).unwrap_or(false);
+        usize::from(cooling && !self.extra.is_empty())
+    }
+
+    /// The primary answered a rate limit: reads start elsewhere for the next half minute.
+    fn cool_primary(&self) {
+        if let Ok(mut c) = self.cool_until.lock() {
+            *c = Some(std::time::Instant::now() + std::time::Duration::from_secs(PRIMARY_COOL_SECS));
         }
     }
 
@@ -270,38 +293,48 @@ impl Near {
         // refuses a request outright (nothing sent), so the same transaction waits and goes again.
         let sends = method == "send_tx";
         let endpoints = if sends { 1 } else { self.endpoints() };
-        for attempt in 0..7 {
-            let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
+        let start = if sends { 0 } else { self.read_start() };
+        let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
+        for attempt in 0..SEND_RATE_LIMIT_ATTEMPTS {
             // A failed or rate-limited attempt goes to the next RPC (one RPC: the same, after a pause).
-            let url = if sends { self.rpc.as_str() } else { self.endpoint(attempt as usize) };
-            match self.post(url, &body) {
+            let url = if sends { self.rpc.as_str() } else { self.endpoint(start + attempt as usize) };
+            let (limited, pause) = match self.post(url, &body) {
                 Ok(v) => {
-                    if let Some(e) = v.get("error") {
+                    let limited = if let Some(e) = v.get("error") {
                         let s = e.to_string();
                         // Transient conditions worth a retry: a rate limit (FastNEAR answers -429, a request
                         // it refused, so a transaction was not sent) backs off longer.
-                        if transient(&s) {
-                            last = eyre!("{method}: {s}");
-                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, rate_limited(&s))));
-                            continue;
+                        if !transient(&s) {
+                            return Err(eyre!("{method}: {s}"));
                         }
-                        return Err(eyre!("{method}: {}", s));
-                    }
-                    // A body with neither `result` nor `error` is not a JSON-RPC answer (a gateway's
-                    // rate-limit page, say): nothing was answered, and for a transaction nothing was sent.
-                    let Some(r) = v.get("result") else {
+                        last = eyre!("{method}: {s}");
+                        rate_limited(&s)
+                    } else if let Some(r) = v.get("result") {
+                        return Ok(r.clone());
+                    } else {
+                        // A body with neither `result` nor `error` is not a JSON-RPC answer (a gateway's
+                        // rate-limit page, say): nothing was answered, and for a transaction nothing was sent.
                         let s = v.to_string();
                         last = eyre!("{method}: not a JSON-RPC answer: {}", s.chars().take(200).collect::<String>());
-                        std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, rate_limited(&s))));
-                        continue;
+                        rate_limited(&s)
                     };
-                    return Ok(r.clone());
+                    if limited && url == self.rpc {
+                        self.cool_primary();
+                    }
+                    (limited, retry_pause_ms(attempt, endpoints, limited))
                 }
                 Err(e) => {
                     last = self.no_answer(method, url, e);
-                    std::thread::sleep(std::time::Duration::from_millis(800 * (attempt + 1)));
+                    (false, 800 * (attempt + 1))
                 }
+            };
+            // Seven attempts. A transaction the primary keeps refusing on its rate limit waits longer (about
+            // four minutes in all): nothing was sent, and a stage that stopped there would start again.
+            let next = attempt + 1;
+            if next >= SEND_RATE_LIMIT_ATTEMPTS || (next >= 7 && !(sends && limited)) {
+                break;
             }
+            std::thread::sleep(std::time::Duration::from_millis(pause));
         }
         Err(last)
     }
@@ -480,7 +513,7 @@ pub fn retry_pause_ms(attempt: u64, endpoints: usize, limited: bool) -> u64 {
             250
         }
     } else if limited {
-        2_000 * (attempt + 1)
+        (2_000 * (attempt + 1)).min(20_000)
     } else {
         800 * (attempt + 1)
     }
@@ -539,8 +572,30 @@ mod tests {
         // Three RPCs: two short pauses, then a longer one after the round, and longer after the next.
         let p: Vec<u64> = (0..7).map(|a| retry_pause_ms(a, 3, true)).collect();
         assert_eq!(p, vec![250, 250, 1_500, 250, 250, 3_000, 250]);
-        // One RPC: the back-off as before.
+        // One RPC: the back-off as before, at most 20 s a pause: a transaction refused on the rate limit
+        // every time waits 210 s over its sixteen attempts.
         assert_eq!((retry_pause_ms(0, 1, true), retry_pause_ms(2, 1, false)), (2_000, 2_400));
+        assert_eq!(retry_pause_ms(15, 1, true), 20_000);
+        assert_eq!((0..SEND_RATE_LIMIT_ATTEMPTS - 1).map(|a| retry_pause_ms(a, 1, true)).sum::<u64>(), 210_000);
+    }
+
+    /// A rate limit on the primary sends reads to the extra RPCs for a while (clones share it), leaving the
+    /// primary to transactions; with no extra RPC, reads stay on the primary.
+    #[test]
+    fn a_rate_limited_primary_leaves_reads_to_the_extra_rpcs() {
+        let mut n = Near::new("testnet", Some("https://primary.example".into()));
+        n.extra = vec!["https://extra.example".into()];
+        assert_eq!(n.endpoint(n.read_start()), "https://primary.example");
+        let clone = n.clone();
+        n.cool_primary();
+        assert_eq!(n.endpoint(n.read_start()), "https://extra.example");
+        assert_eq!(clone.endpoint(clone.read_start()), "https://extra.example");
+        // The next attempt after the extra one is the primary again.
+        assert_eq!(n.endpoint(n.read_start() + 1), "https://primary.example");
+        let mut lone = Near::new("testnet", Some("https://primary.example".into()));
+        lone.extra.clear();
+        lone.cool_primary();
+        assert_eq!(lone.read_start(), 0);
     }
 
     /// An RPC is named by its host and port, never by a path, query or user part, and never by a host that
