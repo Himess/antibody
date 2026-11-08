@@ -106,35 +106,87 @@ pub fn upload(ctx: &Ctx, signer: &Signer, relative_path: &str, content: &[u8]) -
     }))
 }
 
-/// Reads a blob from an https URL or a `near-tx:` location (NEAR archival RPC). Callers check hashes.
+/// The most a fetched blob, manifest or base witness may weigh (and an archival RPC's answer carrying one).
+/// Manifests and witnesses are kilobytes; a location that serves more is refused, never buffered.
+pub const FETCH_MAX: u64 = 16 * 1024 * 1024;
+
+/// What a location may be. Locations come from the chain (a program's manifest, its base witness, a
+/// commit's blob), and anyone can create a program: on a public network only a `near-tx:` location or an
+/// https URL is opened, so a program cannot make a client read its local files, a network share or a
+/// device. `file://` and plain http are for the local sandbox.
+pub fn location_allowed(network: &str, url: &str) -> Result<()> {
+    if fastfs::parse_location(url).is_some() || url.starts_with("https://") {
+        return Ok(());
+    }
+    if network == "sandbox" && (url.starts_with("file://") || url.starts_with("http://")) {
+        return Ok(());
+    }
+    Err(eyre!("a blob location must be near-tx: or https on {network} (a program's own location is refused, not opened)"))
+}
+
+/// At most `max` bytes from `r`, refused past that.
+fn read_capped(r: impl std::io::Read, max: u64) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    r.take(max + 1).read_to_end(&mut buf)?;
+    if buf.len() as u64 > max {
+        return Err(eyre!("the location serves more than {max} bytes: refused"));
+    }
+    Ok(buf)
+}
+
+/// Reads a blob from an https URL or a `near-tx:` location (NEAR archival RPC); `file://` and http only
+/// on the sandbox ([`location_allowed`]); at most [`FETCH_MAX`] bytes. Callers check hashes.
 pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
+    location_allowed(&near.network, url)?;
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build()?;
     if let Some((hash, signer)) = fastfs::parse_location(url) {
         let rpc = match near.network.as_str() {
             "testnet" | "mainnet" => fastfs::archival_rpc(&near.network).to_string(),
             _ => near.rpc.clone(),
         };
-        let v: Value = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()?
-            .post(&rpc)
-            .json(&fastfs::tx_request(hash, signer))
-            .send()?
-            .json()?;
+        let r = client.post(&rpc).json(&fastfs::tx_request(hash, signer)).send().map_err(|e| eyre!("the archival RPC: {}", e.without_url()))?;
+        let v: Value = serde_json::from_slice(&read_capped(r, FETCH_MAX)?)?;
         return fastfs::content_from_tx_response(&v).map_err(|e| eyre!(e));
     }
     if let Some(p) = url.strip_prefix("file://") {
-        return Ok(std::fs::read(p)?);
+        return read_capped(std::fs::File::open(p)?, FETCH_MAX);
     }
-    let r = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build()?.get(url).send()?;
+    let r = client.get(url).send().map_err(|e| eyre!("GET: {}", e.without_url()))?;
     if !r.status().is_success() {
-        return Err(eyre!("GET {url}: HTTP {}", r.status()));
+        return Err(eyre!("GET: HTTP {}", r.status()));
     }
-    Ok(r.bytes()?.to_vec())
+    read_capped(r, FETCH_MAX)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A location from the chain is opened only as near-tx: or https on a public network: never a local
+    /// file, a share or plain http (SA-26).
+    #[test]
+    fn a_chain_location_cannot_open_local_files_on_a_public_network() {
+        for net in ["testnet", "mainnet"] {
+            assert!(location_allowed(net, "https://fastfs.example/antibody/manifests/x.json").is_ok());
+            assert!(location_allowed(net, "near-tx:4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ:acme.antibody.testnet").is_ok());
+            for bad in ["file:///etc/passwd", "file:////host/share/m.json", "file://C:/Users/x/.ssh/id", "http://203.0.113.7/m.json", "/etc/passwd", "ftp://x/y", ""] {
+                assert!(location_allowed(net, bad).is_err(), "{net}: {bad}");
+            }
+        }
+        // The local sandbox keeps its file and http locations.
+        assert!(location_allowed("sandbox", "file:///tmp/m.json").is_ok());
+        assert!(location_allowed("sandbox", "http://127.0.0.1:8080/m.json").is_ok());
+    }
+
+    /// A location that serves more than the cap is refused, not buffered.
+    #[test]
+    fn a_fetched_body_is_capped() {
+        use std::io::Read;
+        assert_eq!(read_capped(&[1u8; 10][..], 10).unwrap().len(), 10);
+        assert!(read_capped(&[1u8; 11][..], 10).is_err());
+        assert!(read_capped(std::io::repeat(0).take(1 << 20), 1000).is_err());
+    }
 
     /// The size a vended account's proof is refused at is the size the reveal would send.
     #[test]

@@ -225,16 +225,17 @@ enum PracticeCmd {
         program: u32,
         #[arg(long, default_value_t = 24)]
         vaults: u32,
-        #[arg(long, default_value = "0.28")]
-        gas_funds: String,
-        #[arg(long, default_value = "0.4")]
-        allowance: String,
+        /// Each term not given stays as the contract has it (an hourly limit raised for judging included)
         #[arg(long)]
-        bond_budget: String,
+        gas_funds: Option<String>,
         #[arg(long)]
-        per_commit_cap: String,
-        #[arg(long, default_value_t = 6)]
-        per_hour: u32,
+        allowance: Option<String>,
+        #[arg(long)]
+        bond_budget: Option<String>,
+        #[arg(long)]
+        per_commit_cap: Option<String>,
+        #[arg(long)]
+        per_hour: Option<u32>,
     },
     /// Fund the vending contract (as its owner): NEAR credit at near-antibody, and tokens for bonds
     Fund {
@@ -1082,12 +1083,18 @@ fn run(cli: Cli) -> Result<Value> {
             cmd: PracticeCmd::Retarget { ref vending, ref account_wasm, program, vaults, ref gas_funds, ref allowance, ref bond_budget, ref per_commit_cap, per_hour },
         } => {
             let c = mk()?;
+            // Each term not given stays as the contract has it: a retarget during judging keeps the raised limit.
+            let now = antibody_cli::practice::vending_config(&c.near, vending)?.terms;
+            let near_or = |v: &Option<String>, d: u128| -> Result<u128> { v.as_deref().map(cmd::parse_near).transpose().map(|x| x.unwrap_or(d)) };
+            let tokens_or = |v: &Option<String>, d: u128| -> Result<u128> {
+                v.as_deref().map(|s| cmd::parse_tokens(s, c.dep.decimals())).transpose().map(|x| x.unwrap_or(d))
+            };
             let terms = antibody_cli::practice::Terms {
-                gas_funds: cmd::parse_near(gas_funds)?,
-                allowance: cmd::parse_near(allowance)?,
-                bond_budget: cmd::parse_tokens(bond_budget, c.dep.decimals())?,
-                per_commit_cap: cmd::parse_tokens(per_commit_cap, c.dep.decimals())?,
-                per_hour,
+                gas_funds: near_or(gas_funds, now.gas_funds)?,
+                allowance: near_or(allowance, now.allowance)?,
+                bond_budget: tokens_or(bond_budget, now.bond_budget)?,
+                per_commit_cap: tokens_or(per_commit_cap, now.per_commit_cap)?,
+                per_hour: per_hour.unwrap_or(now.per_hour),
             };
             antibody_cli::practice::retarget(&c, vending, account_wasm, program, vaults, &terms)
         }
@@ -1220,7 +1227,12 @@ fn run(cli: Cli) -> Result<Value> {
                 Some(w) => w.clone(),
                 None => std::env::current_dir()?,
             };
-            mcp::serve(&mk()?, &ws)?;
+            // The server's state (vended keys, sealed proofs' content keys and salts) lives inside its
+            // workspace, wherever the client started the process, and must be writable before any tool
+            // runs: a vend or a commit is never sent when its key or record could not be kept.
+            let mut ctx = mk()?;
+            ctx.state_dir = mcp::state_dir(&ws)?;
+            mcp::serve(&ctx, &ws)?;
             Ok(Value::Null)
         }
     }

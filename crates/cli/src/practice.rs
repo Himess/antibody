@@ -136,6 +136,12 @@ pub fn vault_address(ctx: &Ctx, program: u32, i: u32) -> Result<String> {
     m.targets.iter().find(|t| t.name == format!("vault-{i}")).map(|t| format!("{:#x}", t.address)).ok_or_else(|| eyre!("no vault-{i} in program {program}"))
 }
 
+/// Whether a send failed because the signing access key itself was refused (its allowance spent, or a key
+/// that may not make this call), so that nothing was executed.
+pub fn vend_key_refused(err: &str) -> bool {
+    ["InvalidAccessKeyError", "NotEnoughAllowance", "AccessKeyNotFound", "MethodNameMismatch", "ReceiverMismatch"].iter().any(|m| err.contains(m))
+}
+
 /// A practice account's name, as the vending contract takes it (it also names a local directory).
 pub fn check_name(name: &str) -> Result<()> {
     if name.is_empty() || name.len() > 32 || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_') {
@@ -154,22 +160,30 @@ pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Valu
         return Err(eyre!("{account} is taken: pick another --name (a new one, lowercase)"));
     }
     let key = Signer::generate(Some(account.clone()))?;
-    let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: VEND_TGAS * TGAS, deposit: 0 }];
-    let public = public_vend_signer(vending);
-    let (out, by) = match ctx.near.send(&public, vending, call.clone(), "EXECUTED_OPTIMISTIC") {
-        Ok(out) => (out, public.account_id),
-        Err(e) if ctx.account.is_some() || ctx.key_file.is_some() => {
-            let me = ctx.signer()?;
-            eprintln!("the public vend key could not call vend ({e}); calling it as {}", me.account_id);
-            (ctx.near.send(&me, vending, call, "EXECUTED_OPTIMISTIC")?, me.account_id)
-        }
-        Err(e) => return Err(e),
-    };
-    let s = cmd::ensure_ok(ctx, &out, "vend")?;
+    // The key is kept before the vend is sent: a vend that executes while its answer is lost (a timeout)
+    // leaves an account whose key is still here.
     if let Some(dir) = key_out.parent() {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(key_out, serde_json::to_vec_pretty(&key.to_file_json())?)?;
+    let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: VEND_TGAS * TGAS, deposit: 0 }];
+    let public = public_vend_signer(vending);
+    let (out, by) = match ctx.near.send(&public, vending, call.clone(), "EXECUTED_OPTIMISTIC") {
+        Ok(out) => (out, public.account_id),
+        // Your own account calls `vend` only when the public key itself was refused (its allowance spent):
+        // after any other error, a timeout above all, the first vend may have gone out.
+        Err(e) if (ctx.account.is_some() || ctx.key_file.is_some()) && vend_key_refused(&format!("{e:#}")) => {
+            let me = ctx.signer()?;
+            let first = format!("{e:#}");
+            let out = ctx
+                .near
+                .send(&me, vending, call, "EXECUTED_OPTIMISTIC")
+                .map_err(|e2| eyre!("the public vend key could not call vend ({first}); calling it as {} failed too: {e2:#}", me.account_id))?;
+            (out, me.account_id)
+        }
+        Err(e) => return Err(e),
+    };
+    let s = cmd::ensure_ok(ctx, &out, "vend")?;
     let vault = vault_of(ctx, vending, &account)?.ok_or_else(|| eyre!("{vending} assigned no vault to {account}"))?;
     Ok(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": by, "tx": s}))
 }
@@ -232,7 +246,16 @@ pub fn target(ctx: &Ctx, vending: Option<String>, program: Option<u32>) -> Resul
     // The vending contract's own program first: its owner can point it at a new practice program (for
     // instance after a worker image rotation, docs/runbooks/worker-images.md), and a vended account may
     // commit to that program only.
-    let program = program.or_else(|| vending_program(&ctx.near, &vending).ok()).or_else(|| dep.map(|p| p.program)).ok_or_else(none)?;
+    // Only a vending contract without `get_config` (an older build) leaves the deployments file's program:
+    // an RPC error is an error, never "use the deployments file", which may name a program it left.
+    let program = match program {
+        Some(p) => p,
+        None => match vending_program(&ctx.near, &vending) {
+            Ok(p) => p,
+            Err(e) if format!("{e:#}").contains("MethodNotFound") => dep.map(|p| p.program).ok_or_else(none)?,
+            Err(e) => return Err(e.wrap_err(format!("reading the program {vending} vends for"))),
+        },
+    };
     Ok((vending, program))
 }
 
@@ -321,6 +344,9 @@ impl<'a> Borsh<'a> {
 pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Value> {
     check_name(name)?;
     let t0 = Instant::now();
+    // `practice/<name>`, whatever the deployments file names: the T2 step and `zk gather` read a try's record
+    // there. (Over MCP a try uses the deployment's practice vending contract only, where a hunt account of the
+    // same name has this same directory.)
     let dir = ctx.state_dir.join("practice").join(name);
     let key_file = dir.join("key.json");
     let vended = vend(ctx, vending, name, &key_file)?;
@@ -534,6 +560,14 @@ pub fn deploy(ctx: &Ctx, wasm: &Path, account_wasm: &Path, owner: &str, program:
 /// serving the deployment's new practice programs.
 pub fn retarget(ctx: &Ctx, vending: &str, account_wasm: &Path, program: u32, vaults: u32, terms: &Terms) -> Result<Value> {
     let owner = ctx.signer()?;
+    // As `set_terms` checks: only the owner, and never an hourly limit of 0 (it would stop every vend).
+    let config = vending_config(&ctx.near, vending)?;
+    if config.owner != owner.account_id.as_str() {
+        return Err(eyre!("{vending}'s owner is {}, not {}", config.owner, owner.account_id));
+    }
+    if terms.per_hour == 0 {
+        return Err(eyre!("an hourly limit of 0 would stop every vend"));
+    }
     let mut set_terms = program.to_le_bytes().to_vec();
     set_terms.extend(vaults.to_le_bytes());
     terms.borsh(&mut set_terms);
@@ -624,6 +658,18 @@ pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Your own account calls `vend` only when the public key itself was refused: never after a timeout,
+    /// when the first vend may have gone out.
+    #[test]
+    fn only_a_refused_vend_key_falls_back_to_your_account() {
+        for refused in [r#"{"InvalidTxError":{"InvalidAccessKeyError":{"NotEnoughAllowance":{}}}}"#, "AccessKeyNotFound", "MethodNameMismatch"] {
+            assert!(vend_key_refused(refused), "{refused}");
+        }
+        for other in ["send_tx: TIMEOUT_ERROR", "send_tx: Rate limits exceeded", "Smart contract panicked: the hourly limit is reached"] {
+            assert!(!vend_key_refused(other), "{other}");
+        }
+    }
 
     #[test]
     fn borsh_args_match_the_contract() {

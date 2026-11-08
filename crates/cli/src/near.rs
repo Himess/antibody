@@ -236,7 +236,8 @@ impl Near {
     /// One attempt, no retry: for queries whose error is an answer (a height with no block).
     pub fn call_once(&self, method: &str, params: Value) -> Result<Value> {
         let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
-        let v = self.post(&self.rpc, &body).map_err(|e| eyre!("{method}: {e}"))?;
+        // The HTTP client's error names the URL, which may carry a key: never in a message.
+        let v = self.post(&self.rpc, &body).map_err(|e| eyre!("{method}: {}", e.without_url()))?;
         match v.get("error") {
             Some(e) => Err(eyre!("{method}: {e}")),
             None => Ok(v["result"].clone()),
@@ -261,18 +262,26 @@ impl Near {
                         let s = e.to_string();
                         // Transient conditions worth a retry: a rate limit (FastNEAR answers -429, a request
                         // it refused, so a transaction was not sent) backs off longer.
-                        let limited = s.contains("Too Many Requests") || s.contains("-429") || s.contains("Rate limit");
-                        if s.contains("TIMEOUT_ERROR") || limited || s.contains("UNKNOWN_BLOCK") {
+                        if transient(&s) {
                             last = eyre!("{method}: {s}");
-                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, limited)));
+                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, rate_limited(&s))));
                             continue;
                         }
                         return Err(eyre!("{method}: {}", s));
                     }
-                    return Ok(v["result"].clone());
+                    // A body with neither `result` nor `error` is not a JSON-RPC answer (a gateway's
+                    // rate-limit page, say): nothing was answered, and for a transaction nothing was sent.
+                    let Some(r) = v.get("result") else {
+                        let s = v.to_string();
+                        last = eyre!("{method}: not a JSON-RPC answer: {}", s.chars().take(200).collect::<String>());
+                        std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, rate_limited(&s))));
+                        continue;
+                    };
+                    return Ok(r.clone());
                 }
                 Err(e) => {
-                    last = eyre!("{method}: {e}");
+                    // The HTTP client's error names the URL, which may carry a key: never in a message.
+                    last = eyre!("{method}: {}", e.without_url());
                     std::thread::sleep(std::time::Duration::from_millis(800 * (attempt + 1)));
                 }
             }
@@ -420,6 +429,17 @@ pub fn block_secs(header: &Value) -> Result<u64> {
 /// turn to, a short pause, and a longer one each time every RPC has been tried: on 2026-11-08 a drill and
 /// the services shared one host, and a rate limit outlasted three RPCs tried 250 ms apart. With one RPC,
 /// a back-off (longer for a rate limit).
+/// An RPC's refusal to answer now, in any case: FastNEAR's -429, "Too Many Requests", "rate limit".
+pub fn rate_limited(s: &str) -> bool {
+    let l = s.to_ascii_lowercase();
+    s.contains("-429") || l.contains("too many requests") || l.contains("rate limit") || l.contains("rate-limit")
+}
+
+/// An RPC error worth another attempt: a rate limit, a timeout, a block the node has not seen yet.
+pub fn transient(s: &str) -> bool {
+    rate_limited(s) || s.contains("TIMEOUT_ERROR") || s.contains("UNKNOWN_BLOCK")
+}
+
 pub fn retry_pause_ms(attempt: u64, endpoints: usize, limited: bool) -> u64 {
     let n = endpoints.max(1) as u64;
     if n > 1 {
@@ -490,6 +510,18 @@ mod tests {
         assert_eq!(p, vec![250, 250, 1_500, 250, 250, 3_000, 250]);
         // One RPC: the back-off as before.
         assert_eq!((retry_pause_ms(0, 1, true), retry_pause_ms(2, 1, false)), (2_000, 2_400));
+    }
+
+    /// A rate limit is one in any case, and a timeout or an unknown block is worth another attempt; a
+    /// contract's refusal is not.
+    #[test]
+    fn transient_errors_are_told_apart() {
+        for s in [r#"{"code":-429,"message":"Rate limits exceeded"}"#, "Too Many Requests", "rate limit exceeded", "RATE LIMIT", "rate-limit exceeded",
+                  "TIMEOUT_ERROR", "UNKNOWN_BLOCK"] {
+            assert!(transient(s), "{s}");
+        }
+        assert!(!transient(r#"{"name":"HANDLER_ERROR","cause":{"name":"UNKNOWN_ACCOUNT"}}"#));
+        assert!(!transient("Smart contract panicked: not the owner"));
     }
 
     /// Cross-checked against near-api-js 5 (scripts/guardian/near_tx_vector.mjs) for the same inputs.

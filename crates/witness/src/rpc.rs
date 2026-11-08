@@ -89,7 +89,8 @@ impl Provider {
                 Err(e) => {
                     st.retries += 1;
                     drop(st);
-                    last = eyre!("{} transport: {e}", self.label);
+                    // The label, never the URL: the HTTP client's error names it, and it may carry a key.
+                    last = eyre!("{} transport: {}", self.label, e.without_url());
                     std::thread::sleep(Duration::from_millis(400 * (1 << attempt)));
                 }
             }

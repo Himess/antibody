@@ -126,6 +126,20 @@ pub fn check_bundle(bytes: &[u8], caps: &Capabilities) -> Result<BundleFile> {
     if f.senders == 0 || f.calls.is_empty() {
         return Err(eyre!("the bundle is empty: a proof has at least one sender and one call"));
     }
+    // The verifier's other caps before it runs (program.rs): senders, the endowment and the number of calls.
+    if f.senders > caps.max_senders {
+        return Err(eyre!("the bundle has {} senders, over the program's cap of {}", f.senders, caps.max_senders));
+    }
+    let wei = |s: &str| -> Option<u128> { if let Some(h) = s.strip_prefix("0x") { u128::from_str_radix(h, 16).ok() } else { s.parse().ok() } };
+    // (An endowment that is not a number fails the parse below.)
+    if let (Some(have), Some(cap)) = (wei(&f.endowment_wei), wei(&caps.max_endowment_wei)) {
+        if have > cap {
+            return Err(eyre!("the bundle's endowment of {have} wei is over the program's cap of {cap}"));
+        }
+    }
+    if f.calls.len() as u64 > caps.max_txs as u64 {
+        return Err(eyre!("the bundle has {} calls, over the program's cap of {}", f.calls.len(), caps.max_txs));
+    }
     let per_call = caps.max_gas_per_tx.min(MAX_CALL_GAS);
     let mut total = 0u64;
     for (i, c) in f.calls.iter().enumerate() {
@@ -171,7 +185,13 @@ pub fn preflight(ctx: &Ctx, program: u32, m: &Manifest, instances: u32, own: u32
     let bytes = std::fs::read(poc).map_err(|e| eyre!("{}: {e}", poc.display()))?;
     let f = check_bundle(&bytes, &m.capabilities)?;
     check_targets(&f, &m.targets, instances, own)?;
-    cmd::seal_proof(ctx, program, poc, None, None, hunter, Some(cmd::MAX_INLINE_BLOB))
+    let sealed = cmd::seal_proof(ctx, program, poc, None, None, hunter, Some(cmd::MAX_INLINE_BLOB))?;
+    // The verifier on this machine already called it invalid: on chain it would lose the bond.
+    let local = cmd::verdict_view(&sealed.local);
+    if local["kind"] == json!("InvalidPoC") {
+        return Err(eyre!("the verifier on this machine finds the proof invalid ({}): refused before anything is spent", local["reason"]));
+    }
+    Ok(sealed)
 }
 
 // ------------------------------------------------------------------------- accounts
@@ -341,8 +361,11 @@ pub fn start(ctx: &Ctx, vending: &str, name: &str, out: Option<&Path>) -> Result
         }
     }
     if let Some(out) = out {
-        let files = write_workspace(ctx, &a, &m, &program, out)
-            .map_err(|e| e.wrap_err(format!("{} is vended and recorded ({}), but its workspace was not written", a.account, dir.display())))?;
+        // On a failure the agent still learns what its account may prove; where its key is stays here.
+        let files = write_workspace(ctx, &a, &m, &program, out).map_err(|e| {
+            e.wrap_err(format!("{} is vended and recorded, but its workspace was not written; its instance is {} of {}: {}",
+                               a.account, a.instance, a.instances, targets_words(&a.targets)))
+        })?;
         let proof = out.join(PROOF_FILE);
         r["workspace"] = json!({"dir": out, "files": files});
         r["next"] = json!([
@@ -631,8 +654,9 @@ fn finish(ctx: &Ctx, a: &mut Account, dir: &Path, poc: &Path, sealed: cmd::Seale
     let p = match proved {
         Ok(p) => p,
         Err(e) => {
-            // `prove` closes the account on an error too, unless that failed: the record follows the chain.
-            if ctx.near.account(&a.account).ok().flatten().is_none() {
+            // `prove` closes the account on an error too, unless that failed: the record follows the chain,
+            // and only an answer that the account is gone closes it (an RPC error leaves the record).
+            if matches!(ctx.near.account(&a.account), Ok(None)) {
                 a.closed = true;
                 let _ = a.write(dir);
             }
@@ -946,7 +970,15 @@ mod tests {
         two["calls"] = json!([ok["calls"][0], ok["calls"][0]]);
         two["calls"][0]["gas_limit"] = json!(600_000);
         two["calls"][1]["gas_limit"] = json!(600_000);
-        assert!(check_bundle(&bundle(two), caps).unwrap_err().to_string().contains("add up to 1200000"));
+        // The practice program allows one call: two are refused on their number, as the verifier does
+        // before it runs; with two allowed, on their gas in all.
+        assert!(check_bundle(&bundle(two.clone()), caps).unwrap_err().to_string().contains("2 calls, over the program's cap of 1"));
+        let two_calls = Capabilities { max_txs: 2, ..caps.clone() };
+        assert!(check_bundle(&bundle(two), &two_calls).unwrap_err().to_string().contains("add up to 1200000"));
+        // The verifier's other pre-run caps: senders and the endowment (D12: they would be an InvalidPoC).
+        assert!(with(&|b| b["senders"] = json!(2)).contains("2 senders, over the program's cap of 1"));
+        assert!(with(&|b| b["endowment_wei"] = json!((10u128.pow(16) + 1).to_string())).contains("over the program's cap of 10000000000000000"));
+        assert!(with(&|b| b["endowment_wei"] = json!(format!("{:#x}", 10u128.pow(17)))).contains("endowment"));
         // EIP-7825's cap holds whatever a program allows.
         let loose = Capabilities { max_gas_per_tx: u64::MAX, max_total_gas: u64::MAX, ..caps.clone() };
         let mut big = ok.clone();
