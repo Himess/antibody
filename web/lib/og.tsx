@@ -25,18 +25,8 @@ export const OG = {
   ink2: "#b4b9b5",
   ink3: "#8e948f",
   line: "#2a2e31",
-  accent: "#ff6b2c",
+  accent: "#ff3f98",
   base: "#74a7ff",
   sepolia: "#4fd1c5",
 };
 
-/** The mark, for OG images: the stem in ink, the two binding sites in the accent. */
-export function OgMark({ size = 44 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M12 21.5V13.2M12 13.2L6.2 6.4M12 13.2l5.8-6.8" stroke={OG.ink} strokeWidth="2.4" strokeLinecap="round" />
-      <circle cx="5" cy="5" r="2.6" fill={OG.accent} />
-      <circle cx="19" cy="5" r="2.6" fill={OG.accent} />
-    </svg>
-  );
-}

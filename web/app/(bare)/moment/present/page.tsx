@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
-import { LogoMark } from "@/components/ui/Logo";
+import { Wordmark } from "@/components/ui/Logo";
 import { utc, wnear } from "@/lib/format";
 import { chainsWord, committer, getMoments, pausesOf, possessive, recordedMoment } from "@/lib/moment";
 import styles from "./present.module.css";
@@ -28,7 +28,7 @@ export default async function Present({ searchParams }: { searchParams: Promise<
       <div className={styles.frame}>
         <header className={styles.top}>
           <span className={styles.brand}>
-            <LogoMark size={34} /> Antibody
+            <Wordmark height={34} />
           </span>
           <span className={styles.tagline}>We don&apos;t read reports. We run them.</span>
         </header>

@@ -1,30 +1,53 @@
 /**
- * The mark: an antibody is a Y-shaped protein whose two arms bind one exact target. Two binding sites in
- * the accent, the stem in ink.
+ * The mark: an antibody (the Y) holds its antigen (the diamond) like a setting, with one constant gap all
+ * round. The arms in ink (currentColor), the antigen in the accent. Below 48 px it draws the small-size cut,
+ * whose wider gap keeps the antigen apart from the arms.
  */
-export function LogoMark({ size = 22, title }: { size?: number; title?: string }) {
+const BODY = "M51.32 108 L68.68 108 L68.68 69.08 L102.28 29.03 L95.85 21.37 L73.19 21.37 L79.62 29.03 L60 52.42 L40.38 29.03 L46.81 21.37 L24.15 21.37 L17.72 29.03 L51.32 69.08Z";
+const ANTIGEN = "M60 46.06 L74.29 29.03 L60 12 L45.71 29.03Z";
+const BODY_SMALL = "M50.7 112 L69.3 112 L69.3 74.05 L109.22 26.47 L102.25 18.16 L77.97 18.16 L84.94 26.47 L60 56.2 L35.06 26.47 L42.03 18.16 L17.75 18.16 L10.78 26.47 L50.7 74.05Z";
+const ANTIGEN_SMALL = "M60 44.94 L75.5 26.47 L60 8 L44.5 26.47Z";
+
+export function LogoMark({ size = 22, title, cut }: { size?: number; title?: string; cut?: "primary" | "small" }) {
+  const small = (cut ?? (size < 48 ? "small" : "primary")) === "small";
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
+      viewBox="0 0 120 120"
       role={title ? "img" : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}
     >
-      <path d="M12 21.5V13.2M12 13.2L6.2 6.4M12 13.2l5.8-6.8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-      <circle cx="5" cy="5" r="2.6" fill="var(--accent)" />
-      <circle cx="19" cy="5" r="2.6" fill="var(--accent)" />
+      <path d={small ? BODY_SMALL : BODY} fill="currentColor" />
+      <path d={small ? ANTIGEN_SMALL : ANTIGEN} fill="var(--accent)" />
     </svg>
   );
 }
 
-export function Wordmark() {
+/* The lockup, outlined (Instrument Sans 640, tracked -0.01 em), the mark in its small-size cut and the antigen as the i's dot. */
+const LOCKUP_VIEWBOX = "0 0 5573.8 1045.2";
+const LOCKUP_ASPECT = 5.3327;
+const LOCKUP_BODY = "M364.8 950.4 L534.8 950.4 L534.8 603.6 L899.6 168.8 L835.9 92.8 L614 92.8 L677.8 168.8 L449.8 440.4 L221.9 168.8 L285.6 92.8 L63.7 92.8 L0 168.8 L364.8 603.6Z";
+const LOCKUP_ANTIGEN = "M449.8 337.6 L591.5 168.8 L449.8 0 L308.2 168.8Z";
+const LOCKUP_WORD = "M1268 835 1530 115H1650L1407 835ZM1805 835 1562 115H1688L1950 835ZM1405 554H1803V664H1405ZM2030 835V325H2163V445H2166V835ZM2387 835V515Q2387 470 2364 448Q2341 425 2297 425Q2259 425 2229 442Q2199 459 2182 490Q2166 520 2166 561L2153 438Q2178 382 2227 349Q2277 315 2348 315Q2432 315 2477 362Q2523 409 2523 488V835ZM2849 846Q2754 846 2708 800Q2663 754 2663 662V210L2799 159V666Q2799 702 2818 720Q2838 737 2880 737Q2896 737 2909 734Q2922 731 2935 727V832Q2922 838 2899 842Q2877 846 2849 846ZM2566 430V325H2935V430ZM3011 835V325H3147V835ZM3564 845Q3491 845 3445 811Q3399 776 3389 716L3398 715V835H3265V115H3401V439L3392 437Q3404 380 3452 348Q3500 315 3572 315Q3641 315 3691 348Q3742 380 3769 439Q3797 498 3797 578Q3797 659 3768 719Q3739 779 3687 812Q3635 845 3564 845ZM3528 735Q3586 735 3621 694Q3656 653 3656 579Q3656 505 3620 465Q3585 425 3527 425Q3470 425 3434 466Q3399 506 3399 580Q3399 654 3434 695Q3470 735 3528 735ZM4123 845Q4041 845 3978 811Q3916 777 3881 717Q3847 656 3847 578Q3847 499 3882 440Q3917 381 3979 348Q4041 315 4123 315Q4206 315 4268 348Q4330 381 4364 440Q4399 499 4399 578Q4399 656 4364 717Q4330 777 4267 811Q4205 845 4123 845ZM4123 737Q4161 737 4191 718Q4222 698 4240 662Q4258 626 4258 577Q4258 504 4219 464Q4181 423 4123 423Q4065 423 4026 464Q3988 505 3988 577Q3988 626 4006 662Q4024 698 4054 718Q4085 737 4123 737ZM4848 835V721L4858 723Q4846 779 4796 812Q4747 845 4678 845Q4608 845 4556 813Q4505 780 4477 721Q4449 662 4449 582Q4449 501 4478 441Q4507 381 4559 348Q4611 315 4681 315Q4754 315 4800 350Q4847 384 4857 444L4845 445V115H4981V835ZM4719 735Q4777 735 4812 695Q4847 654 4847 580Q4847 506 4811 466Q4776 425 4717 425Q4661 425 4625 466Q4590 507 4590 581Q4590 655 4625 695Q4661 735 4719 735ZM5129 1040 5264 737 5289 697 5428 325H5572L5266 1040ZM5240 828 5037 325H5184L5352 782Z";
+const LOCKUP_IDOT = "M3078.8 95.2L3140.8 174.6L3078.8 253.9L3016.8 174.6Z";
+
+export function Wordmark({ height = 24, title }: { height?: number; title?: string }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <LogoMark />
-      <span style={{ fontWeight: 650, letterSpacing: "-0.02em", fontSize: "1.0625rem" }}>Antibody</span>
-    </span>
+    <svg
+      height={height}
+      width={Math.round(height * LOCKUP_ASPECT)}
+      viewBox={LOCKUP_VIEWBOX}
+      role={title ? "img" : undefined}
+      aria-label={title}
+      aria-hidden={title ? undefined : true}
+      style={{ display: "block" }}
+    >
+      <path d={LOCKUP_BODY} fill="currentColor" />
+      <path d={LOCKUP_ANTIGEN} fill="var(--accent)" />
+      <path d={LOCKUP_WORD} fill="currentColor" />
+      <path d={LOCKUP_IDOT} fill="var(--accent)" />
+    </svg>
   );
 }
