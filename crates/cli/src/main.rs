@@ -80,10 +80,21 @@ enum RoundCmd {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Re-run a commit at the proposed fix (permissionless; the requester pays)
+    /// Re-run a commit at the proposed fix (permissionless; the requester pays). A commit revealed inline
+    /// needs its blob passed again: from --blob, the reveal transaction (--reveal-tx) or an Antibody API
+    /// (--api); a FastFS blob needs none
     Rerun {
         #[arg(long)]
         commit: u64,
+        #[arg(long)]
+        blob: Option<PathBuf>,
+        #[arg(long)]
+        reveal_tx: Option<String>,
+        /// The reveal transaction's signer (default: the commit's hunter)
+        #[arg(long)]
+        reveal_signer: Option<String>,
+        #[arg(long)]
+        api: Option<String>,
     },
     /// Open the next round once its minimum duration and re-run window have passed (permissionless)
     Open {
@@ -1028,7 +1039,16 @@ fn run(cli: Cli) -> Result<Value> {
             std::fs::write(out, &bytes)?;
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
-        Cmd::Round { cmd: RoundCmd::Rerun { commit } } => cmd::round_rerun(&mk()?, commit),
+        Cmd::Round { cmd: RoundCmd::Rerun { commit, ref blob, ref reveal_tx, ref reveal_signer, ref api } } => {
+            let from = match (blob, reveal_tx, api) {
+                (None, None, None) => None,
+                (Some(b), None, None) => Some(cmd::BlobFrom::File(b.clone())),
+                (None, Some(h), None) => Some(cmd::BlobFrom::Tx { hash: h.clone(), signer: reveal_signer.clone() }),
+                (None, None, Some(a)) => Some(cmd::BlobFrom::Api(a.clone())),
+                _ => return Err(eyre::eyre!("pass at most one of --blob, --reveal-tx or --api")),
+            };
+            cmd::round_rerun(&mk()?, commit, from.as_ref())
+        }
         Cmd::Try { ref vending, program, ref name, ref poc, json } => {
             let ctx = mk()?;
             let (vending, program) = antibody_cli::practice::target(&ctx, vending.clone(), program)?;

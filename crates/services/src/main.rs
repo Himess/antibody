@@ -571,6 +571,11 @@ fn main() -> Result<()> {
             keeper_float, relayer_float, prover_float,
         } => {
             let dep = load_dep(&cli)?;
+            // The keeper re-runs commits revealed inline with the blob from their reveal, which this
+            // process's own API finds (cmd::round_reruns reads ANTIBODY_API). Set before any thread starts.
+            if std::env::var("ANTIBODY_API").map(|a| a.trim().is_empty()).unwrap_or(true) {
+                std::env::set_var("ANTIBODY_API", format!("http://{listen}"));
+            }
             // The floats /v1/status checks.
             let mut floats = vec![];
             for (role, acct, min) in [("keeper", keeper_account, keeper_float), ("t1-relayer", t1_account, relayer_float), ("t2-prover", t2_prover_account, prover_float)] {

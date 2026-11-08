@@ -128,7 +128,10 @@ creation: neither is part of the manifest.
 ### 3.3 Bounds
 
 `create_program` refuses a manifest unless all of the following hold.
-- Every window is within its range (`docs/api.md`).
+- Every window (`reveal`, `challenge`, `resolve`, `infra_grace`, `run_timeout`, `round_min`, `rerun_window`,
+  `exit_grace`, `disclosure_max_delay`, and `instant.window_secs`) lies between 30 s and 365 days;
+  `infra_grace` covers at least one `run_timeout`; the deadline is in the future, within a year
+  (`crates/rules/src/types.rs`, `Params::check`).
 - `max_eval_gas ≥ (max_entry_calls + 2) × invariants.gas_limit`, and the final evaluation runs with its
   own reserved `gas_limit`, outside the total.
 - Every amount is at most 2^100, so the payout arithmetic cannot overflow `u128`. A payout the escrow
@@ -523,8 +526,8 @@ round-0 manifest. near-antibody uses it for the round's check, its re-runs and t
 
 ### 8.2 Immune memory
 
-While a round is proposed, and within `rerun_window` of its T1-confirmed round check, anyone may request
-(and pay for) a `rerun`, at the proposed fix, of:
+While a round is proposed and its round check is T1-confirmed, anyone may request (and pay for) a `rerun`,
+at the proposed fix, within `rerun_window` of the check's answer (its T0 time, which T1 does not move), of:
 - every paid PoC, from any round, and every commit that ever held a key;
 - every duplicate of the round (its appeal);
 - every gap claim of the round.
@@ -801,8 +804,8 @@ The keeper is permissionless and advances everything:
 - requests the second run an above-cap verdict needs (§6.2);
 - allocates, asks for the round's pause ticket before it pays (the targets first), pays and funds the
   shortfall queue;
-- requests immune-memory re-runs;
-- opens rounds;
+- requests immune-memory re-runs once a proposal is accepted, again for any that is stuck;
+- finishes a round opening that is under way (starting one is anyone's call, `antibody round open`);
 - discloses;
 - exits.
 

@@ -1360,10 +1360,48 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
 }
 
 /// Re-runs a commit at the proposed fix (immune memory, spec §8.2). Anyone may ask; the requester pays.
-pub fn round_rerun(ctx: &Ctx, commit_id: u64) -> Result<Value> {
+/// near-antibody keeps a FastFS blob's location; an inline blob it never stored, so the request passes it
+/// again, read from `from` (a file, the reveal transaction, or an Antibody API that indexed it).
+pub fn round_rerun(ctx: &Ctx, commit_id: u64, from: Option<&BlobFrom>) -> Result<Value> {
     ensure_near_credit(ctx, &ctx.signer()?, min_near_credit())?;
-    let s = call(ctx, "request_rerun", json!({"commit_id": commit_id, "blob": null}), RUN_TGAS)?;
+    let s = match call(ctx, "request_rerun", json!({"commit_id": commit_id, "blob": null}), RUN_TGAS) {
+        Err(e) if needs_inline_blob(&e.to_string()) => {
+            let from = from.ok_or_else(|| {
+                eyre!("commit {commit_id} was revealed inline: pass its blob again (--blob, --reveal-tx or --api)")
+            })?;
+            let (_, arg) = commit_blob(ctx, &ctx.commit(commit_id)?, from)?;
+            call(ctx, "request_rerun", json!({"commit_id": commit_id, "blob": arg}), RUN_TGAS)?
+        }
+        r => r?,
+    };
     Ok(json!({"commit_id": commit_id, "run_id": run_of(&s)?, "tx": s}))
+}
+
+/// near-antibody's refusal of a request that names no blob for a commit whose blob was inline.
+fn needs_inline_blob(err: &str) -> bool {
+    err.contains("pass the commit's inline blob")
+}
+
+/// When a program's proposal was accepted (its round check answered `ok` and is T1-confirmed): the
+/// check's answer time, from which the re-run window counts. None before that.
+fn proposal_accepted_at(check_run: &Value) -> Option<u64> {
+    let a = &check_run["outcome"]["Answered"];
+    (a["tier"] == "T1" && a["facts"]["extra"]["RoundCheck"]["ok"] == json!(true)).then(|| a["at"].as_u64()).flatten()
+}
+
+/// Whether near-antibody takes another request for a commit's re-run at the proposal's round: the re-run
+/// failed, was not judged (only Violation and NoViolation are), was never answered within the run
+/// timeout, or was answered at T0 with no quote past it (engine `request_rerun`'s "stuck").
+fn rerun_stuck(run: &Value, now: u64, run_timeout: u64) -> bool {
+    let o = &run["outcome"];
+    if o.get("Failed").is_some() {
+        return true;
+    }
+    if let Some(a) = o.get("Answered") {
+        let judged = matches!(a["facts"]["kind"].as_str(), Some("Violation" | "NoViolation"));
+        return !judged || (a["tier"] == "T0" && now > a["at"].as_u64().unwrap_or(0) + run_timeout);
+    }
+    now >= run["started_at"].as_u64().unwrap_or(0) + run_timeout
 }
 
 /// Opens the next round once its minimum duration and re-run window have passed (permissionless). The
@@ -1392,16 +1430,33 @@ pub fn round_open(ctx: &Ctx, program: u32) -> Result<Value> {
 fn round_reruns(ctx: &Ctx, program: u32) -> Result<Vec<Value>> {
     let p = ctx.program(program)?;
     let Some(round) = p["proposal"]["round"].as_u64() else { return Ok(vec![]) };
+    // Only an accepted proposal takes re-runs, within its window: near-antibody refuses the rest, and a
+    // refused call still costs gas.
+    let Some(check) = p["proposal"]["check_run"].as_u64() else { return Ok(vec![]) };
+    let Some(accepted_at) = proposal_accepted_at(&ctx.view("get_run", json!({"run_id": check}))?) else { return Ok(vec![]) };
+    let now = crate::near::block_secs(&ctx.near.call("block", json!({"finality": "final"}))?["header"])?;
+    let w = &p["params"]["windows"];
+    if now > accepted_at + w["rerun_window"].as_u64().unwrap_or(0) {
+        return Ok(vec![]);
+    }
+    let run_timeout = w["run_timeout"].as_u64().unwrap_or(0);
+    // An inline blob comes from the API that indexed its reveal (the services set ANTIBODY_API to their own).
+    let from = std::env::var("ANTIBODY_API").ok().filter(|a| !a.trim().is_empty()).map(BlobFrom::Api);
     let mut steps = Vec::new();
     for c in list_commits(ctx, program)? {
         let st = state_label(&c["state"]);
         let candidate = matches!(st.as_str(), "Holder" | "Duplicate" | "GapClaim" | "Promoted" | "Done:Paid" | "Done:Exhausted");
+        // A re-run at this fix that is stuck may be requested again (a missing quote must not leave the key
+        // without a T1 re-run).
         let done = match c["rerun"].as_u64() {
-            Some(r) => ctx.view("get_run", json!({"run_id": r}))?["round"].as_u64() == Some(round),
+            Some(r) => {
+                let run = ctx.view("get_run", json!({"run_id": r}))?;
+                run["round"].as_u64() == Some(round) && !rerun_stuck(&run, now, run_timeout)
+            }
             None => false,
         };
         if candidate && !done {
-            match round_rerun(ctx, c["id"].as_u64().unwrap_or_default()) {
+            match round_rerun(ctx, c["id"].as_u64().unwrap_or_default(), from.as_ref()) {
                 Ok(r) => steps.push(json!({"rerun": c["id"], "run_id": r["run_id"]})),
                 Err(e) => steps.push(json!({"not_rerun": c["id"], "why": e.to_string()})),
             }
@@ -1970,6 +2025,42 @@ pub fn tx(ctx: &Ctx, hash: &str, signer: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A proposal takes re-runs once its round check is `ok` and T1-confirmed; its window counts from the
+    /// check's answer (`at`), which T1 does not move.
+    #[test]
+    fn a_proposal_takes_reruns_once_its_check_is_t1_ok() {
+        let run = |tier: &str, ok: bool| {
+            json!({"outcome": {"Answered": {"tier": tier, "at": 1000,
+                "facts": {"kind": "NoViolation", "extra": {"RoundCheck": {"ok": ok, "canaries_ok": true}}}}}})
+        };
+        assert_eq!(proposal_accepted_at(&run("T1", true)), Some(1000));
+        assert_eq!(proposal_accepted_at(&run("T0", true)), None, "a T0 check is not accepted yet");
+        assert_eq!(proposal_accepted_at(&run("T1", false)), None);
+        assert_eq!(proposal_accepted_at(&json!({"outcome": "Pending"})), None);
+    }
+
+    /// The same "stuck" as near-antibody's `request_rerun`: failed, unjudged, unanswered past the timeout,
+    /// or T0 with no quote past it. A T1 verdict, or a run still within its timeout, is not.
+    #[test]
+    fn a_stuck_rerun_is_told_as_near_antibody_tells_it() {
+        let answered = |tier: &str, kind: &str| {
+            json!({"started_at": 900, "outcome": {"Answered": {"tier": tier, "at": 1000, "facts": {"kind": kind}}}})
+        };
+        assert!(rerun_stuck(&json!({"started_at": 900, "outcome": {"Failed": {"reason": "x"}}}), 901, 240));
+        assert!(rerun_stuck(&answered("T1", "InfraError"), 1001, 240), "an unjudged answer");
+        assert!(!rerun_stuck(&answered("T1", "Violation"), 99_999, 240));
+        assert!(!rerun_stuck(&answered("T0", "NoViolation"), 1240, 240), "T0 within its timeout");
+        assert!(rerun_stuck(&answered("T0", "NoViolation"), 1241, 240), "T0 with no quote past it");
+        assert!(!rerun_stuck(&json!({"started_at": 900, "outcome": "Pending"}), 1139, 240));
+        assert!(rerun_stuck(&json!({"started_at": 900, "outcome": "Pending"}), 1140, 240));
+    }
+
+    #[test]
+    fn an_inline_blob_refusal_is_recognised() {
+        assert!(needs_inline_blob("Smart contract panicked: pass the commit's inline blob (from its reveal transaction)"));
+        assert!(!needs_inline_blob("Smart contract panicked: no T1-confirmed round proposal"));
+    }
 
     #[test]
     fn nep413_layout_and_a_project_key_the_same_near_key_re_derives() {
