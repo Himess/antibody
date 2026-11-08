@@ -10,4 +10,4 @@ optimizer = true
 optimizer_runs = 200
 bytecode_hash = "none"
 cbor_metadata = false
-fs_permissions = [{ access = "read-write", path = "./deployments" }, { access = "read-write", path = "../../target/demo" }, { access = "read-write", path = "../../target/live" }, { access = "read", path = "../../golden" }]
+fs_permissions = [{ access = "read-write", path = "./deployments" }, { access = "read-write", path = "../../target/demo" }, { access = "read-write", path = "../../target/live" }, { access = "read-write", path = "../../target/drill" }, { access = "read", path = "../../golden" }]
