@@ -162,10 +162,7 @@ pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Valu
     let key = Signer::generate(Some(account.clone()))?;
     // The key is kept before the vend is sent: a vend that executes while its answer is lost (a timeout)
     // leaves an account whose key is still here.
-    if let Some(dir) = key_out.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(key_out, serde_json::to_vec_pretty(&key.to_file_json())?)?;
+    crate::cmd::write_secret_json(key_out, &key.to_file_json())?;
     let call = vec![Action::FunctionCall { method: "vend".into(), args: vend_args(name, &key.public_key()), gas: VEND_TGAS * TGAS, deposit: 0 }];
     let public = public_vend_signer(vending);
     let (out, by) = match ctx.near.send(&public, vending, call.clone(), "EXECUTED_OPTIMISTIC") {

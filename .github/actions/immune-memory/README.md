@@ -138,19 +138,36 @@ It runs `antibody round state`, `round propose` and `round results`, which are n
     needs: immune # the job that ran immune-memory with manifest-out and uploaded it as `round-manifest`
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # environment: pr-check   # with a required reviewer, when the repository has writers you do not trust
+    concurrency:
+      group: antibody-program-<id>   # one proposal at a time per program
+      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: round-manifest
+          path: ${{ runner.temp }}/round   # its own folder: the action takes the manifest as one regular file
       - uses: Himess/antibody/.github/actions/immune-enclave@<commit SHA>
         with:
           program: "<the program kept for checks>"
-          manifest: round.json
+          manifest: ${{ runner.temp }}/round/round.json
           project-account: <project>.testnet
           project-key: ${{ secrets.ANTIBODY_PROPOSE_KEY }}
           bot-account: <bot>.testnet
           bot-key: ${{ secrets.ANTIBODY_BOT_KEY }}
+
+  enclave-fork:   # a fork's pull request gets no secret: a failing notice, not a skipped (green) check
+    needs: immune
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error title=Antibody immune memory::not checked in the enclave: a pull request from a fork gets no secret. A maintainer re-runs the check from a branch of this repository."
+          exit 1
 ```
+
+The action proposes with `round propose --code-only`: a manifest whose invariants differ from the current
+round's is refused before anything is sent, so a pull request can bring code, never its own rules.
 
 ## Inputs
 

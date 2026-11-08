@@ -79,6 +79,29 @@ fn write_json(path: &Path, v: &Value) -> Result<()> {
     Ok(())
 }
 
+/// A key file: readable and writable by its owner only (mode 0600 on Unix), created that way rather than
+/// narrowed after the write.
+pub fn write_secret_json(path: &Path, v: &Value) -> Result<()> {
+    if let Some(d) = path.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    use std::io::Write;
+    o.open(path)?.write_all(&serde_json::to_vec_pretty(v)?)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
 fn tx_summary(ctx: &Ctx, out: &Value) -> Value {
     let h = near::tx_hash(out);
     json!({"tx": h, "explorer": ctx.near.explorer_tx(&h), "failures": near::failures(out), "events": near::events(out)})
@@ -127,7 +150,7 @@ pub fn call(ctx: &Ctx, method: &str, args: Value, tgas: u64) -> Result<Value> {
 pub fn keygen_x25519(out: &Path) -> Result<Value> {
     let sk = blob::random32()?;
     let pk = sealed::x25519_public(sk);
-    write_json(out, &json!({"type": "x25519", "public_key": hex::encode(pk), "secret_key": hex::encode(sk)}))?;
+    write_secret_json(out, &json!({"type": "x25519", "public_key": hex::encode(pk), "secret_key": hex::encode(sk)}))?;
     Ok(json!({"public_key": hex::encode(pk), "file": out}))
 }
 
@@ -173,14 +196,14 @@ pub fn nep413_project_key(signer: &Signer, antibody: &str) -> ([u8; 32], Value) 
 pub fn keygen_x25519_nep413(ctx: &Ctx, out: &Path) -> Result<Value> {
     let (sk, nep413) = nep413_project_key(&ctx.signer()?, &ctx.dep.antibody);
     let pk = sealed::x25519_public(sk);
-    write_json(out, &json!({"type": "x25519", "public_key": hex::encode(pk), "secret_key": hex::encode(sk), "nep413": nep413}))?;
+    write_secret_json(out, &json!({"type": "x25519", "public_key": hex::encode(pk), "secret_key": hex::encode(sk), "nep413": nep413}))?;
     Ok(json!({"public_key": hex::encode(pk), "file": out, "nep413": nep413,
               "warning": "Never sign this message anywhere but the antibody CLI: whoever holds the signature can read the findings paid to you."}))
 }
 
 pub fn keygen_near(account: Option<String>, out: &Path) -> Result<Value> {
     let s = Signer::generate(account)?;
-    write_json(out, &s.to_file_json())?;
+    write_secret_json(out, &s.to_file_json())?;
     Ok(json!({"account_id": s.account_id, "public_key": s.public_key_str(), "file": out}))
 }
 
@@ -1336,12 +1359,36 @@ pub fn renumber_round(raw: &[u8], next: u32) -> Result<(Vec<u8>, Option<u32>)> {
     Ok((m.canonical(), Some(from)))
 }
 
+/// A pull-request check proposes target code only: its round keeps the current round's invariants, slot for
+/// slot and code for code. The manifest comes from a job that ran the pull request's code, and a round that
+/// adds a slot may replace the invariants code (`extends` in the TEE), so without this a pull request could
+/// bring rules that flag none of the paid proofs and read green.
+pub fn code_only(current: &Manifest, round: &Manifest) -> Result<()> {
+    if round.invariants != current.invariants {
+        return Err(eyre!(
+            "a check proposes target code only: this manifest's invariants differ from round {}'s (rules or slots changed); it was not proposed",
+            current.round
+        ));
+    }
+    Ok(())
+}
+
 pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], base_witness: Option<&Path>, wait: bool) -> Result<Value> {
+    round_propose_as(ctx, program, manifest, releases, base_witness, wait, false)
+}
+
+/// `round propose`; with `code_only` (`--code-only`, a pull-request check) the manifest must keep the current
+/// round's invariants ([`code_only`]).
+pub fn round_propose_as(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], base_witness: Option<&Path>, wait: bool, check: bool) -> Result<Value> {
     let signer = ctx.signer()?;
     let next = ctx.program(program)?["round"].as_u64().unwrap_or(0) as u32 + 1;
     let (bytes, renumbered) = renumber_round(&std::fs::read(manifest)?, next)?;
     if let Some(from) = renumbered {
         eprintln!("the manifest names round {from}, and program {program}'s next round is {next}: renumbered (a round's code does not depend on its number)");
+    }
+    if check {
+        let current = Manifest::parse(&program_manifest_at(ctx, program, next - 1)?).map_err(|e| eyre!(e))?;
+        code_only(&current, &Manifest::parse(&bytes).map_err(|e| eyre!(e))?)?;
     }
     let m: Value = serde_json::from_slice(&bytes)?;
     let sha = hex::encode(sha256(&bytes));
@@ -1912,7 +1959,7 @@ pub fn key_add(ctx: &Ctx, methods: &[String], allowance_near: f64, out: &Path) -
         "EXECUTED_OPTIMISTIC",
     )?;
     let s = ensure_ok(ctx, &res, "add_key")?;
-    write_json(out, &agent.to_file_json())?;
+    write_secret_json(out, &agent.to_file_json())?;
     Ok(json!({"account": owner.account_id, "public_key": agent.public_key_str(), "key_file": out,
               "receiver": ctx.dep.antibody, "methods": methods, "allowance_near": allowance_near, "tx": s}))
 }
@@ -1984,7 +2031,7 @@ pub fn admin_create_account(ctx: &Ctx, new_account_id: &str, amount_near: &str, 
         (Some(p), _) => (parse_pk(&p)?, None),
         (None, Some(out)) => {
             let s = Signer::generate(Some(new_account_id.to_string()))?;
-            write_json(out, &s.to_file_json())?;
+            write_secret_json(out, &s.to_file_json())?;
             (s.public_key(), Some(out.to_path_buf()))
         }
         (None, None) => return Err(eyre!("pass --public-key or --key-out")),
@@ -2082,6 +2129,40 @@ mod tests {
         assert_eq!(out, want.canonical(), "only the number changes");
         let base = std::fs::read(format!("{dir}/manifest.json")).unwrap();
         assert!(renumber_round(&base, 1).is_err());
+    }
+
+    /// A key file is created readable and writable by its owner only (Unix: mode 0600), and written whole.
+    #[test]
+    fn a_key_file_is_its_owners_alone() {
+        let dir = std::env::temp_dir().join(format!("antibody-keyfile-{}", std::process::id()));
+        let f = dir.join("k.json");
+        write_secret_json(&f, &json!({"account_id": "a.testnet", "private_key": "ed25519:x"})).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&std::fs::read(&f).unwrap()).unwrap()["account_id"], "a.testnet");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pull-request check proposes target code only: the same invariants with other code pass; changed
+    /// invariants code, or an added slot (which would let a round replace the invariants code), are refused.
+    #[test]
+    fn a_check_proposes_target_code_only() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/acme-local");
+        let current = Manifest::parse(&std::fs::read(format!("{dir}/round1/manifest.json")).unwrap()).unwrap();
+        let mut same = current.clone();
+        same.round = current.round + 1;
+        assert!(code_only(&current, &same).is_ok());
+        let mut rules = same.clone();
+        rules.invariants.runtime_code_hash = alloy_primitives::B256::repeat_byte(7);
+        assert!(code_only(&current, &rules).unwrap_err().to_string().contains("invariants differ"));
+        let mut slot = same.clone();
+        let mut extra = slot.invariants.slots[0].clone();
+        extra.bit = 60;
+        slot.invariants.slots.push(extra);
+        assert!(code_only(&current, &slot).is_err(), "an added slot is refused");
     }
 
     /// A proposal takes re-runs once its round check is `ok` and T1-confirmed; its window counts from the
