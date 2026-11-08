@@ -374,6 +374,9 @@ def judges(d):
         # Where the same claims each come with a check the reader's browser runs.
         data["site"] = f"{d.site}/judges"
         out += [f"The same claims, each with a check your browser runs: {d.site}/judges", ""]
+        # The same moment, again every day (docs/drill.md): each drill on the site, the latest on its status.
+        out += [f"The one moment runs again every day on a fresh Acme Lend, the daily drill (docs/drill.md): each drill is listed on "
+                f"{d.site}/moment, and {d.site}/status says whether the latest one passed.", ""]
 
     intro = "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key."
     out += ["## One look", "", intro, ""]
