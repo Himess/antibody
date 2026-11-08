@@ -56,6 +56,7 @@ struct RulesHost {
     memory: Option<Memory>,
     result: Vec<u8>,
     stop: Option<String>,
+    limiter: crate::exec::NoQuietGrowth,
 }
 
 /// The outcome of a view call: its value, a NEAR failure, or a reason the evaluation cannot go on.
@@ -224,8 +225,9 @@ fn link(l: &mut Linker<RulesHost>) -> Result<(), String> {
 
 /// One evaluation of the rules over `world`, with at most `budget` instructions in all.
 pub fn evaluate(env: &EvalEnv, rules: &Compiled, world: &World, budget: u64) -> Eval {
-    let host = RulesHost { env: env.clone(), world: world.clone(), memory: None, result: vec![], stop: None };
+    let host = RulesHost { env: env.clone(), world: world.clone(), memory: None, result: vec![], stop: None, limiter: crate::exec::NoQuietGrowth };
     let mut store = Store::new(&env.engine, host);
+    store.limiter(|h| &mut h.limiter);
     let fail = |why: String| Eval { mask: Err(why), instructions: 0 };
     if store.set_fuel(budget).is_err() {
         return fail("fuel metering is off".into());
