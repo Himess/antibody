@@ -12,6 +12,7 @@ pub mod judge;
 pub mod mcp;
 pub mod near;
 pub mod payable;
+pub mod pr_check;
 pub mod practice;
 pub mod strength;
 pub mod tee;
