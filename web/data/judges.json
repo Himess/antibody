@@ -88,11 +88,11 @@
  "one_look": {
   "intro": "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.",
   "setup": [
-   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
+   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
    ""
   ],
   "command": "antibody judge",
-  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs at the run; programs created since follow them (each daily drill adds one, named `Acme Lend drill <date>`).",
+  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, practice vending `practice.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs at the run; programs created since follow them: a daily drill's (`Acme Lend drill <date>`), fresh practice programs, and the program kept for pull-request checks.",
   "programs_note": "This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the others listed are earlier runs' on the same deployment. Since the run: program 4's 2 pause permits, relayed on 2026-11-07 (docs/results/relay-2026-11-07.json).",
   "contracts": [
    {
@@ -108,6 +108,11 @@
    {
     "role": "near-guardian",
     "account": "guardian.antibody.testnet",
+    "locked": true
+   },
+   {
+    "role": "practice vending",
+    "account": "practice.antibody.testnet",
     "locked": true
    },
    {
@@ -226,7 +231,7 @@
     "audit_ok": true,
     "this_run": "practice",
     "each_try": true,
-    "line": "program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0. The program is public, so its live counts include every try since this run, ours too: our checks of the site, the CLI and the release binary, a screener dry run, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on purpose; the site labels them)"
+    "line": "program 6 (Practice program — a tutorial (testnet)): phase `Open`, anchor `light-client`, 2 of 2 verdicts T1-confirmed, 2 payouts, 0 pause and 0 release permits, audit ok: true (the recorded run's practice program; tries since go to a fresh practice program, now program 13. Practice programs are public, so their live counts include every try, ours too: our checks of the site, the CLI and the release binary, screener dry runs, the measured agent runs, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on purpose; the site labels them)"
    },
    {
     "program_id": 7,
@@ -262,7 +267,7 @@
   {
    "n": 1,
    "kind": "submission",
-   "claim": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
+   "claim": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the enclave, attested on NEAR and paid in seconds under the cap",
    "check": "`antibody status --commit 13`",
    "expected": "`Violation`, tier `T1`, `Done:Paid`, paid 0.1 wNEAR",
    "evidence": "commit [CynCsx8P…](https://testnet.nearblocks.io/txns/CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP), reveal [8yEJyYXg…](https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY), pay [4W4CYBQu…](https://testnet.nearblocks.io/txns/4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ)",
@@ -1012,7 +1017,7 @@
    "n": 12,
    "kind": "practice",
    "claim": "Anyone can run the loop with no account: the practice program (a tutorial)",
-   "check": "`antibody try --name <you>` (sends testnet transactions; vending `practice.antibody.testnet`, program 10; the recorded try was on program 6)",
+   "check": "`antibody try --name <you>` (sends testnet transactions; vending `practice.antibody.testnet`, program 13; the recorded try was on program 6)",
    "expected": "`Done:Paid`, 0.001 wNEAR to the vending contract, about 44 s when the run is T1 (it paid the bond and the run), a vault of its own (each `try` gets the next free one); `<you>` is a new lowercase name (judge-1-p6, judge-2-p6 are taken); while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: 91 to 95 s on that path (docs/results/byo-2026-11-07.json). The output's `payout_path` says which",
    "evidence": "vend [2wUoCN17…](https://testnet.nearblocks.io/txns/2wUoCN17qhVnTMxFRWdwjfQJvizo4YS81DpkdurFpEC8), commit [L9wQ6bJi…](https://testnet.nearblocks.io/txns/L9wQ6bJiSore1NN2TzsnPDbLcfevZt7K5xt6AqnWtmc), reveal [7KduoN6W…](https://testnet.nearblocks.io/txns/7KduoN6WrLrkPKK6hc1NAWKMmeJqfac9MBt5oi7Ma2DH), allocate [2qYXUQQV…](https://testnet.nearblocks.io/txns/2qYXUQQVTqDg2zuyhnokZKmjLQr2M3JpAdatBPspkAKi), pay [rbhQjh9X…](https://testnet.nearblocks.io/txns/rbhQjh9XTWSwPmMQNL8PM6kmWRBoiuHmGSmCMspWGS7), close [8iVfV6ij…](https://testnet.nearblocks.io/txns/8iVfV6ijpQzW6jRUjZCxFPs844EJaDoqjEtQtf3ugT2X), reclaim [4C4sh1ah…](https://testnet.nearblocks.io/txns/4C4sh1ahZoToWt1yG92VL48xXdvyX7toYrELYVxER2Xw)",
    "commands": [
@@ -1316,6 +1321,61 @@
   },
   {
    "n": 17,
+   "kind": "immune_demo",
+   "claim": "Immune memory on pull requests, in the enclave: every paid proof of program 12 re-runs inside the enclave against a pull request's code, through near-antibody's rounds; a pull request that brings back a paid defect is red, a harmless one green (antibody-immune-demo)",
+   "check": "`antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'` (and runs 131, 136, 137–140)",
+   "expected": "run 133 (round 6, commit 56): `Violation`, slot 1 (`fees_to_treasury`), tier `T1`: PR #2 red; runs 137–140 (round 7): `NoViolation`, `T1`: PR #1 green; both round checks `ok` at T1; PR #1's manifest, built for round 6, renumbered to 7",
+   "evidence": "[PR #2's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42515848087), [PR #1's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42515852210), every run: [docs/results/immune-demo-2026-11-08.json](docs/results/immune-demo-2026-11-08.json)",
+   "commands": [
+    "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'"
+   ],
+   "links": [
+    {
+     "label": "PR #2's check",
+     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515848087"
+    },
+    {
+     "label": "PR #1's check",
+     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515852210"
+    }
+   ],
+   "live": [
+    {
+     "kind": "near-view",
+     "contract": "bounty.antibody.testnet",
+     "method": "get_run",
+     "args": {
+      "run_id": 133
+     },
+     "expect": {
+      "path": "outcome.Answered.facts.kind",
+      "equals": "Violation",
+      "says": "run 133 breaks slot 1 again: its facts are a Violation"
+     },
+     "label": "Read the re-run on NEAR",
+     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'"
+    },
+    {
+     "kind": "near-view",
+     "contract": "bounty.antibody.testnet",
+     "method": "get_run",
+     "args": {
+      "run_id": 137
+     },
+     "expect": {
+      "path": "outcome.Answered.facts.kind",
+      "equals": "NoViolation",
+      "says": "run 137, at PR #1's round, breaks nothing"
+     },
+     "label": "Read a green re-run on NEAR",
+     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":137}'"
+    }
+   ],
+   "program": 12,
+   "results": "docs/results/immune-demo-2026-11-08.json"
+  },
+  {
+   "n": 18,
    "kind": "project_read",
    "claim": "The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped",
    "check": "`antibody --account <project> program read --commit 13 --project-key <key file> --out <dir> --reveal-tx 8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY` (the wrap exists: no transaction)",
@@ -1369,7 +1429,7 @@
    "duplicate": 16
   },
   {
-   "n": 18,
+   "n": 19,
    "kind": "audit",
    "claim": "Every conservation equation balances (the ledger's both sides)",
    "check": "`antibody judge` (each program's `audit ok`, and the contract's)",
@@ -1405,7 +1465,7 @@
    ]
   },
   {
-   "n": 19,
+   "n": 20,
    "kind": "agent_runs",
    "claim": "An off-the-shelf agent (Claude Code, the v0.5.0 release binary) completes the loop over MCP: measured runs, not bug finding",
    "check": "each run's commit with `antibody status --commit <id>` (the ids are in each report)",

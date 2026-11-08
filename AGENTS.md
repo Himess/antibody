@@ -4,13 +4,13 @@
 
 These are the results of a run on NEAR testnet (`antibody-services live`) on the locked deployment, with Acme Lend on Sepolia (11155111: it verifies and pauses) and Base Sepolia (84532: it pauses): real OutLayer TEE workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls and need no account.
 
-Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified inside a TEE. An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the TEE judge it.
+Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified in the enclave (a TEE). An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.
 
 ## Start with the practice program
 
 The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:
 
-Commands are written `antibody …`: with the binary from the README's "Try it", run `./antibody …` (`.\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.
+Commands are written `antibody …`: with the binary from the README's "Try it", run `./antibody …` (`.\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.
 
 ```
 antibody try --name <you>

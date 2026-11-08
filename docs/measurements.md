@@ -81,7 +81,7 @@ Window: 244 requests from 2026-11-01 11:27 to 2026-11-02 06:17 UTC, from 28 call
 - **Method.** For latency: the block timestamps of the two receipts within one transaction tree. For
   cost: the `yNEAR charged` log of `on_execution_response`.
 
-## NEAR Chain Signatures on testnet (`v1.signer-prod.testnet`)
+## NEAR's MPC network on testnet (`v1.signer-prod.testnet`)
 
 | Metric | Value |
 |---|---|

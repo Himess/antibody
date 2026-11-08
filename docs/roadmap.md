@@ -7,16 +7,20 @@ everything else is not built yet.
    installs it:
    - *Immune memory:* every paid proof of a program re-runs against each pull request's build, and the
      check goes red if one still breaks a rule.
-   - **Prototype** ([immune.md](immune.md)): readable proofs (disclosed, published, or opened with the
+   - **Working on testnet** ([immune.md](immune.md#re-runs-in-the-enclave)): every paid proof, sealed or not,
+     re-runs inside the enclave through near-antibody's rounds (the `immune-enclave` Action), on the pull
+     requests of [the demo repository](https://github.com/Himess/antibody-immune-demo).
+   - **On the runner** ([immune.md](immune.md)): readable proofs (disclosed, published, or opened with the
      project key), re-run by the local verifier, with `antibody immune` and a GitHub Action.
-   - Next: sealed proofs re-run inside the TEE, where the result is all anyone sees.
+   - Next: a check-only proposal mode, so a pull request's check never becomes the program's next round.
    - **Prototype, not yet run on testnet** ([immune.md](immune.md#bounty-windows)): *a bounty window per pull
      request*, a fork-mode program for the pull request's build with a small escrow, announced over MCP, a
      webhook and the site. When it ends, the check reads "Held N h, X wNEAR at stake, 0 valid findings", or
      blocks the merge on valid findings.
 
    Sealed proofs never appear in public logs.
-2. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.
+2. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state. The
+   engine and the v2 binary are built and tested; nothing is deployed ([near-targets.md](near-targets.md)).
 3. T2: validity proofs of disclosed verdicts, verified on NEAR; later zk by default above a cap.
    - **Done:** the feasibility study ([zk-feasibility.md](zk-feasibility.md)). The verifier runs in SP1
      6.10.0 and reproduces the TEE's receipts in about 30 million cycles.

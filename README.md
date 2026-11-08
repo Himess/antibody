@@ -6,7 +6,7 @@
 
 **Bug bounties that pay on proof.** We don't read reports; we run them.
 
-[Live site](https://antibody-near.vercel.app) · [Recorded demo](https://antibody-near.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
+[Live site](https://antibody-near.vercel.app) · [Recorded run, replayed](https://antibody-near.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
 
 [![CI](https://github.com/Himess/antibody/actions/workflows/ci.yml/badge.svg)](https://github.com/Himess/antibody/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Himess/antibody)](https://github.com/Himess/antibody/releases/latest)
@@ -25,7 +25,8 @@ the proof is *verified in the enclave*. If a rule breaks, NEAR pays the bounty a
 Critical in the project's pause policy, once attested on NEAR, pauses the protocol on every chain the
 project registered. Nobody has to read a report.
 
-It runs on NEAR testnet today, with every contract locked.
+It runs on NEAR testnet today, with every contract locked. In the recorded run, an AI agent's critical finding was
+paid in 71.0 s and the protocol paused on both chains by 90.6 s ([The one moment](#the-one-moment)).
 
 ## Try it in two minutes
 
@@ -90,8 +91,8 @@ took. The same binary runs in Docker:
 
 1. **A project opens a program.** Before a launch or an upgrade, it commits on NEAR its rules as code, a
    payout table and an escrow.
-2. **Anyone submits a sealed proof:** a sequence of calls, with a small bond. Nobody, the project
-   included, can read it before its verdict.
+2. **Anyone submits a sealed proof:** a sequence of calls, with a small bond. Nobody outside the enclave
+   and OutLayer's keystore, the project included, can read it before its verdict.
 3. **A verifier re-runs it inside an enclave** (a TEE), on chain state proven at the program's anchor
    block, and reports which rule broke, where, and the impact.
 4. **NEAR pays automatically.** The first proof of each bug (each rule and entry point) is paid: in
@@ -185,7 +186,7 @@ Every verdict carries one of three levels. The CLI and JUDGES.md print them as T
 
 | Level | What vouches for it |
 |---|---|
-| **Verified in the enclave** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window, and above the instant cap a second OutLayer run must agree. |
+| **Verified in the enclave** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window (60 s), and above the instant cap a second OutLayer run must agree. Nobody files challenges today, so under the cap a T0 verdict is paid when its window ends ([docs/limitations.md](docs/limitations.md)). |
 | **Attested on NEAR** (`T1`) | The run's Intel TDX quote, which binds the pinned verifier, its input and its output, is verified on NEAR. Instant payouts need it. |
 | **Zero-knowledge proof** (`T2`) | An SP1 proof that re-running the verifier on the same input gives the same result, checked on NEAR by near-t2. Live on testnet since 2026-11-07, for disclosed verdicts; no payout depends on it. |
 
@@ -200,7 +201,7 @@ on your machine, and `hunt submit` seals, commits and settles your proof:
 
 ```bash
 ./antibody hunt start --name <you> --vending practice.antibody.testnet
-./antibody check --program 10 --bundle hunt-<you>/proof.bundle.json
+./antibody check --program <id> --bundle hunt-<you>/proof.bundle.json   # the program hunt start printed
 ./antibody hunt submit --name <you> --vending practice.antibody.testnet --poc hunt-<you>/proof.bundle.json
 ```
 
@@ -213,9 +214,10 @@ forfeited ([results](docs/results/byo-2026-11-07.json)).
 `antibody mcp` serves the same loop as MCP tools; `hunt_start`, `check_poc` and `hunt_submit` need no
 account. Every result is marked as untrusted data, and file access stays inside a workspace. An agent
 account is a NEAR sub-account that cannot withdraw, with a bond budget and a per-commit cap. Setup:
-[AGENTS.md](AGENTS.md). Measured on testnet (2026-11-08): Claude Code, with only these tools and the release
-binary, completed the loop in 10 of 10 runs with the tutorial proof and 6 of 6 writing the proof itself;
-every commit ended paid ([docs/agent-runs.md](docs/agent-runs.md)).
+[AGENTS.md](AGENTS.md). Measured on testnet (2026-11-08): Claude Code, with these tools and the release binary,
+took 10 of 10 runs with the tutorial proof, and 6 of 6 writing the proof itself (with file tools in its workspace),
+to a commit that ended `Done:Paid`: 7 and 3 of them within the agent's own call, the rest once the services' keeper
+settled. Practice payouts go back to the vending contract ([docs/agent-runs.md](docs/agent-runs.md)).
 
 ## For projects
 
@@ -229,14 +231,16 @@ every commit ended paid ([docs/agent-runs.md](docs/agent-runs.md)).
   ([docs/fork-mode.md](docs/fork-mode.md)).
 - **NEAR apps can act on verdicts,** like a treasury that freezes on a critical one
   ([docs/verdict-guard.md](docs/verdict-guard.md)).
-- **Immune memory on pull requests** (a prototype): a GitHub Action re-runs every paid proof it can read
-  against a pull request's build, and fails the check if one still breaks a rule
-  ([docs/immune.md](docs/immune.md)).
+- **Immune memory on pull requests:** every paid proof, sealed or not, re-runs inside the enclave against the
+  pull request's code, through near-antibody's rounds, and the check fails if one still breaks a rule. On the
+  [demo repository](https://github.com/Himess/antibody-immune-demo), the pull request that brings a paid bug
+  back is red and the harmless one green. A second check re-runs on the runner the proofs it can read, the
+  only one a fork's pull request gets ([docs/immune.md](docs/immune.md)).
 
 ## Checked and attacked
 
 - **12 settlement properties,** each a Quint invariant checked by Apalache and 20,000 random traces, and
-  replayed against the rule core near-antibody runs; **41 Kani proofs** of the payout arithmetic and every
+  replayed against the rule core near-antibody runs; **41 Kani proofs** (16 harnesses, one of them for 26 precisions) of the payout arithmetic and every
   escrow movement ([docs/properties.md](docs/properties.md)).
 - **37 findings from attacking our own system,** each fixed and pinned by a test, and what every attack
   costs the attacker ([docs/attacks.md](docs/attacks.md); threat model:
@@ -306,7 +310,8 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
   on every chain the project registered. 07 Agent Economy: agents earn on proof, through accounts that
   contain them.
 - **Built during the hackathon:** all code was written after the October 19, 2026 announcement, and the
-  commits reflect when it was written. Tags: `hackathon-start`, milestone tags, and `hackathon-submission`
+  commits reflect when it was written. The first commit is large: it holds the code written on November 1
+  and 2, as the `hackathon-start` tag's message says. Tags: `hackathon-start`, milestone tags, and `hackathon-submission`
   at submission.
 - **AI-assisted:** written with Claude Code (Claude Opus 5.5). The design, the rules and every decision on
   scope were reviewed by the team.
@@ -351,6 +356,8 @@ a decode error instead of a panic; SA-25 in [docs/attacks.md](docs/attacks.md)).
 | `crates/cli` | `antibody`: CLI, MCP server, practice, judge view, rule strength, Foundry compatibility, drafter |
 | `crates/services` | Indexer, API, keeper, relayers, notifier, monitoring, sandbox mocks, the demo |
 | `crates/zk` | Zero-knowledge proofs of disclosed verdicts (SP1): the guest program and the prover client |
+| `crates/runner` | A wasmtime host with OutLayer's engine configuration, for local wasm runs (native == wasm checks) |
+| `crates/verifier-near`, `crates/verifier-v2` | Verifier v2: a NEAR execution engine (wasmi) and the binary that adds it to v1; built and tested, not deployed ([docs/near-targets.md](docs/near-targets.md)) |
 | `contracts/near-antibody`, `near-guardian`, `near-t2`, `practice-vending`, `practice-account`, `verdict-guard` | The NEAR contracts |
 | `contracts/evm` | Acme Lend (deliberately vulnerable), its rules, proofs and fixes; the practice vaults; the adapter |
 | `web/` | The site: the one moment, programs, commits, the browser try, judges' checks, trust, status |

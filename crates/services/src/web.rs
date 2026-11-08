@@ -99,10 +99,10 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
     let answered = ev("run_answered", &verify);
     let kind_of = answered.as_ref().map(|e| e["data"]["kind"].clone()).unwrap_or(sub["verdict"].clone());
     let slots: Vec<Value> = answered.as_ref().and_then(|e| e["data"]["keys"].as_array().cloned()).unwrap_or_default().iter().map(|k| k["slot"].clone()).collect();
-    push("verified", "Verified", secs["verdict"].as_f64(), "near", near_link(answered.as_ref().and_then(|e| e["tx"].as_str().map(String::from))),
-         json!({"kind": kind_of.clone(), "slots": slots.clone(), "by": "the TEE's answer (T0), in the block that resolved the run"}));
+    push("verified", "Verified in the enclave", secs["verdict"].as_f64(), "near", near_link(answered.as_ref().and_then(|e| e["tx"].as_str().map(String::from))),
+         json!({"kind": kind_of.clone(), "slots": slots.clone(), "by": "the enclave's answer (T0), in the block that resolved the run"}));
     let t1 = ev("t1_confirmed", &verify);
-    push("t1", "T1-confirmed", secs["t1"].as_f64(), "near", near_link(t1.as_ref().and_then(|e| e["tx"].as_str().map(String::from))),
+    push("t1", "Attested on NEAR", secs["t1"].as_f64(), "near", near_link(t1.as_ref().and_then(|e| e["tx"].as_str().map(String::from))),
          json!({"by": "the run's TDX quote, verified on NEAR"}));
     // The pause is asked for (the keeper's `pause_ticket`) before the payment.
     let ticket = ev("pause_ticket", &|d: &Value| d["ticket"].as_u64() == Some(commit));

@@ -3,7 +3,7 @@
 The recorded run (`docs/results/testnet-2026-11-04.json`) proves the one moment worked on that day. A
 **drill** runs the same moment again on NEAR testnet every day, on a fresh instance of the Acme Lend
 fixture, so the system is shown to work *today* and breakage is caught before judges see it: worker
-images, DCAP collateral, the RPCs, floats, the relayer keys. The recorded run stays the hero on the site;
+images, DCAP collateral, the RPCs, floats, the relayer keys. The recorded run stays the site's main example;
 each drill that passed is listed under it, labelled "automated drill", and `/status` shows the latest
 drill, passed or not.
 

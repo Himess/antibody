@@ -67,7 +67,7 @@ jobs:
           WINDOW_KEY: ${{ secrets.ANTIBODY_WINDOW_KEY }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.event.repository.name }}
-          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-three.vercel.app' }}
+          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-near.vercel.app' }}
         run: |
           set -uo pipefail
           if [ -z "$ACCOUNT" ] || [ -z "$WINDOW_KEY" ]; then

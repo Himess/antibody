@@ -70,10 +70,9 @@ export function RecordedTries({ id = "recorded" }: { id?: string }) {
       </div>
       <div className="stack" style={{ ["--gap" as string]: "8px" }}>
         <p className="small">
-          The same try from a terminal signs the same transactions. A build of the CLI from the repository has the testnet deployment built in; it needs no account and no
-          key:
+          The same try from a terminal signs the same transactions. The release binary (the README shows how to download it and check its
+          sha256) has the testnet deployment built in; it needs no account and no key:
         </p>
-        <Command label="Build the CLI">cargo build --release -p antibody-cli</Command>
         <Command label="Try from the CLI">antibody try --name &lt;you&gt;</Command>
         <p className="xsmall muted">Once the public vend key&apos;s allowance is spent, the CLI can vend with your own testnet account instead:</p>
         <Command label="Try with your own testnet account">antibody --account &lt;your-account.testnet&gt; try --name &lt;you&gt;</Command>

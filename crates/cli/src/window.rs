@@ -33,7 +33,7 @@ use crate::{cmd, ctx::Ctx, immune, tee};
 
 pub const DEFAULT_CONFIG: &str = ".antibody/window.toml";
 /// The site whose program pages the statuses link to.
-pub const DEFAULT_SITE: &str = "https://antibody-three.vercel.app";
+pub const DEFAULT_SITE: &str = "https://antibody-near.vercel.app";
 /// The commit status every window sets on its pull request's head.
 pub const STATUS_CONTEXT: &str = "antibody/bounty-window (testnet)";
 /// GitHub keeps a commit status's description to 140 characters.

@@ -15,7 +15,7 @@ sent; "How mainnet works" (docs/mainnet.md, `/v1/mainnet`) makes view calls only
 | **Settlement** | NEAR consensus and near-antibody's code, pinned per program | `antibody judge`: code hashes and locked status; a live program's pins never change (property 12) |
 | **Permits** | The MPC network signs what near-guardian builds; each permit is for one program, one round and one chain | `AntibodyAdapter` recomputes the EIP-712 digest (a golden test pins both sides); `antibody judge` lists every permit |
 | **Blob storage** | Nothing: FastFS, checked by sha256 against the commitment | `antibody status` fetches by hash |
-| **Relayers, keeper, indexer, API, notifier** | Nothing: permissionless calls and derived data | Everything is re-derivable from NEAR views |
+| **Relayers, keeper, indexer, API, notifier** | Nothing for safety: permissionless calls and derived data. For liveness, payouts and pauses wait for someone to call them: our keeper and relayers, or anyone running `antibody keeper` | Everything is re-derivable from NEAR views |
 | **The sandbox demo** | Nothing (local): MOCK OutLayer, DCAP and MPC, TEST keys; the T1 checks on its MOCK quotes are the real code | It is a test harness |
 
 ## By actor

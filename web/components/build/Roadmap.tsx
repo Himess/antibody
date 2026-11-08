@@ -22,17 +22,20 @@ const ROADMAP: Item[] = [
     parts: [
       {
         done: true,
-        text: "A prototype: readable proofs (disclosed, published, or opened with the project key), re-run by the local verifier, with antibody immune and a GitHub Action.",
+        text: "Working on testnet: every paid proof, sealed or not, re-runs inside the enclave through near-antibody's rounds, on the demo repository's pull requests.",
       },
-      { done: false, text: "Sealed proofs re-run inside the enclave, where the result is all anyone sees." },
+      {
+        done: true,
+        text: "On the runner: readable proofs (disclosed, published, or opened with the project key), re-run by the local verifier, with antibody immune and a GitHub Action.",
+      },
       {
         done: false,
-        text: "A bounty window per pull request: a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical.",
+        text: "Built, not yet run on testnet: a bounty window per pull request, a fork-mode round for its build with a small escrow, announced to agents; when it ends, the check reads “held N hours, X at stake, 0 valid findings”, or blocks the merge on a valid Critical.",
       },
     ],
-    doc: { path: "docs/immune.md", text: "How the prototype works and what it reads" },
+    doc: { path: "docs/immune.md", text: "How the checks work and what they trust" },
   },
-  { title: "NEAR contracts as a second target VM", detail: "Proofs against NEAR wasm contracts from committed, proven state." },
+  { title: "NEAR contracts as a second target VM", detail: "Proofs against NEAR wasm contracts from committed, proven state. The engine is built and tested; nothing is deployed." },
   {
     title: "Zero-knowledge proofs of disclosed verdicts, verified on NEAR",
     detail: "Later, zk by default above a cap. A validity proof of a disclosed verdict: no privacy claim, and no payout in the locked deployment depends on it.",

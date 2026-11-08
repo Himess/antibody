@@ -31,7 +31,7 @@ CHAIN_NAMES = {11155111: "Sepolia", 84532: "Base Sepolia", 1: "Ethereum", 8453: 
 
 # What each finding of the story shows (all are planted, clearly labeled fixture bugs).
 STORY = {
-    "A (MCP)": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the TEE, T1-confirmed and paid in seconds under the cap",
+    "A (MCP)": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the enclave, attested on NEAR and paid in seconds under the cap",
     "B": "A second planted bug (the unguarded fee sweep) is verified and paid after its window",
     "C": "A prompt injection in the report earns nothing: the verifier never reads reports; NoViolation, and the bond goes to the escrow",
     "D": "A duplicate of A is recorded with its own proof, then confirmed a duplicate at the fix",
@@ -204,7 +204,7 @@ class Doc:
         return ["Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on "
                 f"Windows). Values only the run records (timings, refusals, counts) print with `{self.rec('<path>')}`, which needs Python 3 (standard "
                 "library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification "
-                "levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's "
+                "levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's "
                 "TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.", ""]
 
     def curl(self, rpc, method, params):
@@ -385,6 +385,15 @@ def practice_vending(net):
         return None
 
 
+def practice_program(net):
+    """The practice program a `try` goes to today (the deployments file's), or None."""
+    f = pathlib.Path(__file__).resolve().parents[2] / "deployments" / f"near-{net}.json"
+    try:
+        return (json.loads(f.read_text(encoding="utf-8")).get("practice") or {}).get("program")
+    except (OSError, ValueError):
+        return None
+
+
 def immune_demo(net):
     """The newest pull-request checks in the enclave on this network (docs/results/immune-demo-<date>.json, a red
     and a green check read back from near-antibody), or None."""
@@ -507,7 +516,7 @@ def judges(d):
         audit_c = (r.get("audit", {}).get("contract") or {}).get("ok")
         look["audit_ok"] = audit_c
         # The list is the run's view: a live deployment keeps adding programs (each daily drill one).
-        later = ("; programs created since follow them (each daily drill adds one, named `Acme Lend drill <date>`)" if d.live else "")
+        later = ("; programs created since follow them: a daily drill's (`Acme Lend drill <date>`), fresh practice programs, and the program kept for pull-request checks" if d.live else "")
         look["expected"] = (f"Expected (a one-screen summary; `--json` for the full record): {locked}; contract audit ok: {str(audit_c).lower()}; "
                             f"{len(progs)} programs at the run{later}.")
         out += [look["expected"]]
@@ -521,9 +530,11 @@ def judges(d):
             out += [look["programs_note"]]
         for p in progs:
             v = p.get("verdicts", {})
-            each_try = (" (each `try` adds one verdict and one payout; a try on a worker image still inside its delay stays T0. The program is public, "
-                        "so its live counts include every try since this run, ours too: our checks of the site, the CLI and the release binary, a "
-                        "screener dry run, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on purpose; the site labels them)"
+            now = practice_program(d.net)
+            each_try = ((" (the recorded run's practice program" + (f"; tries since go to a fresh practice program, now program {now}" if now and now != p.get("program_id") else "")
+                         + ". Practice programs are public, so their live counts include every try, ours too: our checks of the site, the CLI and the release "
+                         "binary, screener dry runs, the measured agent runs, and the bring-your-own-proof checks, two of which end NoViolation and InvalidPoC on "
+                         "purpose; the site labels them)")
                         if p.get("program_id") == practice.get("program_id") else "")
             line = (f"program {p.get('program_id')} ({p.get('name', '')}): phase `{p.get('phase')}`, anchor `{p.get('anchor', {}).get('status')}`, "
                     f"{v.get('t1_confirmed')} of {v.get('runs')} verdicts T1-confirmed, {len(p.get('payouts', []))} payouts, "
@@ -947,7 +958,7 @@ def agents(d):
     one = r.get("one_moment", {}).get("seconds_from_commit", {})
     vending = practice.get("vending", {}).get("vending", "practice.<root>.testnet")
     out += ["Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified "
-            "inside a TEE. An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the TEE judge it.", "",
+            "in the enclave (a TEE). An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.", "",
             "## Start with the practice program", "",
             "The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:", ""]
     out += d.flags_note()
