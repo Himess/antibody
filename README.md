@@ -101,6 +101,13 @@ took. The same binary runs in Docker:
    attested on NEAR (T1) and if its rule is in the project's pause policy. The project's fix ships only
    once every paid proof fails against it.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
+  <img src="docs/assets/architecture-light.svg" width="100%" alt="Architecture, with the five steps above: (1) a project commits its rules as code, payouts and escrow to near-antibody on NEAR testnet; (2) a hunter or AI agent commits, then reveals, a sealed proof with a bond; (3) near-antibody asks OutLayer to run the pinned verifier in an Intel TDX enclave, which returns the verdict, and the run's TDX quote is relayed to NEAR and checked by the quote verifier (T1); (4) near-antibody pays the bounty in wNEAR; (5) a critical verdict in the pause policy has near-guardian and the MPC network sign pause permits, relayed to the AntibodyAdapter that pauses Acme Lend on Sepolia and on Base Sepolia. The Ethereum light client confirms each anchor block, near-t2 verifies SP1 proofs of verdicts (T2), and the verdict guard, a NEAR app, reads verdicts.">
+</picture>
+
+Every component and the code behind it: [docs/architecture.md](docs/architecture.md).
+
 **What NEAR makes possible:**
 
 - **One contract settles everything.** near-antibody holds each program's terms and escrow, and applies
@@ -126,6 +133,32 @@ Sepolia. Counted from the block of its commit:
 | 29.1 s | The verdict attested on NEAR |
 | 71.0 s | 0.1 wNEAR paid to agent A |
 | 90.6 s | The protocol paused on both chains |
+
+Who sent what, in order (the times are from the same commit block):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent A (MCP)
+    participant N as near-antibody
+    participant O as OutLayer enclave
+    participant K as Keeper, relayers
+    participant G as near-guardian, MPC
+    participant E as Sepolia, Base Sepolia
+    A->>N: commit: the sealed proof's hash, a bond (0.0 s)
+    A->>N: reveal the sealed proof
+    N->>O: run request, pinned verifier
+    O-->>N: a critical rule broke (18.5 s)
+    K->>N: TDX quote, verified on NEAR (29.1 s)
+    K->>N: allocate the verdict
+    K->>N: pause ticket (58.3 s)
+    N->>G: issue the pause permits
+    G-->>G: the MPC network signs (62.7 s)
+    K->>N: pay
+    N-->>A: 0.1 wNEAR (71.0 s)
+    K->>E: relay the signed permits
+    E-->>E: paused: Base Sepolia 87.2 s, Sepolia 90.6 s
+```
 
 <a href="https://antibody-near.vercel.app/moment">
   <picture>

@@ -1,5 +1,8 @@
 # Architecture
 
+The README's overview diagram (`docs/assets/architecture-{light,dark}.svg`) is written by
+`python3 scripts/docs/architecture.py`; edit its layout there. Every call between the parts:
+
 ```mermaid
 flowchart LR
   subgraph Project
