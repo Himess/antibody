@@ -127,6 +127,23 @@ export interface JudgesData {
   timings: string[];
   does_not_show: string[];
   limits: { source: string; anchor: string; items: { title: string; text: string }[] };
+  /** The newest measured agent runs (docs/agent-runs/<net>-<date>/task-*), when there are any. */
+  agent_runs?: {
+    dir: string;
+    tasks: {
+      task: string;
+      line: string;
+      runs: number;
+      succeeded: number;
+      paid_on_chain: number | null;
+      seconds: { median: number | null; min: number | null; max: number | null };
+      cost_usd_total: number;
+      models: string[];
+      tools: string;
+      report: string;
+      commits: number[];
+    }[];
+  };
 }
 
 export const judges = raw as unknown as JudgesData;

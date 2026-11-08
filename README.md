@@ -173,8 +173,9 @@ with its bond forfeited, and a malformed one refused as `InvalidPoC`
 `antibody mcp` serves the same loop as MCP tools; `hunt_start`, `check_poc` and `hunt_submit` need no
 account. Every result is marked as untrusted data, and file access stays inside a workspace. An agent
 account is a NEAR sub-account that cannot withdraw, with a bond budget and a per-commit cap. Setup:
-[AGENTS.md](AGENTS.md). Measured runs of an off-the-shelf agent completing the loop:
-[docs/agent-runs.md](docs/agent-runs.md) (not run yet).
+[AGENTS.md](AGENTS.md). Measured on testnet (2026-11-08): Claude Code, with only these tools and the release
+binary, completed the loop in 10 of 10 runs with the tutorial proof and 6 of 6 writing the proof itself;
+every commit ended paid ([docs/agent-runs.md](docs/agent-runs.md)).
 
 ## For projects
 

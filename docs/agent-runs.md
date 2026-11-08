@@ -12,7 +12,9 @@ practice program, with the tutorial proof (a public, textbook bug: docs/practice
   off (`--tools ""`) and only Antibody's MCP server is configured (`--strict-mcp-config`), so the agent
   can act only through the MCP tools.
 - **A fresh workspace per run**, and a fresh practice account name.
-- **The task** is one fixed prompt: complete the loop once with the tutorial proof and report the
+- **The task** is one fixed prompt per task: (a) complete the loop once with the tutorial proof through
+  `practice_try`; (a2) write the proof yourself with `hunt_start`, check it with `check_poc`, submit it with
+  `hunt_submit` (the agent also has file tools in its workspace: Read, Grep, Glob, Write). Each reports the
   verdict, the final state and the payout.
 - **Success is read from near-antibody**, never from the agent's words: the practice account's commit
   must end `Done:Paid`.
@@ -22,11 +24,32 @@ practice program, with the tutorial proof (a public, textbook bug: docs/practice
 
 ## Results
 
-**Not run yet.** The runs need a logged-in Claude Code, and the session in this environment had expired
-when they were due. The script and the method above are ready; each run writes `REPORT.md` and its
-transcripts (`logs/run-NN.jsonl`) under `docs/agent-runs/<network>-<date>/`, which this section will
-link. In the sandbox the TEE quote is a MOCK (the T1 checks on it are the real code); a testnet run uses
-OutLayer's real TEE workers.
+**On testnet, 2026-11-08**, with the release binary (antibody 0.5.0, as judges download it) as the MCP
+server, Claude Code 2.1.319 with its default model (claude-opus-5-5), on practice program 10:
+
+| Task | Runs | Paid within the agent's own call | Paid on near-antibody, read again | Median time (paid in its call) | Agent cost |
+|---|---|---|---|---|---|
+| [a](agent-runs/testnet-2026-11-08/task-a/REPORT.md): the tutorial proof through `practice_try`, no built-in tools | 10 | 7 | 10 | 98 s | $1.86 |
+| [a2](agent-runs/testnet-2026-11-08/task-a2/REPORT.md): the agent writes the proof itself (`hunt_start`, `check_poc`, `hunt_submit`; file tools in its workspace) | 6 | 3 | 6 | 91 s | $2.47 |
+
+- **Every commit ended `Done:Paid`** (commits 38 to 53, each listed in its report with its transaction
+  links in the transcript).
+- **In task a2 every agent wrote the same correct proof**: the call that drains its own vault through
+  the unguarded `sweep`. Each checked it with `check_poc` before it submitted, and each got a T1
+  `Violation`.
+- **The six calls that did not see their payout.** These runs set `$NEAR_RPC_EXTRA` to a free dRPC
+  endpoint as the failover. The release binary also sends transactions through it, and the free plan
+  timed out four of them ("Request timeout on the free plan"): tasks a 4 and 7, and a2 2 and 3. Their
+  calls stopped after the commit and the reveal had landed. Two more calls (a 2, a2 5) returned while
+  the payout waited in the program's queue, where claims go in commit order. The services' keeper
+  settled all six as paid within minutes. Since 2026-11-08 main sends transactions on the primary RPC
+  only.
+- **What these runs measure:** completing the loop, with an off-the-shelf agent and only Antibody's
+  tools. They do not measure finding bugs: the practice program's bug and proof are public.
+
+Each report has the prompt, every run's commit, state, time, tool calls and cost, and the full
+transcripts (`logs/run-NN.jsonl`, Claude Code's stream-json, local paths replaced). Re-read a run's commit
+with `antibody status --commit <id>`.
 
 ## Bring your own agent
 
@@ -51,8 +74,8 @@ through an account the server vends it, with no NEAR account configured:
 The tools vend only from the deployment's hunt and practice vending contracts. From a terminal the same
 steps are `antibody hunt start`, `antibody check`, `antibody hunt submit` and `antibody hunt status`
 (docs/practice.md). On the practice program the agent can write the tutorial proof itself, from the
-workspace's `PROOF.md`. A run of this kind would measure an agent writing and submitting a proof; like the
-runs above, it would not measure finding bugs. None has been run yet.
+workspace's `PROOF.md`. Task a2 above measures exactly this: an agent writing and submitting a proof (not
+finding a bug).
 
 ## Reproduce
 
