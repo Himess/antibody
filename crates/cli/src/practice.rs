@@ -157,8 +157,12 @@ pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Valu
     let account = format!("{name}.{vending}");
     // A closed practice account is gone, but the vending contract keeps its name.
     if ctx.near.account(&account)?.is_some() || vault_of(ctx, vending, &account)?.is_some() {
+        if let Some(resumed) = resume_vend(ctx, vending, &account, key_out)? {
+            return Ok(resumed);
+        }
         return Err(eyre!("{account} is taken: pick another --name (a new one, lowercase)"));
     }
+    crate::progress::step(format!("vending {account} (the practice vending contract pays its bond, run and storage)"));
     let key = Signer::generate(Some(account.clone()))?;
     // The key is kept before the vend is sent: a vend that executes while its answer is lost (a timeout)
     // leaves an account whose key is still here.
@@ -178,11 +182,63 @@ pub fn vend(ctx: &Ctx, vending: &str, name: &str, key_out: &Path) -> Result<Valu
                 .map_err(|e2| eyre!("the public vend key could not call vend ({first}); calling it as {} failed too: {e2:#}", me.account_id))?;
             (out, me.account_id)
         }
+        // The public key refused (its allowance spent): nothing was sent, and the key is of no use.
+        Err(e) if vend_key_refused(&format!("{e:#}")) => {
+            let _ = std::fs::remove_file(key_out);
+            return Err(e);
+        }
         Err(e) => return Err(e),
     };
-    let s = cmd::ensure_ok(ctx, &out, "vend")?;
+    // A vend that executed and failed (the hour's cap, say) made no account: its key goes too.
+    let s = cmd::ensure_ok(ctx, &out, "vend").map_err(|e| {
+        let _ = std::fs::remove_file(key_out);
+        hourly_cap(&ctx.near, vending, name, e)
+    })?;
     let vault = vault_of(ctx, vending, &account)?.ok_or_else(|| eyre!("{vending} assigned no vault to {account}"))?;
+    crate::progress::step(format!("vended {account}: instance {vault}"));
     Ok(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": by, "tx": s}))
+}
+
+/// An account an earlier attempt with this name vended, whose key is still here (a vend that executed while
+/// its answer was lost, or a try stopped before it committed): the attempt goes on from the vend. Anything
+/// else (another key, no key, a closed account) is None, and the name stays taken.
+fn resume_vend(ctx: &Ctx, vending: &str, account: &str, key_out: &Path) -> Result<Option<Value>> {
+    let Ok(key) = crate::near::Signer::from_file(key_out) else { return Ok(None) };
+    if key.account_id != account || ctx.near.account(account)?.is_none() {
+        return Ok(None);
+    }
+    let holds = ctx
+        .near
+        .call("query", json!({"request_type": "view_access_key", "finality": "optimistic", "account_id": account, "public_key": key.public_key_str()}))
+        .is_ok_and(|r| r.get("nonce").is_some());
+    if !holds {
+        return Ok(None);
+    }
+    let Some(vault) = vault_of(ctx, vending, account)? else { return Ok(None) };
+    crate::progress::step(format!("{account} was vended by an earlier attempt, and its key is here: going on from the vend"));
+    Ok(Some(json!({"account": account, "key_file": key_out, "vault": vault, "vended_by": "an earlier attempt with this name", "resumed": true,
+                   "tx": {"explorer": null}})))
+}
+
+/// The vending contract's hourly cap, said plainly: how many accounts an hour, that nothing was spent, and the
+/// two ways on (wait, or vend with your own testnet account). Other errors pass unchanged.
+fn hourly_cap(near: &crate::near::Near, vending: &str, name: &str, e: eyre::Report) -> eyre::Report {
+    if !format!("{e:#}").contains("the hour's practice accounts are vended") {
+        return e;
+    }
+    let per_hour = vending_config(near, vending).map(|c| c.terms.per_hour.to_string()).unwrap_or_else(|_| "a few".into());
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let (at, mins) = next_hour(now);
+    eyre!(
+        "{vending} vends at most {per_hour} practice accounts an hour, and this hour's are taken. Nothing was spent and the name          is still free. The count starts again at {at} UTC (in {mins} min): run the same command then, or now with your own          testnet account: antibody --account <you>.testnet try --name {name}. The recorded tries are on the site's /moment."
+    )
+}
+
+/// The next full UTC hour after `now` (the vending contract counts its hours from block time / 3600 s), as
+/// "HH:00", and the whole minutes until it (at least 1).
+pub fn next_hour(now: u64) -> (String, u64) {
+    let next = (now / 3600 + 1) * 3600;
+    (format!("{:02}:00", (next / 3600) % 24), (next - now).div_ceil(60).max(1))
 }
 
 /// Closes a practice account with the vending contract's `reclaim`, signed by the public vend key (by
@@ -370,7 +426,8 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
               "run_id": p.run_id, "verdict": p.reveal["result"], "witness_source": p.commit["witness_source"],
               "witness_bytes": p.commit["witness_bytes"], "t1": t1, "payout_path": path, "payout": payout,
               "challenge_window_s": p.ready.challenge_s, "settle": p.settled, "state": state, "paid_raw": cmd::paid_of(&c).to_string(),
-              "beneficiary": c["beneficiary"], "closed": ctx.near.account(&account)?.is_none(), "links": links, "seconds": t0.elapsed().as_secs_f64()}))
+              "beneficiary": c["beneficiary"], "closed": ctx.near.account(&account)?.is_none(), "reclaimed_by": p.reclaim["by"], "links": links,
+              "seconds": t0.elapsed().as_secs_f64()}))
 }
 
 /// What a vended account's proof came to, from its commit to the account's close.
@@ -424,14 +481,21 @@ pub fn prove(
         Ok((done, reclaim(ctx, vending, account)?))
     };
     let tried = (|| -> Result<_> {
+        crate::progress::step("sealing the proof to the program's key, then committing its hash with the bond");
         let commit = cmd::commit_sealed(&practice, seal(&practice)?)?;
         let commit_id = commit["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {commit}"))?;
+        crate::progress::step(format!("committed: commit {commit_id}; revealing the sealed proof (the enclave verifies it)"));
         let reveal = cmd::reveal(&practice, program, commit_id, true)?;
         let run_id = reveal["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {reveal}"))?;
+        crate::progress::step(format!(
+            "verdict: {} (run {run_id}); waiting for its attestation on NEAR, or the end of the challenge window",
+            reveal["result"]["kind"].as_str().or(reveal["result"]["facts"]["kind"].as_str()).unwrap_or("answered")
+        ));
         // T1 normally arrives in seconds. When it cannot (a worker image the program does not count yet,
         // docs/runbooks/worker-images.md), the verdict stays T0 and is final once NEAR's clock passes the
         // challenge window: the try settles at whichever comes first.
         let ready = payable::wait_on_near(&practice, program, run_id)?;
+        crate::progress::step(format!("payable ({}); settling: allocate, then pay", ready.path.as_str()));
         let settled = settle(&practice, program, commit_id)?;
         Ok((commit, reveal, commit_id, run_id, ready, settled))
     })();
@@ -444,6 +508,7 @@ pub fn prove(
             return Err(e.wrap_err(closed));
         }
     };
+    crate::progress::step("settled; closing the practice account (its NEAR back to the vending contract)");
     let (close, reclaim) = close()?;
     Ok(Proved { commit, reveal, commit_id, run_id, ready, settled, close, reclaim })
 }
@@ -462,6 +527,15 @@ pub fn proof_links(ctx: &Ctx, p: &Proved) -> Vec<Value> {
     links.push(json!({"close": p.close["explorer"]}));
     links.push(json!({"reclaim": p.reclaim["explorer"]}));
     links
+}
+
+/// One transaction of a summary, with the command that shows it. A vend an earlier attempt made (the try or
+/// hunt went on from it) has no hash here: the line says so.
+pub fn tx_line(k: &str, link: &Value, signer: &str) -> String {
+    match link.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("") {
+        "" => format!("    {k:<9} (made by an earlier attempt with this name)"),
+        hash => format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"),
+    }
 }
 
 /// The payout's path in words: T1 pays at once, under the instant cap; a T0 verdict waits out the
@@ -507,9 +581,12 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
     for l in r["links"].as_array().into_iter().flatten() {
         for (k, v) in l.as_object().into_iter().flatten() {
             // The vend and the reclaim are signed by whoever called them; the rest by the practice account.
-            let signer = if k == "vend" || k == "reclaim" { r["vended_by"].as_str() } else { r["account"].as_str() }.unwrap_or("?");
-            let hash = v.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("");
-            out.push(format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"));
+            let signer = match k.as_str() {
+                "vend" => r["vended_by"].as_str(),
+                "reclaim" => r["reclaimed_by"].as_str().or(r["vended_by"].as_str()),
+                _ => r["account"].as_str(),
+            };
+            out.push(tx_line(k, v, signer.unwrap_or("?")));
         }
     }
     out.push("The full record: add --json".into());
@@ -655,6 +732,18 @@ pub fn fund(ctx: &Ctx, vending: &str, near_credit: u128, tokens: u128) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The cap's message names the next full UTC hour and the minutes until it.
+    #[test]
+    fn the_hourly_cap_says_when_it_starts_again() {
+        // 2026-11-16 09:37:10 UTC
+        let now = 1_794_821_830;
+        assert_eq!(now % 3600, 37 * 60 + 10);
+        assert_eq!(next_hour(now), ("10:00".to_string(), 23));
+        assert_eq!(next_hour(now - now % 3600), ("10:00".to_string(), 60));
+        assert_eq!(next_hour(now - now % 3600 + 3599), ("10:00".to_string(), 1));
+        assert_eq!(next_hour(1_794_873_599).0, "00:00");
+    }
 
     /// Your own account calls `vend` only when the public key itself was refused: never after a timeout,
     /// when the first vend may have gone out.

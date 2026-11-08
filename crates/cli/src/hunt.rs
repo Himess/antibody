@@ -409,8 +409,7 @@ pub fn start_summary(r: &Value) -> String {
     }
     let reclaimable = utc(r["reclaimable_after"].as_u64().unwrap_or(0));
     out.push(format!("  It stays open until you submit; anyone may reclaim it an hour after its vend, from {reclaimable}."));
-    let hash = r["vend_tx"].as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("");
-    out.push(format!("    vend      {hash}  (antibody admin tx {hash} --signer {})", s(&r["vended_by"])));
+    out.push(crate::practice::tx_line("vend", &r["vend_tx"], &s(&r["vended_by"])));
     out.push("The full record: add --json".into());
     out.join("\n")
 }
@@ -843,8 +842,7 @@ pub fn summary(r: &Value, decimals: u32, symbol: &str) -> String {
                 "reclaim" => r["reclaimed_by"].as_str().map(String::from).unwrap_or_else(|| s(&r["vended_by"])),
                 _ => s(&r["account"]),
             };
-            let hash = v.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("");
-            out.push(format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"));
+            out.push(crate::practice::tx_line(k, v, &signer));
         }
     }
     out.push(if r["closed"] == json!(true) {

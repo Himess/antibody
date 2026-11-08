@@ -14,6 +14,7 @@ pub mod near;
 pub mod payable;
 pub mod pr_check;
 pub mod practice;
+pub mod progress;
 pub mod strength;
 pub mod tee;
 pub mod window;

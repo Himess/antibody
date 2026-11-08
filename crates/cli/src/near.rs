@@ -14,6 +14,9 @@ pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const SEND_RATE_LIMIT_ATTEMPTS: u64 = 16;
 /// How long reads leave the primary alone after it answered a rate limit.
 const PRIMARY_COOL_SECS: u64 = 30;
+/// Where testnet reads go when the primary rate-limits and `$NEAR_RPC_EXTRA` is unset (set it, even empty, to
+/// choose): public RPCs that answered views without a key on 2026-11-09. Transactions never go to them.
+pub const DEFAULT_TESTNET_READ_FALLBACKS: [&str; 2] = ["https://near-testnet.drpc.org", "https://testnet-rpc.intea.rs"];
 
 #[derive(Clone)]
 pub struct Near {
@@ -198,11 +201,18 @@ impl Near {
             "mainnet" => "https://rpc.mainnet.fastnear.com".into(),
             _ => "https://rpc.testnet.fastnear.com".into(),
         });
-        // A second RPC (and a key) for the regular endpoint; archival lookups stay archival.
+        // A second RPC (and a key) for the regular endpoint; archival lookups stay archival. Unset on testnet,
+        // reads fall back to public RPCs that answered when FastNEAR's free tier rate-limited (2026-11-09):
+        // transactions still go to the primary only.
         let extra = if rpc.contains("archival") {
             vec![]
         } else {
-            std::env::var("NEAR_RPC_EXTRA").unwrap_or_default().split(',').map(str::trim).filter(|u| !u.is_empty() && *u != rpc).map(String::from).collect()
+            let list = match std::env::var("NEAR_RPC_EXTRA") {
+                Ok(v) => v,
+                Err(_) if network == "testnet" => DEFAULT_TESTNET_READ_FALLBACKS.join(","),
+                Err(_) => String::new(),
+            };
+            list.split(',').map(str::trim).filter(|u| !u.is_empty() && *u != rpc).map(String::from).collect()
         };
         let bearer = std::env::var("NEAR_RPC_API_KEY").ok().filter(|k| !k.trim().is_empty()).map(|k| k.trim().to_string());
         Self {
@@ -302,6 +312,13 @@ impl Near {
                 Ok(v) => {
                     let limited = if let Some(e) = v.get("error") {
                         let s = e.to_string();
+                        // A retired endpoint answers -429 to everything: no retry makes it answer.
+                        if deprecated(&s) {
+                            return Err(eyre!(
+                                "{method}: {} is a retired NEAR RPC ({s}). Leave out --rpc for the default, or pass another                                  provider's (docs.near.org/api/rpc/providers)",
+                                rpc_label(url)
+                            ));
+                        }
                         // Transient conditions worth a retry: a rate limit (FastNEAR answers -429, a request
                         // it refused, so a transaction was not sent) backs off longer.
                         if !transient(&s) {
@@ -482,10 +499,6 @@ pub fn block_secs(header: &Value) -> Result<u64> {
     ns.map(|n| n / 1_000_000_000).ok_or_else(|| eyre!("a block header with no timestamp: {header}"))
 }
 
-/// How long attempt `attempt` (from 0) waits after a transient error before the next. With other RPCs to
-/// turn to, a short pause, and a longer one each time every RPC has been tried: on 2026-11-08 a drill and
-/// the services shared one host, and a rate limit outlasted three RPCs tried 250 ms apart. With one RPC,
-/// a back-off (longer for a rate limit).
 /// What a message may say about an RPC (SA-31): its host and port, never its URL, whose path, query or user
 /// part may carry a key. A host with a long label, as a key in a subdomain would be, is not named either.
 pub fn rpc_label(url: &str) -> String {
@@ -506,11 +519,20 @@ pub fn rate_limited(s: &str) -> bool {
     s.contains("-429") || l.contains("too many requests") || l.contains("rate limit") || l.contains("rate-limit")
 }
 
+/// A retired endpoint's answer (rpc.testnet.near.org since 2026: "THIS ENDPOINT IS DEPRECATED", as a -429).
+pub fn deprecated(s: &str) -> bool {
+    s.contains("ENDPOINT IS DEPRECATED")
+}
+
 /// An RPC error worth another attempt: a rate limit, a timeout, a block the node has not seen yet.
 pub fn transient(s: &str) -> bool {
     rate_limited(s) || s.contains("TIMEOUT_ERROR") || s.contains("UNKNOWN_BLOCK")
 }
 
+/// How long attempt `attempt` (from 0) waits after a transient error before the next. With other RPCs to
+/// turn to, a short pause, and a longer one each time every RPC has been tried: on 2026-11-08 a drill and
+/// the services shared one host, and a rate limit outlasted three RPCs tried 250 ms apart. With one RPC,
+/// a back-off (longer for a rate limit).
 pub fn retry_pause_ms(attempt: u64, endpoints: usize, limited: bool) -> u64 {
     let n = endpoints.max(1) as u64;
     if n > 1 {
@@ -617,6 +639,14 @@ mod tests {
     }
 
     /// An RPC that cannot be reached is named, with how to use another, and its URL's key stays out.
+    /// A retired endpoint's -429 is not a rate limit to wait out.
+    #[test]
+    fn a_retired_rpc_is_said_at_once() {
+        let s = r#"{"code":-429,"message":"WARNING! THIS ENDPOINT IS DEPRECATED! STOP USING IT NOW! Switch to https://fastnear.com"}"#;
+        assert!(deprecated(s));
+        assert!(!deprecated(r#"{"code":-429,"message":"Rate limits exceeded"}"#));
+    }
+
     #[test]
     fn an_unreachable_rpc_says_which_and_how_to_change_it() {
         // Nothing listens on port 9 here: the connection is refused.

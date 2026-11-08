@@ -482,6 +482,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AdminCmd,
     },
+    /// Make a key: a NEAR ed25519 key, or a project's X25519 key (`x25519`)
     Keygen {
         #[command(subcommand)]
         kind: KeygenKind,
@@ -513,10 +514,12 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// A program: create, activate, declare known issues, open, show, top up, exit
     Program {
         #[command(subcommand)]
         cmd: ProgramCmd,
     },
+    /// List the deployment's programs (id, phase, anchor)
     Programs {
         #[arg(long, default_value_t = 0)]
         from: u32,
@@ -644,6 +647,7 @@ enum Cmd {
         #[arg(long)]
         no_wait: bool,
     },
+    /// A commit, a verification run or an account: verdict, tier, state, payout, an agent's limits
     Status {
         /// A commit: its verdict, tier, state and payout
         #[arg(long)]
@@ -731,6 +735,7 @@ enum Cmd {
         #[arg(long)]
         commit: u64,
     },
+    /// Agent accounts: register a sub-account with a budget and a per-commit cap, and give it a limited key
     Agent {
         #[command(subcommand)]
         cmd: AgentCmd,
@@ -1503,6 +1508,15 @@ fn main() {
         });
     }
     let is_mcp = matches!(cli.cmd, Cmd::Mcp { .. });
+    // Program names carry "—"; a Windows console on its default code page would print mojibake.
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::System::Console::SetConsoleOutputCP(65001);
+    }
+    // The long commands say what they wait for, on stderr (stdout stays the answer).
+    if matches!(cli.cmd, Cmd::Try { .. } | Cmd::Judge { .. } | Cmd::Hunt { cmd: HuntCmd::Start { .. } | HuntCmd::Submit { .. } }) {
+        antibody_cli::progress::enable();
+    }
     match run(cli) {
         // A command that returns text (a summary) prints it as it is.
         Ok(Value::String(s)) if !is_mcp => println!("{s}"),
