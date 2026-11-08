@@ -208,25 +208,36 @@ Action waits for the slot).
 - `round results` reads each commit's latest re-run, so query a round while it is the latest.
 
 **Measured on testnet** (2026-11-08, [Himess/antibody-immune-demo](https://github.com/Himess/antibody-immune-demo),
-program 12, three paid keys and one gap claim):
+program 12, three paid keys and one gap claim; every run and transaction:
+[docs/results/immune-demo-2026-11-08.json](results/immune-demo-2026-11-08.json)). With v0.6.0-rc.2, both pull
+requests were opened at once:
 
-| | A harmless change (PR #1) | Reintroduces a paid defect (PR #2) |
+| | Reintroduces a paid defect (PR #2) | A harmless change (PR #1) |
 |---|---|---|
-| Round and its check | round 3, run 115: `ok`, T1 16 s after the request | round 4, run 121: `ok`, T1 15 s after the request |
-| Re-runs | runs 116–119, all T1: every key fixed | runs 122–125, all T1: run 123 breaks slot 1 again (`fees_to_treasury`, high); the two `solvency` keys fixed |
-| Verdict | green | red, naming `fees_to_treasury` |
-| Every re-run answered | 141 s after the round check's request | 119 s after the round check's request |
-| Job, until its round opened | 12 min 46 s | 11 min 2 s |
+| Slot | first | second: waited for PR #2's round to open; its manifest named round 6 and was renumbered |
+| Round and its check | round 6, run 131: `ok`, T1 15 s after the request | round 7, run 136: `ok`, T1 14 s after the request |
+| Re-runs | runs 132–135, all T1: run 133 breaks slot 1 again (`fees_to_treasury`, high); the two `solvency` keys fixed | runs 137–140, all T1: every key fixed |
+| Verdict | red, naming `fees_to_treasury` | green |
+| Every re-run answered | 127 s after the round check's request | 103 s after the round check's request |
+| Job, until its round opened | 11 min 7 s | 10 min 47 s, after 11 min in the queue |
 
-PR #2's first run was proposed while PR #1 held the slot. Its manifest still named round 3, near-antibody
-refused it (run 120: "wrong round number"), and that version of the check read PR #1's round as green. The
-renumbering and the per-proposal reading above came from that run.
+The same pull requests on v0.6.0-rc.1, one at a time, gave the same verdicts (rounds 3 and 4). Run at once on
+rc.1, PR #2's manifest named round 3 after PR #1 had opened it: near-antibody refused the proposal (run 120,
+"wrong round number") and that version of the check read PR #1's round as green. The renumbering and the
+per-proposal reading came from that run.
 
 **Costs.** The project's NEAR credit paid 0.102 NEAR for 11 runs (three round checks and eight re-runs). That
 is about 0.009 NEAR a run after OutLayer's refunds, or about 0.05 NEAR for one check (its round check and four
 re-runs).
 Each run's TDX quote is relayed to NEAR separately, at about 0.018 NEAR of gas a run. The proposal's gas
-comes from its key's allowance.
+comes from its key's allowance. The bot's account pays a round's opening up front (300 Tgas, about 0.3 NEAR,
+most of it refunded); below that the round stays shut and the next check queues, with a warning.
+
+**What it does not catch.** Both halves re-run what was already paid. A new defect that no paid proof covers
+passes them, so the demo repository shows two pull requests, not three:
+- A bounty window per pull request is the half meant for new defects. It is built and tested locally, but it
+  has not run on testnet ([Bounty windows](#bounty-windows)).
+- Neither has the measured agent run on an open window.
 
 ## Bounty windows
 
