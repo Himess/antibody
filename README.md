@@ -306,13 +306,23 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
 
 ## Hackathon
 
-- **Tracks:** 06 AI Security & Defense (primary): proofs, not reports, judged in an enclave, with a pause
-  on every chain the project registered. 07 Agent Economy: agents earn on proof, through accounts that
-  contain them.
+- **Tracks:** AI Security & Defense (`security`, primary): proofs, not reports, judged in an enclave, with a
+  pause on every chain the project registered. Agent Economy (`agents`): agents earn on proof, through
+  accounts that contain them. The tracks' hints this builds on:
+  - **TEE attestation:** each run's Intel TDX quote is verified on NEAR before an instant payout (T1).
+  - **Function-call keys:** an agent's key may commit, reveal and retry, and can never withdraw or transfer.
+    A pull-request check's keys may only propose a round (`propose_round` and the manifest's upload) or open
+    one (`open_round`, `allocate`). Each practice account holds one key scoped to its own contract.
+  - **Agent security:** an agent works through a NEAR sub-account that cannot withdraw, within a bond budget
+    and a per-commit cap that count losses; a commit outside them is refused.
+  - **Agent commerce:** agents earn bounties, paid by near-antibody in wNEAR (the measured runs above).
+  - **Chain Signatures:** NEAR's MPC network signs the pause and release permits that the protocol's
+    contracts on Sepolia and Base Sepolia accept.
 - **Built during the hackathon:** all code was written after the October 19, 2026 announcement, and the
   commits reflect when it was written. The first commit is large: it holds the code written on November 1
   and 2, as the `hackathon-start` tag's message says. Tags: `hackathon-start`, milestone tags, and `hackathon-submission`
-  at submission.
+  at submission; every change since the first commit:
+  [hackathon-start...main](https://github.com/Himess/antibody/compare/hackathon-start...main).
 - **AI-assisted:** written with Claude Code (Claude Opus 5.5). The design, the rules and every decision on
   scope were reviewed by the team.
 - **Business model:** the requester pays verification at cost. Revenue is a fee on payouts and a fee per
