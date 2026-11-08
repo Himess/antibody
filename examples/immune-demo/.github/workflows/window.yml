@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ANTIBODY_VERSION: v0.6.0
+  ANTIBODY_VERSION: v0.6.1
   ANTIBODY_REPOSITORY: Himess/antibody
   FOUNDRY_VERSION: v1.8.5
   STATUS_CONTEXT: antibody/bounty-window (testnet)

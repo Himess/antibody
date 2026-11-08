@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "antibody-cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
@@ -663,6 +663,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml",
+ "windows-sys 0.59.0",
  "x25519-dalek",
 ]
 

@@ -106,6 +106,9 @@ pub fn upload(ctx: &Ctx, signer: &Signer, relative_path: &str, content: &[u8]) -
     }))
 }
 
+/// Tries for a `near-tx:` location before its archival RPC's error is the answer.
+const ARCHIVAL_TRIES: usize = 5;
+
 /// The most a fetched blob, manifest or base witness may weigh (and an archival RPC's answer carrying one).
 /// Manifests and witnesses are kilobytes; a location that serves more is refused, never buffered.
 pub const FETCH_MAX: u64 = 16 * 1024 * 1024;
@@ -145,9 +148,29 @@ pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
             "testnet" | "mainnet" => fastfs::archival_rpc(&near.network).to_string(),
             _ => near.rpc.clone(),
         };
-        let r = client.post(&rpc).json(&fastfs::tx_request(hash, signer)).send().map_err(|e| eyre!("the archival RPC: {}", e.without_url()))?;
-        let v: Value = serde_json::from_slice(&read_capped(r, FETCH_MAX)?)?;
-        return fastfs::content_from_tx_response(&v).map_err(|e| eyre!(e));
+        // A public archival RPC rate-limits and times out now and then: its answer is an error, not the
+        // transaction. A few tries, further apart each time, before saying so.
+        let mut last = String::new();
+        for attempt in 0..ARCHIVAL_TRIES {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(3 * attempt as u64));
+            }
+            let answer = client
+                .post(&rpc)
+                .json(&fastfs::tx_request(hash, signer))
+                .send()
+                .map_err(|e| eyre!("{}", e.without_url()))
+                .and_then(|r| read_capped(r, FETCH_MAX))
+                .and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| eyre!("not JSON: {e}")));
+            match answer {
+                Ok(v) if v["result"]["transaction"].is_object() => return fastfs::content_from_tx_response(&v).map_err(|e| eyre!(e)),
+                Ok(v) => last = v.get("error").map(|e| e.to_string()).unwrap_or_else(|| "no transaction in its answer".into()),
+                Err(e) => last = format!("{e:#}"),
+            }
+        }
+        return Err(eyre!(
+            "the archival RPC did not return transaction {hash} in {ARCHIVAL_TRIES} tries (its last answer: {last}). A public RPC              fails like this for a minute at a time: run the same command again"
+        ));
     }
     if let Some(p) = url.strip_prefix("file://") {
         return read_capped(std::fs::File::open(p)?, FETCH_MAX);

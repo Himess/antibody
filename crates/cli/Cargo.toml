@@ -1,8 +1,8 @@
 [package]
 name = "antibody-cli"
-description = "antibody: create programs, hunt, commit/submit sealed PoCs, verify receipts, MCP server for agents"
-# The CLI is released on its own (v0.6.0); the verifier keeps the workspace version its pinned build has.
-version = "0.6.0"
+description = "antibody: create programs, hunt, commit and submit sealed proofs, verify receipts, MCP server for agents"
+# The CLI is released on its own (v0.6.1); the verifier keeps the workspace version its pinned build has.
+version = "0.6.1"
 edition.workspace = true
 license.workspace = true
 
@@ -39,3 +39,7 @@ getrandom = "0.2"
 # tests/web_vectors.rs reads the practice base's anchor header (both are already in the lockfile)
 alloy-consensus.workspace = true
 alloy-rlp.workspace = true
+
+# A UTF-8 console on Windows (program names carry "—"); the version is already in Cargo.lock.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }

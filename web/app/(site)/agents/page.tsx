@@ -38,7 +38,7 @@ const hunterSteps: Step[] = [
         is the same program.
       </p>
     ),
-    commands: [`curl -fsSLO ${config.repo}/releases/download/v0.6.0/antibody-x86_64-unknown-linux-gnu`],
+    commands: [`curl -fsSLO ${config.repo}/releases/download/v0.6.1/antibody-x86_64-unknown-linux-gnu`],
   },
   {
     id: "cli-try",

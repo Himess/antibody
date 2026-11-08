@@ -147,6 +147,7 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
             ctx.dep.antibody, ctx.near.network
         ));
     }
+    crate::progress::step("reading the deployment's contracts (view calls only)");
     let mut contracts = vec![contract(ctx, "near-antibody", &ctx.dep.antibody)?, contract(ctx, "payout token", &ctx.dep.token)?];
     let mut signed = Vec::new();
     let mut guardian = Value::Null;
@@ -184,10 +185,35 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
             (0..n).collect()
         }
     };
-    let programs = ids.into_iter().map(|i| program(ctx, i, &signed, &t2_records)).collect::<Result<Vec<_>>>()?;
+    let programs = programs_in_parallel(ctx, &ids, &signed, &t2_records)?;
     Ok(json!({"network": ctx.near.network, "note": "view calls only: no account and no key",
               "contracts": contracts, "defaults": ctx.view("get_defaults", json!({}))?, "images": ctx.view("get_images", json!({}))?,
               "audit_contract": ctx.view("audit_contract", json!({}))?, "guardian": guardian, "verdict_guard": verdict_guard, "t2": t2, "programs": programs}))
+}
+
+/// Each program's record, four at a time (each is a few dozen view calls; a public RPC limits requests, so not
+/// more), in program order, with a progress line as each is read.
+fn programs_in_parallel(ctx: &Ctx, ids: &[u32], signed: &[Value], t2: &BTreeMap<u64, Value>) -> Result<Vec<Value>> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    crate::progress::step(format!("reading {} programs, four at a time", ids.len()));
+    let next = AtomicUsize::new(0);
+    let read = AtomicUsize::new(0);
+    let slots: Vec<std::sync::Mutex<Option<Result<Value>>>> = ids.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|s| {
+        for _ in 0..4.min(ids.len().max(1)) {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                if i >= ids.len() {
+                    break;
+                }
+                let r = program(ctx, ids[i], signed, t2);
+                let n = read.fetch_add(1, Ordering::Relaxed) + 1;
+                crate::progress::step(format!("program {} read ({n} of {})", ids[i], ids.len()));
+                *slots[i].lock().expect("program slot") = Some(r);
+            });
+        }
+    });
+    slots.into_iter().map(|m| m.into_inner().expect("program slot").unwrap_or_else(|| Err(eyre::eyre!("a program was not read")))).collect()
 }
 
 /// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
