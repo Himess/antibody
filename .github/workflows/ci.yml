@@ -201,7 +201,8 @@ jobs:
         run: cargo test --release -p antibody-verifier-near
       - name: build v2 (native and wasm32-wasip2) and the runner with OutLayer's engine configuration
         run: |
-          cargo build --release -p antibody-verifier-v2 --bin antibody-verify-v2 -p antibody-runner
+          cargo build --release -p antibody-verifier-v2 --bin antibody-verify-v2
+          cargo build --release -p antibody-runner --bin antibody-run
           cargo build --release --target wasm32-wasip2 -p antibody-verifier-v2 --bin antibody-verify-v2
       - name: v1's recorded EVM fixtures through v2, byte for byte
         run: python3 scripts/demo/check_v2_evm.py fixtures/acme-local target/release/antibody-verify-v2
