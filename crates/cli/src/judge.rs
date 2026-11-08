@@ -146,6 +146,13 @@ pub fn judge(ctx: &Ctx, only: Option<u32>) -> Result<Value> {
         signed = permits(ctx, g)?;
         guardian = json!({"config": ctx.near.view(g, "get_config", json!({}))?, "pending_permits": ctx.near.view(g, "pending_permits", json!({}))?});
     }
+    // The vending contracts are contracts of the deployment too (the README's table lists them as locked).
+    if let Some(p) = &ctx.dep.practice {
+        contracts.push(contract(ctx, "practice vending", &p.vending)?);
+    }
+    if let Some(h) = &ctx.dep.hunt {
+        contracts.push(contract(ctx, "hunt vending", &h.vending)?);
+    }
     let mut verdict_guard = Value::Null;
     if let Some(v) = &ctx.dep.verdict_guard {
         contracts.push(contract(ctx, "verdict guard", v)?);

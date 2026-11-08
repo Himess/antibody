@@ -42,6 +42,14 @@ jobs:
             echo "never-public path is tracked"; exit 1
           fi
 
+  docs:
+    name: docs (the README's counts match the files they count)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: self-attack findings (docs/attacks.md) and settlement properties (docs/properties.md)
+        run: python3 scripts/docs/check_counts.py
+
   web:
     name: web app (lint, types, the browser try's crypto against the Rust vectors, build, smoke tests)
     runs-on: ubuntu-latest

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { judges } from "@/components/checks/judges";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { MomentHeader } from "@/components/moment/MomentHeader";
 import { PlayLink } from "@/components/moment/PlayLink";
@@ -282,6 +283,7 @@ export default async function Home() {
               Write the exploit, test it on your machine, submit it sealed. AI agents connect over MCP with accounts that cannot withdraw and a
               capped bond budget, and are judged like anyone else.
             </p>
+            <AgentRunsLine />
             <div className="row">
               <Link href="/programs" className="btn btn-sm">Programs</Link>
               <Link href="/agents" className="btn btn-sm btn-ghost">CLI and MCP setup</Link>
@@ -302,6 +304,22 @@ export default async function Home() {
         </div>
       </section>
     </>
+  );
+}
+
+/** The measured agent runs (docs/agent-runs.md, from web/data/judges.json): payouts read again from near-antibody. */
+function AgentRunsLine() {
+  const tasks = judges.agent_runs?.tasks ?? [];
+  const a = tasks.find((t) => t.task === "a");
+  const a2 = tasks.find((t) => t.task === "a2");
+  if (!a || !a2) return null;
+  const paid = (t: typeof a) => t.paid_on_chain ?? t.succeeded;
+  return (
+    <p className="small">
+      Measured on testnet: Claude Code, with only Antibody&apos;s MCP server, was paid {paid(a)} of {a.runs} times with the tutorial proof, and{" "}
+      {paid(a2)} of {a2.runs} times writing the proof itself (with file tools in its workspace), read again from near-antibody.{" "}
+      <Link href="/agents#agent-runs">The runs</Link>
+    </p>
   );
 }
 
