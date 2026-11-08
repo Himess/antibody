@@ -953,18 +953,32 @@ impl Live {
         let by = Broadcaster::Key(&evm_key);
         let (w, root, forge) = (&self.a.work, &self.a.root, &self.a.forge_bin);
         let (sepolia, base) = (self.sepolia(), self.a.base_rpc.clone());
-        let ad_a = self.forge_deploy(&sepolia, "the adapter on Sepolia", || {
-            demo::deploy_adapter(root, forge, &sepolia, &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))
-        })?;
-        let ad_b = self.forge_deploy(&base, "the adapter on Base Sepolia", || {
-            demo::deploy_adapter(root, forge, &base, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))
-        })?;
+        let dep = &self.s["evm"]["acme"];
+        let proxies: Vec<String> = ["AcmeLend", "AcmeVault"].iter().map(|k| dep[*k].as_str().unwrap_or_default().to_lowercase()).collect();
+        // An attempt of this stage that deployed the adapters and then stopped (on a NEAR rate limit, say) left
+        // them on chain: deploying again at the same CREATE2 address reverts, so they are reused.
+        let ad_a = match adapter_deployed(&sepolia, &w.join("adapter-sepolia.json"), &proxies) {
+            Some(v) => {
+                println!("  the adapter on Sepolia: deployed by an earlier attempt (code, and the proxies' admin), reused");
+                v
+            }
+            None => self.forge_deploy(&sepolia, "the adapter on Sepolia", || {
+                demo::deploy_adapter(root, forge, &sepolia, &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))
+            })?,
+        };
+        let ad_b = match adapter_deployed(&base, &w.join("adapter-base-sepolia.json"), &proxies) {
+            Some(v) => {
+                println!("  the adapter on Base Sepolia: deployed by an earlier attempt (code, and the proxies' admin), reused");
+                v
+            }
+            None => self.forge_deploy(&base, "the adapter on Base Sepolia", || {
+                demo::deploy_adapter(root, forge, &base, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))
+            })?,
+        };
         let adapter = ad_a["adapter"].as_str().unwrap_or_default().to_lowercase();
         if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
             return Err(eyre!("the adapter's address differs between chains"));
         }
-        let dep = &self.s["evm"]["acme"];
-        let proxies: Vec<String> = ["AcmeLend", "AcmeVault"].iter().map(|k| dep[*k].as_str().unwrap_or_default().to_lowercase()).collect();
         let chains = json!([{"chain_id": SEPOLIA, "adapter": adapter, "proxies": proxies}, {"chain_id": BASE_SEPOLIA, "adapter": adapter, "proxies": proxies}]);
         let acme = self.ctx_of("acme");
         // The MPC credit (0.1) and the call's 100 Tgas set aside.
@@ -1850,4 +1864,26 @@ pub fn run(a: LiveArgs) -> Result<Value> {
     }
     l.stop_services();
     Ok(l.s)
+}
+
+/// An adapter an earlier attempt of the guardian stage deployed: its output file is written, its address has
+/// code, and both proxies' admin (the EIP-1967 admin slot AntibodyProxy uses) is the adapter, which the deploy
+/// script's last calls set. Anything less is None, and the stage deploys as usual.
+fn adapter_deployed(rpc: &str, out: &Path, proxies: &[String]) -> Option<Value> {
+    const ADMIN_SLOT: &str = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(out).ok()?).ok()?;
+    let adapter = v["adapter"].as_str()?.to_lowercase();
+    let evm = Evm::new(rpc);
+    let code = evm.call("eth_getCode", json!([adapter, "latest"])).ok()?;
+    if code.as_str().map_or(true, |c| c.len() <= 2) {
+        return None;
+    }
+    for proxy in proxies {
+        let word = evm.call("eth_getStorageAt", json!([proxy, ADMIN_SLOT, "latest"])).ok()?;
+        let hex = word.as_str()?.trim_start_matches("0x");
+        if hex.len() < 40 || format!("0x{}", &hex[hex.len() - 40..]).to_lowercase() != adapter {
+            return None;
+        }
+    }
+    Some(v)
 }
