@@ -57,6 +57,12 @@ inputs:
     description: "true: fail when no proof breaks a rule but the result is inconclusive (never shown as fixed)"
     required: false
     default: "true"
+  manifest-out:
+    description: >-
+      Optional. Also write the pull request's code as the program's next round manifest, at this path (relative to
+      working-directory), for the immune-enclave action's job to propose (README.md, Two halves)
+    required: false
+    default: ""
   api:
     description: Optional. An Antibody API that indexed the reveals, for blobs not committed under the mapping's `blobs`
     required: false
@@ -69,6 +75,9 @@ outputs:
   report:
     description: The JSON report's path (empty when no report was written)
     value: ${{ steps.immune.outputs.report }}
+  manifest:
+    description: The round manifest's path, when manifest-out was given and the check could write it
+    value: ${{ steps.immune.outputs.manifest }}
 
 runs:
   using: composite
@@ -133,6 +142,7 @@ runs:
         NETWORK: ${{ inputs.network }}
         STRICT: ${{ inputs.strict }}
         API: ${{ inputs.api }}
+        MANIFEST_OUT: ${{ inputs.manifest-out }}
       run: |
         set -uo pipefail
         # GitHub runs this step as `bash -eo pipefail`: errexit stays on. The binary's exit code is its verdict, so
@@ -153,9 +163,13 @@ runs:
           [ -n "$PROGRAM" ] && args+=(--program "$PROGRAM")
           [ "$STRICT" = "true" ] && args+=(--strict)
           [ -n "$API" ] && args+=(--api "$API")
+          [ -n "$MANIFEST_OUT" ] && args+=(--manifest-out "$MANIFEST_OUT")
           "$ANTIBODY" "${args[@]}" || code=$?
         fi
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        if [ -n "$MANIFEST_OUT" ] && [ -f "$MANIFEST_OUT" ]; then
+          echo "manifest=$MANIFEST_OUT" >> "$GITHUB_OUTPUT"
+        fi
         if [ -f "$json" ]; then
           echo "report=$json" >> "$GITHUB_OUTPUT"
         fi

@@ -95,6 +95,56 @@ jobs:
           project-key: ${{ secrets.ANTIBODY_PROJECT_KEY }}
 ```
 
+## Re-runs in the enclave (immune-enclave)
+
+The check above re-runs, on the runner, the paid proofs it can read. Its companion,
+[`immune-enclave`](../immune-enclave/action.yml), re-runs every paid proof inside the enclave, through
+near-antibody's rounds. Only which keys still break is published.
+1. The job with no secret writes the pull request's code as a round manifest (`manifest-out`).
+2. A job that runs none of the pull request's code proposes that manifest as the next round of a program
+   kept for pull-request checks.
+3. The keeper requests each paid proof's re-run once the round check is attested on NEAR, and the check
+   reads near-antibody.
+
+The result per paid key:
+- **still breaks:** its rule and severity, as near-antibody publishes them;
+- **fixed;**
+- **no verdict yet.**
+
+Each key also has a link to its re-run and its tier. Nothing sealed is shown.
+
+- **A program of its own.** Anyone may open a proposed round once its windows allow, so a pull request's
+  proposal on a real program could become that program's next round. Propose on a program kept for
+  checks, with paid proofs of its own: a proof is bound to its program and cannot be re-run elsewhere.
+- **One proposal at a time per program.** An accepted proposal is cleared only by opening its round. The
+  action waits for the slot (`wait-for-slot`) and says when the check queued. With `bot-account`, it opens
+  the round once the re-run window ends, so the next push gets the slot.
+- **The key is scoped.** The project's key is a function-call key limited to `propose_round` and
+  `__fastdata_fastfs` (the upload of the manifest) on near-antibody, with an allowance. The project's
+  NEAR credit at near-antibody pays each round check (0.03 NEAR), so fund it beforehand.
+- **Forks get no secret.** A pull request from a fork runs the check above only, on the proofs it can read.
+
+It runs `antibody round state`, `round propose` and `round results`, which are new in v0.6.0.
+
+```yaml
+  enclave:        # the scoped key is here, and nothing from the pull request runs
+    needs: immune # the job that ran immune-memory with manifest-out and uploaded it as `round-manifest`
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: round-manifest
+      - uses: Himess/antibody/.github/actions/immune-enclave@<commit SHA>
+        with:
+          program: "<the program kept for checks>"
+          manifest: round.json
+          project-account: <project>.testnet
+          project-key: ${{ secrets.ANTIBODY_PROPOSE_KEY }}
+          bot-account: <bot>.testnet
+          bot-key: ${{ secrets.ANTIBODY_BOT_KEY }}
+```
+
 ## Inputs
 
 | Input | Default | What |
