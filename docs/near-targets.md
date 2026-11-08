@@ -1,6 +1,6 @@
 # NEAR contracts as targets: verifier v2 (design)
 
-**Status: a design, for review. Nothing here is built or deployed yet.** Every feature below is "not yet"
+**Status: a design, reviewed on 2026-11-08 (§13). Nothing here is built or deployed yet.** Every feature below is "not yet"
 until it is merged, measured and recorded, and this page will say so feature by feature as each one lands.
 
 Today the verifier judges EVM contracts only, while NEAR settles, attests and pauses. Verifier v2 lets a
@@ -38,7 +38,7 @@ The fields near-antibody reads keep their types and meaning:
 
 | Field | For a NEAR program |
 |---|---|
-| `anchor.chain_id` | A value v2 reads as NEAR testnet (proposed: 398). It is not the light client's chain, so near-antibody labels the anchor project-attested |
+| `anchor.chain_id` | 398, which v2 reads as NEAR testnet. It is not the light client's chain, so near-antibody labels the anchor project-attested |
 | `anchor.block_number`, `anchor.block_hash` | The NEAR block whose context the run uses (fork mode), or whose state it proves (live state, §9). The hash is the block hash's 32 bytes, in hex |
 | `anchor.evm_spec` | `near` (the field is a free string; v2 reads it with the new `vm` field below and refuses a mismatch) |
 | `targets[]` | `name`; `address`, the NEAR account; `code_hash`, the lowercase hex SHA-256 of its wasm |
@@ -254,13 +254,11 @@ only. EVM programs keep v1.
 v2 programs have no T2. near-t2 pins v1's guest key and wasm hash, and has no owner. A second near-t2
 pinning a v2 guest is optional (N8): only if everything else ships.
 
-## 13. Open questions for review
+## 13. Decisions (reviewed 2026-11-08)
 
-- **The NEAR chain id value** in `anchor.chain_id` (proposed 398, for NEAR testnet).
-- **Rules granularity:** the rules run after each top-level call; per receipt would catch more, but breaks
-  on correct code.
-- **The perturbation factor (2×) and the 10% gas margin:** they trade false `Unevaluable` results against
-  gas-dependent verdicts.
-- **Floats:** are they enabled once canonicalisation passes conformance, or kept refused for the
-  hackathon?
+- **NEAR testnet's `anchor.chain_id`:** 398.
+- **Rules granularity:** after each top-level call's receipt tree, not after each receipt.
+- **Gas:** the second run with every cost doubled, and the 10% margin, as in §3.
+- **Floats:** refused (a run that executes one is `Unevaluable`) through the hackathon, whatever the
+  conformance suite shows.
 - **Pairing and BLS host functions:** refused in the first release.
