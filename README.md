@@ -294,8 +294,10 @@ list: [docs/limitations.md](docs/limitations.md).
 
 ## Roadmap
 
-- **Pull requests:** sealed proofs re-run inside the enclave, and a bounty window per pull request (the
-  immune-memory check is a prototype today).
+- **Pull requests:** working on testnet, sealed proofs re-run inside the enclave through rounds, on every
+  pull request of [the demo repository](https://github.com/Himess/antibody-immune-demo)
+  ([docs/immune.md](docs/immune.md)); built, not yet run on testnet, a bounty window per pull request; next,
+  a check-only proposal mode.
 - **Zero-knowledge by default** above a payout cap (near-t2 is live on testnet).
 - **NEAR contracts** as a second target VM.
 - **Multi-block proofs** with a bounded time warp.

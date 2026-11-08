@@ -32,6 +32,8 @@ const EIP1967_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca50
 const ACME_LEND_PROXY = "0xCa1FAFbCFC14d665d76045A018B215987f39f8A7";
 const ACME_LEND_FINAL = "74e75477af2d649ffe8037a37014dd8c7bd217a9";
 const FORK_MODE_VAULT = "0xfa35e1e99bd69719f57045409e19555f0147cf44";
+// Pull-request checks on testnet: immune memory in the enclave, on program 12 (docs/immune.md).
+const DEMO_REPO = "https://github.com/Himess/antibody-immune-demo";
 const SEPOLIA = 11155111;
 
 const steps: Step[] = [
@@ -398,19 +400,36 @@ export default function ProjectsPage() {
                 </span>
               </li>
               <li>
-                <Pill tone="info" size="sm">
-                  prototype
+                <Pill tone="ok" size="sm">
+                  testnet
                 </Pill>
                 <span>
-                  For pull requests (roadmap item 1): <code>antibody immune</code> and a GitHub Action re-run every paid proof
-                  the check can read (disclosed, published, or opened with your project key) against the pull request&apos;s build,
-                  with the local verifier, and the check goes red if one still breaks a rule (
-                  <DocLink path="docs/immune.md">docs/immune.md</DocLink>).
+                  On every pull request, in the enclave: the pull request&apos;s build is proposed as a round of a program kept for these
+                  checks, and every paid proof, sealed or not, is re-run inside the enclave. Only which keys still break is published.
+                  On the{" "}
+                  <a href={DEMO_REPO} target="_blank" rel="noreferrer noopener">
+                    demo repository
+                  </a>
+                  , a harmless change reads green and a pull request that brings back a paid defect reads red, naming the rule. How it
+                  works:{" "}
+                  <DocLink path="docs/immune.md" hash="re-runs-in-the-enclave">
+                    docs/immune.md
+                  </DocLink>
+                </span>
+              </li>
+              <li>
+                <Pill tone="info" size="sm">
+                  on the runner
+                </Pill>
+                <span>
+                  <code>antibody immune</code> and a GitHub Action re-run every paid proof the check can read (disclosed, published, or
+                  opened with your project key) against the pull request&apos;s build, with the local verifier. Pull requests from forks
+                  get this check only.
                 </span>
               </li>
               <li>
                 <NotYet>next</NotYet>
-                <span>Sealed proofs re-run inside the enclave, where the result is all anyone sees, and a bounty window per pull request.</span>
+                <span>A bounty window per pull request, built and not yet run on testnet, and a check-only proposal mode.</span>
               </li>
             </ul>
           </Claim>
