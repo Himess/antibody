@@ -428,6 +428,8 @@ export interface Moment {
   commit: { tx: string | null; explorer: string | null; block_height: number | null; block_ts_ns: number; at_utc: string | null };
   clock: string;
   notes: string[];
+  /** What is true of this run only (a drill whose reveal came late), shown with its times. */
+  run_notes?: string[];
   steps: MomentStep[];
 }
 

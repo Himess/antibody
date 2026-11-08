@@ -1,6 +1,6 @@
 import { Empty } from "@/components/ui/States";
 import { TxLink } from "@/components/ui/TxLink";
-import { getMoments, laneName, latestMoment } from "@/lib/moment";
+import { getMoments, laneName, recordedMoment } from "@/lib/moment";
 import { deployment } from "./deployment";
 import { OfflineCopy, Recorded } from "./Labels";
 import { Check } from "./Check";
@@ -9,7 +9,8 @@ import styles from "./build.module.css";
 /** The recorded pause: when it was asked for, the payment, and each chain's pause, each with its transaction. */
 export async function PauseEvidence() {
   const { data, live } = await getMoments();
-  const m = latestMoment(data);
+  // The recorded run: the API's `latest` is the newest drill, and this card shows what is recorded.
+  const m = recordedMoment(data);
   const steps = Array.isArray(m?.steps) ? m.steps : [];
   const pauses = steps.filter((s) => typeof s.chain === "string" && s.chain.startsWith("evm:")).sort((a, b) => a.seconds - b.seconds);
   if (!m || !pauses.length) return <Empty>No recorded pause to show yet.</Empty>;

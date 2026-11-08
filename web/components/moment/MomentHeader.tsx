@@ -41,6 +41,12 @@ export function MomentHeader({ moment, live, titleId, level = 2 }: { moment: Mom
           · <Link href={`/commits/${moment.commit_id}`}>Commit {moment.commit_id}</Link>
         </span>
       </p>
+      {moment.run_notes?.map((n) => (
+        <p key={n} className="small" role="note">
+          <Icon name="info" size={12} style={{ display: "inline", marginRight: 6 }} />
+          {n}
+        </p>
+      ))}
     </div>
   );
 }

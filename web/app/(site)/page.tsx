@@ -315,6 +315,12 @@ function DrillLine({ drill }: { drill: Moment }) {
       {drill.all_ok && paid
         ? `paid at ${paid.seconds.toFixed(1)} s${paused !== null ? `, every chain paused by ${paused.toFixed(1)} s` : ""}, from its commit's block.`
         : "it did not complete; its record says where it stopped."}
+      {drill.run_notes?.length ? (
+        <>
+          {" "}
+          <Link href={`/moment?run=${encodeURIComponent(drill.id)}`}>Read the note on its times</Link>.
+        </>
+      ) : null}
     </p>
   );
 }
