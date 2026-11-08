@@ -158,6 +158,19 @@ fn a_draining_call_is_a_violation_with_its_entry_point_and_impact() {
     assert_eq!(i.impact_usd, "210.00");
     assert_eq!(r.senders.len(), 1);
     assert_eq!(r.senders[0].len(), 64, "a NEAR-implicit sender");
+
+    // When ANTIBODY_WRITE_FIXTURES=1, write this program's witness (small WAT modules only) as a fixture.
+    if std::env::var("ANTIBODY_WRITE_FIXTURES").as_deref() == Ok("1") {
+        let b = bundle(&[("vault.near", "noop", vec![]), ("vault.near", "withdraw", amount(105 * NEAR))]);
+        let witness = serde_json::json!({
+            "schema": "antibody.near-witness.v1",
+            "manifest": String::from_utf8(p.manifest.clone()).unwrap(),
+            "codes": p.codes.iter().map(|c| b64(c)).collect::<Vec<_>>(),
+            "bundle": b,
+        });
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/near/vault-witness.json");
+        std::fs::write(path, serde_json::to_vec(&witness).unwrap()).unwrap();
+    }
 }
 
 #[test]

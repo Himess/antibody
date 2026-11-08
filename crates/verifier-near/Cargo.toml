@@ -10,8 +10,12 @@ path = "src/lib.rs"
 
 [dependencies]
 # The interpreter, pinned exactly (docs/near-targets.md §3). No `wat`, no memory64, no SIMD; btree collections
-# inside the interpreter, so nothing in it needs a random source.
-wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "prefer-btree-collections"] }
+# inside the interpreter, so nothing in it needs a random source. `portable-dispatch`: wasmi's loop-based
+# dispatch on every target. Without a dispatch feature wasmi 2.0.0 selects its tail-call backend
+# unconditionally, which relies on sibling-call optimization that wasm32 (no tail-call proposal) and
+# unoptimized builds do not perform: there every executed instruction grows the native stack until it
+# traps. The loop backend also makes native and wasm builds run the identical dispatch code.
+wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "prefer-btree-collections", "portable-dispatch"] }
 # The same parser wasmi 2.0.0 uses: module checks and the float rewrite (src/prepare.rs).
 wasmparser = { version = "=0.228.0", default-features = false, features = ["std", "validate", "features"] }
 serde.workspace = true
