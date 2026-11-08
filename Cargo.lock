@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "antibody-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
