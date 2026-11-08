@@ -961,7 +961,11 @@ pub fn commit_sealed(ctx: &Ctx, sp: SealedProof) -> Result<Value> {
             json!({"program_id": program, "round": round, "commitment": cm, "terms_sha256": terms}), 25, 0)?;
         let summary = ensure_ok(ctx, &out, "commit")?;
         let id = near::return_value(&out).and_then(|v| v.as_u64()).ok_or_else(|| {
-            eyre!("containment: the commit was refused (the bond is over this agent's cap or remaining budget)")
+            // Refused without a panic: near-antibody recorded a containment event (`agent_statement` counts them).
+            eyre!(
+                "containment: the commit was refused and recorded as a containment event (the bond is over this agent's cap or                  remaining budget): {}",
+                summary["explorer"].as_str().unwrap_or("(no link)")
+            )
         })?;
         (id, summary)
     } else {

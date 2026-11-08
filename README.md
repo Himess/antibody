@@ -85,9 +85,10 @@ while, and a transaction waits and goes again. `./antibody --rpc <url> judge` pi
 ```
 
 It gets a practice account, seals the public tutorial proof, commits and reveals it, and settles it,
-printing each step as it happens and a link for every transaction at the end. It ends `Done:Paid` in one
-to three minutes when the run is attested on NEAR: 43.7 s and 39.9 s in the recorded run, 36.4 s and 44.4 s
-on 2026-11-08's fresh practice program, about three minutes when the public RPC rate-limits. While new
+printing each step as it happens and a link for every transaction at the end. It ends `Done:Paid` in about
+a minute when the run is attested on NEAR: 43.7 s and 39.9 s in the recorded run, 36.4 s, 44.4 s and 44.6 s
+on the fresh practice program (2026-11-08 and 09); a busy public RPC can stretch that, and every step prints
+as it goes. While new
 worker images wait their two-day delay, the payout waits the program's 60 s challenge window instead (91 to
 95 s for the paid runs in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output
 says which path it took.
