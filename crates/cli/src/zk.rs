@@ -147,8 +147,14 @@ fn content_key(ctx: &Ctx, run: &Value, program_key: &str, hunter: &str, given: O
             return Ok((parse(k)?, "the hunter's record"));
         }
     }
-    if ctx.dep.practice.as_ref().map(|p| p.program as u64) == run["program"].as_u64() {
-        return Ok((blob::practice_content_key(program_key, hunter), "a practice try's public key"));
+    // A practice try's key is public: on the deployments file's practice program, or on the one the vending
+    // contract names now (its owner points it at a fresh program when the vaults run out; the T2 prover picks
+    // that program's runs).
+    if let Some(p) = ctx.dep.practice.as_ref() {
+        let now = crate::practice::vending_program(&ctx.near, &p.vending).ok();
+        if [Some(p.program), now].iter().flatten().any(|&id| Some(id as u64) == run["program"].as_u64()) {
+            return Ok((blob::practice_content_key(program_key, hunter), "a practice try's public key"));
+        }
     }
     Err(eyre!("no content key for run {}: a disclosed proof's key is published with it (--key <hex>)", run["id"]))
 }

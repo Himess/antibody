@@ -160,7 +160,7 @@ on your machine, and `hunt submit` seals, commits and settles your proof:
 
 ```bash
 ./antibody hunt start --name <you> --vending practice.antibody.testnet
-./antibody check --program 6 --bundle hunt-<you>/proof.bundle.json
+./antibody check --program 10 --bundle hunt-<you>/proof.bundle.json
 ./antibody hunt submit --name <you> --vending practice.antibody.testnet --poc hunt-<you>/proof.bundle.json
 ```
 

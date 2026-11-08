@@ -6,7 +6,7 @@
   "network": "testnet",
   "outlayer": "outlayer.testnet",
   "practice": {
-    "program": 6,
+    "program": 10,
     "vending": "practice.antibody.testnet"
   },
   "release": {
