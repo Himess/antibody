@@ -376,6 +376,33 @@ def agent_runs(net):
     return {"dir": f"docs/agent-runs/{dirs[-1].name}", "tasks": tasks, "binary": ", ".join(binaries) or None}
 
 
+def practice_vending(net):
+    """The practice vending contract the deployments file names (`judge` lists it), or None."""
+    f = pathlib.Path(__file__).resolve().parents[2] / "deployments" / f"near-{net}.json"
+    try:
+        return (json.loads(f.read_text(encoding="utf-8")).get("practice") or {}).get("vending")
+    except (OSError, ValueError):
+        return None
+
+
+def immune_demo(net):
+    """The newest pull-request checks in the enclave on this network (docs/results/immune-demo-<date>.json, a red
+    and a green check read back from near-antibody), or None."""
+    base = pathlib.Path(__file__).resolve().parents[2] / "docs" / "results"
+    files = sorted(base.glob("immune-demo-*.json"))
+    if not files:
+        return None
+    try:
+        im = json.loads(files[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if im.get("network") != net or not any(c.get("verdict") == "red" for c in im.get("checks", [])) \
+            or not any(c.get("verdict") == "green" and c.get("renumbered_from") for c in im.get("checks", [])):
+        return None
+    im["file"] = f"docs/results/{files[-1].name}"
+    return im
+
+
 def agent_runs_lines(runs):
     """One line per task of the measured agent runs: what the agent had, how many runs ended paid, the median."""
     lines = []
@@ -463,6 +490,11 @@ def judges(d):
     if j:
         locked = ", ".join(f"{c['role']} `{c['account']}` locked: {str(c.get('locked')).lower()}" for c in j.get("contracts", []))
         look["contracts"] = [{"role": c.get("role"), "account": c.get("account"), "locked": c.get("locked")} for c in j.get("contracts", [])]
+        # Since v0.6.0 `judge` also reads the practice vending contract's keys (locked: no full-access key).
+        vend = practice_vending(d.net)
+        if vend and not any(c.get("role") == "practice vending" for c in j.get("contracts", [])):
+            locked += f", practice vending `{vend}` locked: true"
+            look["contracts"].append({"role": "practice vending", "account": vend, "locked": True})
         vg = r.get("verdict_consumer") or {}
         if vg.get("contract") and not any(c.get("role") == "verdict guard" for c in j.get("contracts", [])):
             # Deployed after the run's judge view: today's `judge` lists it too.
@@ -700,6 +732,31 @@ def judges(d):
             f"honest run {sub[0].get('run_id')} `{sub[0]['record'].get('outcome')}`; "
             f"lying TEE's run {sub[-1].get('run_id')} `{sub[-1]['record'].get('outcome')}` ({', '.join(sub[-1]['record'].get('differ') or [])} differ); a tampered proof refused: `{str(nt.get('tampered_refused')).lower()}`",
             "-", "t2", [cmd])
+    im = immune_demo(d.net)
+    if im:
+        # Pull-request checks in the enclave (docs/immune.md): the demo repository's red and green checks on the
+        # latest release candidate, each re-run read back from near-antibody (docs/results/immune-demo-*.json).
+        n += 1
+        red = next(c for c in im["checks"] if c.get("verdict") == "red")
+        green = next(c for c in im["checks"] if c.get("verdict") == "green")
+        brk = red["still_breaks"][0]
+        rerun = brk["rerun_run"]
+        greens = [x["run"] for x in green["reruns"]]
+        cmd = d.cli(f"view --contract {contract} --method get_run --args '{{\"run_id\":{rerun}}}'")
+        row(n, f"Immune memory on pull requests, in the enclave: every paid proof of program {im['program']['id']} re-runs inside the enclave against a pull request's code, "
+               f"through near-antibody's rounds; a pull request that brings back a paid defect is red, a harmless one green ({im['repository'].rsplit('/', 1)[-1]})",
+            f"`{cmd}` (and runs {red['round_check']['run']}, {green['round_check']['run']}, {greens[0]}–{greens[-1]})",
+            f"run {rerun} (round {red['round']}, commit {brk['commit']}): `Violation`, slot {brk['slot']} (`{brk['rule']}`), tier `T1`: PR #{red['pull_request']} red; "
+            f"runs {greens[0]}–{greens[-1]} (round {green['round']}): `NoViolation`, `T1`: PR #{green['pull_request']} green; both round checks `ok` at T1; "
+            f"PR #{green['pull_request']}'s manifest, built for round {green['renumbered_from']}, renumbered to {green['round']}",
+            f"[PR #{red['pull_request']}'s check]({red['workflow_run']}), [PR #{green['pull_request']}'s check]({green['workflow_run']}), every run: [{im['file']}]({im['file']})",
+            "immune_demo", [cmd],
+            [{"label": f"PR #{red['pull_request']}'s check", "url": red["workflow_run"]}, {"label": f"PR #{green['pull_request']}'s check", "url": green["workflow_run"]}],
+            [d.check_view(contract, "get_run", {"run_id": rerun}, f"run {rerun} breaks slot {brk['slot']} again: its facts are a Violation", "Read the re-run on NEAR",
+                          path="outcome.Answered.facts.kind", equals="Violation"),
+             d.check_view(contract, "get_run", {"run_id": greens[0]}, f"run {greens[0]}, at PR #{green['pull_request']}'s round, breaks nothing", "Read a green re-run on NEAR",
+                          path="outcome.Answered.facts.kind", equals="NoViolation")],
+            program=im["program"]["id"], results=im["file"])
     pr = r.get("project_read", {})
     if pr:
         n += 1

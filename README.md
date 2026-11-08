@@ -35,7 +35,7 @@ The release binary has the testnet deployment built in: no repository, no accoun
 
 ```bash
 # Linux x86_64
-V=v0.5.1; F=antibody-x86_64-unknown-linux-gnu
+V=v0.6.0; F=antibody-x86_64-unknown-linux-gnu
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -43,7 +43,7 @@ sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```bash
 # macOS (Apple silicon)
-V=v0.5.1; F=antibody-aarch64-apple-darwin
+V=v0.6.0; F=antibody-aarch64-apple-darwin
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -52,7 +52,7 @@ shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```powershell
 # Windows x86_64 (PowerShell): prints OK, or MISMATCH (then delete antibody.exe and download it again)
-$V="v0.5.1"; $U="https://github.com/Himess/antibody/releases/download/$V"
+$V="v0.6.0"; $U="https://github.com/Himess/antibody/releases/download/$V"
 Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.exe" -OutFile antibody.exe -UseBasicParsing
 Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.sha256" -OutFile antibody.sha256 -UseBasicParsing
 if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
@@ -84,7 +84,7 @@ a link for every transaction. It ends `Done:Paid` in about a minute when the run
 waits the program's 60 s challenge window instead: about a minute and a half (91 to 95 s for the paid runs
 in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output says which path it
 took. The same binary runs in Docker:
-`docker run --rm ghcr.io/himess/antibody:v0.5.1 judge`.
+`docker run --rm ghcr.io/himess/antibody:v0.6.0 judge`.
 
 ## How it works
 
@@ -275,13 +275,8 @@ On NEAR testnet, every contract locked (no full-access keys):
 
 Code hashes, the verifier build and the source commit are pinned in
 [deployments/near-testnet.json](deployments/near-testnet.json); `./antibody judge` reads them live for every
-contract above but the practice vending contract. Its keys, one RPC call: a single function-call key
-(`vend` and `reclaim`, the public vend key) and no full-access key.
-
-```bash
-curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query",
-  "params":{"request_type":"view_access_key_list","finality":"final","account_id":"practice.antibody.testnet"}}'
-```
+contract above. The practice vending contract counts as locked when its only key is the public vend key, a
+function-call key limited to `vend` and `reclaim`.
 
 Full table: [docs/deployment.md](docs/deployment.md).
 
