@@ -164,7 +164,7 @@ impl Drill {
     /// fixture at fresh CREATE2 addresses without touching contracts/.
     fn deployer(&self) -> Result<EvmSigner> {
         let base = EvmSigner::from_hex(&self.base_evm_key()?)?;
-        base.derive(format!("drill-{}", self.date).as_bytes())
+        base.derive(deployer_label(&self.date, self.s["evm_attempt"].as_u64().unwrap_or(0)).as_bytes())
     }
 
     fn base_evm_key(&self) -> Result<String> {
@@ -303,7 +303,32 @@ impl Drill {
 
     /// A fresh Acme Lend on both chains, deployed by the per-drill deployer (new CREATE2 addresses). The
     /// deployer is funded from the base deployer first where it needs it.
+    ///
+    /// A deployment that sent part of its transactions and stopped (a public RPC whose nonce lags, say)
+    /// cannot be sent again from the same deployer: its first CREATE2 addresses are taken. The next attempt
+    /// derives a fresh deployer (`evm_attempt`, recorded so a resumed drill keeps counting), at most
+    /// [`EVM_ATTEMPTS`] in all; the abandoned contracts are our own fixture, never used.
     fn evm(&mut self) -> Result<()> {
+        loop {
+            let attempt = self.s["evm_attempt"].as_u64().unwrap_or(0);
+            let err = match self.evm_once() {
+                Ok(()) => return Ok(()),
+                Err(e) => e,
+            };
+            let deployer = self.deployer()?;
+            let sent = [self.sepolia(), self.a.base_rpc.clone()].iter().any(|rpc| {
+                Evm::new(rpc).call("eth_getTransactionCount", json!([deployer.address, "latest"])).ok().and_then(|v| crate::evm::hex_u64(&v).ok()).unwrap_or(0) > 0
+            });
+            if !sent || attempt + 1 >= EVM_ATTEMPTS {
+                return Err(err);
+            }
+            println!("  the deployment stopped after sending transactions ({err:#}): attempt {} with a fresh deployer", attempt + 2);
+            self.s["evm_attempt"] = json!(attempt + 1);
+            self.save()?;
+        }
+    }
+
+    fn evm_once(&mut self) -> Result<()> {
         let deployer = self.deployer()?;
         let base = EvmSigner::from_hex(&self.base_evm_key()?)?;
         let zero = "0x0000000000000000000000000000000000000000";
@@ -825,6 +850,18 @@ fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
 }
 
+/// Deployment attempts in one drill, each from a fresh deployer once an earlier one sent transactions.
+const EVM_ATTEMPTS: u64 = 3;
+
+/// The label a drill's deployer is derived with: the date, and the attempt after the first.
+fn deployer_label(date: &str, attempt: u64) -> String {
+    if attempt == 0 {
+        format!("drill-{date}")
+    } else {
+        format!("drill-{date}-{attempt}")
+    }
+}
+
 /// Gas forge's simulation counts for a drill's deployments on one chain, with margin: its gas limits on
 /// Sepolia on 2026-11-08 were 94.2M for Acme's 29 transactions and 10.3M for the adapter's 4, nine times
 /// their simulation.
@@ -1038,6 +1075,16 @@ mod tests {
         let s = evm_shortfall("evm-deployer", SEPOLIA, "0xabc", 1, 1_000).unwrap();
         assert_eq!((s["kind"].as_str(), s["chain_id"].as_u64()), (Some("evm-deployer"), Some(SEPOLIA)));
         assert!(evm_shortfall("evm-relayer", BASE_SEPOLIA, "0xdef", 1_000, 1_000).is_none());
+    }
+
+    #[test]
+    fn a_new_attempt_has_a_fresh_deployer() {
+        // The first attempt keeps the day's label (and so the addresses of a drill that worked at once).
+        assert_eq!(deployer_label("2026-11-08", 0), "drill-2026-11-08");
+        assert_eq!(deployer_label("2026-11-08", 1), "drill-2026-11-08-1");
+        let base = EvmSigner::from_hex("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80").unwrap();
+        let (a, b) = (base.derive(deployer_label("2026-11-08", 0).as_bytes()).unwrap(), base.derive(deployer_label("2026-11-08", 1).as_bytes()).unwrap());
+        assert_ne!(a.address, b.address);
     }
 
     #[test]
