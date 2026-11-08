@@ -188,7 +188,8 @@ repository (`examples/immune-demo`, to copy). Not yet run on testnet.
      code (immutables included), as `fork_practice_manifest` does for the practice program in fork mode.
    - **The terms**: Low, Medium and High only (a fork-mode program has nothing to pause, so no Critical and no
      pause slots); a T1-confirmed finding up to the largest payout is paid in seconds, others after a 5-minute
-     challenge window; the deadline `hours` after opening; reveal 10 minutes, exit grace 10 minutes; no gap lane
+     challenge window; the deadline `hours` after the manifest is written, just before creation; reveal 10
+     minutes, exit grace 10 minutes; no gap lane
      and no known issues. near-antibody's bounds are checked before anything is sent (`Params::check`).
    - **The budget guard**, then the program is created as the bot (the escrow with `ft_transfer_call`),
      activated (its base witness pinned; if no relayer has made the activation T1 within 45 s, the bot relays
@@ -228,7 +229,7 @@ repository's is `examples/immune-demo/window.toml`; the unit tests' is `fixtures
 ```toml
 artifacts = "out"                 # Foundry's output directory
 repository = "antibody-immune-demo"
-hours = 24                        # the deadline, after opening
+hours = 24                        # the deadline, from creation
 escrow = "0.03"                   # wNEAR on testnet (no value)
 daily_cap = 4                     # windows the bot opens in 24 hours, at most
 

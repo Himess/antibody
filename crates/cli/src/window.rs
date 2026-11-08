@@ -130,7 +130,7 @@ pub struct Config {
     pub repository: Option<String>,
     /// What the deployment is, first in the program's description.
     pub description: Option<String>,
-    /// The window's length: its deadline is this many hours after it opens.
+    /// The window's length: its deadline is this many hours after its manifest is written, just before creation.
     pub hours: Option<f64>,
     /// The escrow, in whole units of the payout token (wNEAR on testnet).
     pub escrow: Option<String>,
@@ -308,6 +308,9 @@ pub fn encode_abi(types: &[String], values: &[toml::Value], address: &dyn Fn(&st
     let mut head: Vec<[u8; 32]> = Vec::with_capacity(types.len());
     let mut tails: Vec<(usize, Vec<u8>)> = Vec::new();
     for (i, (t, v)) in types.iter().zip(values).enumerate() {
+        if t.contains('[') || t.starts_with('(') {
+            return Err(eyre!("argument {i} ({t}): arrays and tuples are not encoded here: give `args_hex`, or a call's `data`"));
+        }
         if dynamic(t) {
             let bytes = match (t.as_str(), v.as_str()) {
                 ("string", Some(s)) => s.as_bytes().to_vec(),
@@ -1098,16 +1101,18 @@ pub struct OpenOpts {
 pub fn open(ctx: &Ctx, o: &OpenOpts) -> Result<Value> {
     let cfg = Config::load(&o.config)?;
     let (d, sym) = (ctx.dep.decimals(), ctx.dep.symbol().to_string());
-    let placeholder = o.project.is_none() && ctx.account.is_none();
+    // The signing account: --account, else the key file's (a dry run may have neither).
+    let account = ctx.account.clone().or_else(|| ctx.signer().ok().map(|s| s.account_id));
+    let placeholder = o.project.is_none() && account.is_none();
     if placeholder && !o.dry_run {
         return Err(eyre!("no project: pass --account (the bot account that opens the window, with its key)"));
     }
-    if let (Some(p), Some(a), false) = (&o.project, &ctx.account, o.dry_run) {
+    if let (Some(p), Some(a), false) = (&o.project, &account, o.dry_run) {
         if p != a {
             return Err(eyre!("--project {p} is not the signing account {a}: the project creates its program itself"));
         }
     }
-    let project = o.project.clone().or_else(|| ctx.account.clone()).unwrap_or_else(|| "project.testnet".into());
+    let project = o.project.clone().or_else(|| account.clone()).unwrap_or_else(|| "project.testnet".into());
     let repo = o.repo.clone().or_else(|| cfg.repository.clone());
     let head = o.head.as_deref().map(short_head).transpose()?;
     let name = match (&o.name, o.pr, &repo) {
@@ -1165,7 +1170,7 @@ pub fn open(ctx: &Ctx, o: &OpenOpts) -> Result<Value> {
     }
 
     let now = near_now(ctx);
-    if let Some(account) = ctx.account.clone().filter(|_| !placeholder) {
+    if let Some(account) = account.clone().filter(|_| !placeholder) {
         let cap = o.daily_cap.or(cfg.daily_cap).unwrap_or(DEFAULT_DAILY_CAP);
         let min_near = cmd::parse_near(cfg.min_near.as_deref().unwrap_or(DEFAULT_MIN_NEAR))?;
         let g = guard(ctx, &account, escrow, cap, min_near, now)?;
@@ -1475,18 +1480,11 @@ fn close_pages(ctx: &Ctx, program: u32) -> Result<Vec<Value>> {
     }
 }
 
+/// Unit tests with no EVM: the deployment's code is a stub here. `tests/window_fixture.rs` runs the fixture's
+/// deployment, the verifier's activation checks and a proof with the verifier's own code.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use antibody_verifier::{
-        bundle::{sender_address, Bundle, BundleCall},
-        db::{MissingTracker, MissingWitness},
-    };
-    use revm::{
-        database_interface::DBErrorMarker,
-        state::{AccountInfo, Bytecode},
-        DatabaseRef,
-    };
 
     fn fixture() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/window")
@@ -1496,81 +1494,15 @@ mod tests {
         toml::Value::String(v.into())
     }
 
-    /// An anchor with nothing on it: the fixture's deployment reads nothing but the addresses it creates at.
-    #[derive(Debug)]
-    struct Anchorless;
-
-    #[derive(Debug)]
-    struct Never;
-    impl std::fmt::Display for Never {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("never")
-        }
-    }
-    impl std::error::Error for Never {}
-    impl DBErrorMarker for Never {}
-
-    impl DatabaseRef for Anchorless {
-        type Error = Never;
-        fn basic_ref(&self, _: Address) -> Result<Option<AccountInfo>, Never> {
-            Ok(None)
-        }
-        fn code_by_hash_ref(&self, _: B256) -> Result<Bytecode, Never> {
-            Ok(Bytecode::default())
-        }
-        fn storage_ref(&self, _: Address, _: U256) -> Result<U256, Never> {
-            Ok(U256::ZERO)
-        }
-        fn block_hash_ref(&self, _: u64) -> Result<B256, Never> {
-            Ok(B256::ZERO)
-        }
-    }
-
-    impl MissingTracker for Anchorless {
-        fn first_missing(&self) -> Option<MissingWitness> {
-            None
-        }
-    }
-
     const NOW: u64 = 1_800_000_000;
 
-    fn header() -> alloy_consensus::Header {
-        alloy_consensus::Header {
-            gas_limit: 30_000_000,
-            number: 1,
-            timestamp: NOW,
-            base_fee_per_gas: Some(0),
-            excess_blob_gas: Some(0),
-            blob_gas_used: Some(0),
-            parent_beacon_block_root: Some(B256::ZERO),
-            ..Default::default()
-        }
-    }
-
     fn anchor() -> Anchor {
-        Anchor { chain_id: 31337, block_number: 1, block_hash: header().hash_slow(), evm_spec: "osaka".into(), trust: "project-attested".into() }
+        Anchor { chain_id: 31337, block_number: 1, block_hash: B256::repeat_byte(1), evm_spec: "osaka".into(), trust: "project-attested".into() }
     }
 
-    /// `cmd::deployed_code` with no RPC: the deployment run by the verifier's own code on [`Anchorless`].
-    fn offline_code(m: &Manifest, addrs: &[Address]) -> Result<Vec<(B256, Bytes)>> {
-        let spec = antibody_verifier::run::program_chain_spec(m.anchor.chain_id).map_err(|e| eyre!("{e}"))?;
-        let db = antibody_verifier::program::deployed(&header(), m, spec, &Anchorless).map_err(|e| eyre!("{:?}", antibody_verifier::program::classify(&e)))?;
-        addrs
-            .iter()
-            .map(|a| {
-                let info = db.basic_ref(*a).map_err(|e| eyre!("{e}"))?;
-                Ok(match info {
-                    Some(i) if i.code_hash != keccak256([]) => {
-                        let code = match i.code {
-                            Some(c) => c,
-                            None => db.code_by_hash_ref(i.code_hash).map_err(|e| eyre!("{e}"))?,
-                        };
-                        (i.code_hash, code.original_bytes())
-                    }
-                    _ => (keccak256([]), Bytes::new()),
-                })
-            })
-            .collect()
+    /// Instead of the deployment: one byte of code at every address, distinct per address.
+    fn stub_code(_: &Manifest, addrs: &[Address]) -> Result<Vec<(B256, Bytes)>> {
+        Ok(addrs.iter().map(|a| Bytes::from(vec![0x60, a[19], 0x00])).map(|c| (keccak256(&c), c)).collect())
     }
 
     fn fixture_config() -> Config {
@@ -1638,7 +1570,8 @@ mod tests {
         assert_eq!(&two[96..98], &[0x12, 0x34]);
         assert_eq!(two.len(), 32 * 5);
         assert!(encode_abi(&["address".into()], &[s("vault")], &named).unwrap_err().to_string().contains("vault?"));
-        assert!(encode_abi(&["uint256[]".into()], &[s("1")], &named).unwrap_err().to_string().contains("not a static type"));
+        assert!(encode_abi(&["uint256[]".into()], &[s("1")], &named).unwrap_err().to_string().contains("arrays and tuples are not encoded here"));
+        assert!(encode_abi(&["function".into()], &[s("1")], &named).unwrap_err().to_string().contains("not a static type"));
         assert!(encode_abi(&["uint256".into()], &[], &named).is_err());
         assert_eq!(parse_signature("mint(address, uint256)").unwrap(), ("mint(address,uint256)".to_string(), vec!["address".to_string(), "uint256".to_string()]));
         assert_eq!(parse_signature("approveLend()").unwrap().1.len(), 0);
@@ -1648,10 +1581,10 @@ mod tests {
     }
 
     #[test]
-    fn the_fixture_window_is_a_program_the_verifier_activates_and_a_proof_can_break() {
+    fn the_fixture_config_becomes_its_manifest() {
         let cfg = fixture_config();
         let a = args(&cfg);
-        let p = plan(&cfg, &a, anchor(), offline_code).unwrap();
+        let p = plan(&cfg, &a, anchor(), stub_code).unwrap();
         let m = &p.manifest;
         let d = deployer();
         // The deployment, in order: coin, vault, note (not a target), the mint, then the rules.
@@ -1668,10 +1601,14 @@ mod tests {
         assert_eq!(deploy.txs[3].to, Some(coin));
         assert_eq!(&deploy.txs[3].data[..4], &keccak256(b"mint(address,uint256)")[..4]);
         assert_eq!(&deploy.txs[3].data[16..36], vault.as_slice(), "a contract's name stands for its address");
-        // The rules' runtime code is the instance's: its immutables name the vault and the coin.
-        let rules = &m.invariants.runtime_code;
-        assert_eq!(m.invariants.runtime_code_hash, keccak256(rules));
-        assert!(rules.windows(20).any(|w| w == vault.as_slice()) && rules.windows(20).any(|w| w == coin.as_slice()));
+        // The rules are created last; their runtime code and the targets' code hashes are what the deployment leaves.
+        let rules_art = immune::read_artifact(&fixture().join("artifacts/Window.sol/VaultRules.json")).unwrap();
+        assert_eq!(&deploy.txs[4].data[..rules_art.creation.len()], rules_art.creation.as_slice());
+        assert_eq!(&deploy.txs[4].data[rules_art.creation.len() + 12..rules_art.creation.len() + 32], vault.as_slice());
+        let stub = stub_code(m, &[p.rules.address, coin]).unwrap();
+        assert_eq!(m.invariants.runtime_code, stub[0].1);
+        assert_eq!(m.invariants.runtime_code_hash, keccak256(&stub[0].1));
+        assert_eq!(m.targets[0].code_hash, stub[1].0);
         assert_eq!(m.invariants.slots, vec![Slot { bit: 0, name: "vault_keeps_its_coins".into(), severity: Severity::High }]);
         assert_eq!(m.impact.protocol_accounts, vec![vault]);
         assert_eq!(m.impact.tokens[0].address, coin);
@@ -1686,28 +1623,7 @@ mod tests {
         assert!(m.program.description.contains("A window is a fork-mode program for the pull request's build"));
         assert!(m.program.description.contains("0.01 wNEAR on testnet, which has no value; proofs committed before its deadline"));
         assert_eq!(Manifest::parse(&m.canonical()).unwrap(), *m);
-
-        // The verifier's activation checks pass on it: the rules pass the lint, every target has its code hash,
-        // snapshot() and check(snapshot()) == 0 at the anchor.
-        let spec = antibody_verifier::run::program_chain_spec(31337).unwrap();
-        let reserved = Some(antibody_verifier::run::reserved_address("bounty.test.near/7", header().hash_slow()));
-        let inv = Bytecode::new_raw(m.invariants.runtime_code.clone());
-        let db = antibody_verifier::program::deployed(&header(), m, spec.clone(), &Anchorless).unwrap();
-        antibody_verifier::program::anchor_checks(&header(), m, &inv, spec.clone(), &db, reserved).expect("the activation checks pass");
-
-        // A proof that sweeps the vault (the planted bug) breaks the rule: hunters can win this window.
-        let salt = B256::repeat_byte(7);
-        let hunter = sender_address(&salt, 0);
-        let sweep = [&keccak256(b"sweep(address)")[..4], hunter.into_word().as_slice()].concat();
-        let bundle = Bundle {
-            sender_salt: salt,
-            senders: 1,
-            endowment_wei: 10u128.pow(16),
-            calls: vec![BundleCall { sender: 0, to: Some(vault), value: U256::ZERO, data: sweep.into(), gas_limit: 1_000_000 }],
-        };
-        let run = antibody_verifier::program::execute_program(&header(), m, &inv, &bundle, spec, &Anchorless, reserved).unwrap();
-        assert_eq!(run.broken_mask, U256::from(1u8), "vault_keeps_its_coins breaks");
-        assert!(run.target_code_hashes_match);
+        check_manifest(m, a.escrow, NOW).unwrap();
     }
 
     #[test]
@@ -1717,7 +1633,7 @@ mod tests {
         let cfg = fixture_config();
         let mut a = args(&cfg);
         a.rules_artifacts = PathBuf::from("src");
-        assert!(plan(&cfg, &a, anchor(), offline_code).unwrap_err().to_string().contains("no artifact for VaultRules"));
+        assert!(plan(&cfg, &a, anchor(), stub_code).unwrap_err().to_string().contains("no artifact for VaultRules"));
     }
 
     #[test]
@@ -1726,7 +1642,7 @@ mod tests {
         let err = |text: &str| -> String {
             match Config::parse(text) {
                 Err(e) => e.to_string(),
-                Ok(cfg) => plan(&cfg, &args(&cfg), anchor(), offline_code).err().map(|e| format!("{e:#}")).unwrap_or_default(),
+                Ok(cfg) => plan(&cfg, &args(&cfg), anchor(), stub_code).err().map(|e| format!("{e:#}")).unwrap_or_default(),
             }
         };
         assert!(err(&base.replace("severity = \"high\"", "severity = \"critical\"")).contains("nothing to pause"));
@@ -1738,14 +1654,15 @@ mod tests {
         assert!(err(&base.replace("function = \"mint(address, uint256)\"", "function = \"mint(address)\"")).contains("2 arguments for 1 parameters"));
         assert!(err(&base.replace("contract = \"Vault\"", "contract = \"Vault\"\nfunction = \"x()\"")).contains("belong to a call"));
         assert!(err(&base.replace("[windows]", "[windows]\nsurprise = 1")).contains("unknown field"));
-        // A deployment that reverts (the minter is the deployer, not the vault) names its transactions, in order.
-        let e = err(&base.replace("[[tx]]\ncall = \"coin\"", "[[tx]]\ncall = \"vault\"").replace("mint(address, uint256)", "sweep(address)").replace("args = [\"vault\", \"1000000000000000000000\"]", "args = [\"deployer\"]\nvalue = 5"));
-        assert!(e.contains("3: call vault.sweep(address)"), "{e}");
-        // The settlement stays within near-antibody's bounds: a deadline within a year.
+        assert!(err(&base.replace("[[tx]]\ncall = \"coin\"", "[[tx]]\ncall = \"coin\"\nname = \"x\"")).contains("a call takes"));
+        // A deployment that leaves no code where a contract was created is refused.
         let cfg = fixture_config();
+        let none = |_: &Manifest, addrs: &[Address]| Ok(addrs.iter().map(|_| (keccak256([]), Bytes::new())).collect());
+        assert!(plan(&cfg, &args(&cfg), anchor(), none).unwrap_err().to_string().contains("leaves no code at coin"));
+        // The settlement stays within near-antibody's bounds: a deadline within a year.
         let mut a = args(&cfg);
         a.deadline = NOW + 366 * 86_400;
-        assert!(plan(&cfg, &a, anchor(), offline_code).unwrap_err().to_string().contains("within a year"));
+        assert!(plan(&cfg, &a, anchor(), stub_code).unwrap_err().to_string().contains("within a year"));
     }
 
     #[test]
