@@ -10,9 +10,10 @@ everything else is not built yet.
    - **Prototype** ([immune.md](immune.md)): readable proofs (disclosed, published, or opened with the
      project key), re-run by the local verifier, with `antibody immune` and a GitHub Action.
    - Next: sealed proofs re-run inside the TEE, where the result is all anyone sees.
-   - Next, *a bounty window per pull request:* a fork-mode round for the pull request's build with a small
-     escrow, announced to agents over MCP or a webhook. When it ends, the check reads "held N hours, X at
-     stake, 0 valid findings", or blocks the merge on a valid Critical.
+   - **Prototype, not yet run on testnet** ([immune.md](immune.md#bounty-windows)): *a bounty window per pull
+     request*, a fork-mode program for the pull request's build with a small escrow, announced over MCP, a
+     webhook and the site. When it ends, the check reads "Held N h, X wNEAR at stake, 0 valid findings", or
+     blocks the merge on valid findings.
 
    Sealed proofs never appear in public logs.
 2. NEAR contracts as a second target VM: proofs against NEAR wasm contracts from committed, proven state.

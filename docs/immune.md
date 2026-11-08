@@ -7,7 +7,8 @@ pull request's compiled code. If one still breaks a committed rule, the pull req
 the check fails. Ship only what survived, continuously.
 
 This is a prototype of roadmap item 1: readable proofs, re-run by the local verifier. Re-running sealed
-proofs inside the TEE, and a bounty window per pull request, are next and not built.
+proofs inside the TEE is next and not built. A bounty window per pull request is built and not yet run on
+testnet ([Bounty windows](#bounty-windows)).
 
 ```
 forge build
@@ -139,7 +140,7 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
 
 - **Sealed proofs outside the TEE.** A proof the run cannot read is listed, not re-run. Re-running sealed
   proofs inside the TEE, where the result is all anyone sees, is next.
-- **A bounty window per pull request** (a fork-mode round for the pull request's build) is next.
+- **A bounty window per pull request** is built (below) and not yet run on testnet.
 - **One anchor.** The re-runs use the state the proofs proved at the anchor; code that reads other state is
   inconclusive, and a change of storage layout cannot be expressed as an override.
 - **Builds.** Contracts that link libraries, and constructors that read other contracts, need `runtime`.
@@ -159,3 +160,174 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
   `fixtures/zk/a`) reproduces the TEE's receipt and is fixed on the final fix built from source. Commits 14
   and 18 are listed as not re-run until their tags are disclosed (both qualify), and 19, a gap claim with no
   tag to disclose, as sealed.
+
+## Bounty windows
+
+Immune memory re-runs what was already paid for. A bounty window pays hunters, people or agents, to look for
+what was not: **a window is a fork-mode program for the pull request's build; X wNEAR on testnet, which has no
+value; proofs committed before its deadline are judged and paid.** The site, the commit statuses, the webhook
+message and MCP's `list_programs` all say it in these words.
+
+Built: `antibody window open|status|close|list` (`crates/cli/src/window.rs`) and two workflows for the demo
+repository (`examples/immune-demo`, to copy). Not yet run on testnet.
+
+### What happens
+
+1. Someone with write access labels a pull request `bounty-window`. `window.yml` refuses a pull request from a
+   fork, and a labeller whose permission (from the GitHub API) is not write or admin.
+2. A job with no secret checks out the pull request's head and the base branch and runs `forge build` on both.
+3. A job that runs none of the pull request's code, and holds the bot account's key, reads `.antibody/window.toml`
+   from the base branch and runs `antibody window open`:
+   - **The anchor** is the newest Sepolia block NEAR's Ethereum light client holds (`last_block_number`, then
+     `block_hash_safe`), checked against the Ethereum RPC's header for that block. `create_program` asks the
+     same light client, so the anchor is confirmed at creation and nothing waits.
+   - **The deployment** (docs/fork-mode.md): the config's transactions from the fork-mode deployer, in order: the
+     pull request's contracts with their constructor arguments, the calls that seed them, and the rules contract
+     last, from the **base branch's** build, so a pull request cannot weaken the rules its own window is judged by.
+     `cmd::deployed_code` runs the deployment at the anchor for the targets' code hashes and the rules' runtime
+     code (immutables included), as `fork_practice_manifest` does for the practice program in fork mode.
+   - **The terms**: Low, Medium and High only (a fork-mode program has nothing to pause, so no Critical and no
+     pause slots); a T1-confirmed finding up to the largest payout is paid in seconds, others after a 5-minute
+     challenge window; the deadline `hours` after opening; reveal 10 minutes, exit grace 10 minutes; no gap lane
+     and no known issues. near-antibody's bounds are checked before anything is sent (`Params::check`).
+   - **The budget guard**, then the program is created as the bot (the escrow with `ft_transfer_call`),
+     activated (its base witness pinned; if no relayer has made the activation T1 within 45 s, the bot relays
+     the TDX quote itself, about 0.018 NEAR) and opened.
+   - Its name: `PR #12 window (antibody-immune-demo @ 1a2b3c4)`, the head's short hash in it.
+4. **Announced**: a pending commit status on the head, `Bounty window open until <UTC>, <X> wNEAR at stake
+   (testnet)`, in the context `antibody/bounty-window (testnet)`; a message to each webhook in `ANTIBODY_WEBHOOKS`;
+   `window: true` on the program in MCP's `list_programs` (and kind `window` in `antibody judge`); the
+   "Pull-request window" label on the site's programs page and program page.
+5. **Every 15 minutes**, `window-close.yml` lists the bot's windows for the repository (`window list --project
+   <bot> --repo <repo>`), reads each with `window status`, and sets the head's final status:
+   - green: `Held <N> h, <X> wNEAR at stake, 0 valid findings`;
+   - red: `<k> valid findings (<tiers>), merge blocked`, each finding's severity and tier (`2 valid findings
+     (High T1, Medium T0), merge blocked`; one finding reads `1 valid finding (…)`), linked to the program page,
+     and each commit's page in the job summary.
+
+   Once the deadline and the exit grace have passed, `window close` expires unrevealed commits past their
+   reveal window, times out stuck runs, allocates and pays, then exits (permissionless: the escrow's rest goes
+   to the bot's token credit), closes the records and withdraws the credit to the bot's wallet. The escrow comes
+   back minus the payouts.
+
+```
+antibody window open --config .antibody/window.toml --artifacts out --pr 12 --repo antibody-immune-demo --head <sha> --dry-run
+antibody window status --program <id>
+antibody --account <bot> window close --program <id>
+antibody window list --project <bot> --repo antibody-immune-demo
+```
+
+`--dry-run` writes the manifest and prints what the program would be: no key, nothing sent. It still reads NEAR
+(the light client) and the Ethereum RPC (the deployment at the anchor).
+
+### The window config
+
+The repository commits `.antibody/window.toml` (let it through `.gitignore` as `!.antibody/window.toml`). The demo
+repository's is `examples/immune-demo/window.toml`; the unit tests' is `fixtures/window/window.toml`.
+
+```toml
+artifacts = "out"                 # Foundry's output directory
+repository = "antibody-immune-demo"
+hours = 24                        # the deadline, after opening
+escrow = "0.03"                   # wNEAR on testnet (no value)
+daily_cap = 4                     # windows the bot opens in 24 hours, at most
+
+[[tx]]                            # a creation: `name` (a target unless `target = false`) and its artifact
+name = "AcmeVault"
+contract = "AcmeVaultFixed"
+args = ["AcmeGuard", "acUSD", "AcmeLend", "AcmeTreasury", "deployer"]
+
+[[tx]]                            # a call: an earlier contract, a function and its arguments (or `data`)
+call = "AcmeVault"
+function = "deposit(uint256)"
+args = ["1000000000000000000000000"]
+
+[rules]                           # created last; its runtime code is what the program commits
+contract = "AcmeInvariants"
+args = ["AcmeLend", "AcmeVault", "acUSD", "AcmeTreasury", "2000000000000000000000"]
+
+[[slot]]
+bit = 0
+name = "solvency"
+severity = "high"                 # low, medium or high
+
+[payouts]                         # wNEAR per severity
+high = "0.01"
+```
+
+Arguments are those of the immune mapping, plus `deployer` (the fork-mode deployer's address), a contract created
+before it by its `name`, `string`, and `bytes` as hex. `args_hex` takes encoded constructor arguments; a call's
+`data` takes its calldata; `value` sends wei. Optional: `description`, `bond` and `challenge_bond` (wNEAR),
+`min_near`, `[impact]` (`protocol_accounts` by name, default every target; `native_usd`; `[[impact.token]]` with
+`symbol`, `contract`, `decimals`, `usd`), `[capabilities]` and `[windows]` (`reveal`, `challenge`, `resolve`,
+`infra_grace`, `run_timeout`, `exit_grace`, in seconds). The rules contract must be in the base branch's build and
+the config in the base branch: merge them before the first window.
+
+### Verdicts
+
+| Verdict | When | Commit status |
+|---|---|---|
+| `opening` | created, activation not confirmed yet | pending |
+| `open` | open, before the deadline | pending |
+| `settling` | after the deadline, no valid finding yet, and a proof committed before it still in flight | pending |
+| `green` | after the deadline: no valid finding, nothing in flight | success |
+| `red` | after the deadline: at least one valid finding | failure |
+| `void` | the anchor was rejected, the program failed its checks, or it never opened by its deadline | error |
+
+A valid finding is a commit whose verdict is a Violation that holds its keys: paid, owed, or with its rule's budget
+spent. A duplicate repeats a finding already counted and is not counted again. The tier is the verdict's (T0, or T1
+when its TDX quote was verified on NEAR).
+
+### Guards
+
+- **One window per pull request head.** The name carries the head's short hash: opening the same head again
+  reports the open window, resumes one still in setup, and is refused once it has run. A new commit gets a window
+  when the label is added again.
+- **Forks are refused**, and so is a labeller without write access. GitHub gives no secret to a fork's workflow,
+  and a fork's code must not be built where the key is: a maintainer can push the change to a branch of the
+  repository and label that pull request.
+- **The budget guard**, before each window: fewer than `daily_cap` (`--daily-cap`) windows in the last 24 hours,
+  the escrow in the bot's wallet and credit, `min_near` NEAR liquid (default 1), and the escrow at most
+  `--max-escrow` (the workflow's default 0.05).
+- **The terms are the base branch's**: the config and the rules contract come from it, the pull request's build
+  only supplies the contracts under test.
+- `window-close.yml` counts only the bot's own windows: anyone can name a program like a window, and nobody else
+  can sign as the bot.
+
+### The key
+
+- The bot account needs a **full-access key**: creating a program sends the escrow with `ft_transfer_call` and
+  one yoctoNEAR, and recovering it needs `withdraw`, which also attaches one yoctoNEAR. Use an account that holds
+  only what windows need.
+- The key lives only in jobs that run none of the pull request's code: the open job, in the environment
+  `bounty-window` (give it a required reviewer), and the scheduled close job, in the environment
+  `bounty-window-close` (deployment branches: the default branch only; a reviewer there would hold every run).
+- `pull_request`, never `pull_request_target`. On `pull_request` the workflow file itself comes from the pull
+  request, so anyone who can push a branch could make a run read the key: the reviewer approves each run.
+- The project key, which reads findings paid to the window (`antibody program read`), is derived from the bot's
+  key (NEP-413): whoever holds the bot's key can read them.
+- Secrets: `ANTIBODY_WINDOW_KEY` (the near-cli key file's JSON), `SEPOLIA_RPC`, optionally `ANTIBODY_WEBHOOKS`;
+  variables: `ANTIBODY_WINDOW_ACCOUNT`, optionally `ANTIBODY_WINDOW_MAX_ESCROW`, `ANTIBODY_WINDOW_DAILY_CAP`,
+  `ANTIBODY_SITE`.
+
+### Costs (estimated from the measurements, not measured for windows yet)
+
+- **The escrow**, returned at exit minus the payouts.
+- **NEAR, about 0.1 per window**: the program's storage at near-antibody (from the bot's NEAR credit, kept), the
+  activation run's deposit and answer allowance (0.02 + 0.01; OutLayer refunds the compute it did not use), the
+  manifest and base witness uploads, the transactions' gas, and the activation's T1 relay (0.0176) when the bot
+  relays it. The gas set aside while a call runs (0.3 NEAR for the creation, 0.2 for the activation) comes back.
+- **An Ethereum RPC** that serves `eth_getProof` at the light client's block, some 60 to 130 blocks behind the head:
+  public endpoints often refuse proofs that far back (`SEPOLIA_RPC`).
+- **GitHub Actions**: two `forge build`s per window, and a run every 15 minutes.
+
+### Limits
+
+- **Not yet run on testnet.** The unit tests run the fixture's deployment and the verifier's activation checks
+  with no network, and a proof against the fixture breaks its rule.
+- **One build per window.** The deployment is the config's, with the pull request's contracts; a contract that
+  links libraries, or whose deployment reads state the anchor does not have, needs its deployment written out.
+- **The base branch's rules.** A pull request that changes the rules is judged by the old ones until it merges.
+- **Agents bound to programs** (`agent register --program`) hold at most 16: an agent that hunts windows is
+  registered without a program list, or re-bound.
+- **Testnet only**, as everything here: wNEAR on testnet has no value.
