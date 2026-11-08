@@ -186,17 +186,26 @@ runs:
         key="$RUNNER_TEMP/bot-key.json"; umask 077; printf '%s' "$BOT_KEY" > "$key"
         A=("$ANTIBODY" --network "$NETWORK")
         # near-antibody opens it once the re-run window has ended, every commit is allocated and no re-run is in flight.
+        opened=false; err="$RUNNER_TEMP/open.err"; : > "$err"
         for _ in $(seq 1 40); do
           st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
           state=$(printf '%s' "$st" | jq -r '.proposal.state // "none"')
-          [ "$state" = "accepted" ] || { echo "nothing to open (proposal: $state)"; break; }
+          [ "$state" = "accepted" ] || { echo "nothing to open (proposal: $state)"; opened=true; break; }
           now=$(printf '%s' "$st" | jq -r '.now'); from=$(printf '%s' "$st" | jq -r '.proposal.opens_from // 0')
-          if [ "$now" -ge "$from" ] && "${A[@]}" --account "$BOT" --key-file "$key" round open --program "$PROGRAM" > /dev/null 2>&1; then
-            echo "round opened: the slot is free"; break
+          if [ "$now" -ge "$from" ]; then
+            if "${A[@]}" --account "$BOT" --key-file "$key" round open --program "$PROGRAM" > /dev/null 2> "$err"; then
+              echo "round opened: the slot is free"; opened=true; break
+            fi
+            # The bot's account pays the call's gas up front (300 Tgas: about 0.3 NEAR liquid), a common reason.
+            echo "the round did not open yet: $(tail -c 400 "$err" | tr '\n' ' ')"
           fi
           sleep 30
         done
         rm -f "$key"
+        if [ "$opened" != "true" ]; then
+          echo "::warning title=Antibody immune memory::the round could not be opened, so the next check queues until someone opens it (antibody round open --program $PROGRAM): $(tail -c 300 "$err" | tr '\n' ' ')"
+          echo "The round could not be opened: the next pull request's check waits until it is (\`antibody round open --program $PROGRAM\`)." >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - name: verdict
       shell: bash

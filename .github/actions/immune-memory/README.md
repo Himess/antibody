@@ -126,6 +126,9 @@ Each key also has a link to its re-run and its tier. Nothing sealed is shown.
 - **The key is scoped.** The project's key is a function-call key limited to `propose_round` and
   `__fastdata_fastfs` (the upload of the manifest) on near-antibody, with an allowance. The project's
   NEAR credit at near-antibody pays each round check (0.03 NEAR), so fund it beforehand.
+- **The bot keeps NEAR liquid.** Opening a round attaches 300 Tgas, which its account pays up front (about
+  0.3 NEAR; most of it comes back). Below that the round stays shut, the action warns, and the next check
+  queues until someone opens it (`antibody round open --program <id>`).
 - **Forks get no secret.** A pull request from a fork runs the check above only, on the proofs it can read.
 
 It runs `antibody round state`, `round propose` and `round results`, which are new in v0.6.0.
