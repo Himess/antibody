@@ -14,7 +14,7 @@ What it does, in order:
    nothing) and writes its report to the job summary;
 4. fails the job when a paid proof still breaks a rule (and, by default, when the result is inconclusive).
 
-`antibody immune` first ships in release v0.5.0, the default `version`; the release must be published.
+`antibody immune` first shipped in release v0.5.0; the default `version` is v0.5.1, which has the fixes below; the release must be published.
 
 ## Use
 
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4     # with `submodules: recursive` if forge build needs them
-      - uses: Himess/antibody/.github/actions/immune-memory@v0.5.0   # or a commit SHA
+      - uses: Himess/antibody/.github/actions/immune-memory@v0.5.1   # or a commit SHA
         with:
           program: "5"
           project-key: ${{ secrets.ANTIBODY_PROJECT_KEY }}   # optional; read Security first
@@ -58,7 +58,7 @@ jobs:
 `forge build` runs code from the pull request, and any code a job runs can reach a secret given to that job
 ([Security](#security)). The safer pattern builds in a job with no secret, then runs the checked binary with
 the key in a job that runs none of the pull request's code: that job reads the mapping, the blobs and the
-build's artifacts as data. `build` is new after v0.5.0: pin the Action to a later release or commit.
+build's artifacts as data. `build` is new in v0.5.1: pin the Action to v0.5.1 or later.
 
 ```yaml
 name: immune memory
@@ -99,7 +99,7 @@ jobs:
 
 | Input | Default | What |
 |---|---|---|
-| `version` | `v0.5.0` | The antibody release whose binary runs |
+| `version` | `v0.5.1` | The antibody release whose binary runs |
 | `repository` | `Himess/antibody` | The repository that publishes it |
 | `program` | the mapping's | The program's id on near-antibody |
 | `config` | `.antibody/immune.toml` | The mapping file, relative to `working-directory` (the `.gitignore` rules above) |

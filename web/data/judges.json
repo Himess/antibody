@@ -88,12 +88,12 @@
  "one_look": {
   "intro": "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.",
   "setup": [
-   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path>`, which needs Python 3 (standard library only) and a clone of this repository; the same values sit at that path in `docs/results/testnet-2026-11-04.json`. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
+   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, an enclave result (OutLayer's operator delivered the TEE's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
    ""
   ],
   "command": "antibody judge",
-  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs.",
-  "programs_note": "This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the others are earlier runs' on the same deployment.",
+  "expected": "Expected (a one-screen summary; `--json` for the full record): near-antibody `bounty.antibody.testnet` locked: true, payout token `wrap.testnet` locked: false, near-guardian `guardian.antibody.testnet` locked: true, verdict guard `guard.antibody.testnet` locked: true, T2 (near-t2) `zk.antibody.testnet` locked: true; contract audit ok: true; 8 programs at the run; programs created since follow them (each daily drill adds one, named `Acme Lend drill <date>`).",
+  "programs_note": "This run's programs are 5 (Acme Lend), 6 (practice) and 7 (fork mode); the others listed are earlier runs' on the same deployment. Since the run: program 4's 2 pause permits, relayed on 2026-11-07 (docs/results/relay-2026-11-07.json).",
   "contracts": [
    {
     "role": "near-antibody",
@@ -814,7 +814,7 @@
    "claim": "The one moment: A's verdict pays A and pauses the fixture on both chains",
    "check": "`antibody judge --program 5` (the permits); the times: `python3 scripts/docs/recorded.py one_moment.seconds_from_commit --file docs/results/testnet-2026-11-04.json`",
    "expected": "2 pause permits; from A's commit block: verdict 18.5 s, T1 29.1 s, paid 71.0 s (its block), pause permits signed at 62.7 s and 62.7 s, paused on 11155111 at 90.6 s and on 84532 at 87.2 s (NEAR steps at their blocks, each pause when the relayer got its receipt; the MPC network signed the permits)",
-   "evidence": "11155111: —, 84532: —, 11155111: [0x224f6f77…](https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4), 84532: [0x2bcb96c8…](https://sepolia.basescan.org/tx/0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b)",
+   "evidence": "11155111: [0x224f6f77…](https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4), 84532: [0x2bcb96c8…](https://sepolia.basescan.org/tx/0x2bcb96c817c3c0abecbe93d5c77cae3a671ebf631ff3dc2dec00bec753d6244b)",
    "commands": [
     "antibody judge --program 5",
     "python3 scripts/docs/recorded.py one_moment.seconds_from_commit --file docs/results/testnet-2026-11-04.json"
@@ -1013,7 +1013,7 @@
    "kind": "practice",
    "claim": "Anyone can run the loop with no account: the practice program (a tutorial)",
    "check": "`antibody try --name <you>` (sends testnet transactions; vending `practice.antibody.testnet`, program 10; the recorded try was on program 6)",
-   "expected": "`Done:Paid`, 0.001 wNEAR to the vending contract, about 44 s when the run is T1 (it paid the bond and the run), a vault of its own (each `try` gets the next free one); `<you>` is a new lowercase name (judge-1-p6, judge-2-p6 are taken); while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: 91 to 101 s on that path (docs/results/byo-2026-11-07.json). The output's `payout_path` says which",
+   "expected": "`Done:Paid`, 0.001 wNEAR to the vending contract, about 44 s when the run is T1 (it paid the bond and the run), a vault of its own (each `try` gets the next free one); `<you>` is a new lowercase name (judge-1-p6, judge-2-p6 are taken); while new worker images wait their delay the run stays T0 and the payout waits the program's challenge window: 91 to 95 s on that path (docs/results/byo-2026-11-07.json). The output's `payout_path` says which",
    "evidence": "vend [2wUoCN17…](https://testnet.nearblocks.io/txns/2wUoCN17qhVnTMxFRWdwjfQJvizo4YS81DpkdurFpEC8), commit [L9wQ6bJi…](https://testnet.nearblocks.io/txns/L9wQ6bJiSore1NN2TzsnPDbLcfevZt7K5xt6AqnWtmc), reveal [7KduoN6W…](https://testnet.nearblocks.io/txns/7KduoN6WrLrkPKK6hc1NAWKMmeJqfac9MBt5oi7Ma2DH), allocate [2qYXUQQV…](https://testnet.nearblocks.io/txns/2qYXUQQVTqDg2zuyhnokZKmjLQr2M3JpAdatBPspkAKi), pay [rbhQjh9X…](https://testnet.nearblocks.io/txns/rbhQjh9XTWSwPmMQNL8PM6kmWRBoiuHmGSmCMspWGS7), close [8iVfV6ij…](https://testnet.nearblocks.io/txns/8iVfV6ijpQzW6jRUjZCxFPs844EJaDoqjEtQtf3ugT2X), reclaim [4C4sh1ah…](https://testnet.nearblocks.io/txns/4C4sh1ahZoToWt1yG92VL48xXdvyX7toYrELYVxER2Xw)",
    "commands": [
     "antibody try --name <you>"
@@ -1218,11 +1218,11 @@
    "n": 16,
    "kind": "t2",
    "claim": "T2: the verdict of each run whose content key is published (fixtures/zk; sealed on chain), re-run in SP1 on the TEE's exact input, is a Groth16 proof that near-t2 checks on NEAR against near-antibody's records (zk.antibody.testnet, locked; a validity proof of a disclosed verdict: no privacy claimed, no payout depends on it)",
-   "check": "`antibody zk status --run 33` (and runs 33, 36, 35, 53)",
+   "check": "`antibody zk status --run 33 --contract zk.antibody.testnet` (and runs 33, 36, 35, 53)",
    "expected": "run 33 `confirmed`, run 36 `confirmed`, run 35 `confirmed`, run 53 `confirmed`; a tampered proof refused: `true`; SP1 6.10.0's key built in: `true`, program vkey `0x00e87aaa…`",
    "evidence": "run 33 [2qv8TQiY…](https://testnet.nearblocks.io/txns/2qv8TQiYf8nA4K32p8H7BWmPE9T2g9NPCQ8J2Q7J7YEN), run 36 [FZaKJZ8M…](https://testnet.nearblocks.io/txns/FZaKJZ8MtMT167wraALccUfZe3opocKFWgJbRMEcMMf3), run 35 [2k3SarGc…](https://testnet.nearblocks.io/txns/2k3SarGcKzXmzwk5EQNDhXKGbD61EhTcNAWJQjeWY2AA), run 53 [2j6f6Ti8…](https://testnet.nearblocks.io/txns/2j6f6Ti8f23itmFoPiQpatTybYzxjN8hn4r76TG1MYX3)",
    "commands": [
-    "antibody zk status --run 33"
+    "antibody zk status --run 33 --contract zk.antibody.testnet"
    ],
    "links": [
     {
@@ -1403,8 +1403,83 @@
      "cli": "antibody judge"
     }
    ]
+  },
+  {
+   "n": 19,
+   "kind": "agent_runs",
+   "claim": "An off-the-shelf agent (Claude Code, the release binary) completes the loop over MCP: measured runs, not bug finding",
+   "check": "each run's commit with `antibody status --commit <id>` (the ids are in each report)",
+   "expected": "task a, the tutorial proof through `practice_try`, no built-in tools: 10 of 10 commits ended `Done:Paid` (7 within the agent's own call); median 98 s when paid within the call; task a2, the agent writes the proof itself with `hunt_start`, `check_poc` and `hunt_submit`, and file tools in its workspace: 6 of 6 commits ended `Done:Paid` (3 within the agent's own call); median 91 s when paid within the call",
+   "evidence": "[task a](docs/agent-runs/testnet-2026-11-08/task-a/REPORT.md), [task a2](docs/agent-runs/testnet-2026-11-08/task-a2/REPORT.md)",
+   "commands": [
+    "antibody status --commit 38",
+    "antibody status --commit 48"
+   ],
+   "links": [],
+   "live": []
   }
  ],
+ "agent_runs": {
+  "dir": "docs/agent-runs/testnet-2026-11-08",
+  "tasks": [
+   {
+    "task": "a",
+    "line": "task a, the tutorial proof through `practice_try`, no built-in tools: 10 of 10 commits ended `Done:Paid` (7 within the agent's own call); median 98 s when paid within the call",
+    "runs": 10,
+    "succeeded": 7,
+    "paid_on_chain": 10,
+    "seconds": {
+     "median": 98.2,
+     "max": 174.4,
+     "min": 68.8
+    },
+    "cost_usd_total": 1.859,
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "tools": "none",
+    "report": "docs/agent-runs/testnet-2026-11-08/task-a/REPORT.md",
+    "commits": [
+     38,
+     39,
+     40,
+     41,
+     42,
+     43,
+     44,
+     45,
+     46,
+     47
+    ]
+   },
+   {
+    "task": "a2",
+    "line": "task a2, the agent writes the proof itself with `hunt_start`, `check_poc` and `hunt_submit`, and file tools in its workspace: 6 of 6 commits ended `Done:Paid` (3 within the agent's own call); median 91 s when paid within the call",
+    "runs": 6,
+    "succeeded": 3,
+    "paid_on_chain": 6,
+    "seconds": {
+     "median": 90.7,
+     "max": 95.2,
+     "min": 89.7
+    },
+    "cost_usd_total": 2.4732,
+    "models": [
+     "claude-opus-5-5"
+    ],
+    "tools": "Read,Grep,Glob,Write",
+    "report": "docs/agent-runs/testnet-2026-11-08/task-a2/REPORT.md",
+    "commits": [
+     48,
+     49,
+     50,
+     51,
+     52,
+     53
+    ]
+   }
+  ]
+ },
  "evm_checks": [
   {
    "claim": 11,
@@ -1651,8 +1726,8 @@
   "E: submission (witness, seal, commit, reveal) to verdict 22.2 s.",
   "F: submission (witness, seal, commit, reveal) to verdict 24.1 s.",
   "G: submission (witness, seal, commit, reveal) to verdict 28.8 s.",
-  "Practice try (judge-1-p6.practice.antibody.testnet): 43.7 s from vend to payout.",
-  "Practice try (judge-2-p6.practice.antibody.testnet): 39.9 s from vend to payout."
+  "Practice try (judge-1-p6.practice.antibody.testnet): 43.7 s for the whole try, vend to close, its payout included.",
+  "Practice try (judge-2-p6.practice.antibody.testnet): 39.9 s for the whole try, vend to close, its payout included."
  ],
  "does_not_show": [
   "One project, our own fixtures, on testnets: Acme Lend and the practice program are labeled test fixtures, and wNEAR on testnet has no value.",
@@ -1698,11 +1773,11 @@
    },
    {
     "title": "TEE trust is tiered, not removed.",
-    "text": "T1 needs DCAP collateral; above the cap a second run and a window are required."
+    "text": "T1 needs DCAP collateral. Without T1 a verdict rests on OutLayer's operator (T0): under the instant cap it becomes final once its challenge window passes (60 s on testnet), so a false one that nobody challenges stands, and a false Violation is paid; above the cap a second OutLayer run must also agree. A challenge demands T1; anyone may file one, but neither the CLI nor the services do."
    },
    {
     "title": "Worker images.",
-    "text": "A worker image OutLayer approves later counts for existing programs only after the image delay (2 days on testnet); until then a run on it gets no T1, and its payout waits the challenge window (docs/runbooks/worker-images.md)."
+    "text": "A worker image OutLayer approves later counts for existing programs only after the image delay (2 days on testnet); until then a run on it gets no T1, so its payout waits the challenge window and its pause waits too, since a pause needs T1 (docs/runbooks/worker-images.md)."
    },
    {
     "title": "Old anchors.",

@@ -1,7 +1,7 @@
 # The antibody CLI alone, so trying Antibody needs no build and no toolchain (JUDGES.md):
 #
-#   docker run --rm -v "$PWD:/work" ghcr.io/himess/antibody:v0.5.0 try --name <you>
-#   docker run --rm ghcr.io/himess/antibody:v0.5.0 judge
+#   docker run --rm -v "$PWD:/work" ghcr.io/himess/antibody:v0.5.1 try --name <you>
+#   docker run --rm ghcr.io/himess/antibody:v0.5.1 judge
 #
 # The testnet deployment is built into the binary. Built and pushed by .github/workflows/release.yml, which
 # pushes each release's own tag only (there is no `latest`).
