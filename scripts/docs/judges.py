@@ -326,6 +326,37 @@ def report_file(sha256):
     return None
 
 
+def agent_runs(net):
+    """The newest measured agent runs on this network (docs/agent-runs/<net>-<date>/task-*/summary.json, written
+    by scripts/agents/measured_runs.py), or None."""
+    base = pathlib.Path(__file__).resolve().parents[2] / "docs" / "agent-runs"
+    dirs = sorted(p for p in base.glob(f"{net}-*") if p.is_dir())
+    if not dirs:
+        return None
+    tasks = []
+    for f in sorted(dirs[-1].glob("task-*/summary.json")):
+        try:
+            tasks.append(json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    return {"dir": f"docs/agent-runs/{dirs[-1].name}", "tasks": tasks} if tasks else None
+
+
+def agent_runs_lines(runs):
+    """One line per task of the measured agent runs: what the agent had, how many runs ended paid, the median."""
+    lines = []
+    for s in runs["tasks"]:
+        ok = len([r for r in s.get("records", []) if r.get("success")])
+        med = (s.get("seconds") or {}).get("median")
+        what = ("the tutorial proof through `practice_try`, no built-in tools" if s.get("task") == "a" else
+                "the agent writes the proof itself with `hunt_start`, `check_poc` and `hunt_submit`, and file tools in its workspace")
+        paid = s.get("paid_on_chain")
+        result = (f"{paid} of {s.get('runs')} commits ended `Done:Paid` ({ok} within the agent's own call)" if paid is not None
+                  else f"{ok} of {s.get('runs')} `Done:Paid`")
+        lines.append(f"task {s.get('task')}, {what}: {result}" + (f"; median {med:.0f} s when paid within the call" if med else ""))
+    return lines
+
+
 def judges(d):
     r = d.r
     out = d.header("For judges")
@@ -660,6 +691,21 @@ def judges(d):
                             path="audit_contract.ok", equals=True)]
         row(n, "Every conservation equation balances (the ledger's both sides)", f"`{cmd}` (each program's `audit ok`, and the contract's)", oks,
             "view calls", "audit", [cmd], (), live)
+    # The measured agent runs (docs/agent-runs.md): each run's commit is read from near-antibody.
+    runs = agent_runs(d.net) if d.net != "sandbox" else None
+    if runs:
+        n += 1
+        first = [next((c for r in s.get("records", []) if r.get("success") for c in r.get("commits") or []), None) for s in runs["tasks"]]
+        cmds = [d.cli(f"status --commit {c}") for c in first if c is not None]
+        row(n, "An off-the-shelf agent (Claude Code, the release binary) completes the loop over MCP: measured runs, not bug finding",
+            f"each run's commit with `{d.cli('status --commit <id>')}` (the ids are in each report)", "; ".join(agent_runs_lines(runs)),
+            ", ".join(f"[task {s.get('task')}]({runs['dir']}/task-{s.get('task')}/REPORT.md)" for s in runs["tasks"]), "agent_runs", cmds)
+        # The same numbers for the site's /agents section.
+        data["agent_runs"] = {"dir": runs["dir"], "tasks": [
+            {"task": s.get("task"), "line": line, "runs": s.get("runs"), "succeeded": s.get("succeeded"), "paid_on_chain": s.get("paid_on_chain"), "seconds": s.get("seconds"),
+             "cost_usd_total": s.get("cost_usd_total"), "models": s.get("models"), "tools": s.get("tools"),
+             "report": f"{runs['dir']}/task-{s.get('task')}/REPORT.md", "commits": [c for r in s.get("records", []) for c in r.get("commits") or []]}
+            for s, line in zip(runs["tasks"], agent_runs_lines(runs))]}
     # The EVM checks, spelled out.
     evm = []
     checks = data["evm_checks"] = []
@@ -823,6 +869,14 @@ def agents(d):
         out += ["## Measured in the recorded run", "",
                 f"Agent A submitted over MCP. From its commit's block: verdict {one.get('verdict', 0):.1f} s, T1 {one.get('t1', 0):.1f} s, paid {one.get('paid', 0):.1f} s "
                 f"(the payment's block; {'sandbox clock' if d.net == 'sandbox' else 'NEAR testnet blocks'}).", ""]
+    runs = agent_runs(d.net) if d.net != "sandbox" else None
+    if runs:
+        # docs/agent-runs.md: an off-the-shelf agent with this server, each run's commit read from near-antibody.
+        out += ["## Measured agent runs", "",
+                "Claude Code, headless, with this MCP server and the release binary, on the practice program. They measure completing the "
+                "loop, not finding bugs; success is each run's commit ending `Done:Paid` on near-antibody, never the agent's words.", ""]
+        out += [f"- {line}" for line in agent_runs_lines(runs)]
+        out += ["", "Each run's commit, time, tool calls and cost: " + ", ".join(f"{runs['dir']}/task-{s.get('task')}/REPORT.md" for s in runs["tasks"]) + ".", ""]
     return "\n".join(out)
 
 

@@ -5,6 +5,7 @@ import { ContainmentChecks, RecordedAgentRun } from "@/components/build/AgentEvi
 import { Check } from "@/components/build/Check";
 import { DocLink } from "@/components/build/DocLink";
 import { NotYet } from "@/components/build/Labels";
+import { judges } from "@/components/checks/judges";
 import { LeaderboardBlock } from "@/components/build/Leaderboard";
 import { DataFrame, McpConfig, McpConfigNoAccount, McpTools, MCP_TOOLS } from "@/components/build/Mcp";
 import { OnThisPage } from "@/components/build/OnThisPage";
@@ -248,6 +249,8 @@ const BYO_SAMPLE = `{
 }`;
 
 export default function AgentsPage() {
+  // The measured agent runs, from web/data/judges.json (scripts/docs/judges.py reads docs/agent-runs/).
+  const runs = judges.agent_runs;
   return (
     <>
       <PageHead
@@ -602,24 +605,52 @@ export default function AgentsPage() {
         </div>
       </Section>
 
-      <Section id="agent-runs" title="Measured agent runs" actions={<NotYet>not run yet</NotYet>}>
+      <Section
+        id="agent-runs"
+        title="Measured agent runs"
+        actions={
+          runs ? (
+            <Pill tone="ok" size="sm">
+              measured on testnet
+            </Pill>
+          ) : (
+            <NotYet>not run yet</NotYet>
+          )
+        }
+      >
         <div className="grid grid-2">
           <div className="stack">
             <p className="small">
               Can an off-the-shelf AI agent, given only Antibody&apos;s MCP server, complete the whole loop: get an account, seal a
-              proof, commit it, have it verified in the enclave, and be paid? The runs that measure this, on the practice program with
-              its tutorial proof, <strong>have not been done yet</strong>. They will measure completing the loop, not finding bugs.
+              proof, commit it, have it verified in the enclave, and be paid? These runs measure it on the practice program, whose bug and
+              proof are public: completing the loop, not finding bugs.
             </p>
+            {runs ? (
+              <ul className={styles.bullets}>
+                {runs.tasks.map((t) => (
+                  <li key={t.task}>
+                    <strong>
+                      {t.paid_on_chain ?? t.succeeded} of {t.runs}
+                    </strong>{" "}
+                    paid, task {t.task} ({t.task === "a" ? "the tutorial proof through practice_try, no other tools" : "the agent writes the proof itself"}):{" "}
+                    {t.succeeded} within the agent&apos;s own call
+                    {t.seconds.median ? `, median ${Math.round(t.seconds.median)} s` : ""}; commits {t.commits[0]} to {t.commits[t.commits.length - 1]}.{" "}
+                    <DocLink path={t.report}>The report</DocLink>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <ul className={styles.bullets}>
-              <li>Only Antibody&apos;s MCP server configured, with every built-in tool of the agent turned off.</li>
+              <li>Claude Code with only Antibody&apos;s MCP server (task a2 adds file tools in its workspace), and the release binary.</li>
               <li>A fresh workspace and a fresh practice account name per run, and one fixed task.</li>
               <li>
                 Success read from near-antibody, never from the agent&apos;s words: the commit must end <code>Done:Paid</code>.
               </li>
-              <li>Recorded per run: wall time, tool calls, verification spend and bonds from the agent statement, the payout, the transcript.</li>
+              <li>Recorded per run: the commit, wall time, tool calls, the payout, the agent&apos;s cost and the full transcript.</li>
             </ul>
             <p className="small muted">
-              The method and the script: <DocLink path="docs/agent-runs.md">docs/agent-runs.md</DocLink>.
+              The method, the results and why some payouts landed after the agent&apos;s call:{" "}
+              <DocLink path="docs/agent-runs.md">docs/agent-runs.md</DocLink>.
             </p>
           </div>
           <Suspense fallback={<Loading label="Reading the recorded run" />}>

@@ -1,0 +1,421 @@
+{
+  "task": "a",
+  "network": "testnet",
+  "practice": {
+    "program": 10,
+    "vending": "practice.antibody.testnet"
+  },
+  "runs": 10,
+  "succeeded": 7,
+  "token_decimals": 24,
+  "token_symbol": "wNEAR",
+  "success_rate": 0.7,
+  "seconds": {
+    "median": 98.2,
+    "max": 174.4,
+    "min": 68.8
+  },
+  "verification_spent_yocto_total": "0",
+  "paid_raw_total": "7000000000000000000000",
+  "bonds_lost_total": "0",
+  "cost_usd_total": 1.859,
+  "models": [
+    "claude-opus-5-5"
+  ],
+  "prompt": "You have one MCP server, `antibody`. Antibody pays for verified proofs that a bounty program's own invariants break. This deployment has a practice program: a tutorial whose bug and proof are public, so anyone can practise the loop. Complete the loop once with the tutorial proof: get a practice account named `{name}`, have the proof sealed, committed, verified and settled, then report the verdict, the commit's final state and the payout, with the transaction links. Use only the antibody tools.",
+  "tools": "none",
+  "started": "11080904",
+  "records": [
+    {
+      "run": 0,
+      "task": "a",
+      "name": "m11080904-00",
+      "account": "m11080904-00.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 76.3,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        38
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.0715518,
+      "duration_ms": 73243,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the practice loop once with the tutorial proof, and it went through: the proof was verified as a violation and the commit was paid.\n\n**Account:** `m11080904-00.practice.antibody.testnet`. Practice program 10, vault `0xa828ec08588df5b71c5a027bac2bbb68ddc844b9` (index 18).\n\n**Verdict:** a **Violation** in `verify` mode. It broke one invariant key, slot 0, with tag `1bde8d8b\u20267365bb`.\n- T1 (the confirming check) agreed with it, so it was final in about 54 s, before the 60 s challenge window ran out.\n- The impact and protected harm were both 0 USD, which is expected for the practice vault.\n- Run 76, receipt sha256 `638630c9\u2026d7c36c`.\n- One inconsistency: `practice_try`'s top-level `verdict` field says tier **T0**, but its `t1` field and the on-chain status of commit 38 both say **T1**. I'm treating T1 as correct.\n\n**Commit 38, final state: `Done:Paid`**\n- Paid **0.001 NEAR** (1e21 yocto) at once, under the instant-payout cap, with no fee.\n- The bond was 0.0001 NEAR, and verification took one attempt.\n- The money went to the vending contract, **`practice.antibody.testnet`**, which is the beneficiary for practice accounts. It did not go to the hunter account.\n- The account has been closed.\n\n**Transactions (NEAR testnet):**\n- Vend (create the account): https://testnet.nearblocks.io/txns/CbyKCeoSpSG2L1ADp8p4N4QtdXMhP3T1bcVpQZKyTQ8g\n- Commit (seal the proof, commit its hash and the bond): https://testnet.nearblocks.io/txns/DVL8YrB1kRGbU5kYFfr1MTPbNisjur1CBRdZAkMPrruE\n- Reveal (send the proof for verification): https://testnet.nearblocks.io/txns/FeaGidBYZQTFwWgQjEMyDRgs6S9x5Di3QBZwjuurZ8wS\n- Allocate (settlement): https://testnet.nearblocks.io/txns/D4yR3bzyMQCovSQ1m6GLFALWrUWActZopmwwxeTssvPY\n- Pay: https://testnet.nearblocks.io/txns/8u8p23CoSYk4vo2Ua7kjoUqgEwM7WqbJJyG1zs8aYnX2\n- Close account: https://testnet.nearblocks.io/txns/FXUub5Ki1DitHkiv44zw8ef2FQ8Ag65MadQFKiQYsP3Z\n- Reclaim: https://testnet.nearblocks.io/txns/8keNz9bLb8B6RnB48pcuwiUMBRLBmLSUk2D9PS97fsTL",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 1,
+      "task": "a",
+      "name": "m11080904-01",
+      "account": "m11080904-01.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 70.6,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        39
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.0707748,
+      "duration_ms": 69550,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the full loop once with the tutorial proof on practice program 10. It took about 50 seconds, and the commit's on-chain state confirms it ended **verified and paid**.\n\n**Account:** `m11080904-01.practice.antibody.testnet`, which was given vault `0x83cb21ef40d1b7f7eb895818513163180ed19ae4` (index 19).\n\n**Verdict (run 77):**\n- **Kind:** `Violation`. The program's invariant broke at slot 0, tag `683215c3\u2026bf601c06`.\n- **Tier:** T1 confirmed the result. The tool's output also included an entry marked T0; the commit's final status shows T1, and payment went through the T1 path.\n- **Impact:** 0 USD. This is expected for the practice vault.\n- **Receipt sha256:** `79ff7245a11929d9544486b7758c104b855eb1614e4855195dd62fcb9cc325bd`\n\n**Commit 39, final state: `Done:Paid`**\n- Committed and paid on the first attempt. There was no challenge and no rerun.\n- Bond: 0.0001 NEAR\n\n**Payout:** 0.001 NEAR (`1000000000000000000000` yocto), fee 0. It was paid at once through the T1 path without waiting out the 60-second challenge window. The money went to `practice.antibody.testnet`, not to you: on the practice program the payout goes back to the practice contract. After payment the account was closed and its balance reclaimed.\n\n**Transactions (NEAR testnet):**\n- Vend: https://testnet.nearblocks.io/txns/79QJjLVm53rgiwK4XDBgo9A1ADbPsksLHUWzJrGv83HR\n- Commit: https://testnet.nearblocks.io/txns/8tWGvsu1zxumPbvAiKvwj1wPmENqZTo3YX4B1T15gEkd\n- Reveal: https://testnet.nearblocks.io/txns/AUjrNQgvCAWpwPnzW3sHGtjnw8jrZQwEeRxhNNz7apUm\n- Allocate: https://testnet.nearblocks.io/txns/BHB7CSMiyJqRGsnZAZiTqYhe8egHb62j21ZuNYhSgS3i\n- Pay: https://testnet.nearblocks.io/txns/HqLukwsCsYtoi7dbYT8BpFoGM77ffPuKAQfxw5GBn8WT\n- Close: https://testnet.nearblocks.io/txns/HYcYt9KQPvhu7kCbxRXdYYYSu2fuBQ3yaCdCVaXUaQ9h\n- Reclaim: https://testnet.nearblocks.io/txns/5etxVsLGbN4kZhmRUxnXRX2pafiTTfHZ6s7YWi2p1aoJ",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 2,
+      "task": "a",
+      "name": "m11080904-02",
+      "account": "m11080904-02.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 72.2,
+      "success": false,
+      "states": [
+        "Holder"
+      ],
+      "commits": [
+        40
+      ],
+      "paid_raw": "0",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "0",
+      "net_tokens": "0",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.0714098,
+      "duration_ms": 71092,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the practice loop once for the account `m11080904-02.practice.antibody.testnet`, using practice program 10 and vault `0x27bce7d1\u20263a7c`. The proof was sealed, committed, revealed, verified and settled, and the account was then closed, in about 50 seconds. One point to know first: the commit records **0 paid**.\n\n**Verdict: Violation.** The proof broke the program's invariant.\n- Commit 40, run 78, mode `verify`, one new key (slot 0, tag `57d0a221\u20265a707`).\n- Tier T1 confirmed it: the server's first answer was tier T0 and the final one is T1. Because of that, settlement was final immediately instead of waiting out the 60-second challenge window (`payout_path: T1`).\n- Impact and protected harm were both $0 (`impact_usd_micro` and `protected_harm_usd_micro` are 0).\n- Receipt sha256: `de75d231e2b71dcf651f96e6fb669d396c3d76d6bed4586353a20288ad81dd5b`\n\n**Commit's final state: `Holder`.**\n- 1000000000000000000000 yoctoNEAR (0.001 NEAR) is set aside for it, with no debt.\n- The bond was 1e20 yoctoNEAR (0.0001 NEAR). The `reclaim` transaction below appears to be that bond coming back.\n- The challenge was null and this was the first attempt.\n\n**Payout:**\n- The commit shows `paid: 0` and `paid_raw: \"0\"`. The 0.001 NEAR has been set aside for the commit but not paid out yet.\n- The beneficiary is `practice.antibody.testnet`, the practice vending contract. Any amount released therefore goes back to that contract, not to you. That is normal for the tutorial.\n\n**Transaction links (NEAR testnet):**\n- vend: https://testnet.nearblocks.io/txns/8MXnPEEQSCNUspd1CEaCMCMK7tRaQU2uVwwdzTy8a8UL\n- commit: https://testnet.nearblocks.io/txns/8rKmT4vXKezmA5GwnZxrYZsa92rQBLc2Wr2w21suxQuS\n- reveal: https://testnet.nearblocks.io/txns/GD3cjy7fn1E6384Y7yaLVnYcP8zTbXAJG8VZj5ckQDPV\n- allocate (settle): https://testnet.nearblocks.io/txns/7zpDirS1BWhVVGsJDbdojN1953ZjykkefTEhDbUp3MQ4\n- close: https://testnet.nearblocks.io/txns/ECZKFAzjDR69J4rUeZW1afdjKA1TPXPjD9yWZFv1abxV\n- reclaim: https://testnet.nearblo",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 3,
+      "task": "a",
+      "name": "m11080904-03",
+      "account": "m11080904-03.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 174.4,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        41
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status",
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status",
+        "mcp__antibody__list_programs",
+        "mcp__antibody__status",
+        "mcp__antibody__practice_try",
+        "mcp__antibody__get_program",
+        "mcp__antibody__get_program",
+        "mcp__antibody__get_program",
+        "mcp__antibody__status",
+        "mcp__antibody__status",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 15,
+      "cost_usd": 0.9283357999999999,
+      "duration_ms": 173208,
+      "model": "claude-opus-5-5",
+      "final_text": "The loop is complete. The commit settled to **Done:Paid** and the payout went through.\n\n## Practice loop \u2014 complete\n\nThe tutorial proof was sealed, committed, verified and settled. The initial `practice_try` call hit a free\u2011plan NEAR RPC timeout during the final settle step, but the on\u2011chain keeper finished the job on its own: I watched the commit advance `Verifying \u2192 Holder \u2192 Done:Paid`.\n\n**Account**\n- `m11080904-03.practice.antibody.testnet` (owned by `practice.antibody.testnet`, vended for this run)\n- Ran against **Program 10** \u2014 \"Practice program \u2014 a tutorial (testnet)\", the 24\u2011vault fixture whose one planted bug is `sweep` having no access check (invariant slot 0, `vault_keeps_its_ether`, severity *low*)\n\n**Verdict** (commit id **41**, run **79**)\n- Kind: **Violation** \u2014 the committed invariant broke, slot **0** (`vault_keeps_its_ether`)\n- Tier: **T1** (fast confirmation path), mode `verify`\n- Key tag claimed: `0fe4a23afba19da52860b442b7e556d84added7b2720aa955092f160514afaa7`\n- Receipt sha256: `7e6687b67986cb0755ce3edc657882aec81be3b5dde888bdd89e30eea5d8af9f`\n\n**Commit final state**\n- **Done:Paid** \u2014 amount **0.001 wNEAR** (`1000000000000000000000` yocto), `instant: false` (settled on NEAR's clock after the challenge window, not the instant path)\n- Bond (0.0001 wNEAR) returned; no forfeit, no debt. Beneficiary: `practice.antibody.testnet`. The program's `owed`/`reserved` cleared to 0 and its `paid` rose to 0.006 wNEAR.\n\n**Payout**\n- **0.001 wNEAR** paid to the beneficiary for this finding \u2014 the payout path was **T0-style settlement** (the post-window keeper transfer), i.e. `instant: false`, even though the verdict itself confirmed at tier T1.\n\n**A note on transaction links:** the `practice_try` tool is what returns the per-transaction explorer links, and its single call aborted on the RPC timeout before it could hand them back. I completed and confirmed the loop by reading public on-chain state via `status`, which reports the settled facts above but not the cli",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 4,
+      "task": "a",
+      "name": "m11080904-04",
+      "account": "m11080904-04.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 50.2,
+      "success": false,
+      "states": [
+        "Verifying"
+      ],
+      "commits": [
+        42
+      ],
+      "paid_raw": "0",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "100000000000000000000",
+      "bonds_lost": "0",
+      "bonds_returned": "0",
+      "agent_paid": "0",
+      "net_tokens": "0",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status",
+        "mcp__antibody__list_programs",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 6,
+      "cost_usd": 0.0896482,
+      "duration_ms": 48844,
+      "model": "claude-opus-5-5",
+      "final_text": "I'm stopping here and won't retry the step that was blocked. This is where things stand:\n\n**The loop isn't finished: commit 42 has a verdict but hasn't settled.** The `practice_try` call for `m11080904-04` failed partway. The node returned `send_tx: Request timeout on the free plan, please upgrade to paid plan`, along with a message saying `m11080904-04.practice.antibody.testnet is closed` and its NEAR had gone back to `practice.antibody.testnet`.\n\nWhat I found in Antibody's public state afterwards:\n\n- **Account:** `m11080904-04.practice.antibody.testnet` exists and is registered. Its owner is `practice.antibody.testnet`, and it has made 1 commit with a 0.0001 wNEAR bond still locked. Nothing has been paid and no bond has been lost or returned.\n- **Commit 42:** practice program 10, run 80, 1 attempt. Its state is **Verifying**; it never reached a final state.\n- **Verdict:** **Violation**, tier **T0**, mode `verify`. It has one key (slot 0, tag `237c5048\u20269fd7b6`) and receipt `ad69f4b4\u2026268e39`. Impact and protected harm are both 0.\n- **Payout:** 0 so far. Because the commit hasn't settled, no payout path (T1 or T0) has been taken.\n- **Transaction links:** I don't have any. The tool call errored before it returned them, and the status tool doesn't include them.\n\nSo the proof was sealed, committed and found to break the invariant. What's missing is the final T1 confirmation or the end of the challenge window, plus settlement and the payout. The timeout came from the free-plan limit on the NEAR RPC endpoint. Settling commit 42 or re-running the loop would need your go-ahead and probably a working RPC endpoint.",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 5,
+      "task": "a",
+      "name": "m11080904-05",
+      "account": "m11080904-05.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 112.9,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        43
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.070841,
+      "duration_ms": 111626,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the loop once, but no payout went out: the proof was verified and an award was set aside, yet `paid` is 0. The practice account `m11080904-05.practice.antibody.testnet` was created and the tutorial proof was sealed, committed (commit 43, program 10, run 81), revealed and verified. The account was then closed. The whole thing took about 92 s.\n\n**Verdict:** `Violation`. The proof broke one of the program's invariants (key tag `46b4382c\u2026ff7d9`) on vault `0x6712ab45\u2026734a` (vault index 23). Impact and protected harm were both reported as $0.\n\n**Commit's final state:** `Holder`. It holds an award of 0.001 NEAR (`1000000000000000000000` yocto), all of it marked reserved, with no debt. The bond was 0.0001 NEAR.\n\n**Payout:** none. Both the submission result and the commit's own status show `paid` = 0. There was an `allocate` transaction, so the award looks set aside but not paid out. These tools don't show whether it pays out later or whether the practice program never pays.\n\n**Tier mismatch:** the submission result says the verdict stayed T0 because no T1 confirmation came within the 60 s challenge window, and that it was settled through T0 once the window closed. But checking commit 43 afterwards shows the verdict as tier **T1**. A T1 confirmation probably arrived after settlement, but I can't confirm that from here.\n\n**Transactions (NEAR testnet):**\n- Vend (account created): https://testnet.nearblocks.io/txns/6y97i5q7vaew7YLFD4XL7JyTtYaPL1N5Yxz2jacfGg9o\n- Commit: https://testnet.nearblocks.io/txns/5TLe5y3d9BngVz4xKM59aFoPyCciGB8daYAoTbHCTpuG\n- Reveal: https://testnet.nearblocks.io/txns/Dy3YmsQCPJUMcAfSkqCA8r6wTTEy5RiR4djMcc5UZTRq\n- Allocate (settlement): https://testnet.nearblocks.io/txns/EeRoUXXudYj13ztdRm1mh8uensqFtpEQZkeQUCePJhu\n- Close (account): https://testnet.nearblocks.io/txns/5YZxhUtgAss2BqZXApMGywGYsjQQUoNVL92PfuYnewiY\n- Reclaim: https://testnet.nearblocks.io/txns/4FLZSeFdiAk4rd3qWZgc5uTpvhh455PfcnWyv7oLGJoy\n\nThe receipt hash is `5bc1a3122fb009950ee4f98c14",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 6,
+      "task": "a",
+      "name": "m11080904-06",
+      "account": "m11080904-06.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 115.1,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        44
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.0709126,
+      "duration_ms": 113881,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the practice loop once with the tutorial proof, and it ended in a payout. The proof was sealed, committed, revealed and verified, then paid when the challenge window closed. I checked the result again with `status`.\n\n**Account:** `m11080904-06.practice.antibody.testnet` (practice program 10, vault `0xa7b45e6d1e7d9f488e219e273836d17f9489654e`)\n\n**Verdict:** **Violation**\n- Mode `verify`, run 82, one key broken (slot 0, tag `f86b1358\u20269a90c4`)\n- Impact and protected harm were both 0 USD, as expected for practice\n- Receipt sha256: `5fd9aa0b\u2026eaead954`\n\n**Commit 44, final state:** **`Done:Paid`**\n- Bond was 0.0001 NEAR, and it was one attempt with no challenge.\n\n**Payout:** **0.001 NEAR** (`1000000000000000000000` yocto), with no fee, paid to `practice.antibody.testnet`.\n- It went through the **T0** path, not instantly. The second check (T1) didn't answer within the 60 s challenge window, so the T0 verdict stood and was paid once the window ended. The whole run took about 95 s.\n- One mismatch: `status` now shows the verdict's tier as T1, so the T1 check seems to have answered after the payment. It agrees (also a Violation), but it didn't change how this commit was paid.\n\n**Transactions (NEAR testnet):**\n- vend: https://testnet.nearblocks.io/txns/9Jfkmwq9bHjQaT6XvkUBpSR2AuJMUFpp6J4i7jLJt16Y\n- commit: https://testnet.nearblocks.io/txns/5ADZhaR741S2S9VHPsMKuHtDWFfFmXXbYes1aRA1qer2\n- reveal: https://testnet.nearblocks.io/txns/FzVsYEe28Na1YiBvUpv6W1jWP4oWvjMYt6SdYenr2oQC\n- allocate: https://testnet.nearblocks.io/txns/8TbzV9TbvyAGnyWrinz814HsJyhkA8pJUuBJyJo6R4Gh\n- pay: https://testnet.nearblocks.io/txns/FeiSPzGBWgKLcz19TA3ak6pqShrckTWcpYy2KgiChXGt\n- close: https://testnet.nearblocks.io/txns/9ZywKSBcd8joXNZDXH5ceMmU7X8mzEa4ueHdKc33voGt\n- reclaim: https://testnet.nearblocks.io/txns/8uMGW3WQhoXShdMy5aCExYkNZzfRumoU7XaUpkJVEe9M\n\nThe practice account is now closed.",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 7,
+      "task": "a",
+      "name": "m11080904-07",
+      "account": "m11080904-07.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 43.6,
+      "success": false,
+      "states": [
+        "Verifying"
+      ],
+      "commits": [
+        45
+      ],
+      "paid_raw": "0",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "100000000000000000000",
+      "bonds_lost": "0",
+      "bonds_returned": "0",
+      "agent_paid": "0",
+      "net_tokens": "0",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 4,
+      "cost_usd": 0.055449599999999995,
+      "duration_ms": 42432,
+      "model": "claude-opus-5-5",
+      "final_text": "I couldn't finish the practice loop. It stopped partway, and the account has a commit stuck in place with no verdict and no payout.\n\n**What happened**\n- `practice_try` for `m11080904-07` returned an error from the NEAR network: `send_tx: {\"code\":30,\"message\":\"Request timeout on the free plan, please upgrade to paid plan\"}`. That's a rate limit on the network connection. The same error message also said `m11080904-07.practice.antibody.testnet` \"is closed, its NEAR back to practice.antibody.testnet\".\n- The account's status doesn't match \"closed\". It's still registered, with **1 commit**, a **bond of 0.0001 wNEAR still locked**, nothing returned or lost, and **0 paid**. Verification spending is 0, so the proof most likely never reached verification.\n\n**Results you asked for**\n- **Verdict:** none yet.\n- **Commit's final state:** not final. It was committed with its bond locked, but I couldn't confirm whether it was ever revealed.\n- **Payout:** 0.\n- **Transaction links:** none. The tool returned an error instead of its normal result, so it gave me no links.\n\n**Options**\n1. **Recommended:** look up that one commit with `status`, then reveal it with `submit` so it can be verified and settled. This needs the commit's ID, which the tools haven't shown me yet. I'd look it up through the practice program.\n2. Run `practice_try` again with a new name. The proof format only allows one proof per account, so reusing `m11080904-07` probably won't work.\n\nEither way, the network timeout could happen again. Which do you want me to do?",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 8,
+      "task": "a",
+      "name": "m11080904-08",
+      "account": "m11080904-08.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 98.2,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        46
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status",
+        "mcp__antibody__list_programs",
+        "mcp__antibody__get_program",
+        "mcp__antibody__status",
+        "mcp__antibody__status",
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 11,
+      "cost_usd": 0.3592999,
+      "duration_ms": 96942,
+      "model": "claude-opus-5-5",
+      "final_text": "I've reached the limit of what the available tools allow here, so let me report the situation honestly rather than claim a clean finish.\n\n## What happened\n\nThe practice loop **did run and the proof was verified** \u2014 but the final settle/close step hit a NEAR free-plan request timeout, so it didn't fully finalize. Here's the proven state on-chain:\n\n**Program:** 10 \u2014 \"Practice program \u2014 a tutorial (testnet)\", project `antibody.testnet`\n**Account:** `m11080904-08.practice.antibody.testnet` (registered; bond 0.0001 wNEAR locked)\n**Commit:** id **46**, run **84**\n\n**Verdict (confirmed on NEAR):**\n- `kind`: **Violation** \u2705 \u2014 the tutorial bug (`sweep` has no access check) proven against the anchored state\n- `tier`: **T0**\n- `slot 0` (`vault_keeps_its_ether`, low), key tag `c90c44b3\u2026ed356`\n- `receipt_sha256`: `4c4505f5\u202672e3cbad`\n- `blob_sha256`: `a986a9f4\u20263ecc8fea5`, commitment `bde7d15b\u202686ebd84a`\n- answered_at 1794129429\n\n**Commit's current state:** `Verifying` \u2014 **not yet `Done:Paid`**. Payout is **0.000 wNEAR** so far (the low-severity payout of 0.001 wNEAR, which every prior commit on this program received, has not been disbursed).\n\n## Why it's not finished\n\nThe first `practice_try` call returned:\n\n> `m11080904-08.practice.antibody.testnet is closed\u2026 send_tx: {\"code\":30,\"message\":\"Request timeout on the free plan, please upgrade to paid plan\"}`\n\nThe seal \u2192 commit \u2192 reveal \u2192 verify stages all succeeded (the Violation verdict is on-chain), but the keeper's **settle/payout transaction timed out** on NEAR's free RPC plan. That left commit 46 in `Verifying`, past its `retry_until` (1794130015) and past the 60s T0 challenge window.\n\nI **cannot finalize it with the tools I have**:\n- `practice_try` now refuses with *\"is taken: pick another --name\"* \u2014 it won't resume or reuse this name, and a fresh name would create a different account/commit, not settle this one.\n- There's no standalone settle/keeper tool exposed to me, and the other tools (`commit`, `submit`, `hunt_*`) are for ",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    },
+    {
+      "run": 9,
+      "task": "a",
+      "name": "m11080904-09",
+      "account": "m11080904-09.practice.antibody.testnet",
+      "exit_code": 0,
+      "seconds": 68.8,
+      "success": true,
+      "states": [
+        "Done:Paid"
+      ],
+      "commits": [
+        47
+      ],
+      "paid_raw": "1000000000000000000000",
+      "verification_spent_yocto": "0",
+      "bonds_locked": "0",
+      "bonds_lost": "0",
+      "bonds_returned": "100000000000000000000",
+      "agent_paid": "1000000000000000000000",
+      "net_tokens": "1000000000000000000000",
+      "tool_calls": [
+        "mcp__antibody__practice_try",
+        "mcp__antibody__status"
+      ],
+      "num_turns": 3,
+      "cost_usd": 0.0707712,
+      "duration_ms": 67776,
+      "model": "claude-opus-5-5",
+      "final_text": "I ran the practice loop once with the tutorial proof, and the account `m11080904-09` got paid. I then checked the commit's on-chain status, and it matches what the run reported.\n\n**Account and run:** the account `m11080904-09.practice.antibody.testnet` was created by `practice.antibody.testnet` and proved vault `0xce0e5e7be89913778ee2250f6e51da4e1bbeedd5` (index 3). That was practice program 10, commit **47**, run 85, and the whole loop took about 50 s.\n\n**Verdict:** a **Violation**, meaning the vault's committed invariant broke (one key, slot 0, tag `3dc9b3fb\u2026d109b`). It ran in verify mode and the impact was $0. Receipt sha256: `0e69471b\u202688b8f4cf00`. One small mismatch: the run's `verdict` field said tier T0, but its T1 field and the on-chain status both say **T1**.\n\n**Commit's final state:** **`Done:Paid`**, after 1 attempt, with no challenge and no rerun. The bond was 0.0001 NEAR.\n\n**Payout:** **0.001 NEAR** (`1000000000000000000000` yocto), paid instantly through the **T1** path with no fee. It went to the beneficiary `practice.antibody.testnet`, not to the hunter account, because that's how the practice program is set up. The T1 confirmation paid at once, under the cap, so there was no wait for the 60 s challenge window. The account was then closed and its funds reclaimed.\n\n**Transactions (NEAR testnet):**\n- vend: https://testnet.nearblocks.io/txns/39SLfW1HVxbrZzGKyuPK9LNzaMyTFd9UhTGcBfjLKEQV\n- commit: https://testnet.nearblocks.io/txns/99g4LarFPTRiZm2ya2k3KvzoxCvNFZctGEVnZ9AHGT3u\n- reveal: https://testnet.nearblocks.io/txns/J1PMxU2XPLCKntK3Fyb7qzNxm6ypDPKHqYbS5w97jRtk\n- allocate: https://testnet.nearblocks.io/txns/9eEVuHkyEKNUGT3TAZAT18oxnBfvuDHyTewUAPWh8Xgt\n- pay: https://testnet.nearblocks.io/txns/9z63YHDHw4TuRM3cDinohKa1twU7REhhPM9KpVmcDyXs\n- close: https://testnet.nearblocks.io/txns/C1Gz5847GFgV6LhCqav26TmRHLwLTF2v8isvYPFjLgod\n- reclaim: https://testnet.nearblocks.io/txns/8J1SHH8HLxkbwyLqeKmNtk4fWZBAXNpFD6QqYyARGtmV",
+      "stderr_tail": "",
+      "final_states": [
+        "Done:Paid"
+      ],
+      "paid_final_raw": "1000000000000000000000"
+    }
+  ],
+  "paid_on_chain": 10,
+  "rechecked_at": "2026-11-08 09:38 UTC",
+  "notes": [
+    "These runs set `$NEAR_RPC_EXTRA` to a free dRPC endpoint as the failover RPC. The release binary (v0.5.0) also sends transactions through the failover, and dRPC's free plan timed out two of them (\"Request timeout on the free plan\"): runs 4 and 7 stopped before they settled, and the services' keeper settled both commits as paid. Since 2026-11-08 main sends transactions on the primary RPC only. Run 2 ended `Holder`: its payout waited in the program's queue (claims go in commit order) and the keeper paid it."
+  ],
+  "versions": {
+    "antibody": "antibody 0.5.0",
+    "claude": "2.1.319 (Claude Code)"
+  },
+  "started_utc": "2026-11-08 09:04 UTC",
+  "paid_final_raw_total": "10000000000000000000000"
+}
