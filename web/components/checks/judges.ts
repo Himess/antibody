@@ -130,6 +130,8 @@ export interface JudgesData {
   /** The newest measured agent runs (docs/agent-runs/<net>-<date>/task-*), when there are any. */
   agent_runs?: {
     dir: string;
+    /** The release whose binary was the agent's MCP server (for example "v0.5.0"). */
+    binary?: string | null;
     tasks: {
       task: string;
       line: string;

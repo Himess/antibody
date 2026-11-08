@@ -368,7 +368,12 @@ def agent_runs(net):
             tasks.append(json.loads(f.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             pass
-    return {"dir": f"docs/agent-runs/{dirs[-1].name}", "tasks": tasks} if tasks else None
+    if not tasks:
+        return None
+    # The release whose binary was the agent's MCP server ("antibody 0.5.0" in each summary -> "v0.5.0"): later
+    # releases change that server, so the text names the one measured.
+    binaries = sorted({(s.get("versions") or {}).get("antibody", "").replace("antibody ", "v", 1) for s in tasks} - {""})
+    return {"dir": f"docs/agent-runs/{dirs[-1].name}", "tasks": tasks, "binary": ", ".join(binaries) or None}
 
 
 def agent_runs_lines(runs):
@@ -739,11 +744,12 @@ def judges(d):
         n += 1
         first = [next((c for r in s.get("records", []) if r.get("success") for c in r.get("commits") or []), None) for s in runs["tasks"]]
         cmds = [d.cli(f"status --commit {c}") for c in first if c is not None]
-        row(n, "An off-the-shelf agent (Claude Code, the release binary) completes the loop over MCP: measured runs, not bug finding",
+        binary = f"the {runs['binary']} release binary" if runs.get("binary") else "the release binary"
+        row(n, f"An off-the-shelf agent (Claude Code, {binary}) completes the loop over MCP: measured runs, not bug finding",
             f"each run's commit with `{d.cli('status --commit <id>')}` (the ids are in each report)", "; ".join(agent_runs_lines(runs)),
             ", ".join(f"[task {s.get('task')}]({runs['dir']}/task-{s.get('task')}/REPORT.md)" for s in runs["tasks"]), "agent_runs", cmds)
         # The same numbers for the site's /agents section.
-        data["agent_runs"] = {"dir": runs["dir"], "tasks": [
+        data["agent_runs"] = {"dir": runs["dir"], "binary": runs.get("binary"), "tasks": [
             {"task": s.get("task"), "line": line, "runs": s.get("runs"), "succeeded": s.get("succeeded"), "paid_on_chain": s.get("paid_on_chain"), "seconds": s.get("seconds"),
              "cost_usd_total": s.get("cost_usd_total"), "models": s.get("models"), "tools": s.get("tools"),
              "report": f"{runs['dir']}/task-{s.get('task')}/REPORT.md", "commits": [c for r in s.get("records", []) for c in r.get("commits") or []]}
@@ -925,8 +931,9 @@ def agents(d):
     runs = agent_runs(d.net) if d.net != "sandbox" else None
     if runs:
         # docs/agent-runs.md: an off-the-shelf agent with this server, each run's commit read from near-antibody.
+        server = f"Antibody's MCP server as release {runs['binary']} shipped it" if runs.get("binary") else "this MCP server and the release binary"
         out += ["## Measured agent runs", "",
-                "Claude Code, headless, with this MCP server and the release binary, on the practice program. They measure completing the "
+                f"Claude Code, headless, with {server}, on the practice program. They measure completing the "
                 "loop, not finding bugs; success is each run's commit ending `Done:Paid` on near-antibody, never the agent's words.", ""]
         out += [f"- {line}" for line in agent_runs_lines(runs)]
         out += ["", "Each run's commit, time, tool calls and cost: " + ", ".join(f"{runs['dir']}/task-{s.get('task')}/REPORT.md" for s in runs["tasks"]) + ".", ""]

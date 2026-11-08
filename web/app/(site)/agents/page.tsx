@@ -641,7 +641,10 @@ export default function AgentsPage() {
               </ul>
             ) : null}
             <ul className={styles.bullets}>
-              <li>Claude Code with only Antibody&apos;s MCP server (task a2 adds file tools in its workspace), and the release binary.</li>
+              <li>
+                Claude Code with only Antibody&apos;s MCP server (task a2 adds file tools in its workspace),{" "}
+                {runs?.binary ? `as release ${runs.binary} shipped it.` : "and the release binary."}
+              </li>
               <li>A fresh workspace and a fresh practice account name per run, and one fixed task.</li>
               <li>
                 Success read from near-antibody, never from the agent&apos;s words: the commit must end <code>Done:Paid</code>.

@@ -38,11 +38,11 @@ server, Claude Code 2.1.319 with its default model (claude-opus-5-5), on practic
   the unguarded `sweep`. Each checked it with `check_poc` before it submitted, and each got a T1
   `Violation`.
 - **The six calls that did not see their payout.** These runs set `$NEAR_RPC_EXTRA` to a free dRPC
-  endpoint as the failover. The release binary also sends transactions through it, and the free plan
+  endpoint as the failover. The v0.5.0 binary also sends transactions through it, and the free plan
   timed out four of them ("Request timeout on the free plan"): tasks a 4 and 7, and a2 2 and 3. Their
   calls stopped after the commit and the reveal had landed. Two more calls (a 2, a2 5) returned while
   the payout waited in the program's queue, where claims go in commit order. The services' keeper
-  settled all six as paid within minutes. Since 2026-11-08 main sends transactions on the primary RPC
+  settled all six as paid within minutes. Since v0.5.1 the CLI sends transactions on the primary RPC
   only.
 - **What these runs measure:** completing the loop, with an off-the-shelf agent and only Antibody's
   tools. They do not measure finding bugs: the practice program's bug and proof are public.
