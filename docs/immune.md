@@ -1,14 +1,21 @@
-# Immune memory on pull requests (prototype)
+# Immune memory on pull requests
 
 A program's paid proofs are its immune memory. Inside a program, every paid proof is re-run against each
-proposed fix, and a fix ships only when all of them fail (docs/rounds.md). `antibody immune` brings the same
-check to every pull request, before any escrow: it re-runs each paid proof the project can read against the
-pull request's compiled code. If one still breaks a committed rule, the pull request re-opens a paid hole and
-the check fails. Ship only what survived, continuously.
+proposed fix, and a fix ships only when all of them fail (docs/rounds.md). Immune memory brings the same
+check to every pull request: if a paid proof still breaks a committed rule against the pull request's code,
+the pull request re-opens a paid hole and the check fails. Ship only what survived, continuously.
 
-This is a prototype of roadmap item 1: readable proofs, re-run by the local verifier. Re-running sealed
-proofs inside the TEE is next and not built. A bounty window per pull request is built and not yet run on
-testnet ([Bounty windows](#bounty-windows)).
+A pull request is checked two ways (roadmap item 1):
+- **On the runner** (`antibody immune`, the `immune-memory` Action): each paid proof the project can read,
+  re-run by the local verifier. It sends nothing. The sections from [What a run does](#what-a-run-does) to
+  [Evidence](#evidence) describe it.
+- **In the enclave, through near-antibody's rounds** (the `immune-enclave` Action): the pull request's code is
+  proposed as the next round of a program kept for these checks, and every paid proof, sealed or not, re-runs
+  inside the enclave. Only which keys still break is published. It works on testnet:
+  [Re-runs in the enclave](#re-runs-in-the-enclave).
+
+Both catch a paid defect coming back, never a new one. A new defect is what a bounty window per pull request
+is for: built, not yet run on testnet ([Bounty windows](#bounty-windows)).
 
 ```
 forge build
@@ -160,6 +167,66 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
   `fixtures/zk/a`) reproduces the TEE's receipt and is fixed on the final fix built from source. Commits 14
   and 18 are listed as not re-run until their tags are disclosed (both qualify), and 19, a gap claim with no
   tag to disclose, as sealed.
+
+## Re-runs in the enclave
+
+The check on the runner re-runs only the proofs it can read. The `immune-enclave` Action re-runs every paid
+proof, sealed or not, inside the enclave, through near-antibody's rounds: the same machinery that checks a
+project's own fix (docs/rounds.md).
+
+1. **A job with no secret builds the pull request's code** and writes it as a round manifest (`antibody
+   immune --manifest-out`, the `immune-memory` Action's `manifest-out`).
+2. **A job that runs none of the pull request's code proposes it** as the next round of a program kept for
+   these checks (`antibody round propose`). Its key is limited to `propose_round` and the manifest's upload.
+3. **near-antibody's round check runs in the enclave.** Once it answers `ok` and is attested on NEAR (T1), the
+   keeper requests a re-run of every paid proof at that round. Each re-run runs inside the enclave and is
+   attested on NEAR.
+4. **The check reads near-antibody** (`antibody round results --round R --check-run RUN`). Per paid key the
+   answer is: still breaks, fixed, or no verdict yet. Only which keys still break is published; where a proof
+   breaks stays sealed (SA-19).
+5. **A bot key limited to `open_round` and `allocate` opens the round** once its re-run window ends, so the
+   next pull request finds the slot free.
+
+**What it trusts.**
+- The enclave's runs, attested on NEAR (T1), and near-antibody's round rules.
+- The pull request's code is built where no secret is, and the keys never meet that code.
+- A pull request from a fork gets no secret and runs the check on the runner only.
+
+**A program of its own, and why.** Anyone may open an accepted proposal once its windows allow, so a pull
+request proposed on a real program could become that program's next round. The checks therefore propose on a
+program kept for them, with paid proofs of its own (a proof is bound to its program).
+- On testnet this is program 12: Acme Lend at new addresses, its findings submitted and paid as in the recorded
+  run, and fixed in rounds 1 and 2.
+- Every check opens its round there. That program's current code is therefore the last checked pull request's.
+  Its paid proofs are re-run against every proposal, whatever the current round.
+
+**One proposal at a time.** An accepted proposal is cleared only by opening its round, so checks queue (the
+Action waits for the slot).
+- A manifest built while another pull request held the slot names a round that has opened since. `round
+  propose` renumbers it to the round it proposes; only the number changes.
+- A check reads its own round alone. A round check near-antibody refused is an error, never a pass.
+- `round results` reads each commit's latest re-run, so query a round while it is the latest.
+
+**Measured on testnet** (2026-11-08, [Himess/antibody-immune-demo](https://github.com/Himess/antibody-immune-demo),
+program 12, three paid keys and one gap claim):
+
+| | A harmless change (PR #1) | Reintroduces a paid defect (PR #2) |
+|---|---|---|
+| Round and its check | round 3, run 115: `ok`, T1 16 s after the request | round 4, run 121: `ok`, T1 15 s after the request |
+| Re-runs | runs 116–119, all T1: every key fixed | runs 122–125, all T1: run 123 breaks slot 1 again (`fees_to_treasury`, high); the two `solvency` keys fixed |
+| Verdict | green | red, naming `fees_to_treasury` |
+| Every re-run answered | 141 s after the round check's request | 119 s after the round check's request |
+| Job, until its round opened | 12 min 46 s | 11 min 2 s |
+
+PR #2's first run was proposed while PR #1 held the slot. Its manifest still named round 3, near-antibody
+refused it (run 120: "wrong round number"), and that version of the check read PR #1's round as green. The
+renumbering and the per-proposal reading above came from that run.
+
+**Costs.** The project's NEAR credit paid 0.102 NEAR for 11 runs (three round checks and eight re-runs). That
+is about 0.009 NEAR a run after OutLayer's refunds, or about 0.05 NEAR for one check (its round check and four
+re-runs).
+Each run's TDX quote is relayed to NEAR separately, at about 0.018 NEAR of gas a run. The proposal's gas
+comes from its key's allowance.
 
 ## Bounty windows
 
