@@ -6,7 +6,7 @@ import styles from "./ui.module.css";
 export { LEVEL, levelOf, type Level } from "@/lib/levels";
 
 /**
- * The level's badge, in plain words (lib/levels.ts): "Verified in the enclave", "Attested on NEAR", "Zero-knowledge proof", the
+ * The level's badge, in plain words (lib/levels.ts): "Enclave verdict", "Attested on NEAR", "Zero-knowledge proof", the
  * code in its tooltip. `code` adds the code beside it as small text (the trust page only).
  */
 export function TierBadge({ tier, size, code = false }: { tier: string | null | undefined; size?: "sm" | "md"; code?: boolean }) {

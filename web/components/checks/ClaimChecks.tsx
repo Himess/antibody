@@ -243,7 +243,7 @@ export function ClaimIndex({ rows }: { rows: IndexRow[] }) {
   const tally = progress
     ? `Checking claim ${progress.at} of ${progress.total}…`
     : ran === 0
-      ? `${checkable.length} claims, each with a check your browser runs${terminal ? `; ${terminal} only in a terminal` : ""}.`
+      ? `${checkable.length + terminal} claims: ${checkable.length} your browser checks right here${terminal ? `, ${terminal} with a terminal command` : ""}.`
       : [
           `${count("holds")} of ${checkable.length} hold`,
           count("differs") ? `${count("differs")} differ${count("differs") === 1 ? "s" : ""}` : "",

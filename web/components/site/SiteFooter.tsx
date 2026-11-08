@@ -42,8 +42,8 @@ export function SiteFooter() {
           </a>
           <span className="footer-api">
             API{" "}
-            <a href={`${config.apiBase}/health`} target="_blank" rel="noreferrer noopener" className="mono xsmall">
-              {config.apiBase.replace(/^https?:\/\//, "")}
+            <a href={`${config.apiShown}/v1/status`} target="_blank" rel="noreferrer noopener" className="mono xsmall">
+              /v1/status
             </a>
           </span>
         </div>

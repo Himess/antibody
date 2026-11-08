@@ -110,7 +110,7 @@ function summary(x: {
       if (promoted)
         return `${S}'s proof was a duplicate until round ${numOf(evData(promoted).round) ?? "—"}'s fix stopped the earlier claim but not this one: promoted, and paid ${amount}.`;
       const s = secondsBetween(x.baseNs, paid?.block_ts_ns);
-      return `${S}'s sealed proof broke ${rules || "a rule"}${sev ? ` (${sev})` : ""}. Verified in the enclave${x.t1 ? ", attested on NEAR" : ""} and paid ${amount}${d?.instant === true ? " instantly, under the instant cap" : " after its challenge window"}${s !== null ? `, ${duration(s)} after its commit` : ""}.`;
+      return `${S}'s sealed proof broke ${rules || "a rule"}${sev ? ` (${sev})` : ""}. Run in the enclave${x.t1 ? ", attested on NEAR" : ""} and paid ${amount}${d?.instant === true ? " instantly, under the instant cap" : " after its challenge window"}${s !== null ? `, ${duration(s)} after its commit` : ""}.`;
     }
     case "Duplicate":
     case "Done:DuplicateConfirmed":

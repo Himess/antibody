@@ -141,7 +141,7 @@ function Rows({ account, activity, own }: { account: string; activity: Activity;
           </div>
           <p className="xsmall muted">
             Each commit&apos;s page shows its transactions and the checks behind its verdict. The same list from a terminal:{" "}
-            <span className="mono">antibody status --program &lt;id&gt;</span>. Source: <span className="mono">{config.apiBase.replace(/^https?:\/\//, "")}</span>.
+            <span className="mono">antibody status --program &lt;id&gt;</span>. Source: the Antibody API (<span className="mono">/v1/programs</span>).
           </p>
         </>
       )}

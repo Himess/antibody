@@ -28,6 +28,15 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // The API's public paths under the site's own origin, so links and commands name the site (config.apiShown).
+  async rewrites() {
+    const api = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
+    if (!api.startsWith("https://")) return [];
+    return [
+      { source: "/v1/:path*", destination: `${api}/v1/:path*` },
+      { source: "/health", destination: `${api}/health` },
+    ];
+  },
 };
 
 export default nextConfig;

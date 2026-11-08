@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Moment } from "@/lib/api/types";
 import { utc, wnear } from "@/lib/format";
-import { chainsWord, committer, pausesOf, possessive, recordHref } from "@/lib/moment";
+import { chainsWord, committer, pausesOf, Possessive, recordHref } from "@/lib/moment";
 import { Icon } from "../ui/Icon";
 import { Pill } from "../ui/Pill";
 
@@ -26,7 +26,7 @@ export function MomentHeader({ moment, live, titleId, level = 2 }: { moment: Mom
         ) : null}
       </div>
       <H id={titleId}>
-        {possessive(name)} Critical: paid in {paid?.seconds.toFixed(1)} s
+        {Possessive(name)} critical bug: paid in {paid?.seconds.toFixed(1)} s
         {lastPause !== null ? `, ${chainsWord(paused.length)} paused by ${lastPause.toFixed(1)} s` : ""}
       </H>
       <p className="small muted">

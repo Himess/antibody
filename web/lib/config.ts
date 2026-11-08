@@ -13,20 +13,30 @@ const list = (v: string | undefined, fallback: string[]): string[] => {
   return items.length ? items : fallback;
 };
 
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
+const siteUrl = (
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000")
+).replace(/\/+$/, "");
+
 export const config = {
-  /** The Antibody API (antibody-services api), over HTTPS. */
-  apiBase: (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8787").replace(/\/+$/, ""),
+  /** The Antibody API (antibody-services api), over HTTPS: what the site's own requests call. */
+  apiBase,
+  /**
+   * The API as the site shows it, in links and commands: the site's own origin, which passes /v1 and /health
+   * on to the API (next.config.ts). Locally, the API itself.
+   */
+  apiShown: apiBase.startsWith("https://") && siteUrl.startsWith("https://") ? siteUrl : apiBase,
   /** The site's own origin (OG images, canonical URLs). */
-  siteUrl: (
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000")
-  ).replace(/\/+$/, ""),
+  siteUrl,
   network: process.env.NEXT_PUBLIC_NEAR_NETWORK ?? "testnet",
   /** NEAR RPCs the browser uses for explicit checks and the try, tried in order with backoff. */
+  // rpc.testnet.near.org is retired (it answers -429 "DEPRECATED" to everything).
   nearRpcs: list(process.env.NEXT_PUBLIC_NEAR_RPCS, [
     "https://rpc.testnet.fastnear.com",
     "https://test.rpc.fastnear.com",
-    "https://rpc.testnet.near.org",
+    "https://near-testnet.drpc.org",
+    "https://testnet-rpc.intea.rs",
   ]),
   /** Archival RPCs: blobs and base witnesses uploaded with FastFS live in old transactions. */
   nearArchivalRpcs: list(process.env.NEXT_PUBLIC_NEAR_ARCHIVAL_RPCS, [

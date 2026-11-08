@@ -147,7 +147,7 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
               </>
             ) : null}
             ; the API serves them all at{" "}
-            <a href={`${config.apiBase}/v1/moments`} target="_blank" rel="noreferrer noopener">
+            <a href={`${config.apiShown}/v1/moments`} target="_blank" rel="noreferrer noopener">
               /v1/moments
             </a>
             .

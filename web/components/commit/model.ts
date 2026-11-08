@@ -596,7 +596,7 @@ export const RECORDED: Record<
     program: 5,
     hunter: "agent-a.antibody.testnet",
     rows: [1, 8, 15, 16],
-    text: "Our fixture agent A, a scripted MCP client, submitted a sealed proof over MCP: verified in the enclave, attested on NEAR and paid in seconds under the cap. Its verdict paused the fixture on both chains, the verdict guard froze on it, and the project read the proof through its release wrap.",
+    text: "Our fixture agent A, a scripted MCP client, submitted a sealed proof over MCP: run in the enclave, attested on NEAR and paid in seconds under the cap. Its verdict paused the fixture on both chains, the verdict guard froze on it, and the project read the proof through its release wrap.",
   },
   14: {
     program: 5,

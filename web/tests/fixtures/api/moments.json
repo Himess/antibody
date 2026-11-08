@@ -41,7 +41,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/2Bf74vNQdwGMT8oLf67EquZkXKZLUynXwTHHzAE4euJC",
      "key": "verified",
-     "label": "Verified in the enclave",
+     "label": "Enclave verdict",
      "seconds": 125.2,
      "seconds_exact": 125.229272939,
      "tx": "2Bf74vNQdwGMT8oLf67EquZkXKZLUynXwTHHzAE4euJC"
@@ -191,7 +191,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY",
      "key": "verified",
-     "label": "Verified in the enclave",
+     "label": "Enclave verdict",
      "seconds": 18.5,
      "seconds_exact": 18.524081315,
      "tx": "8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY"

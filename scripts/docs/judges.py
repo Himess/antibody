@@ -31,7 +31,7 @@ CHAIN_NAMES = {11155111: "Sepolia", 84532: "Base Sepolia", 1: "Ethereum", 8453: 
 
 # What each finding of the story shows (all are planted, clearly labeled fixture bugs).
 STORY = {
-    "A (MCP)": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the enclave, attested on NEAR and paid in seconds under the cap",
+    "A (MCP)": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is run in the enclave, attested on NEAR and paid in seconds under the cap",
     "B": "A second planted bug (the unguarded fee sweep) is verified and paid after its window",
     "C": "A prompt injection in the report earns nothing: the verifier never reads reports; NoViolation, and the bond goes to the escrow",
     "D": "A duplicate of A is recorded with its own proof, then confirmed a duplicate at the fix",
@@ -204,7 +204,7 @@ class Doc:
         return ["Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on "
                 f"Windows). Values only the run records (timings, refusals, counts) print with `{self.rec('<path>')}`, which needs Python 3 (standard "
                 "library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification "
-                "levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's "
+                "levels the CLI prints: T0, the enclave verdict (OutLayer's operator delivered the enclave's output; nothing on NEAR checks it yet); T1, attested on NEAR (the run's "
                 "TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.", ""]
 
     def curl(self, rpc, method, params):
@@ -910,7 +910,10 @@ def bring_your_own(d, names, vending):
            "Your agent writes the proof itself and needs no NEAR account: the server gets it an account from a vending contract and keeps "
            "the account's key. The vending contract pays the bond, the verification run and the storage, and payouts go back to it. One "
            "config, with no account:", "",
-           "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["mcp", "--workspace", "<dir>"]}}}, indent=2), "```", ""]
+           "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["mcp", "--workspace", "<dir>"]}}}, indent=2), "```", "",
+           "With Claude Code, the same in one line: `claude mcp add antibody -- " + " ".join(["antibody"] + d.net_args() + ["mcp", "--workspace", "<dir>"]) + "`.", "",
+           "The practice vending contract vends at most a set number of accounts per UTC clock hour (30 through 25 November). When the hour's "
+           "are taken, `hunt_start` and `practice_try` refuse with the time the count starts again, and nothing is spent.", ""]
     added = [n for n in ("hunt_start", "hunt_submit") if names and n not in names]
     if added:
         out += ["The recorded run's server had no " + " or ".join(f"`{n}`" for n in added) + ": the tools below were added after it.", ""]
@@ -957,8 +960,8 @@ def agents(d):
     practice = r.get("practice", {})
     one = r.get("one_moment", {}).get("seconds_from_commit", {})
     vending = practice.get("vending", {}).get("vending", "practice.<root>.testnet")
-    out += ["Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified "
-            "in the enclave (a TEE). An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.", "",
+    out += ["Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, run "
+            "in the enclave (a TEE) and, for an instant payout, attested on NEAR. An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.", "",
             "## Start with the practice program", "",
             "The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:", ""]
     out += d.flags_note()

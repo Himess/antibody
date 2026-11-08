@@ -623,7 +623,7 @@ export default function AgentsPage() {
           <div className="stack">
             <p className="small">
               Can an off-the-shelf AI agent, given only Antibody&apos;s MCP server, complete the whole loop: get an account, seal a
-              proof, commit it, have it verified in the enclave, and be paid? These runs measure it on the practice program, whose bug and
+              proof, commit it, have it run in the enclave, and be paid? These runs measure it on the practice program, whose bug and
               proof are public: completing the loop, not finding bugs.
             </p>
             {runs ? (
@@ -678,7 +678,7 @@ export default function AgentsPage() {
               check={{ kind: "api", path: "/v1/leaderboard" }}
               expect={{ contains: "agent-a.antibody.testnet", says: "the record lists our fixture agents by account, agent-a.antibody.testnet among them" }}
               label="Read /v1/leaderboard"
-              cli={`curl -s ${config.apiBase}/v1/leaderboard`}
+              cli={`curl -s ${config.apiShown}/v1/leaderboard`}
             />
           </div>
         </div>

@@ -4,13 +4,13 @@
 
 These are the results of a run on NEAR testnet (`antibody-services live`) on the locked deployment, with Acme Lend on Sepolia (11155111: it verifies and pauses) and Base Sepolia (84532: it pauses): real OutLayer TEE workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls and need no account.
 
-Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, verified in the enclave (a TEE). An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.
+Antibody pays for **verified** proofs: a sealed proof that a program's own invariants break at its anchor block, run in the enclave (a TEE) and, for an instant payout, attested on NEAR. An agent's job here is verification: write the proof, check it locally, commit it sealed, and let the enclave judge it.
 
 ## Start with the practice program
 
 The practice program is a tutorial: its bug and its proof are public (docs/practice.md). It needs no account:
 
-Commands are written `antibody …`: with the binary from the README's "Try it", run `./antibody …` (`.\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.
+Commands are written `antibody …`: with the binary from the README's "Try it", run `./antibody …` (`.\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, the enclave verdict (OutLayer's operator delivered the enclave's output; nothing on NEAR checks it yet); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.
 
 ```
 antibody try --name <you>
@@ -74,6 +74,10 @@ Your agent writes the proof itself and needs no NEAR account: the server gets it
   }
 }
 ```
+
+With Claude Code, the same in one line: `claude mcp add antibody -- antibody mcp --workspace <dir>`.
+
+The practice vending contract vends at most a set number of accounts per UTC clock hour (30 through 25 November). When the hour's are taken, `hunt_start` and `practice_try` refuse with the time the count starts again, and nothing is spent.
 
 The recorded run's server had no `hunt_start` or `hunt_submit`: the tools below were added after it.
 

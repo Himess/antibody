@@ -21,9 +21,9 @@ import { config } from "@/lib/config";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: "Open a program",
+    title: "For protocols: open a program",
     description:
-      "Open an Antibody program before a launch or an upgrade: rules as code, an escrow, a pause on every chain you register once a Critical in your pause policy is attested on NEAR, and a release gate your fix must pass against every paid proof. The quickstart, the business model and the roadmap.",
+      "Open an Antibody program before a launch or an upgrade: rules as code, an escrow, a pause on every chain you register once a Critical in your pause policy is attested on NEAR, and a release gate your fix must pass against every paid proof. What a project gets, the business model, the quickstart and the roadmap.",
   };
 }
 
@@ -258,8 +258,8 @@ export default function ProjectsPage() {
   return (
     <>
       <PageHead
-        crumbs={[{ href: "/projects", label: "Open a program" }]}
-        eyebrow="For projects"
+        crumbs={[{ href: "/projects", label: "For protocols" }]}
+        eyebrow="For protocols"
         title="Open a program"
         lede={
           <>
@@ -308,33 +308,13 @@ export default function ProjectsPage() {
 
       <OnThisPage
         items={[
-          { href: "#quickstart", label: "Quickstart" },
           { href: "#what-you-get", label: "What you get" },
           { href: "#business-model", label: "Business model" },
+          { href: "#quickstart", label: "Quickstart" },
           { href: "#roadmap", label: "Roadmap" },
           { href: "#pilot", label: "Ask for a pilot" },
         ]}
       />
-
-      <Section
-        id="quickstart"
-        title="The quickstart"
-        lede={
-          <>
-            Nine steps with their exact commands, against the testnet deployment the CLI has built in. The full text:{" "}
-            <DocLink path="docs/project-quickstart.md">docs/project-quickstart.md</DocLink>.
-          </>
-        }
-      >
-        <div className="callout" style={{ marginBottom: 8 }}>
-          <Icon name="info" size={16} />
-          <span>
-            Rehearse it offline first, on Linux or macOS: <code>make serve</code> runs the whole story in a sandbox and keeps it up.
-            Add <code>--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json</code> to any command.
-          </span>
-        </div>
-        <Steps steps={steps} label="Open a program, step by step" />
-      </Section>
 
       <Section
         id="what-you-get"
@@ -456,6 +436,27 @@ export default function ProjectsPage() {
       <Section id="business-model" title="Business model" lede="Verification at cost, fees pinned per program, and forfeited bonds that are never ours.">
         <dl className={styles.model}>
           <div>
+            <dt>For</dt>
+            <dd>
+              <span className={styles.modelLead}>Protocols before a launch or an upgrade.</span>
+              <span>
+                No team reads reports: the verifier pays or refuses a proof in minutes, and a Critical pauses every chain you registered before
+                anyone has read it. A fix ships only once every paid proof fails against it.
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Price</dt>
+            <dd>
+              <span className={styles.modelLead}>5% of each payout. Nothing when nothing is found.</span>
+              <span>
+                The proposed mainnet price (0 on this testnet). A program that pays two Criticals of 50,000 and one High of 10,000 pays 5,500 in
+                fees, taken from its escrow after the hunters are paid. No triage team, no retainer: each verification run is paid at cost by
+                whoever asks for it.
+              </span>
+            </dd>
+          </div>
+          <div>
             <dt>Verification</dt>
             <dd>
               <span className={styles.modelLead}>At cost.</span>
@@ -487,7 +488,7 @@ export default function ProjectsPage() {
                   equals: "1000000000000000000000",
                   says: "program 5's ledger counts commit 15's forfeited bond, 0.001 wNEAR, in its own escrow",
                 }}
-                cli={`curl -s ${config.apiBase}/v1/programs`}
+                cli={`curl -s ${config.apiShown}/v1/programs`}
                 label="Read the ledgers"
               />
             </dd>
@@ -502,6 +503,26 @@ export default function ProjectsPage() {
             </dd>
           </div>
         </dl>
+      </Section>
+
+      <Section
+        id="quickstart"
+        title="The quickstart"
+        lede={
+          <>
+            Nine steps with their exact commands, against the testnet deployment the CLI has built in. The full text:{" "}
+            <DocLink path="docs/project-quickstart.md">docs/project-quickstart.md</DocLink>.
+          </>
+        }
+      >
+        <div className="callout" style={{ marginBottom: 8 }}>
+          <Icon name="info" size={16} />
+          <span>
+            Rehearse it offline first, on Linux or macOS: <code>make serve</code> runs the whole story in a sandbox and keeps it up.
+            Add <code>--network sandbox --rpc http://127.0.0.1:3030 --deployments target/demo/deployments.json</code> to any command.
+          </span>
+        </div>
+        <Steps steps={steps} label="Open a program, step by step" />
       </Section>
 
       <Section

@@ -40,7 +40,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY",
      "key": "verified",
-     "label": "Verified in the enclave",
+     "label": "Enclave verdict",
      "seconds": 18.5,
      "seconds_exact": 18.524081315,
      "tx": "8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY"
