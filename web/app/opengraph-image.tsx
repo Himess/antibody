@@ -2,7 +2,8 @@ import { ImageResponse } from "next/og";
 import recorded from "@/data/moments.json";
 import type { Moments } from "@/lib/api/types";
 import { plainStep } from "@/lib/moment";
-import { OG, OgMark, ogFonts } from "@/lib/og";
+import { OG, ogFonts } from "@/lib/og";
+import { OgLockup } from "@/lib/og-logo";
 
 export const alt = "The one moment: A's Critical verified at 18.5 s, paid at 71.0 s, both chains paused by 90.6 s (recorded on NEAR testnet)";
 export const size = OG.size;
@@ -45,8 +46,7 @@ export default async function Image() {
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: OG.bg, color: OG.ink, padding: "54px 80px", fontFamily: "Sans" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <OgMark size={40} />
-          <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: -0.5 }}>Antibody</span>
+          <OgLockup height={40} ink={OG.ink} accent={OG.accent} />
           <span style={{ marginLeft: "auto", fontFamily: "Mono", fontSize: 18, color: OG.ink3, letterSpacing: 1.5 }}>RECORDED ON NEAR TESTNET</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", marginTop: 24 }}>

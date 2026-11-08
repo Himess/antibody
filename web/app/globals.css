@@ -14,9 +14,10 @@
   --ink-3: #5a6168;
   --line: #dde0da;
   --line-strong: #c3c8c1;
-  --accent: #e8480c;
-  --accent-ink: #b53a07;
-  --accent-soft: #fbe6dc;
+  --accent: #d6156f;
+  --accent-ink: #a8105a;
+  --accent-soft: #fbe3ee;
+  --on-accent: #ffffff;
   --ok: #11683f;
   --ok-soft: #e1f0e7;
   --warn: #7e5200;
@@ -76,9 +77,10 @@
     --ink-3: #8e948f;
     --line: #23272a;
     --line-strong: #353a3e;
-    --accent: #ff6b2c;
-    --accent-ink: #ff8a55;
-    --accent-soft: #2a1710;
+    --accent: #ff3f98;
+    --accent-ink: #ff6eb0;
+    --accent-soft: #2a0f1c;
+    --on-accent: #0a0b0c;
     --ok: #4cc38a;
     --ok-soft: #10251a;
     --warn: #e3b341;
@@ -109,9 +111,10 @@
   --ink-3: #8e948f;
   --line: #23272a;
   --line-strong: #353a3e;
-  --accent: #ff6b2c;
-  --accent-ink: #ff8a55;
-  --accent-soft: #2a1710;
+  --accent: #ff3f98;
+  --accent-ink: #ff6eb0;
+  --accent-soft: #2a0f1c;
+  --on-accent: #0a0b0c;
   --ok: #4cc38a;
   --ok-soft: #10251a;
   --warn: #e3b341;
@@ -467,7 +470,7 @@ pre {
 .btn-primary:hover {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-sm {
@@ -716,6 +719,10 @@ pre {
 .brand {
   text-decoration: none;
   color: var(--ink);
+  /* The header centres the 24 px wordmark; its word's baseline (835 of 1045.2 units) then sits 2.6 px below
+     the nav's. A whole-pixel lift puts it on the nav's baseline and keeps the edges sharp at 1x. */
+  position: relative;
+  top: -3px;
 }
 
 .brand:hover {

@@ -9,7 +9,7 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="page site-header-inner">
         <Link href="/" className="brand" aria-label="Antibody, home">
-          <Wordmark />
+          <Wordmark height={24} />
         </Link>
         <nav aria-label="Main" className="nav-desktop">
           <NavLinks />

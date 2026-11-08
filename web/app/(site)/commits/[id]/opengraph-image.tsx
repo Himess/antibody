@@ -19,7 +19,8 @@ import {
 import { api } from "@/lib/api";
 import { stateLabel, wnear } from "@/lib/format";
 import { LEVEL, levelOf } from "@/lib/levels";
-import { OG, OgMark, ogFonts } from "@/lib/og";
+import { OG, ogFonts } from "@/lib/og";
+import { OgLockup } from "@/lib/og-logo";
 
 export const alt = "A commit's verdict card on Antibody (NEAR testnet)";
 export const size = OG.size;
@@ -84,8 +85,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     (
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: OG.bg, color: OG.ink, padding: "60px 80px", fontFamily: "Sans" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <OgMark size={40} />
-          <span style={{ fontSize: 30, fontWeight: 600 }}>Antibody</span>
+          <OgLockup height={40} ink={OG.ink} accent={OG.accent} />
           <span style={{ marginLeft: "auto", fontFamily: "Mono", fontSize: 18, color: OG.ink3, letterSpacing: 1.5 }}>NEAR TESTNET</span>
         </div>
         <span style={{ marginTop: 44, fontFamily: "Mono", fontSize: 26, color: OG.ink2 }}>
