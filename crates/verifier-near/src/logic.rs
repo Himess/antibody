@@ -161,6 +161,8 @@ pub struct Host {
     pub fuel_left: u64,
     pub fuel_window: u64,
     pub instructions: u64,
+    /// Memory the host cannot back traps (src/exec.rs).
+    pub limiter: crate::exec::NoQuietGrowth,
 }
 
 impl Host {
@@ -190,6 +192,7 @@ impl Host {
             fuel_left: fuel_budget,
             fuel_window: 0,
             instructions: 0,
+            limiter: crate::exec::NoQuietGrowth,
         })
     }
 
@@ -581,7 +584,7 @@ impl Host {
         self.gas.pay_base(self.cfg.ext.base)?;
         self.view_check("promise_batch_then")?;
         let account = self.read_account_id(mem, acc_ptr, acc_len)?;
-        let deps = match self.promises.get(promise_idx as usize) {
+        let deps = match self.promises.get(usize::try_from(promise_idx).unwrap_or(usize::MAX)) {
             Some(Promise::Receipt(r)) => vec![*r],
             Some(Promise::NotReceipt(rs)) => rs.clone(),
             None => return Err(host(format!("InvalidPromiseIndex {{ promise_idx: {promise_idx} }}"))),
@@ -603,7 +606,7 @@ impl Host {
         let mut deps = vec![];
         for c in raw.chunks_exact(8) {
             let idx = u64::from_le_bytes(c.try_into().unwrap());
-            match self.promises.get(idx as usize) {
+            match self.promises.get(usize::try_from(idx).unwrap_or(usize::MAX)) {
                 Some(Promise::Receipt(r)) => deps.push(*r),
                 Some(Promise::NotReceipt(rs)) => deps.extend(rs.iter().copied()),
                 None => return Err(host(format!("InvalidPromiseIndex {{ promise_idx: {idx} }}"))),
@@ -620,7 +623,7 @@ impl Host {
     }
 
     fn receipt_of(&self, promise_idx: u64) -> Result<(usize, bool), Stop> {
-        let r = match self.promises.get(promise_idx as usize) {
+        let r = match self.promises.get(usize::try_from(promise_idx).unwrap_or(usize::MAX)) {
             Some(Promise::Receipt(r)) => *r,
             Some(Promise::NotReceipt(_)) => return Err(host("CannotAppendActionToJointPromise")),
             None => return Err(host(format!("InvalidPromiseIndex {{ promise_idx: {promise_idx} }}"))),
@@ -789,7 +792,7 @@ impl Host {
     fn promise_result(&mut self, idx: u64, reg: u64) -> Result<u64, Stop> {
         self.gas.pay_base(self.cfg.ext.base)?;
         self.view_check("promise_result")?;
-        match self.ctx.promise_results.get(idx as usize).cloned() {
+        match self.ctx.promise_results.get(usize::try_from(idx).unwrap_or(usize::MAX)).cloned() {
             None => Err(host(format!("InvalidPromiseResultIndex {{ result_idx: {idx} }}"))),
             Some(PromiseResult::Successful(data)) => {
                 self.reg_set(reg, &data)?;
@@ -803,7 +806,7 @@ impl Host {
         self.gas.pay_base(self.cfg.ext.base)?;
         self.gas.pay_base(self.cfg.ext.promise_return)?;
         self.view_check("promise_return")?;
-        match self.promises.get(promise_idx as usize) {
+        match self.promises.get(usize::try_from(promise_idx).unwrap_or(usize::MAX)) {
             Some(Promise::Receipt(r)) => {
                 self.return_data = ReturnData::ReceiptIndex(*r);
                 Ok(())
@@ -1163,7 +1166,8 @@ pub fn link(l: &mut Linker<Host>) -> Result<(), String> {
     Ok(())
 }
 
-/// nearcore's `WasmTrap` names for wasmi's traps. `None`: v2 cannot judge it (fuel, stack).
+/// nearcore's `WasmTrap` names for wasmi's traps (every one of wasmi 2.0.0's, named). `None`: v2 cannot judge it
+/// (fuel, stack, the host's memory).
 pub fn wasm_trap(t: TrapCode) -> Option<&'static str> {
     Some(match t {
         TrapCode::UnreachableCodeReached => "Unreachable",
@@ -1172,7 +1176,7 @@ pub fn wasm_trap(t: TrapCode) -> Option<&'static str> {
         TrapCode::IndirectCallToNull => "IndirectCallToNull",
         TrapCode::IntegerDivisionByZero | TrapCode::IntegerOverflow | TrapCode::BadConversionToInteger => "IllegalArithmetic",
         TrapCode::BadSignature => "IncorrectCallIndirectSignature",
-        TrapCode::StackOverflow | TrapCode::OutOfFuel => return None,
-        _ => "GenericTrap",
+        // The host's limits, not the contract's behaviour: never a NEAR failure (src/exec.rs, NoQuietGrowth).
+        TrapCode::StackOverflow | TrapCode::OutOfFuel | TrapCode::OutOfSystemMemory | TrapCode::GrowthOperationLimited => return None,
     })
 }

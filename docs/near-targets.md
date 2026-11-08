@@ -1,7 +1,9 @@
 # NEAR contracts as targets: verifier v2 (design)
 
-**Status: a design, reviewed on 2026-11-08 (§13). Nothing here is built or deployed yet.** Every feature below is "not yet"
-until it is merged, measured and recorded, and this page will say so feature by feature as each one lands.
+**Status: designed and reviewed on 2026-11-08 (§13); the engine and the v2 binary are built and tested (§14);
+nothing is deployed and no program pins v2.** CI runs the engine's tests, checks that v2's native and
+wasm32-wasip2 builds give byte-identical output on two NEAR fixtures, and checks v1's recorded EVM fixtures
+through v2 byte for byte. What stays to do before a program pins v2 is §15.
 
 Today the verifier judges EVM contracts only, while NEAR settles, attests and pauses. Verifier v2 lets a
 program commit NEAR contracts (wasm) as its targets, so Antibody protects NEAR applications themselves. v2
@@ -263,7 +265,7 @@ pinning a v2 guest is optional (N8): only if everything else ships.
   conformance suite shows.
 - **Pairing and BLS host functions:** refused in the first release.
 
-## 14. Implementation notes (E5 N1)
+## 14. Implementation notes (the first build)
 
 The first engine (`crates/verifier-near`, the new `antibody-verifier-v2` binary) follows this design,
 with these deviations, each made to match the reference runtime on real near-sdk-rs contracts:
@@ -312,3 +314,36 @@ with these deviations, each made to match the reference runtime on real near-sdk
   carry (`antibody.receipt.v1` is v1's replay and bundle receipt). The NEAR receipt keeps v1's program
   receipt fields in order, with NEAR types (account ids, yoctoNEAR), `chain_id` 398 and the added `near`
   section; the facts are v1's facts structure exactly.
+
+## 15. Before a program pins v2 (the 2026-11-09 review)
+
+A fresh-context review of the engine found these; the first two are fixed.
+
+- **Fixed: memory the host cannot back** traps (a resource limiter on every store). It used to fail quietly:
+  `memory.grow` returned -1, or a value stack out of memory became a NEAR failure, in the enclave under its
+  memory cap but not natively. It is now `Unevaluable`; it should become an InfraError (retried) when that
+  outcome reaches the engine. Every one of wasmi's trap codes is named.
+- **Fixed: contract-supplied promise and result indices** no longer wrap on a 32-bit build.
+- **To do:**
+  - **Resources.**
+    - Enforce §10's limit on the storage a run writes.
+    - Charge each instantiation, and each rules view's 64 MiB memory, a fixed fuel cost calibrated on OutLayer.
+    - Cap the views of one evaluation.
+    - Stop cloning an account's whole state on a receipt's first write.
+  - **Gas fidelity.** Charge an upper bound of nearcore's trie-node fees on every storage operation in both
+    runs, and price wasmi's free control instructions, so the doubled run bounds NEAR's cost.
+  - **`random_seed`.** Derive a seed per action, or make a bundle call that reads it `Unevaluable`. Today every
+    call gets the manifest's constant.
+  - **Receipts.**
+    - System receipts (refunds, deletion payouts) should not count against the depth bound.
+    - A receipt's result should be its last action's.
+    - Model nearcore's receipt-size and recorded-storage limits, and its 256 KiB stack accounting.
+    - Refuse `attached_deposit` in view mode.
+  - **Activation.**
+    - Check each impact token's `ft_balance_of` at activation.
+    - Refuse element segments and reference-typed globals, or say here that they are allowed.
+  - **Tests.**
+    - A byte-identity case for v1's TEE request path through v2.
+    - The crypto vectors under wasm.
+    - Conformance against nearcore's sandbox (§8).
+    - Fuzzing.

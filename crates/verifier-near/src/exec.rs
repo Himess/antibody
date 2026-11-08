@@ -47,6 +47,38 @@ pub fn new_engine() -> Engine {
     Engine::new(&c)
 }
 
+/// Memory the host cannot back traps instead of failing quietly. On a failed allocation wasmi's `memory.grow`
+/// returns -1 to the contract, which then runs on along a path NEAR never takes (NEAR always backs its pages):
+/// natively the allocation succeeds, in the enclave under its memory cap it may not, and the two builds would
+/// judge the same proof differently. Trapping makes the call `Unevaluable`, and no verdict rests on it. Growth
+/// past a memory's maximum still returns -1, as on NEAR: wasmi refuses it before asking the host.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoQuietGrowth;
+
+impl wasmi::ResourceLimiter for NoQuietGrowth {
+    fn memory_growing(&mut self, _current: usize, _desired: usize, _maximum: Option<usize>) -> Result<bool, wasmi_core::LimiterError> {
+        Ok(true)
+    }
+    fn table_growing(&mut self, _current: usize, _desired: usize, _maximum: Option<usize>) -> Result<bool, wasmi_core::LimiterError> {
+        Ok(true)
+    }
+    fn memory_grow_failed(&mut self, error: &wasmi_core::MemoryError) -> Result<(), wasmi_core::LimiterError> {
+        match error {
+            wasmi_core::MemoryError::OutOfSystemMemory => Err(wasmi_core::LimiterError::ResourceLimiterDeniedAllocation),
+            _ => Ok(()),
+        }
+    }
+    fn instances(&self) -> usize {
+        10_000
+    }
+    fn tables(&self) -> usize {
+        10_000
+    }
+    fn memories(&self) -> usize {
+        10_000
+    }
+}
+
 /// The engine and every contract compiled so far, by the sha256 of its original code.
 #[derive(Clone)]
 pub struct Vm {
@@ -141,6 +173,7 @@ pub fn execute(
     let first = logic::window(&host);
     host.fuel_window = first;
     let mut store = Store::new(engine, host);
+    store.limiter(|h| &mut h.limiter);
     if store.set_fuel(first).is_err() {
         return finish(store.into_data(), Outcome::Unevaluable("fuel metering is off".into()));
     }
@@ -201,6 +234,9 @@ fn end(store: Store<Host>, cfg: &Config, result: Result<(), wasmi::Error>, float
                     Outcome::Unevaluable("instructions: a call reached its instruction budget".into())
                 }
                 Some(wasmi::TrapCode::OutOfFuel) => Outcome::Unevaluable("gas: a call exhausted its gas".into()),
+                Some(t @ (wasmi::TrapCode::OutOfSystemMemory | wasmi::TrapCode::GrowthOperationLimited)) => {
+                    Outcome::Unevaluable(format!("memory: the host could not back the call's memory ({t})"))
+                }
                 Some(t) => match logic::wasm_trap(t) {
                     Some(name) => Outcome::Failed(format!("WasmTrap({name})")),
                     None => Outcome::Unevaluable(format!("stack: wasmi's bound was reached ({t})")),

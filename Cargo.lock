@@ -772,6 +772,7 @@ dependencies = [
  "sha2",
  "sha3",
  "wasmi",
+ "wasmi_core",
  "wasmparser 0.228.0",
  "wat",
 ]

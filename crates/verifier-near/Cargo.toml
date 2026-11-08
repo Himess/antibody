@@ -16,6 +16,9 @@ path = "src/lib.rs"
 # unoptimized builds do not perform: there every executed instruction grows the native stack until it
 # traps. The loop backend also makes native and wasm builds run the identical dispatch code.
 wasmi = { version = "=2.0.0", default-features = false, features = ["std", "validate", "prefer-btree-collections", "portable-dispatch"] }
+# wasmi's core, already in Cargo.lock at this version: its `LimiterError` and `MemoryError` name a resource
+# limiter's results (src/exec.rs), which wasmi itself does not re-export.
+wasmi_core = { version = "=2.0.0", default-features = false }
 # The same parser wasmi 2.0.0 uses: module checks and the float rewrite (src/prepare.rs).
 wasmparser = { version = "=0.228.0", default-features = false, features = ["std", "validate", "features"] }
 serde.workspace = true
