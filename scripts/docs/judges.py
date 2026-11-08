@@ -258,6 +258,16 @@ class Doc:
 LIMITS_DOC = "docs/limitations.md"
 
 
+def current_practice(net):
+    """The practice program a `try` goes to today: the deployments file's, which the vending contract names
+    (a fresh one replaces it when its vaults are all proved). None when the file has none."""
+    try:
+        dep = json.loads((pathlib.Path(__file__).resolve().parents[2] / "deployments" / f"near-{net}.json").read_text(encoding="utf-8"))
+        return (dep.get("practice") or {}).get("program")
+    except (OSError, ValueError):
+        return None
+
+
 def readme_limits():
     """docs/limitations.md, item by item ({title, text}: the bold lead and the rest), for the site."""
     try:
@@ -520,10 +530,13 @@ def judges(d):
                f"`{t.get('state')}`, {d.tokens(t.get('paid_raw'))} to the vending contract, about {t.get('seconds', 0):.0f} s when the run is T1")
         cmd = d.cli('try --name <you>')
         final = t.get("final_state") or t.get("state")
+        # Today's practice program, when a fresh one has replaced the recorded run's.
+        now, then = current_practice(d.net), practice.get("program_id")
+        where = f"program {then}" if now in (None, then) else f"program {now}; the recorded try was on program {then}"
         live = [d.check_api(f"/v1/commits/{t.get('commit_id')}", f"the recorded try (commit {t.get('commit_id')}): row.state is {final}", "Check the recorded try",
                             d.cli(f"status --commit {t.get('commit_id')}"), path="row.state", equals=final)] if t.get("commit_id") is not None else []
         row(n, "Anyone can run the loop with no account: the practice program (a tutorial)",
-            f"`{cmd}` (sends {d.net} transactions; vending `{practice.get('vending', {}).get('vending')}`, program {practice.get('program_id')})",
+            f"`{cmd}` (sends {d.net} transactions; vending `{practice.get('vending', {}).get('vending')}`, {where})",
             f"{end} (it paid the bond and the run), a vault of its own "
             f"(each `try` gets the next free one); `<you>` is a new lowercase name ({', '.join(x.get('account', '').split('.')[0] for x in tries)} are taken)"
             f"{t0_note()}",
