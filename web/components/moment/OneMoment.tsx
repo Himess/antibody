@@ -233,7 +233,8 @@ export function OneMoment({
         </div>
       </div>
 
-      {variant !== "present" ? <PhoneChart steps={steps} lanes={lanes} t={t} end={end} /> : null}
+      {/* Shown below 760 px in every variant (the stage included, on a phone); the wide chart takes over above it. */}
+      <PhoneChart steps={steps} lanes={lanes} t={t} end={end} />
 
       <div className={styles.controls}>
         <button type="button" className="btn btn-sm" onClick={() => (playing ? setPlaying(false) : play())} aria-label={playing ? "Pause the replay" : "Play the replay"}>
