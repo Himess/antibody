@@ -1,0 +1,11 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = []
+# The settings of contracts/evm, so the fixture builds like Acme Lend does.
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+bytecode_hash = "none"
+cbor_metadata = false

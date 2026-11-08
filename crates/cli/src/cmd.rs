@@ -427,7 +427,9 @@ pub fn programs(ctx: &Ctx, from: u32, limit: u32) -> Result<Value> {
         let id = p["id"].as_u64().unwrap_or_default() as u32;
         let m = meta(ctx, id)?;
         let l = &p["ledger"];
-        rows.push(json!({"id": id, "key": p["key"], "name": m["name"], "project": p["project"], "phase": p["phase"], "anchor": p["anchor"],
+        // A pull request's bounty window (docs/immune.md) is labelled by its name: a fork-mode program for its build.
+        let window = m["name"].as_str().is_some_and(crate::window::is_window);
+        rows.push(json!({"id": id, "key": p["key"], "name": m["name"], "window": window, "project": p["project"], "phase": p["phase"], "anchor": p["anchor"],
                          "round": p["round"], "commits": p["commits"], "token": ctx.dep.symbol(), "escrow": fmt_tokens(u128_of(&l["available"]) + u128_of(&l["reserved"]), ctx.dep.decimals()),
                          "paid": fmt_tokens(u128_of(&l["paid"]), ctx.dep.decimals())}));
     }
