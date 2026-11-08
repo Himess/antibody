@@ -58,7 +58,7 @@ describe("plain words for rules, levels and our own tries", () => {
   });
 
   it("names the three levels in words, the codes kept for the tooltips", () => {
-    expect([LEVEL.T0.name, LEVEL.T1.name, LEVEL.T2.name]).toEqual(["Enclave result", "Attested on NEAR", "ZK-proven"]);
+    expect([LEVEL.T0.name, LEVEL.T1.name, LEVEL.T2.name]).toEqual(["Verified in the enclave", "Attested on NEAR", "Zero-knowledge proof"]);
     for (const l of ["T0", "T1", "T2"] as const) expect(LEVEL[l].title.startsWith(`Level ${l}:`)).toBe(true);
     expect([levelOf("T0"), levelOf("T1"), levelOf("T2"), levelOf("")]).toEqual(["T0", "T1", "T2", "T0"]);
   });

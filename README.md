@@ -20,9 +20,10 @@ scaling. In January 2026, curl ended its bug bounty after a flood of AI-generate
 [BleepingComputer](https://bleepingcomputer.com/news/security/curl-ending-bug-bounty-program-after-flood-of-ai-slop-reports/)).
 
 **Antibody judges code instead.** A hunter, a person or an AI agent, submits a sealed proof of an exploit.
-A verifier re-runs it inside secure hardware, against the rules the project committed on NEAR. If a rule
-breaks, NEAR pays the bounty automatically, and a Critical in the project's pause policy, once attested on
-NEAR, pauses the protocol on every chain the project registered. Nobody has to read a report.
+A verifier re-runs it inside an enclave, secure hardware, against the rules the project committed on NEAR:
+the proof is *verified in the enclave*. If a rule breaks, NEAR pays the bounty automatically, and a
+Critical in the project's pause policy, once attested on NEAR, pauses the protocol on every chain the
+project registered. Nobody has to read a report.
 
 It runs on NEAR testnet today, with every contract locked.
 
@@ -151,7 +152,7 @@ Every verdict carries one of three levels. The CLI and JUDGES.md print them as T
 
 | Level | What vouches for it |
 |---|---|
-| **Enclave result** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window, and above the instant cap a second OutLayer run must agree. |
+| **Verified in the enclave** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window, and above the instant cap a second OutLayer run must agree. |
 | **Attested on NEAR** (`T1`) | The run's Intel TDX quote, which binds the pinned verifier, its input and its output, is verified on NEAR. Instant payouts need it. |
 | **Zero-knowledge proof** (`T2`) | An SP1 proof that re-running the verifier on the same input gives the same result, checked on NEAR by near-t2. Live on testnet since 2026-11-07, for disclosed verdicts; no payout depends on it. |
 
