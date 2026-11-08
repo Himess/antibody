@@ -30,7 +30,7 @@ It runs on NEAR testnet today, with every contract locked.
 
 The release binary has the testnet deployment built in: no repository, no account and no key.
 
-**1. Download it and check its sha256.**
+**1. Download it and check its sha256**, in an empty folder.
 
 ```bash
 # Linux x86_64
@@ -58,7 +58,7 @@ if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Conten
 ```
 
 On Windows, type `.\antibody.exe` wherever this page says `./antibody`. Each file also has a build
-provenance attestation: `gh attestation verify <file> -R Himess/antibody`.
+provenance attestation: `gh attestation verify <file> -R Himess/antibody` (the GitHub CLI, signed in).
 
 **2. Read the live deployment.** View calls only:
 
@@ -67,7 +67,9 @@ provenance attestation: `gh attestation verify <file> -R Himess/antibody`.
 ```
 
 It prints each contract's locked status (code hashes with `--json`), and every program's verdicts, payouts
-and pauses.
+and pauses. `judge` and `try` read a public NEAR RPC that limits requests: if a command stops with a
+rate-limit error (`-429`), run it again a minute later, or give it another NEAR testnet RPC with
+`./antibody --rpc <url> judge`.
 
 **3. Run a practice bounty end to end.**
 
@@ -76,7 +78,7 @@ and pauses.
 ```
 
 It gets a practice account, seals the public tutorial proof, commits and reveals it, and settles it, with
-a link for every transaction. It ends `Done:Paid` in under a minute when the run is attested on NEAR
+a link for every transaction. It ends `Done:Paid` in about a minute when the run is attested on NEAR
 (the recorded tries took 43.7 s and 39.9 s). While new worker images wait their two-day delay, the payout
 waits the program's 60 s challenge window instead: about a minute and a half (91 to 95 s for the paid runs
 in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output says which path it
@@ -238,7 +240,15 @@ On NEAR testnet, every contract locked (no full-access keys):
 | near-t2: zero-knowledge proofs | `zk.antibody.testnet` |
 
 Code hashes, the verifier build and the source commit are pinned in
-[deployments/near-testnet.json](deployments/near-testnet.json); `./antibody judge` reads them live.
+[deployments/near-testnet.json](deployments/near-testnet.json); `./antibody judge` reads them live for every
+contract above but the practice vending contract. Its keys, one RPC call: a single function-call key
+(`vend` and `reclaim`, the public vend key) and no full-access key.
+
+```bash
+curl -s https://rpc.testnet.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query",
+  "params":{"request_type":"view_access_key_list","finality":"final","account_id":"practice.antibody.testnet"}}'
+```
+
 Full table: [docs/deployment.md](docs/deployment.md).
 
 ## Limits
