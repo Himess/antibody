@@ -685,17 +685,41 @@ impl Drill {
         let relayer_file = self.relayer_file();
         let key = self.key();
         let mut confirmed: BTreeMap<String, Value> = BTreeMap::new();
+        // Relaying is permissionless: the services' relayer may carry a permit first (on 2026-11-08 it took
+        // Base Sepolia's), and this drill's own attempt is then refused by the adapter or reverts (used
+        // already). The pause counts either way; its transaction is the adapter's PauseCalled log.
         crate::live::poll("pause() on both chains", Duration::from_secs(900), Duration::from_secs(3), || {
             for v in permits(&relayer_file).values().filter(|v| v["program_key"] == json!(key)) {
-                if v["kind"] == "pause"
-                    && v["status"] == "confirmed"
-                    && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true))
-                {
+                let carried = ["confirmed", "refused", "reverted"].iter().any(|s| v["status"] == json!(s));
+                if v["kind"] == "pause" && carried && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true)) {
                     confirmed.entry(v["chain_id"].to_string()).or_insert_with(|| v.clone());
                 }
             }
             (confirmed.len() == 2).then_some(())
         })?;
+        let mut by_others = Vec::new();
+        for (chain, v) in confirmed.iter_mut().filter(|(_, v)| v["status"] != json!("confirmed")) {
+            let (rpc, explorer) = if *chain == SEPOLIA.to_string() { (self.sepolia(), ETHERSCAN) } else { (self.a.base_rpc.clone(), BASESCAN) };
+            if let Some((tx, block, ts)) = pause_log(&Evm::new(&rpc), v["adapter"].as_str().unwrap_or_default(), &key) {
+                v["status"] = json!("confirmed");
+                v["tx_hash"] = json!(tx);
+                v["explorer"] = json!(format!("{explorer}{tx}"));
+                v["block"] = json!(format!("{block:#x}"));
+                v["confirmed_ms"] = json!(ts * 1000);
+                v["relayed_by"] = json!("another relayer: the adapter refused this drill's copy as used");
+                by_others.push(v.clone());
+            }
+        }
+        if !by_others.is_empty() {
+            // The drill's relayer file says so too, for the results' list of permits.
+            let mut st: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            for v in &by_others {
+                if let Some(e) = st.get_mut(&v["permit_id"].to_string()) {
+                    *e = v.clone();
+                }
+            }
+            std::fs::write(&relayer_file, serde_json::to_vec_pretty(&st)?)?;
+        }
         let commit_tx = self.s["mcp"]["commit_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("commit", a_commit));
         let reveal_tx = self.s["mcp"]["reveal_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("reveal", a_commit));
         let pay_tx = keeper_a["steps"]
@@ -909,6 +933,22 @@ impl Drill {
 /// wei as whole ether, 18 decimals.
 fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
+}
+
+/// The transaction that applied a program's pause permit on a chain, whoever relayed it: the adapter's
+/// earliest `PauseCalled(program, …)` log in recent blocks, with its block and the block's time (seconds).
+fn pause_log(evm: &Evm, adapter: &str, program_key: &str) -> Option<(String, u64, u64)> {
+    let topic0 = alloy_primitives::keccak256(b"PauseCalled(bytes32,uint32,uint64,address,bool)");
+    let program = alloy_primitives::keccak256(program_key.as_bytes());
+    let head = crate::evm::hex_u64(&evm.read("eth_blockNumber", json!([])).ok()?).ok()?;
+    let logs = evm
+        .read("eth_getLogs", json!([{"address": adapter, "fromBlock": format!("{:#x}", head.saturating_sub(5_000)), "toBlock": "latest",
+                                    "topics": [format!("{topic0:#x}"), format!("{program:#x}")]}]))
+        .ok()?;
+    let first = logs.as_array()?.first()?.clone();
+    let block = crate::evm::hex_u64(&first["blockNumber"]).ok()?;
+    let b = evm.read("eth_getBlockByNumber", json!([format!("{block:#x}"), false])).ok()?;
+    Some((first["transactionHash"].as_str()?.to_string(), block, crate::evm::hex_u64(&b["timestamp"]).ok()?))
 }
 
 /// Deployment attempts in one run of a drill, each from a fresh deployer once an earlier one sent
