@@ -57,9 +57,10 @@ Exit codes: **0** no re-run paid proof breaks a rule; **2** a paid proof still b
 breaks, but a re-run was inconclusive (with `--strict`, also when a paid proof could not be read); **1** the
 check could not run. `--json` and `--md` write the report (the Markdown is a job summary).
 
-A proof read with the project key is still sealed: the report names the rule it breaks (its slot is public on
-chain) but withholds where, the entry point its on-chain tag hides, and what its run read. `--reveal-sealed`
-shows them, for a local run.
+A proof read with the project key is still sealed. The report names a rule it breaks only when the commit's
+keys on chain already name that rule's slot; any other rule it breaks now (the code changed, or a later round
+added the rule) shows as `another rule (withheld)`. It withholds where, the entry point its on-chain tag hides,
+and what its run read. `--reveal-sealed` shows them all, for a local run.
 
 ## The mapping
 
@@ -84,6 +85,20 @@ address), a number (an integer, or a decimal or `0x` string), a bool, or `bytesN
 encoded arguments instead, for dynamic types; `runtime = <file>` takes the runtime code itself (hex). Map the
 implementation behind a proxy, not the proxy: a target's storage stays the anchor's.
 
+**`.antibody/` is also the CLI's private state directory.** Run in the repository, `antibody` keeps there the
+content keys and salts of commits (`submissions/`, `known/`), account keys (`practice/`, `hunt/`) and
+witnesses with their salts (`witness-cache/`). None of that may be committed: the project's `.gitignore` lets
+only the immune memory's files through.
+
+```gitignore
+.antibody/*
+!.antibody/immune.toml
+!.antibody/proofs/
+!.antibody/keys/
+```
+
+`.antibody/keys/` holds content keys already published, nothing else.
+
 ## Trust
 
 - **The verifier is the pinned verifier's code.** The CLI links `crates/verifier`, the crate the TEE's pinned
@@ -97,7 +112,8 @@ implementation behind a proxy, not the proxy: a target's storage stays the ancho
   at the target's address, with the anchor's storage. Acme Lend's final fix, built from its sources through a
   mapping like the one above, hashes to exactly the code its release permits installed on testnet
   (`0x7deb43a5…`, `0x8281ee18…`).
-- **The binary is the release's.** The GitHub Action checks the binary's sha256 against the release's.
+- **The binary is the release's.** The GitHub Action checks the binary's sha256 against the release's, and
+  again just before it runs it.
 
 What it does not show: that the pull request has no new bug. It shows that each paid exploit it can read
 stops working. Finding the next bug is what a program's hunters are paid for.
@@ -113,8 +129,11 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
 - **The project key, if used, is a repository secret.** GitHub does not give secrets to pull requests from
   forks, so those re-run disclosed proofs (and published ones) only, and the summary lists the rest as not
   re-run.
-- The key is only in the environment of the step that runs the verified binary, not of the step that builds
-  the pull request.
+- **Any code the job runs can reach a secret given to the job**, the pull request's `forge build` included: it
+  follows the pull request's `foundry.toml`, which can name a program to run as the compiler. The step that
+  gets the key checks the binary's sha256 again first, which catches a replaced binary, not a runner the
+  build took over. The safer pattern is two jobs: build with no secret, then run the checked binary with the
+  key in a job that runs none of the pull request's code (`build: false`; the README shows both jobs).
 
 ## Limits
 
@@ -131,8 +150,8 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
 - `crates/cli/src/immune.rs`, tests with no network: the override derivation from artifacts and the mapping;
   the code under test (only what the build replaces, under the current round's rules); disclosure keys
   opening `wrap_d`, and release wraps opening with the project key only; the results and exit codes; the
-  Markdown, sealed details withheld. End to end on the
-  recorded fixture (`fixtures/acme-local`): bug B's paid proof still breaks `fees_to_treasury` at
+  Markdown, sealed details withheld, and a sealed proof's rules named only where its commit's keys name them.
+  End to end on the recorded fixture (`fixtures/acme-local`): bug B's paid proof still breaks `fees_to_treasury` at
   `AcmeVault.sweepFees(address)` on the vault as deployed and breaks no rule on `AcmeVaultFixed`, each built
   from an artifact through the mapping; its receipt, assembled as the TEE ran it, is the fixture's; and a
   witness that does not prove what the code reads is inconclusive, naming it.

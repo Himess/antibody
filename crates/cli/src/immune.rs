@@ -465,7 +465,8 @@ impl Outcome {
 /// A rule a re-run broke, and where.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Broken {
-    pub slot: u8,
+    /// None when withheld: a rule a sealed proof breaks that its commit's keys do not name (`withhold`).
+    pub slot: Option<u8>,
     pub rule: String,
     pub severity: String,
     /// `Target.function(types)`, or the selector when no artifact names it.
@@ -575,7 +576,7 @@ pub fn rerun(env: &Envelope, w: &ProgramWitness, program_key: &str, selectors: &
                         format!("{}.{function}", f.target_name.clone().unwrap_or_else(|| f.target.to_string()))
                     };
                     Broken {
-                        slot: f.slot,
+                        slot: Some(f.slot),
                         rule: f.name.clone(),
                         severity: severity(f.severity).into(),
                         entry_point,
@@ -797,19 +798,30 @@ pub struct Opts {
     pub blobs: Option<PathBuf>,
     pub api: Option<String>,
     pub strict: bool,
-    /// Show where a proof read with the project key breaks a rule. Off by default: such a proof is still sealed,
-    /// and its entry point is what the on-chain tag hides (a job summary of a public repository is public).
+    /// Show where a proof read with the project key breaks a rule, and every rule it breaks. Off by default: such a
+    /// proof is still sealed, its entry point is what the on-chain tag hides, and only the rules its commit's keys
+    /// name are public (a job summary of a public repository is public).
     pub reveal_sealed: bool,
 }
 
-/// What a report may say about a proof read with the project key: the rules it breaks (their slots are public on
-/// chain), not where, nor what its run read.
-pub fn withhold(row: &mut ProofRow) {
+/// What a report may say about a proof read with the project key. Such a proof is still sealed: the report names a
+/// rule it breaks only when the commit's keys on chain already name that rule's slot (`key_slots`, public). Any
+/// other rule it breaks now (the code changed, a later round added the rule, or the verdict's keys were capped) is
+/// `another rule (withheld)`, with no slot. Never where it breaks, nor what its run read.
+pub fn withhold(row: &mut ProofRow, key_slots: &[u8]) {
     for b in &mut row.broken {
+        if !b.slot.is_some_and(|s| key_slots.contains(&s)) {
+            b.slot = None;
+            b.rule = "another rule".into();
+            b.severity = "withheld".into();
+        }
         b.entry_point = "withheld (a sealed proof)".into();
         b.target = Address::ZERO;
         b.selector = String::new();
     }
+    // The verifier lists broken rules by slot: the named ones go first, so a withheld rule's place does not tell its
+    // slot from theirs.
+    row.broken.sort_by_key(|b| b.slot.is_none());
     if row.outcome == Outcome::Inconclusive {
         row.reason = Some("details withheld (a sealed proof): re-run it locally with the project key and --reveal-sealed".into());
     }
@@ -997,12 +1009,16 @@ pub fn run(ctx: &Ctx, o: &Opts) -> Result<(Report, Manifest)> {
             "Done:Defaulted" => format!("{} owed", tokens(cmd::u128_of(&c["state"]["Done"]["Defaulted"]["owed"]))),
             s => format!("{} due", tokens(cmd::u128_of(&c["state"][s]["amount"]))),
         };
-        let paid_for = answered(&verify)["keys"]
+        // The slots the verdict's keys name: public on chain, so these rules may be named even for a sealed proof.
+        let key_slots: Vec<u8> = answered(&verify)["keys"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|k| k["slot"].as_u64())
-            .map(|slot| match current.slot(slot as u8) {
+            .filter_map(|k| k["slot"].as_u64().and_then(|s| u8::try_from(s).ok()))
+            .collect();
+        let paid_for = key_slots
+            .iter()
+            .map(|&slot| match current.slot(slot) {
                 Some(s) => format!("{} ({})", s.name, severity(s.severity)),
                 None => format!("slot {slot}"),
             })
@@ -1077,7 +1093,7 @@ pub fn run(ctx: &Ctx, o: &Opts) -> Result<(Report, Manifest)> {
             }
         }
         if opened.read_through == "project key" && !o.reveal_sealed {
-            withhold(&mut row);
+            withhold(&mut row, &key_slots);
         }
         proofs.push(row);
     }
@@ -1343,7 +1359,7 @@ args = ["AcmeGuard", 2000]
             outcome,
             broken: if outcome == Outcome::StillBreaks {
                 vec![Broken {
-                    slot: 1,
+                    slot: Some(1),
                     rule: "fees_to_treasury".into(),
                     severity: "high".into(),
                     entry_point: "AcmeVault.sweepFees(address)".into(),
@@ -1429,11 +1445,56 @@ args = ["AcmeGuard", 2000]
         assert!(none.starts_with("### Antibody immune memory: nothing re-run: no paid proof is readable here"));
         let inc = markdown(&report(vec![row(18, Inconclusive)], false));
         assert!(inc.starts_with("### Antibody immune memory: inconclusive: no paid proof breaks a rule, but 1 re-run could not be judged"));
-        // A proof read with the project key is still sealed: its rule shows (its slot is public), not where it broke.
+        // A proof read with the project key is still sealed: its rule shows (its commit's key names its slot, public),
+        // not where it broke.
         let mut sealed = vec![row(14, StillBreaks), row(18, Inconclusive)];
-        sealed.iter_mut().for_each(withhold);
+        sealed.iter_mut().for_each(|r| withhold(r, &[1]));
         let md = markdown(&report(sealed, false));
         assert!(md.contains("| fees_to_treasury (high) | `withheld (a sealed proof)` |") && !md.contains("sweepFees") && !md.contains("slot 0x7"), "{md}");
+    }
+
+    /// A sealed proof read with the project key names only the rules its commit's keys on chain name. A rule it breaks
+    /// now that no key named (the code changed, or a later round added the rule) is another rule, with no slot, after
+    /// the named ones: the verifier lists rules by slot, so its place would tell its slot.
+    #[test]
+    fn a_sealed_proof_names_only_the_rules_its_commits_keys_name() {
+        let broken = |slot: u8, rule: &str, severity: &str| Broken {
+            slot: Some(slot),
+            rule: rule.into(),
+            severity: severity.into(),
+            entry_point: format!("Hidden.entry{slot}()"),
+            target: "0x00000000000000000000000000000000000000aa".parse().unwrap(),
+            selector: format!("0xdeadbe0{slot}"),
+        };
+        let mut r = row(14, Outcome::StillBreaks);
+        r.read_through = Some("project key".into());
+        // The commit's keys name slot 1 (fees_to_treasury); the re-run also breaks slots 0 and 2, in slot order.
+        r.broken = vec![broken(0, "solvency", "critical"), broken(1, "fees_to_treasury", "high"), broken(2, "oracle_bounds", "medium")];
+        withhold(&mut r, &[1]);
+        let named = &r.broken[0];
+        assert_eq!((named.slot, named.rule.as_str(), named.severity.as_str()), (Some(1), "fees_to_treasury", "high"));
+        for b in &r.broken[1..] {
+            assert_eq!((b.slot, b.rule.as_str(), b.severity.as_str()), (None, "another rule", "withheld"));
+        }
+        assert!(r.broken.iter().all(|b| b.entry_point == "withheld (a sealed proof)" && b.target == Address::ZERO && b.selector.is_empty()));
+
+        let rep = report(vec![r], false);
+        let md = markdown(&rep);
+        assert!(md.contains("| project key | fees_to_treasury (high), another rule (withheld), another rule (withheld) |"), "{md}");
+        let j = to_json(&rep);
+        assert!(j["proofs"][0]["broken"][1]["slot"].is_null() && j["proofs"][0]["broken"][2]["slot"].is_null(), "{j}");
+        assert_eq!(j["proofs"][0]["broken"][0]["slot"], 1);
+        let text = j.to_string();
+        for hidden in ["solvency", "critical", "oracle_bounds", "medium", "Hidden.entry", "deadbe"] {
+            assert!(!md.contains(hidden) && !text.contains(hidden), "{hidden} is shown:\n{md}\n{text}");
+        }
+
+        // A gap claim's commit has no key: no rule it breaks is named.
+        let mut gap = row(19, Outcome::StillBreaks);
+        gap.paid_for = vec![];
+        withhold(&mut gap, &[]);
+        assert_eq!((gap.broken[0].slot, gap.broken[0].rule.as_str(), gap.broken[0].severity.as_str()), (None, "another rule", "withheld"));
+        assert!(!markdown(&report(vec![gap], false)).contains("fees_to_treasury"));
     }
 
     /// The fixture's anchor code of a target, from a witness's bytecodes.
@@ -1480,7 +1541,7 @@ args = ["AcmeGuard", 2000]
         assert_eq!(buggy.outcome, Outcome::StillBreaks, "{:?}", buggy.reason);
         assert_eq!(buggy.broken.len(), 1);
         let b = &buggy.broken[0];
-        assert_eq!((b.slot, b.rule.as_str(), b.severity.as_str(), b.entry_point.as_str()), (1, "fees_to_treasury", "high", "AcmeVault.sweepFees(address)"));
+        assert_eq!((b.slot, b.rule.as_str(), b.severity.as_str(), b.entry_point.as_str()), (Some(1), "fees_to_treasury", "high", "AcmeVault.sweepFees(address)"));
 
         let (fixed, rows) = run("fixed", "AcmeVaultFixed");
         assert!(rows.iter().any(|r| r.target == "AcmeVaultImpl" && r.code == "pull request"));

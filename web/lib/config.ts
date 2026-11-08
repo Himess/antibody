@@ -38,8 +38,12 @@ export const config = {
     84532: list(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPCS, ["https://base-sepolia-rpc.publicnode.com"]),
   } as Record<number, string[]>,
   repo: "https://github.com/Himess/antibody",
-  /** The commit the deployed site was built from (Vercel sets it), for "view source" links. */
-  commit: process.env.NEXT_PUBLIC_GIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "main",
+  /**
+   * The commit the deployed site was built from, for "view source" links: NEXT_PUBLIC_GIT_SHA, or the commit
+   * Vercel gives a Next.js build. Only NEXT_PUBLIC_* values are inlined into the browser bundle, so the
+   * server and the browser render the same link (a server-only variable would give the browser `main`).
+   */
+  commit: process.env.NEXT_PUBLIC_GIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "main",
 } as const;
 
 export const explorers = {
