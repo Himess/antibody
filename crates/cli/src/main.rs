@@ -245,6 +245,19 @@ enum PracticeCmd {
         #[arg(long, default_value = "0")]
         tokens: String,
     },
+    /// Change the vending contract's hourly vend limit or its program (as its owner) with `set_terms`
+    /// alone: every other term, the instances and the practice-account code stay as they are. Prints the
+    /// configuration before and after
+    Terms {
+        #[arg(long)]
+        vending: String,
+        /// Practice accounts a vend may create per hour (the judging days need more than the usual 6)
+        #[arg(long)]
+        per_hour: Option<u32>,
+        /// A new practice program to vend for (a fresh one gives every instance back: docs/runbooks/worker-images.md)
+        #[arg(long)]
+        program: Option<u32>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1082,6 +1095,7 @@ fn run(cli: Cli) -> Result<Value> {
             let raw = cmd::parse_tokens(tokens, c.dep.decimals())?;
             antibody_cli::practice::fund(&c, vending, cmd::parse_near(near)?, raw)
         }
+        Cmd::Practice { cmd: PracticeCmd::Terms { ref vending, per_hour, program } } => antibody_cli::practice::set_terms(&mk()?, vending, program, per_hour),
         Cmd::Round { cmd: RoundCmd::Open { program } } => cmd::round_open(&mk()?, program),
         Cmd::Expire { commit } => cmd::call(&mk()?, "expire", json!({"commit_id": commit}), 30),
         Cmd::TimeOut { commit } => cmd::call(&mk()?, "time_out", json!({"commit_id": commit}), 30),

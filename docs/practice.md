@@ -134,6 +134,10 @@ antibody practice deploy --account practice.antibody.testnet --wasm antibody_pra
   --owner antibody.testnet --program <id> --bond-budget <bond> --per-commit-cap <bond>
 # as the owner: NEAR credit at near-antibody (runs, storage) and tokens for the bonds
 antibody practice fund --account antibody.testnet --vending practice.antibody.testnet --near 0.5 --tokens <n>
+# as the owner: the hourly vend limit, or a fresh practice program, with `set_terms` alone (the other
+# terms, the vaults and the practice-account code stay as they are; before and after are printed)
+antibody practice terms --account antibody.testnet --vending practice.antibody.testnet --per-hour 30
+antibody practice terms --account antibody.testnet --vending practice.antibody.testnet --program <new id>
 ```
 
 The practice program's base witness is built with `antibody program activate --cover <bundle>`: the base
@@ -152,7 +156,10 @@ vending contract, and two judges with no account try it.
 - Claims are paid in commit order: a commit that is never revealed holds the later tries' payouts until
   its reveal window ends and the keeper expires it.
 - With 24 vaults, the 25th account in a round gets a vault someone already proved: its proof is a
-  duplicate, as on any program.
+  duplicate, as on any program. `/v1/status` counts the vaults left unproved (`components.practice.instances`)
+  and warns when six or fewer remain (`practice-vaults-low`), critically when the next try's vault is
+  already proved (`practice-vault-proved`). A fresh practice program gives every vault back
+  (docs/runbooks/worker-images.md, steps 3 and 4).
 - Vending is limited per hour, and the public vend key's allowance caps the gas that calls to `vend`
   can spend; the operator refills both.
 - A practice account is an agent bound to the practice program: it cannot commit anywhere else. Its

@@ -52,8 +52,10 @@ changes: near-antibody, near-guardian, the vending code and the verifier wasm st
    - The first command picks a Sepolia block, rebuilds the practice and fork-mode bases, and waits for
      the light client to reach the block (about 16 minutes).
    - The second creates and activates the new practice program. Its activation is T1 on the new image.
-     It then opens the program, points the vending contract at it (`set_terms` by `antibody.testnet`)
-     and runs two judge tries.
+     It then opens the program, points the vending contract at it (`set_terms` alone, by
+     `antibody.testnet`: the hourly limit and the practice-account code stay as they are) and runs two
+     judge tries. By hand, the same pointing is
+     `antibody practice terms --account antibody.testnet --vending practice.antibody.testnet --program <new id>`.
    - Needs: `SEPOLIA_RPC` with `eth_getProof` near the head (`.env`); about 0.03 wNEAR of escrow and 0.35
      NEAR free on `antibody.testnet`.
 4. **The deployments file.** Set `practice.program` in `deployments/near-testnet.json` to the new id and
@@ -64,6 +66,10 @@ changes: near-antibody, near-guardian, the vending code and the verifier wasm st
 
 **Rollback.** None is needed: program 6 stays valid. Once its pending images count, `set_terms` can
 point the vending contract back, or simply leave it.
+
+**The same steps when the vaults run out.** Each of the 24 vaults pays once per program: once they are
+proved, a try is a duplicate with no payout (`practice-vaults-low`, then `practice-vault-proved` in
+`/v1/status`). Steps 3 to 5 give every vault back on a fresh program, with no image rotation involved.
 
 ## Prevention
 

@@ -20,6 +20,10 @@ locked contracts already allow, or a restart.
    allowance at or above their floors. The keeper also needs NEAR **credit** at near-antibody, beside its
    float: `sync_images` pays the storage of each image entry it lists from that credit, and fails with
    "not enough NEAR credit for storage" without it (fixed on 2026-11-07 with a 0.1 NEAR `storage_deposit`).
+   **Vaults** (`components.practice.instances`): more than six of the 24 left unproved (`fresh`), and
+   `next_is_fresh` true. Each vault pays once per program; when they run out, open a fresh practice
+   program ([worker-images.md](worker-images.md), steps 3 to 5) before the judges' tries become
+   duplicates.
 4. **Worker images** (`components.images`): no unlisted image, and none still inside its delay. A
    pending image means runs on it get no T1 until it counts, and tries take the T0 path (paid after
    the challenge window, about a minute and a half).
@@ -50,6 +54,12 @@ antibody admin send-near --to practice.antibody.testnet --amount-near 1 --accoun
 
 # an account's NEAR credit at near-antibody for storage (the keeper's, for sync_images): 0.1 NEAR
 antibody admin call --contract bounty.antibody.testnet --method storage_deposit --args '{"account_id":"keeper.antibody.testnet"}' --deposit-yocto 100000000000000000000000 --account antibody.testnet --key-file <root key file>
+
+# the hourly vend limit for the judging days (usually 6), with set_terms alone; restore it after 25 November
+antibody practice terms --vending practice.antibody.testnet --per-hour 30 --account antibody.testnet --key-file <root key file>
+
+# ETH for the EVM relayer or the drill's base deployer (Sepolia, Base Sepolia): send it to the address
+# /v1/status shows in components.evm_balances; the relayer pays each pause permit's gas
 ```
 
 PROVE for the T2 prover is an Ethereum-mainnet token: the team deposits it by hand on SP1's prover network and
@@ -91,12 +101,16 @@ Each alert is `{level, component, key, message}`. Critical alerts make `ok` fals
 | `images-unlisted`, `images-pending` | critical, warn | a worker image OutLayer approved is not listed, or still in its delay | worker-images.md |
 | `t1-waiting-<run>`, `t1-failed-<run>`, `t1-gave-up-<run>` | warn, warn, critical | a run's T1 relay waits, failed, or was given up | check the run's image and the collateral |
 | `t1-collateral-expired`, `t1-collateral-pcs` | critical, info | OutLayer's collateral copy expired; with `auto`, fresh Intel PCS collateral is used | nothing with `auto` |
+| `practice-vaults-low`, `practice-vault-proved` | warn, critical | six or fewer practice vaults left unproved, or the next try's vault is already proved (its try would be a duplicate) | a fresh practice program (worker-images.md, steps 3 to 5) |
 | `relayer-pending` | warn | signed pause permits not yet relayed to their chain | check the EVM relayer key's balances |
+| `evm-relayer-low-<chain>`, `evm-deployer-low-<chain>` | critical | the EVM relayer or the drill's base deployer under its floor on a chain | send it ETH on that chain |
+| `drill-failed`, `drill-stale`, `drill-skipped` | critical, warn, warn | the latest drill stopped at a step, is older than a day plus six hours, or skipped itself (a balance under what a drill needs) | read its results file; top up; the kill switch if it must stop (docs/drill.md) |
 | `keeper-error-<program>` | warn | a keeper pass on a program failed | read the keeper's log |
 | `<component>-stale` | warn | a service has not advanced for 5 minutes | restart it |
 | `t2-prover-balance`, `t2-prover-budget`, `t2-prover-failed`, `t2-contradicts` | warn / critical | the T2 prover is low on PROVE, at its budget, failing, or found a contradiction | top up PROVE; a contradiction is investigated before anything else |
 
 ## After 25 November
 
-Restore the vending contracts' per-hour limits to their usual values (`set_terms`, recorded), stop the
-drills, and leave the services running as long as the floats last.
+Restore the vending contracts' per-hour limits to their usual values
+(`antibody practice terms --per-hour 6`, recorded), stop the drills, and leave the services running as
+long as the floats last.
