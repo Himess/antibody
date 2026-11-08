@@ -135,6 +135,10 @@ pub fn results(ctx: &Ctx, program: u32, round: Option<u64>, site: Option<&str>) 
         }
     }
     let n = |v: &str| counts[v].as_u64().unwrap_or(0);
+    // No paid key: nothing was re-run, which is never a pass.
+    if rows.is_empty() {
+        return Ok(not_checked(program, Some(round), None, "the program has no paid key at this round: nothing was re-run", &Value::Null));
+    }
     let verdict = if n("still breaks") > 0 { "red" } else if n("no verdict yet") > 0 { "inconclusive" } else { "green" };
     Ok(json!({"program": program, "round": round, "keys": rows, "counts": counts, "verdict": verdict,
               "note": "re-run inside the enclave through near-antibody's rounds; only which keys still break is published"}))
@@ -198,7 +202,12 @@ pub fn wait_results(ctx: &Ctx, program: u32, wait: u64, site: Option<&str>, prop
         }
         let r = results(ctx, program, round, site)?;
         let prop = &st["proposal"];
-        let ours = round.is_some() && prop["round"].as_u64() == round;
+        // The proposal followed: its round-check run when known (another proposal may take the same round once
+        // this one went stale), else its round.
+        let ours = match check_run {
+            Some(id) => prop["check_run"].as_u64() == Some(id),
+            None => round.is_some() && prop["round"].as_u64() == round,
+        };
         let opened = round.is_some_and(|n| st["round"].as_u64().unwrap_or(0) >= n);
         if round.is_some() && !ours && !opened {
             return Ok(not_checked(program, round, check_run, "the proposal is gone and its round never opened (refused, or replaced while stale)", prop));

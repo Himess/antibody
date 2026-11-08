@@ -137,7 +137,12 @@ runs:
           if [ -f "$md" ]; then cat "$md" >> "$GITHUB_STEP_SUMMARY"; else printf '%s\n' "### Antibody immune memory: $1" >> "$GITHUB_STEP_SUMMARY"; fi
           exit 0
         }
-        if [ ! -f "$MANIFEST" ]; then finish "no round manifest at $MANIFEST: the build job wrote none (its log says why)"; fi
+        if [ ! -f "$MANIFEST" ] || [ -L "$MANIFEST" ]; then finish "no round manifest at $MANIFEST (a regular file): the build job wrote none (its log says why)"; fi
+        MANIFEST=$(cd "$(dirname "$MANIFEST")" && pwd)/$(basename "$MANIFEST")
+        # The manifest came from a job that ran the pull request's code. The CLI reads a deployments file and a
+        # .env from its working directory and the directories above: it runs from an empty one, so nothing that
+        # arrived beside the manifest chooses its RPC or contracts.
+        cd "$(mktemp -d)"
         A=("$ANTIBODY" --network "$NETWORK")
         # One proposal at a time per program, and an accepted one is cleared only by opening its round: wait for the
         # slot, and wait again if another check proposed first (near-antibody refuses a second proposal).
@@ -147,7 +152,7 @@ runs:
         while :; do
           st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
           if [ "$(printf '%s' "$st" | jq -r '.free // false')" = "true" ]; then
-            if "${A[@]}" --account "$PROJECT" --key-file "$key" --eth-rpc "$ETH_RPC" round propose --program "$PROGRAM" --manifest "$MANIFEST" --no-wait > "$RUNNER_TEMP/propose.json" 2> "$RUNNER_TEMP/propose.err"; then
+            if "${A[@]}" --account "$PROJECT" --key-file "$key" --eth-rpc "$ETH_RPC" round propose --program "$PROGRAM" --manifest "$MANIFEST" --code-only --no-wait > "$RUNNER_TEMP/propose.json" 2> "$RUNNER_TEMP/propose.err"; then
               break
             fi
             grep -q "one proposal at a time" "$RUNNER_TEMP/propose.err" || { cat "$RUNNER_TEMP/propose.err" >&2; finish "the proposal was not sent (its log says why)"; }
@@ -184,12 +189,16 @@ runs:
       run: |
         set -uo pipefail
         key="$RUNNER_TEMP/bot-key.json"; umask 077; printf '%s' "$BOT_KEY" > "$key"
+        trap 'rm -f "$key"' EXIT
+        cd "$(mktemp -d)"
         A=("$ANTIBODY" --network "$NETWORK")
         # near-antibody opens it once the re-run window has ended, every commit is allocated and no re-run is in flight.
         opened=false; err="$RUNNER_TEMP/open.err"; : > "$err"
         for _ in $(seq 1 40); do
-          st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
-          state=$(printf '%s' "$st" | jq -r '.proposal.state // "none"')
+          st=""
+          for _r in 1 2 3; do st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) && [ -n "$st" ] && break; sleep 10; done
+          if [ -z "$st" ]; then echo "round state could not be read: trying again"; sleep 30; continue; fi
+          state=$(printf '%s' "$st" | jq -r '.proposal.state // "none"' 2>/dev/null) || state=unknown
           [ "$state" = "accepted" ] || { echo "nothing to open (proposal: $state)"; opened=true; break; }
           now=$(printf '%s' "$st" | jq -r '.now'); from=$(printf '%s' "$st" | jq -r '.proposal.opens_from // 0')
           if [ "$now" -ge "$from" ]; then

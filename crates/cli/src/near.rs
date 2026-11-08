@@ -399,12 +399,19 @@ impl Near {
                 m.insert(key.clone(), nonce);
             }
             let tx = encode_tx(&signer.account_id, &pk, nonce, receiver, &block_hash, &actions);
-            let (signed, _) = sign_tx(&tx, &signer.key);
+            let (signed, hash) = sign_tx(&tx, &signer.key);
             match self.call(
                 "send_tx",
                 json!({"signed_tx_base64": base64::engine::general_purpose::STANDARD.encode(&signed), "wait_until": wait_until}),
             ) {
                 Err(e) if attempt < 3 && e.to_string().contains("InvalidNonce") => {
+                    // `call` sends the same signed bytes again after an attempt with no answer: if one of them
+                    // ran, its nonce is the one now used. That transaction's outcome is the answer, never a
+                    // second one signed with the next nonce.
+                    let h = bs58::encode(hash).into_string();
+                    if let Ok(done) = self.call("tx", json!({"tx_hash": h, "sender_account_id": signer.account_id, "wait_until": wait_until})) {
+                        return Ok(done);
+                    }
                     // The node tells us the key's current nonce: continue from there.
                     let s = e.to_string();
                     if let Some(n) = s.split("\"ak_nonce\":").nth(1).and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|d| d.parse::<u64>().ok()) {

@@ -190,7 +190,19 @@ project's own fix (docs/rounds.md).
 **What it trusts.**
 - The enclave's runs, attested on NEAR (T1), and near-antibody's round rules.
 - The pull request's code is built where no secret is, and the keys never meet that code.
-- A pull request from a fork gets no secret and runs the check on the runner only.
+- **The keyed job checks what it is handed.** The round manifest comes from the job that ran the pull
+  request's code, so `round propose --code-only` refuses any manifest whose invariants (rules or slots)
+  differ from the current round's. A pull request can bring code, never its own rules. The CLI also runs from
+  an empty directory, so no file that arrived beside the manifest picks its RPC or contracts.
+- **Repository writers are trusted.** On `pull_request`, a same-repository pull request runs its own copy of the
+  workflow, and the secrets with it. For a repository with writers you do not trust, put the keyed job behind an
+  environment that needs a reviewer, or run it from a workflow on the default branch (`workflow_run`).
+- **A pull request from a fork** gets no secret. It runs the check on the runner only. Its enclave check fails
+  with "not checked in the enclave" rather than showing as a skipped, green check; a maintainer re-runs it from a
+  branch.
+- **On the demo, the project account is shared.** The checks' project, `acme.antibody.testnet`, is also program
+  5's project, and a key limited to `propose_round` is limited by method, not by program. A real setup gives the
+  program kept for checks a project account of its own.
 
 **A program of its own, and why.** Anyone may open an accepted proposal once its windows allow, so a pull
 request proposed on a real program could become that program's next round. The checks therefore propose on a
@@ -409,4 +421,12 @@ when its TDX quote was verified on NEAR).
 - **The base branch's rules.** A pull request that changes the rules is judged by the old ones until it merges.
 - **Agents bound to programs** (`agent register --program`) hold at most 16: an agent that hunts windows is
   registered without a program list, or re-bound.
+- **To fix before windows run on testnet** (found by the 2026-11-09 review):
+  - `window.yml` builds the base branch's rules after the pull request's code ran in the same job. Build the base
+    in a job of its own, or in `open`, which runs none of the pull request's code.
+  - `open` holds a full-access key in a workflow the pull request defines, and its budget guards live in that
+    file and the CLI. The environment's reviewer is the only barrier. Move `open` to a workflow on the default
+    branch (as `window-close` is), with an account funded for windows only.
+  - The daily cap counts programs named as windows only, and two pull requests can pass the guard together.
+  - The final status is looked up by a seven-character commit prefix; store the full commit.
 - **Testnet only**, as everything here: wNEAR on testnet has no value.

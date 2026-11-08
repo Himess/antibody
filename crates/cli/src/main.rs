@@ -70,6 +70,10 @@ enum RoundCmd {
         base_witness: Option<PathBuf>,
         #[arg(long)]
         no_wait: bool,
+        /// A pull-request check: propose target code only. A manifest whose invariants (rules or slots) differ
+        /// from the current round's is refused before anything is sent
+        #[arg(long)]
+        code_only: bool,
     },
     /// Build a round's base witness now (needs an RPC that serves proofs at the anchor), for later
     Base {
@@ -1203,9 +1207,9 @@ fn run(cli: Cli) -> Result<Value> {
             c.near.view(contract, method, a)
         }
         Cmd::Keeper { program } => cmd::keeper(&mk()?, program),
-        Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, ref base_witness, no_wait } } => {
+        Cmd::Round { cmd: RoundCmd::Propose { program, ref manifest, ref releases, ref base_witness, no_wait, code_only } } => {
             let releases = releases.iter().map(|r| cmd::parse_release(r)).collect::<eyre::Result<Vec<_>>>()?;
-            cmd::round_propose(&mk()?, program, manifest, &releases, base_witness.as_deref(), !no_wait)
+            cmd::round_propose_as(&mk()?, program, manifest, &releases, base_witness.as_deref(), !no_wait, code_only)
         }
         Cmd::Round { cmd: RoundCmd::Base { program, ref manifest, ref out } } => {
             let c = mk()?;
