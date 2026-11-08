@@ -118,10 +118,16 @@ export function timedNote(s: Step): string | null {
   return null;
 }
 
+/** Where one transaction serves two steps: the later step lands in a later receipt of the first one's. */
+export function sharedTxNote(s: Step, steps: Step[]): string | null {
+  const first = s.tx ? steps.find((x) => x.tx === s.tx) : undefined;
+  return first && first.key !== s.key ? `same transaction as ${first.label}, a later receipt` : null;
+}
+
 /** What a step's link is, where one transaction serves two steps or the step lands in a later receipt. */
 export function txNote(s: Step, steps: Step[], who: string): string | null {
-  const first = s.tx ? steps.find((x) => x.tx === s.tx) : undefined;
-  if (first && first.key !== s.key) return `same transaction as ${first.label}, a later receipt`;
+  const shared = sharedTxNote(s, steps);
+  if (shared) return shared;
   if (s.key === "verified") return `${possessive(who)} reveal; the answer lands in a later receipt`;
   // The commit's NEAR block is the clock's zero; each pause's block is on its own chain (the API gives it in hex).
   const raw = s.detail?.block;
