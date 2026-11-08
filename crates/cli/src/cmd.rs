@@ -1855,6 +1855,22 @@ pub fn admin_lock(ctx: &Ctx, confirm: &str) -> Result<Value> {
 /// Adds a function-call access key limited to [`AGENT_METHODS`] on near-antibody, with a NEAR gas
 /// allowance, to the signer's account (the agent's own sub-account).
 pub fn agent_key_add(ctx: &Ctx, allowance_near: f64, out: &Path) -> Result<Value> {
+    let methods: Vec<String> = AGENT_METHODS.iter().map(|s| s.to_string()).collect();
+    let mut r = key_add(ctx, &methods, allowance_near, out)?;
+    r["agent_public_key"] = r["public_key"].clone();
+    Ok(r)
+}
+
+/// Adds a function-call key to the signer's account, limited to `methods` on near-antibody and to a gas
+/// allowance, and writes it to `out`: for automation that must never move funds (immune memory v2's
+/// proposal key, a bot that opens rounds; docs/immune.md). A function-call key cannot attach a deposit.
+pub fn key_add(ctx: &Ctx, methods: &[String], allowance_near: f64, out: &Path) -> Result<Value> {
+    if methods.is_empty() || methods.iter().any(|m| m.trim().is_empty()) {
+        return Err(eyre!("name at least one method, and no empty one"));
+    }
+    if !(allowance_near > 0.0 && allowance_near <= 10.0) {
+        return Err(eyre!("the allowance is between 0 and 10 NEAR (it only pays gas)"));
+    }
     let owner = ctx.signer()?;
     let agent = Signer::generate(Some(owner.account_id.clone()))?;
     let allowance = (allowance_near * 1e6) as u128 * (ONE_NEAR / 1_000_000);
@@ -1866,15 +1882,15 @@ pub fn agent_key_add(ctx: &Ctx, allowance_near: f64, out: &Path) -> Result<Value
             permission: Permission::FunctionCall {
                 allowance: Some(allowance),
                 receiver_id: ctx.dep.antibody.clone(),
-                method_names: AGENT_METHODS.iter().map(|s| s.to_string()).collect(),
+                method_names: methods.to_vec(),
             },
         }],
         "EXECUTED_OPTIMISTIC",
     )?;
     let s = ensure_ok(ctx, &res, "add_key")?;
     write_json(out, &agent.to_file_json())?;
-    Ok(json!({"account": owner.account_id, "agent_public_key": agent.public_key_str(), "key_file": out,
-              "receiver": ctx.dep.antibody, "methods": AGENT_METHODS, "allowance_near": allowance_near, "tx": s}))
+    Ok(json!({"account": owner.account_id, "public_key": agent.public_key_str(), "key_file": out,
+              "receiver": ctx.dep.antibody, "methods": methods, "allowance_near": allowance_near, "tx": s}))
 }
 
 pub fn pull(ctx: &Ctx, program: u32, out: &Path) -> Result<Value> {

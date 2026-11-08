@@ -381,6 +381,18 @@ enum AgentKeyCmd {
 
 #[derive(Subcommand)]
 enum AdminCmd {
+    /// Add a function-call key to the signer's account, limited to the named near-antibody methods and a gas
+    /// allowance (it can never move funds): e.g. propose_round,__fastdata_fastfs for a pull-request check's
+    /// proposals, or open_round,allocate for a bot (docs/immune.md)
+    KeyAdd {
+        /// Comma-separated near-antibody methods
+        #[arg(long, value_delimiter = ',')]
+        methods: Vec<String>,
+        #[arg(long, default_value_t = 1.0)]
+        allowance_near: f64,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Create a sub-account of the signer, or a top-level .testnet account via the registrar
     CreateAccount {
         #[arg(long)]
@@ -1183,6 +1195,7 @@ fn run(cli: Cli) -> Result<Value> {
                 AdminCmd::Deploy { wasm, init_method, init_args } => cmd::admin_deploy(&c, wasm, init_method.clone(), init_args.clone()),
                 AdminCmd::Call { contract, method, args, deposit_yocto, gas_tgas } => cmd::admin_call(&c, contract, method, args, *deposit_yocto, *gas_tgas),
                 AdminCmd::SendNear { to, amount_near } => cmd::admin_send_near(&c, to, amount_near),
+                AdminCmd::KeyAdd { methods, allowance_near, out } => cmd::key_add(&c, methods, *allowance_near, out),
                 AdminCmd::Tx { hash, signer } => cmd::tx(&c, hash, signer),
                 AdminCmd::Lock { confirm_irreversible } => cmd::admin_lock(&c, confirm_irreversible),
                 AdminCmd::DeleteAccount { beneficiary, confirm_irreversible } => cmd::admin_delete_account(&c, beneficiary, confirm_irreversible),
