@@ -1,0 +1,148 @@
+# The bounty window config for Himess/antibody-immune-demo: copy it there as .antibody/window.toml (Antibody's
+# docs/immune.md, "Bounty windows"). A window deploys Acme Lend at the pull request's build only inside the verifier
+# (fork mode), in this order, from the fixed deployer (keccak256("antibody/deployer/v1")[12..], nobody's key), on top
+# of a Sepolia block NEAR's Ethereum light client already holds. In arguments, "deployer" names that address and a
+# contract's name its address. DELIBERATELY VULNERABLE TEST FIXTURE: never deploy Acme Lend to mainnet.
+artifacts = "out"
+repository = "antibody-immune-demo"
+description = "Acme Lend at this pull request's build (DELIBERATELY VULNERABLE TEST FIXTURE): AcmeLendFinal and AcmeVaultFixed over the contracts they fix, seeded as on testnet, without proxies."
+hours = 24
+escrow = "0.03"
+daily_cap = 4
+
+# ---- the contracts (each one a target), as AcmeSetup.deploy has them, with the pull request's fixes in place
+
+[[tx]]
+name = "AcmeGuard"
+contract = "AcmeGuard"
+args = ["deployer"]
+
+[[tx]]
+name = "acUSD"
+contract = "AcmeUSD"
+args = ["AcmeGuard", "deployer"]
+
+[[tx]]
+name = "acETH"
+contract = "AcmeETH"
+args = ["AcmeGuard", "deployer"]
+
+[[tx]]
+name = "AcmePool"
+contract = "AcmePool"
+args = ["AcmeGuard", "acETH", "acUSD", "deployer"]
+
+[[tx]]
+name = "AcmeLend"
+contract = "AcmeLendFinal"
+args = ["AcmeGuard", "acUSD", "acETH", "AcmePool", "2000000000000000000000"]
+
+[[tx]]
+name = "AcmeTreasury"
+contract = "AcmeTreasury"
+args = ["deployer"]
+
+[[tx]]
+name = "AcmeVault"
+contract = "AcmeVaultFixed"
+args = ["AcmeGuard", "acUSD", "AcmeLend", "AcmeTreasury", "deployer"]
+
+[[tx]]
+call = "AcmeVault"
+function = "approveLend()"
+
+# ---- the seed, as AcmeSetup.seed has it on testnet, with the deployer as minter, pool admin and the one borrower
+
+[[tx]]
+call = "acUSD"
+function = "mint(address,uint256)"
+args = ["deployer", "1109000000000000000000000"]
+
+[[tx]]
+call = "acETH"
+function = "mint(address,uint256)"
+args = ["deployer", "150000000000000000000"]
+
+[[tx]]
+call = "acETH"
+function = "approve(address,uint256)"
+args = ["AcmePool", "50000000000000000000"]
+
+[[tx]]
+call = "acUSD"
+function = "approve(address,uint256)"
+args = ["AcmePool", "104000000000000000000000"]
+
+[[tx]]
+call = "AcmePool"
+function = "addLiquidity(uint256,uint256)"
+args = ["50000000000000000000", "104000000000000000000000"]
+
+[[tx]]
+call = "acUSD"
+function = "approve(address,uint256)"
+args = ["AcmeVault", "1005000000000000000000000"]
+
+[[tx]]
+call = "AcmeVault"
+function = "deposit(uint256)"
+args = ["1000000000000000000000000"]
+
+[[tx]]
+call = "AcmeVault"
+function = "donateYield(uint256)"
+args = ["5000000000000000000000"]
+
+[[tx]]
+call = "acETH"
+function = "approve(address,uint256)"
+args = ["AcmeLend", "100000000000000000000"]
+
+[[tx]]
+call = "AcmeLend"
+function = "depositCollateral(uint256)"
+args = ["100000000000000000000"]
+
+[[tx]]
+call = "AcmeLend"
+function = "borrow(uint256)"
+args = ["100000000000000000000000"]
+
+# ---- the rules: Acme Lend's own (src/acme/AcmeInvariants.sol), built from the base branch by window.yml
+
+[rules]
+contract = "AcmeInvariants"
+args = ["AcmeLend", "AcmeVault", "acUSD", "AcmeTreasury", "2000000000000000000000"]
+gas_limit = 5000000
+
+# Program 5 pays solvency as Critical; a window pays Low, Medium and High only (a fork-mode program has nothing to
+# pause). Bit 2 (share_price) is left out: planted bug #4 breaks it in the final fix too, as the project's declared
+# known issue on program 5, and a window has no known issues to declare.
+[[slot]]
+bit = 0
+name = "solvency"
+severity = "high"
+
+[[slot]]
+bit = 1
+name = "fees_to_treasury"
+severity = "high"
+
+[payouts]
+high = "0.01"
+
+[impact]
+protocol_accounts = ["AcmeLend", "AcmeVault", "AcmePool", "AcmeTreasury"]
+native_usd = "2000"
+
+[[impact.token]]
+symbol = "acUSD"
+contract = "acUSD"
+decimals = 18
+usd = "1"
+
+[[impact.token]]
+symbol = "acETH"
+contract = "acETH"
+decimals = 18
+usd = "2000"

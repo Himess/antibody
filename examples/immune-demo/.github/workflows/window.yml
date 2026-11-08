@@ -1,0 +1,226 @@
+name: bounty window
+
+# A bounty window per pull request (Antibody's docs/immune.md, "Bounty windows"). When someone with write access
+# labels a pull request `bounty-window`, its build gets a program on near-antibody (NEAR testnet): a window is a
+# fork-mode program for the pull request's build; its escrow is wNEAR on testnet, which has no value; proofs
+# committed before its deadline are judged and paid. window-close.yml sets the final status after the deadline.
+#
+# Setup (docs/immune.md): the variable ANTIBODY_WINDOW_ACCOUNT (the bot account that opens windows), and in the
+# environment `bounty-window` (give it a required reviewer) the secrets ANTIBODY_WINDOW_KEY (that account's
+# full-access key file, near-cli JSON) and SEPOLIA_RPC (an Ethereum RPC that serves eth_getProof at the light
+# client's block); optionally the secret ANTIBODY_WEBHOOKS (comma-separated URLs) and the variables
+# ANTIBODY_WINDOW_MAX_ESCROW, ANTIBODY_WINDOW_DAILY_CAP and ANTIBODY_SITE.
+
+on:
+  pull_request:   # never pull_request_target: it would run the pull request's code with this repository's secrets
+    types: [labeled]
+
+permissions:
+  contents: read
+
+# One run at a time per pull request: a second label event waits, then finds the window already open.
+concurrency:
+  group: bounty-window-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  ANTIBODY_VERSION: v0.6.0
+  ANTIBODY_REPOSITORY: Himess/antibody
+  FOUNDRY_VERSION: v1.8.5
+  STATUS_CONTEXT: antibody/bounty-window (testnet)
+
+jobs:
+  check:
+    name: the label, the branch and the labeller
+    if: github.event.label.name == 'bounty-window'
+    runs-on: ubuntu-latest
+    steps:
+      - name: refuse forks and labellers without write access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          LABELLER: ${{ github.event.sender.login }}
+        run: |
+          set -euo pipefail
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error title=Bounty window::refused: the pull request comes from a fork ($HEAD_REPO); windows open for this repository's own branches only"
+            exit 1
+          fi
+          # `permission` is admin, write, read or none (maintain counts as write, triage as read).
+          perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$LABELLER/permission" --jq .permission)
+          case "$perm" in
+            admin|write) echo "$LABELLER has $perm access: the window may open" ;;
+            *) echo "::error title=Bounty window::refused: $LABELLER added the label with '$perm' access; a window needs write access"; exit 1 ;;
+          esac
+
+  build:
+    name: build (no secret)
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      # The pull request's head: the contracts the window deploys. Its code runs here, where there is no secret.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
+      # The base branch: the rules the window judges by, so a pull request cannot weaken its own window's rules.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+      - name: forge build (the pull request's head)
+        working-directory: pr
+        run: forge build
+      - name: forge build (the base branch)
+        working-directory: base
+        run: forge build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: window-build
+          path: |
+            pr/out/
+            base/out/
+          retention-days: 3
+          if-no-files-found: error
+
+  open:
+    name: open the window
+    needs: build
+    runs-on: ubuntu-latest
+    # The bot's full-access key is here, and nothing from the pull request runs: the config comes from the base
+    # branch and the build's artifacts are read as data (JSON). A required reviewer on this environment approves
+    # each run, workflow file included.
+    environment: bounty-window
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      # The window config from the base branch: a pull request does not set its own window's terms.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: window-build
+          path: ${{ runner.temp }}/window-build
+
+      - name: antibody ${{ env.ANTIBODY_VERSION }} (checksum-verified release binary)
+        id: bin
+        run: |
+          set -euo pipefail
+          sha256_of() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi < "$1" | cut -d' ' -f1; }
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64) target=x86_64-unknown-linux-gnu ;;
+            macOS-ARM64) target=aarch64-apple-darwin ;;
+            *) echo "::error::no prebuilt antibody binary for ${RUNNER_OS} ${RUNNER_ARCH}"; exit 1 ;;
+          esac
+          dir="${RUNNER_TEMP}/antibody-${ANTIBODY_VERSION}"
+          mkdir -p "$dir"
+          base="https://github.com/${ANTIBODY_REPOSITORY}/releases/download/${ANTIBODY_VERSION}"
+          curl -fsSL --retry 3 -o "$dir/antibody" "$base/antibody-${target}"
+          curl -fsSL --retry 3 -o "$dir/antibody.sha256" "$base/antibody-${target}.sha256"
+          want=$(awk -v f="antibody-${target}" '$2 == f || $2 == "*" f {print $1}' "$dir/antibody.sha256")
+          got=$(sha256_of "$dir/antibody")
+          if [ -z "$want" ] || [ "$want" != "$got" ]; then
+            echo "::error::antibody-${target} does not match the release's sha256 (want '${want}', got ${got})"
+            exit 1
+          fi
+          chmod +x "$dir/antibody"
+          echo "antibody-${target} ${got} (checked against ${base}/antibody-${target}.sha256)"
+          echo "path=$dir/antibody" >> "$GITHUB_OUTPUT"
+
+      - name: antibody window open
+        id: open
+        env:
+          ANTIBODY: ${{ steps.bin.outputs.path }}
+          ACCOUNT: ${{ vars.ANTIBODY_WINDOW_ACCOUNT }}
+          WINDOW_KEY: ${{ secrets.ANTIBODY_WINDOW_KEY }}
+          SEPOLIA_RPC: ${{ secrets.SEPOLIA_RPC }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ github.event.repository.name }}
+          MAX_ESCROW: ${{ vars.ANTIBODY_WINDOW_MAX_ESCROW || '0.05' }}
+          DAILY_CAP: ${{ vars.ANTIBODY_WINDOW_DAILY_CAP || '4' }}
+          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-three.vercel.app' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ACCOUNT" ] || [ -z "$WINDOW_KEY" ] || [ -z "$SEPOLIA_RPC" ]; then
+            echo "::error title=Bounty window::set the variable ANTIBODY_WINDOW_ACCOUNT and the environment secrets ANTIBODY_WINDOW_KEY and SEPOLIA_RPC"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/window-key.json"
+          (umask 077 && printf '%s' "$WINDOW_KEY" > "$key")
+          out="$RUNNER_TEMP/window.json"
+          # The budget guard runs first, inside: fewer than DAILY_CAP windows in 24 hours, the escrow in the bot's
+          # wallet and credit, NEAR for gas; and the escrow at most MAX_ESCROW. The same head again resumes or reports
+          # its window: one window per pull request head.
+          code=0
+          "$ANTIBODY" --account "$ACCOUNT" --key-file "$key" window open \
+            --config .antibody/window.toml \
+            --artifacts "$RUNNER_TEMP/window-build/pr/out" \
+            --rules-artifacts "$RUNNER_TEMP/window-build/base/out" \
+            --pr "$PR" --repo "$REPO" --head "$HEAD_SHA" \
+            --max-escrow "$MAX_ESCROW" --daily-cap "$DAILY_CAP" --site "$SITE" \
+            --out "$RUNNER_TEMP/window-manifest.json" > "$out" || code=$?
+          rm -f "$key"
+          [ "$code" = 0 ] || exit "$code"
+          jq . "$out"
+          {
+            echo "program=$(jq -r .program "$out")"
+            echo "description=$(jq -r .status.description "$out")"
+            echo "target_url=$(jq -r .status.target_url "$out")"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Bounty window: program $(jq -r .program "$out") on near-antibody (NEAR testnet)"
+            echo
+            echo "$(jq -r .status.description "$out")"
+            echo
+            echo "- Name: \`$(jq -r .name "$out")\`, open until $(jq -r .deadline.utc "$out"), $(jq -r '.escrow.amount + " " + .escrow.token' "$out") at stake"
+            echo "- Anchor: Sepolia block $(jq -r '.anchor.block // "(an earlier run of this window)"' "$out"), held by NEAR's Ethereum light client"
+            echo "- Program: $(jq -r .links.program "$out")"
+            echo
+            echo "A window is a fork-mode program for the pull request's build; its escrow is wNEAR on testnet, which has no value; proofs committed before its deadline are judged and paid."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp "$out" "$RUNNER_TEMP/announce.json"
+
+      - name: pending commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DESCRIPTION: ${{ steps.open.outputs.description }}
+          TARGET_URL: ${{ steps.open.outputs.target_url }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=pending -f context="$STATUS_CONTEXT" -f description="$DESCRIPTION" -f target_url="$TARGET_URL" > /dev/null
+
+      - name: announce to the webhooks
+        env:
+          ANTIBODY_WEBHOOKS: ${{ secrets.ANTIBODY_WEBHOOKS }}
+        run: |
+          set -uo pipefail
+          if [ -z "${ANTIBODY_WEBHOOKS:-}" ]; then
+            echo "no ANTIBODY_WEBHOOKS: nothing to announce"
+            exit 0
+          fi
+          body=$(jq -c '{content: .announce, text: .announce}' "$RUNNER_TEMP/announce.json")
+          IFS=',' read -ra hooks <<< "$ANTIBODY_WEBHOOKS"
+          for h in "${hooks[@]}"; do
+            # The URLs are secrets: never printed.
+            curl -fsS -m 15 -H 'Content-Type: application/json' -d "$body" "$h" > /dev/null || echo "::warning::a webhook did not take the announcement"
+          done
+
+      - name: error status when the window did not open
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=error -f context="$STATUS_CONTEXT" -f description="The bounty window did not open: its workflow run says why" -f target_url="$RUN_URL" > /dev/null
