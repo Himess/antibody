@@ -1496,7 +1496,23 @@ fn immune(cli: Cli) -> Result<i32> {
     Ok(report.exit_code)
 }
 
+/// The main thread's stack is 1 MB on Windows (8 MB on Linux), and the verifier's EVM frames (revm, reth) and
+/// the RPC client's futures sometimes need more there, above all in a debug build: a 2026-11-09 test overflowed
+/// it now and then. Every command runs on a thread with a 64 MB stack instead (reserved, not committed).
 fn main() {
+    let worker = std::thread::Builder::new().name("antibody".into()).stack_size(64 * 1024 * 1024).spawn(run_main);
+    match worker.map(|w| w.join()) {
+        Ok(Ok(())) => {}
+        // A panic was already printed by the panic hook.
+        Ok(Err(_)) => std::process::exit(101),
+        Err(e) => {
+            eprintln!("error: could not start the command's thread: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_main() {
     let cli = Cli::parse();
     if matches!(cli.cmd, Cmd::Immune(_)) {
         std::process::exit(match immune(cli) {
