@@ -68,8 +68,11 @@ binds.
   `--t1-collateral`). On testnet OutLayer's copies for its workers' platform expire on 2026-11-07 at
   23:46:20 UTC (QE identity; TCB info at 00:29:39 the next day). Agent A's run verified against fresh
   Intel PCS collateral before that, `Verified` / `UpToDate`, the status programs accept
-  (`docs/results/t1-collateral-2026-11-06.json`). `/v1/status` shows when the copies expire and raises an
-  alert for every T1 relay that fails.
+  (`docs/results/t1-collateral-2026-11-06.json`). After it, on 2026-11-08, the services' T1 relayer
+  relayed two runs with fresh Intel PCS collateral, and both are T1 on NEAR (runs 68 and 69, the first
+  automated drill's: `docs/results/t1-collateral-2026-11-08.json`). `/v1/status` shows when the copies
+  expire, says when relays use Intel PCS (`t1-collateral-pcs`), and raises an alert for every T1 relay
+  that fails.
 - **Worker images.** OutLayer adds worker images to its approved list. A program accepts the images it
   pinned at creation, and later ones from its pinned registry only after the image delay (2 days on
   testnet), once near-antibody lists them (`sync_images`, permissionless). Until then a run on a new

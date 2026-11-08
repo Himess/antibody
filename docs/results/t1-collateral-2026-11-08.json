@@ -1,0 +1,47 @@
+{
+ "what": "T1 after OutLayer's on-chain DCAP collateral expired: two runs relayed with fresh Intel PCS collateral by the services' T1 relayer (--t1-collateral auto)",
+ "network": "testnet",
+ "expired": {
+  "source": "worker.outlayer.testnet.get_collaterals (docs/results/t1-collateral-2026-11-06.json)",
+  "first": "2026-11-07T23:46:20Z (QE identity; PCK CRL 2026-11-08T00:28:56Z, TCB info 2026-11-08T00:29:39Z)"
+ },
+ "status_notice": {
+  "component": "t1",
+  "key": "t1-collateral-pcs",
+  "level": "info",
+  "message": "OutLayer's on-chain DCAP collateral expired at 2026-11-07T23:46:20Z: T1 relays use fresh Intel PCS collateral (auto)"
+ },
+ "runs": [
+  {
+   "run_id": 68,
+   "program": 8,
+   "mode": "activate",
+   "answered_utc": "2026-11-08T01:14:22Z",
+   "tier": "T1",
+   "outlayer_request_id": 13041,
+   "collateral": "intel-pcs",
+   "attempts": 1,
+   "t1_tx": "HBUwofURtoBJrjPeLNZxhfGYXq8kNHcEv5vfQioCeand",
+   "explorer": "https://testnet.nearblocks.io/txns/HBUwofURtoBJrjPeLNZxhfGYXq8kNHcEv5vfQioCeand"
+  },
+  {
+   "run_id": 69,
+   "program": 8,
+   "mode": "verify",
+   "commit": 34,
+   "answered_utc": "2026-11-08T01:30:35Z",
+   "tier": "T1",
+   "outlayer_request_id": 13046,
+   "collateral": "intel-pcs",
+   "attempts": 1,
+   "t1_tx": "FtTLbbykwvUX1RENjUU3XV7CE9r3NrRmQPuChgf1w1vR",
+   "explorer": "https://testnet.nearblocks.io/txns/FtTLbbykwvUX1RENjUU3XV7CE9r3NrRmQPuChgf1w1vR"
+  }
+ ],
+ "program_note": "program 8 is the first automated drill (an Acme Lend fixture of our own, created 2026-11-08), so its image snapshot holds the images OutLayer approved on 2026-11-06",
+ "commands": [
+  "antibody --network testnet status --run 68 --json   # outcome.Answered.tier: T1",
+  "antibody --network testnet status --run 69 --json   # outcome.Answered.tier: T1",
+  "antibody --network testnet tee check --request-id 13046 --collateral pcs"
+ ]
+}
