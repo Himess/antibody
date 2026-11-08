@@ -1,0 +1,27 @@
+[package]
+name = "antibody-verifier-v2"
+description = "Verifier v2: v1 (unchanged, linked as a library) plus the NEAR engine, dispatched on the manifest's `vm` field"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "antibody-verify-v2"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# v1, unchanged: an EVM program takes exactly v1's code path through these library functions.
+antibody-verifier = { path = "../verifier" }
+antibody-verifier-near = { path = "../verifier-near" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64 = "0.22"
+
+[target.'cfg(target_os = "wasi")'.dependencies]
+# The same outbound HTTPS client v1's binary uses (versions already in Cargo.lock).
+wasi-http-client = "0.2"

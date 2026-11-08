@@ -170,14 +170,48 @@ jobs:
         run: cargo build --release -p antibody-verifier -p antibody-witness -p antibody-runner
       - name: build (wasm32-wasip2)
         run: cargo build --release --target wasm32-wasip2 -p antibody-verifier --bin antibody-verify
-      - name: the verifier wasm as programs pin it (reproducible build; compare its sha256 across machines)
-        run: bash scripts/build/verifier-wasm.sh
+      - name: the verifier wasm as programs pin it (reproducible build; it must stay the pinned wasm_hash)
+        run: |
+          out="$(bash scripts/build/verifier-wasm.sh)"
+          echo "$out"
+          # Every program on testnet pins this build: a change to its bytes is a new verifier, never a side effect.
+          test "${out%% *}" = ccc27f0ca60c503c46f6f1b2024b54481709fdd0c8849fe8d9a8912c637b28c1
       - name: recorded fixtures — expected verdicts and keys, native == wasm
         run: |
           python3 scripts/demo/check_fixtures.py fixtures/acme-local
           python3 scripts/demo/check_fixtures.py fixtures/acme-local/round1
       - name: self-attack regressions (inputs that once broke the verifier)
         run: python3 scripts/demo/check_regressions.py
+
+  verifier-v2:
+    name: verifier v2 (the NEAR engine's tests, native == wasm, v1's EVM fixtures byte for byte)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - name: toolchain from rust-toolchain.toml
+        run: rustup toolchain install && rustup show
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: true
+          key: verifier-v2
+      - name: the NEAR engine's tests (host functions, receipts, gas, a near-sdk-rs contract end to end)
+        run: cargo test --release -p antibody-verifier-near
+      - name: build v2 (native and wasm32-wasip2) and the runner with OutLayer's engine configuration
+        run: |
+          cargo build --release -p antibody-verifier-v2 --bin antibody-verify-v2
+          cargo build --release -p antibody-runner --bin antibody-run
+          cargo build --release --target wasm32-wasip2 -p antibody-verifier-v2 --bin antibody-verify-v2
+      - name: v1's recorded EVM fixtures through v2, byte for byte
+        run: python3 scripts/demo/check_v2_evm.py fixtures/acme-local target/release/antibody-verify-v2
+      - name: NEAR programs, native == wasm (full output and facts)
+        run: |
+          for w in fixtures/near/status-witness.json fixtures/near/vault-witness.json; do
+            python3 scripts/demo/check_v2_near_native_vs_wasm.py "$w" target/release/antibody-verify-v2 \
+              target/wasm32-wasip2/release/antibody-verify-v2.wasm target/release/antibody-run
+          done
 
   near:
     name: NEAR contracts (unit tests + wasm)

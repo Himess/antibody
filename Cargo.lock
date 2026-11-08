@@ -759,6 +759,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "antibody-verifier-near"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "curve25519-dalek",
+ "hex",
+ "k256",
+ "ripemd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sha3",
+ "wasmi",
+ "wasmparser 0.228.0",
+ "wat",
+]
+
+[[package]]
+name = "antibody-verifier-v2"
+version = "0.1.0"
+dependencies = [
+ "antibody-verifier",
+ "antibody-verifier-near",
+ "base64 0.22.1",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "wasi-http-client",
+]
+
+[[package]]
 name = "antibody-witness"
 version = "0.1.0"
 dependencies = [
@@ -5792,6 +5824,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "string-interner"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23de088478b31c349c9ba67816fa55d9355232d63c3afea8bf513e31f0f1d2c0"
+dependencies = [
+ "hashbrown 0.15.5",
+ "serde",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6577,6 +6619,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmi"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78693fcdd618e0fc34af59c6b8efa9ac5d58c68df940beff4bedddb6acfe7c27"
+dependencies = [
+ "spin",
+ "wasmi_collections",
+ "wasmi_core",
+ "wasmi_ir",
+ "wasmparser 0.228.0",
+]
+
+[[package]]
+name = "wasmi_collections"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a8be2aa467cf2d29e96ff759472c36eeb44a3c81c67fc9cb76c9a24c519c557"
+dependencies = [
+ "string-interner",
+]
+
+[[package]]
+name = "wasmi_core"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69372d5fda3ea3d1e0aa6603c7888110e0187e88ea17cd8fc2e2df0a0e1f37fa"
+dependencies = [
+ "libm",
+]
+
+[[package]]
+name = "wasmi_ir"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f17b774caa13c618c7244f1ee51fe23c5e7b8538a471fa46d9949779758aed6"
+dependencies = [
+ "wasmi_core",
+]
+
+[[package]]
 name = "wasmparser"
 version = "0.220.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6600,6 +6682,16 @@ dependencies = [
  "indexmap 2.14.0",
  "semver 1.0.28",
  "serde",
+]
+
+[[package]]
+name = "wasmparser"
+version = "0.228.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4abf1132c1fdf747d56bbc1bb52152400c70f336870f968b85e89ea422198ae3"
+dependencies = [
+ "bitflags",
+ "indexmap 2.14.0",
 ]
 
 [[package]]
