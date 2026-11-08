@@ -1,14 +1,15 @@
 name: release
 
 # Prebuilt binaries, the verifier build OutLayer runs, and a CLI image, so trying Antibody needs no
-# build (JUDGES.md). Runs on a version tag or by hand. The release it makes is a DRAFT: a maintainer
+# build (JUDGES.md). Runs on a version tag: when it is pushed, or by hand on the tag itself
+# (`gh workflow run release.yml --ref <tag>`). Each build provenance attestation names the run's ref and
+# commit as the source, so the run must be the tag's. The release it makes is a DRAFT: a maintainer
 # reviews and publishes it.
+#
+# Third-party actions are pinned to full commit SHAs (the version in a comment): a moved tag must not
+# change what runs with these jobs' write tokens.
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "an existing tag to build and release"
-        required: true
   push:
     tags: ["v*"]
 
@@ -16,11 +17,22 @@ permissions:
   contents: read
 
 env:
-  TAG: ${{ inputs.tag || github.ref_name }}
+  TAG: ${{ github.ref_name }}
 
 jobs:
+  tag:
+    name: the run is a version tag's
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) echo "release ${GITHUB_REF_NAME} from ${GITHUB_SHA}" ;;
+            *) echo "::error::run this workflow on a version tag (gh workflow run release.yml --ref <tag>), not on ${GITHUB_REF}"; exit 1 ;;
+          esac
+
   cli:
     name: antibody CLI (${{ matrix.target }})
+    needs: tag
     strategy:
       fail-fast: false
       matrix:
@@ -35,10 +47,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - run: rustup target add ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: build
         run: cargo build --release --locked -p antibody-cli --target ${{ matrix.target }}
       - name: package
@@ -63,6 +73,7 @@ jobs:
 
   verifier:
     name: the verifier OutLayer runs (wasm32-wasip2)
+    needs: tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,9 +81,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: build
         run: |
           set -euo pipefail
@@ -91,6 +100,7 @@ jobs:
 
   image:
     name: CLI image (ghcr.io)
+    needs: tag
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -99,9 +109,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -109,7 +117,7 @@ jobs:
       - id: name
         run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: Dockerfile.cli
@@ -136,7 +144,7 @@ jobs:
           path: dist
           merge-multiple: true
       - run: ls -l dist && cat dist/*.sha256
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.TAG }}
           draft: true
