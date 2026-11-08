@@ -34,9 +34,9 @@ jobs:
           # The history of the commit under test (a pull request's merge commit, or main), not every branch:
           # another branch's content is that branch's own check.
           ./gitleaks git --redact --no-banner --config .gitleaks.toml --log-opts="HEAD" -v .
-      # The same paths as .githooks/pre-commit (keep the two in step): the hook is opt-in, this is enforced.
-      # .env files at any depth (but .env.example), and .antibody/, the CLI's private state.
       - name: never-public paths are not tracked
+        # The same paths as .githooks/pre-commit (keep the two in step): the hook is opt-in, this is enforced.
+        # .env files at any depth (but .env.example), and .antibody/, the CLI's private state.
         run: |
           if git ls-files | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|(.*/)?brief[^/]*\.md$|(.*/)?[^/]*_brief[^/]*\.md$|daily/|scripts/report_to_html\.py$|(.*/)?\.env$|(.*/)?\.env\.|(.*/)?\.antibody/)' | grep -Ev '(^|/)\.env\.example$'; then
             echo "never-public path is tracked"; exit 1
