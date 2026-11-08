@@ -220,16 +220,26 @@ impl Drill {
 
     // ------------------------------------------------------------------------------ balances and guards
 
-    /// The NEAR amount (yoctoNEAR) and liquid-of-storage of an account now, or null if it does not exist.
+    /// The NEAR amount (yoctoNEAR) and liquid-of-storage of an account now, null if it does not exist, or
+    /// `{"error"}` when the RPC did not answer after three tries (a public RPC's hiccup is not a missing
+    /// account: on 2026-11-08 one made four existing accounts look absent and skipped a drill).
     fn near_balance(&self, account: &str) -> Value {
-        match self.near.account(account) {
-            Ok(Some(a)) => {
-                let amount = cmd::u128_of(&a["amount"]);
-                let liquid = amount.saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
-                json!({"amount_yocto": amount.to_string(), "liquid_yocto": liquid.to_string()})
+        let mut last = String::new();
+        for i in 0..3 {
+            if i > 0 {
+                std::thread::sleep(Duration::from_secs(3));
             }
-            _ => Value::Null,
+            match self.near.account(account) {
+                Ok(Some(a)) => {
+                    let amount = cmd::u128_of(&a["amount"]);
+                    let liquid = amount.saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
+                    return json!({"amount_yocto": amount.to_string(), "liquid_yocto": liquid.to_string()});
+                }
+                Ok(None) => return Value::Null,
+                Err(e) => last = format!("{e:#}"),
+            }
         }
+        json!({"error": last})
     }
 
     /// A snapshot of every balance a drill spends from: the NEAR accounts, and the EVM deployer and relayer
@@ -266,6 +276,11 @@ impl Drill {
         for role in ["hq", "acme", "agent-a", "keeper", "relayer"] {
             let who = if role == "hq" { HQ.to_string() } else { acct(role) };
             let b = self.near_balance(&who);
+            if let Some(e) = b["error"].as_str() {
+                // Unknown, not low: the drill skips with the RPC's error, never as a missing account.
+                low.push(json!({"kind": "near", "role": role, "account": who, "error": format!("the NEAR RPC did not answer: {e}")}));
+                continue;
+            }
             let liquid = b["liquid_yocto"].as_str().and_then(|s| s.parse::<u128>().ok());
             if let Some(s) = near_shortfall(role, &who, liquid) {
                 low.push(s);
