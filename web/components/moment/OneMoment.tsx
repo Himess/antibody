@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Moment } from "@/lib/api/types";
 import { cap, shortHash } from "@/lib/format";
-import { committer, laneName, lanesOf, momentEnd, PLAY_EVENT, possessive, stepsWithCommit, type Lane, type Step } from "@/lib/moment";
+import { committer, laneName, lanesOf, momentEnd, PLAY_EVENT, possessive, sharedTxNote, stepsWithCommit, type Lane, type Step } from "@/lib/moment";
 import { Icon } from "../ui/Icon";
 import styles from "./OneMoment.module.css";
 
@@ -413,6 +413,9 @@ function StepList({ steps }: { steps: Step[] }) {
           <span className={styles.itemBody}>
             <span className={styles.itemLabel}>{s.label}</span>
             {s.chain === "near" ? null : <span className={`${styles.chip} ${laneClass(s.chain)}`}>{laneName(s.chain)}</span>}
+            {/* Two steps may share one transaction (a request, then its answer in a later receipt): say so rather than
+                show one link twice as if it were two events. */}
+            {sharedTxNote(s, steps) ? <span className={styles.itemNote}>{sharedTxNote(s, steps)}</span> : null}
           </span>
           {s.explorer ? (
             <a className={`${styles.itemTx} mono`} href={s.explorer} target="_blank" rel="noreferrer noopener" title={s.tx ?? undefined}>

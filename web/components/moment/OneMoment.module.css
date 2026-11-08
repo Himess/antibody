@@ -716,3 +716,9 @@ a.vlabel:focus-visible {
 .present .axis {
   height: 28px;
 }
+
+.itemNote {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
