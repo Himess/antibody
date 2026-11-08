@@ -10,8 +10,9 @@ locked contracts already allow, or a restart.
 1. **`/v1/status` shows 0 warnings.** `curl -s $API/v1/status | jq '{ok, alerts}'`. `ok` is false
    only on a critical alert; aim for an empty `alerts` list. The site's `/status` page shows the same.
 2. **Floats** (`components.floats`): every operating account at or above its float.
-   - keeper ≥ 0.4 NEAR (`sync_images` sets 300 Tgas aside, about 0.301 NEAR: under that the keeper
-     cannot list a new worker image);
+   - keeper ≥ 0.8 NEAR. `sync_images` sets 300 Tgas aside, about 0.301 NEAR, and so does opening a
+     pull-request check's round (the keeper's account is the demo repository's bot): under 0.3 NEAR it can
+     do neither;
    - T1 relayer ≥ 0.5 NEAR (each T1 costs it about 0.018 NEAR, one DCAP verification);
    - T2 prover ≥ 0.3 NEAR (`prover.antibody.testnet`: it pays the gas of each near-t2 submission).
 3. **Credits** (`components.practice`, and the hunt's when it runs): the vending contract's NEAR
@@ -35,6 +36,33 @@ locked contracts already allow, or a restart.
    above its 2 PROVE floor (one proof costs about 0.42 PROVE on SP1's prover network; the budget caps it at 6
    an hour and 40 a day).
 8. **The site**: `/`, `/moment`, `/try`, `/judges` and one commit page answer 200.
+
+## On a timer (the host's service manager, persistent across reboots)
+
+| Timer | When (UTC) | What |
+|---|---|---|
+| `antibody-perhour-up` | 2026-11-15 18:00 | the practice vending contract's hourly limit to 30 (`antibody practice terms --per-hour 30`) |
+| `antibody-practice-refresh` | 16, 17 and 18 November, 06:30 | a fresh practice program when 12 or fewer vaults are fresh (worker-images.md, steps 3 and 4, with the drill's kill switch set while it runs) |
+| `antibody-perhour-down` | 2026-11-25 12:00 | the hourly limit back to 6 |
+
+Each writes to the operations log. Check after each run that `/v1/status` shows the new `per_hour`, or
+a new `practice.program` with 24 fresh vaults; the deployments file follows the program by hand (step 4).
+
+## Pull-request checks (the demo repository)
+
+[Himess/antibody-immune-demo](https://github.com/Himess/antibody-immune-demo) proposes every same-repository
+pull request as a round of program 12 (docs/immune.md#re-runs-in-the-enclave).
+- **Project key:** `acme.antibody.testnet`, a function-call key limited to `propose_round` and
+  `__fastdata_fastfs`. Its NEAR credit at near-antibody pays the round check and every re-run, about
+  0.05 NEAR a check: keep it above 0.3 NEAR (`antibody --account acme.antibody.testnet storage-deposit --near 0.5`).
+- **Bot key:** `keeper.antibody.testnet`, limited to `open_round` and `allocate`. Opening a round needs about
+  0.3 NEAR liquid on the keeper (its float, above).
+- **When a check queues** ("the program's proposal slot stayed taken"): `antibody round state --program 12`
+  says why. An accepted proposal past its `opens_from` opens with
+  `antibody --account keeper.antibody.testnet --key-file <bot key> round open --program 12`; then re-run the
+  pull request's checks.
+- The bounty-window workflows (`examples/immune-demo/`) are not installed there: windows have not run on
+  testnet.
 
 ## Top-ups
 
@@ -111,6 +139,5 @@ Each alert is `{level, component, key, message}`. Critical alerts make `ok` fals
 
 ## After 25 November
 
-Restore the vending contracts' per-hour limits to their usual values
-(`antibody practice terms --per-hour 6`, recorded), stop the drills, and leave the services running as
-long as the floats last.
+The `antibody-perhour-down` timer restores the practice vending's hourly limit to 6 (check it in
+`/v1/status`). Stop the drills, and leave the services running as long as the floats last.

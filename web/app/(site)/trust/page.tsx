@@ -118,7 +118,8 @@ export default async function TrustPage() {
             <TierBadge tier="T0" code />
             <p className="small">
               OutLayer runs the verifier in an enclave (secure hardware, a TEE), and its operator delivers the output. On that alone, a payout waits
-              its challenge window; above the instant cap it also needs a second run that agrees.
+              its challenge window; above the instant cap it also needs a second run that agrees. Nobody files challenges today, so under the
+              cap a T0 verdict is paid when its window ends.
             </p>
           </div>
           <div className={styles.cardBox}>

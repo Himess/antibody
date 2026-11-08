@@ -30,14 +30,15 @@ export async function generateMetadata(): Promise<Metadata> {
 const hunterSteps: Step[] = [
   {
     id: "cli-build",
-    title: "Build the CLI",
+    title: "Get the CLI",
     body: (
       <p>
-        With a Rust toolchain (the repository pins its version). The build has the testnet deployment built in. The binary is{" "}
-        <code>./target/release/antibody</code>, called <code>antibody</code> below.
+        The release binary has the testnet deployment built in; download it and check its sha256 as the README shows (Linux, macOS and
+        Windows). It is called <code>antibody</code> below. A build from the repository (<code>cargo build --release -p antibody-cli</code>)
+        is the same program.
       </p>
     ),
-    commands: [`git clone ${config.repo} && cd antibody`, "cargo build --release -p antibody-cli"],
+    commands: [`curl -fsSLO ${config.repo}/releases/download/v0.6.0/antibody-x86_64-unknown-linux-gnu`],
   },
   {
     id: "cli-try",
@@ -127,7 +128,7 @@ const hunterSteps: Step[] = [
     body: (
       <ol>
         <li>It seals the witness to the program&apos;s key, bound to your account.</li>
-        <li>It commits the hash with your bond: this fixes your priority, and nobody can read the proof before its verdict.</li>
+        <li>It commits the hash with your bond: this fixes your priority, and nobody outside the enclave can read the proof before its verdict.</li>
         <li>It reveals the sealed proof, so near-antibody has the enclave verify it.</li>
         <li>It waits for the verdict.</li>
       </ol>

@@ -20,7 +20,7 @@ flowchart LR
   AB -- "anchor check" --> LC[Ethereum light client]
   K[keeper bot] -- "allocate · pay · pause_ticket · reruns" --> AB
   AB -- "pause ticket · release gate" --> G[near-guardian]
-  G -- "sign EIP-712 permits" --> MPC[Chain Signatures]
+  G -- "sign EIP-712 permits" --> MPC[MPC network]
   G -. "signed permits (public)" .-> R[relayer]
   R -- "pause() · release()" --> AD1[(AntibodyAdapter, Sepolia)]
   R -- "pause() · release()" --> AD2[(AntibodyAdapter, Base Sepolia)]
@@ -35,13 +35,13 @@ flowchart LR
 | Path | Role |
 |---|---|
 | `crates/verifier` | The deterministic verifier (native and `wasm32-wasip2`): program mode, rounds, fork mode, receipts and facts, TEE request handling, sealed-submission crypto |
-| `crates/witness` | Witnesses: base witnesses traced through the activation checks, PoC witnesses through the verifier's own path, and submissions sealed against the pinned base alone |
+| `crates/witness` | Witnesses: base witnesses traced through the activation checks, proof witnesses through the verifier's own path, and submissions sealed against the pinned base alone |
 | `crates/rules` | The settlement rule core near-antibody runs (Kani proofs, replayed against the Quint model) |
 | `crates/runner` | A wasmtime host with OutLayer's engine configuration, for local wasm runs |
 | `crates/cli` | `antibody`: the CLI and MCP server, the practice try-it, the judge view, rule strength, Foundry compatibility, the drafter, T1 tools |
 | `crates/services` | Indexer, API, keeper bot, relayers (permits, T1), notifier and monitoring, sandbox mocks, the demo |
 | `contracts/near-antibody` | Settlement contract and the sandbox-only mocks (OutLayer, DCAP, MPC, light client, tUSD) |
-| `contracts/near-guardian` | Pause and release permits signed with Chain Signatures under each program's own path |
+| `contracts/near-guardian` | Pause and release permits the MPC network signs under each program's own path |
 | `contracts/practice-vending` | Practice accounts with scoped keys and bond credit |
 | `contracts/practice-account` | A practice account's own contract: passes its key's calls on to near-antibody, and closes the account when its try is done |
 | `contracts/verdict-guard` | A NEAR app consuming verdicts: a treasury that freezes on a verified Critical |

@@ -312,8 +312,21 @@ export const isPracticeTry = (account?: string | null) => provenance(account) ==
  * Whose practice try: ours (the recorded run's, our rehearsal, or any try on an earlier run's program, 0–4),
  * else a visitor's.
  */
+/** Our own tries by name pattern: each fresh practice program's two checks, the measured agent runs, screener and runbook checks. */
+const OUR_TRY_PATTERNS: [RegExp, string][] = [
+  [/^judge-\d+-p\d+\./, "our check of a fresh practice program"],
+  [/^m\d{8}-\d+\./, "a measured agent run (docs/agent-runs.md)"],
+  [/^scrn-/, "our screener dry run"],
+  [/^pcs-/, "our rehearsal"],
+  [/^runbook-/, "our runbook check"],
+];
+
 export function practiceTry(account: string, program?: number | null): string {
-  return OUR_TRIES[account] ?? (typeof program === "number" && runGroup(program) === "earlier" ? "an earlier run's practice try" : "a visitor's practice try");
+  return (
+    OUR_TRIES[account] ??
+    OUR_TRY_PATTERNS.find(([re]) => re.test(account))?.[1] ??
+    (typeof program === "number" && runGroup(program) === "earlier" ? "an earlier run's practice try" : "a visitor's practice try")
+  );
 }
 
 /** Our fixture agents, the practice tries and our own accounts, labelled wherever they appear. */

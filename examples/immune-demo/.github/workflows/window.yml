@@ -147,7 +147,7 @@ jobs:
           REPO: ${{ github.event.repository.name }}
           MAX_ESCROW: ${{ vars.ANTIBODY_WINDOW_MAX_ESCROW || '0.05' }}
           DAILY_CAP: ${{ vars.ANTIBODY_WINDOW_DAILY_CAP || '4' }}
-          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-three.vercel.app' }}
+          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-near.vercel.app' }}
         run: |
           set -euo pipefail
           if [ -z "$ACCOUNT" ] || [ -z "$WINDOW_KEY" ] || [ -z "$SEPOLIA_RPC" ]; then

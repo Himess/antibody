@@ -24,7 +24,7 @@ practice program, with the tutorial proof (a public, textbook bug: docs/practice
 
 ## Results
 
-**On testnet, 2026-11-08**, with the release binary (antibody 0.5.0, as judges download it) as the MCP
+**On testnet, 2026-11-08**, with the release binary (antibody 0.5.0, the release binary these runs used) as the MCP
 server, Claude Code 2.1.319 with its default model (claude-opus-5-5), on practice program 10:
 
 | Task | Runs | Paid within the agent's own call | Paid on near-antibody, read again | Median time (paid in its call) | Agent cost |

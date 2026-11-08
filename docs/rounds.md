@@ -49,10 +49,10 @@ the provider's proof window. The proposal counts once the check is T1-confirmed.
 Once the check is T1-confirmed, and within `rerun_window` of its answer (the check's T0 time, which T1
 does not move), anyone may ask for, and pay for, a re-run at the fix (`antibody round rerun --commit N`;
 a commit revealed inline needs its blob again: `--blob`, `--reveal-tx` or `--api`) of:
-- every paid PoC, from any round, and every commit that ever held a key;
+- every paid proof, from any round, and every commit that ever held a key;
 - the round's duplicates (their appeal) and gap claims.
 
-The TEE re-runs the original sealed PoC (the same `poc_hash`) under the round manifest. A re-run counts
+The enclave re-runs the original sealed proof (the same `poc_hash`) under the round manifest. A re-run counts
 for its own proposal only, so the next fix is checked against every paid exploit again, and a fix that
 brings an old bug back is caught. `antibody keeper` requests every eligible re-run once the proposal is
 accepted and while its window is open, and requests again any re-run near-antibody counts as stuck
@@ -72,14 +72,14 @@ A duplicate of a released key whose own re-run still breaks it is **promoted** (
 can only add payments.
 
 The **release gate** holds when:
-1. every paid PoC, from any round, was re-run at this fix and shows no violation;
-2. every Critical or High PoC of the round, duplicates included, was re-run and is fixed;
+1. every paid proof, from any round, was re-run at this fix and shows no violation;
+2. every Critical or High proof of the round, duplicates included, was re-run and is fixed;
 3. no gap claim still breaks;
 4. the canaries pass;
 5. every holder of a Critical or High key, from any round, was re-run at this fix and shows no violation.
 
 When it holds, near-antibody asks near-guardian for a release permit per proxy and chain: EIP-712,
-signed by Chain Signatures under the project's path. The program's adapter upgrades a proxy only with a
+signed by the MPC network under the project's path. The program's adapter upgrades a proxy only with a
 valid permit, and only to an implementation whose on-chain code hash is the permit's.
 
 ## The demo

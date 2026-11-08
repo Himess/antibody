@@ -9,7 +9,7 @@ inputs:
   version:
     description: The antibody release whose prebuilt binary runs (its sha256 is checked against the release's .sha256 file)
     required: false
-    default: v0.5.1
+    default: v0.6.0
   repository:
     description: The repository that publishes the release
     required: false

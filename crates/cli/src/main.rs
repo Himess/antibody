@@ -1,4 +1,4 @@
-//! `antibody` — create programs, hunt, commit and submit sealed PoCs, verify receipts, and serve
+//! `antibody` — create programs, hunt, commit and submit sealed proofs, verify receipts, and serve
 //! the same operations to AI agents over MCP. Every command prints JSON with explorer links.
 
 use antibody_cli::{cmd, ctx, hunt, immune, mcp};
@@ -530,7 +530,7 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Translate a forge-test PoC into a bundle: its calls as pranked senders, with a restricted
+    /// Translate a forge-test proof into a bundle: its calls as pranked senders, with a restricted
     /// cheatcode set (pranks as its own senders, deals to them, helpers that change no state)
     FromForge {
         /// The Foundry project
@@ -716,7 +716,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: PracticeCmd,
     },
-    /// Rounds: propose a fix, re-run PoCs at it, open the next round (docs/rounds.md)
+    /// Rounds: propose a fix, re-run paid proofs at it, open the next round (docs/rounds.md)
     Round {
         #[command(subcommand)]
         cmd: RoundCmd,

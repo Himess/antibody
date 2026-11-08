@@ -145,8 +145,8 @@ still breaks a rule ([its README](../.github/actions/immune-memory/README.md)).
 
 ## Limits
 
-- **Sealed proofs outside the TEE.** A proof the run cannot read is listed, not re-run. Re-running sealed
-  proofs inside the TEE, where the result is all anyone sees, is next.
+- **Sealed proofs on the runner.** The check on the runner lists a proof it cannot read; the check in the
+  enclave re-runs it ([Re-runs in the enclave](#re-runs-in-the-enclave)).
 - **A bounty window per pull request** is built (below) and not yet run on testnet.
 - **One anchor.** The re-runs use the state the proofs proved at the anchor; code that reads other state is
   inconclusive, and a change of storage layout cannot be expressed as an override.
@@ -181,7 +181,7 @@ project's own fix (docs/rounds.md).
 3. **near-antibody's round check runs in the enclave.** Once it answers `ok` and is attested on NEAR (T1), the
    keeper requests a re-run of every paid proof at that round. Each re-run runs inside the enclave and is
    attested on NEAR.
-4. **The check reads near-antibody** (`antibody round results --round R --check-run RUN`). Per paid key the
+4. **The check reads near-antibody** (`antibody round results --program P --round R --check-run RUN`, v0.6.0 and later). Per paid key the
    answer is: still breaks, fixed, or no verdict yet. Only which keys still break is published; where a proof
    breaks stays sealed (SA-19).
 5. **A bot key limited to `open_round` and `allocate` opens the round** once its re-run window ends, so the
@@ -222,7 +222,7 @@ Action waits for the slot).
 **Measured on testnet** (2026-11-08, [Himess/antibody-immune-demo](https://github.com/Himess/antibody-immune-demo),
 program 12, three paid keys and one gap claim; every run and transaction:
 [docs/results/immune-demo-2026-11-08.json](results/immune-demo-2026-11-08.json)). With v0.6.0-rc.2, both pull
-requests were opened at once:
+requests were checked at once:
 
 | | Reintroduces a paid defect (PR #2) | A harmless change (PR #1) |
 |---|---|---|

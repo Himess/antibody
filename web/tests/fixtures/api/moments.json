@@ -41,7 +41,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/2Bf74vNQdwGMT8oLf67EquZkXKZLUynXwTHHzAE4euJC",
      "key": "verified",
-     "label": "Verified",
+     "label": "Verified in the enclave",
      "seconds": 125.2,
      "seconds_exact": 125.229272939,
      "tx": "2Bf74vNQdwGMT8oLf67EquZkXKZLUynXwTHHzAE4euJC"
@@ -53,7 +53,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/43hWQie22N5KfXuhgPX6eYxsYk74hS7xrirRfAmyXgZ2",
      "key": "t1",
-     "label": "T1-confirmed",
+     "label": "Attested on NEAR",
      "seconds": 148.9,
      "seconds_exact": 148.89226041,
      "tx": "43hWQie22N5KfXuhgPX6eYxsYk74hS7xrirRfAmyXgZ2"
@@ -191,7 +191,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY",
      "key": "verified",
-     "label": "Verified",
+     "label": "Verified in the enclave",
      "seconds": 18.5,
      "seconds_exact": 18.524081315,
      "tx": "8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY"
@@ -203,7 +203,7 @@
      },
      "explorer": "https://testnet.nearblocks.io/txns/2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P",
      "key": "t1",
-     "label": "T1-confirmed",
+     "label": "Attested on NEAR",
      "seconds": 29.1,
      "seconds_exact": 29.125573721,
      "tx": "2EeXUc7iL8iVf4RpZFKF1LC6sjv9D3hmdGC1RXbG3Y7P"

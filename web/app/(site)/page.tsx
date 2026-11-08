@@ -108,14 +108,14 @@ export default async function Home() {
               <span className={styles.stepNo}>2</span>
               <div>
                 <h3>Anyone submits a sealed proof</h3>
-                <p>A person or an AI agent commits an exploit with a bond. Nobody can read it before the verdict.</p>
+                <p>A person or an AI agent commits an exploit with a bond. Nobody outside the enclave can read it before the verdict.</p>
               </div>
             </li>
             <li>
               <span className={styles.stepNo}>3</span>
               <div>
                 <h3>It is verified in the enclave</h3>
-                <p>OutLayer&apos;s enclave runs the exploit on the chain state the project committed, and NEAR checks its attestation.</p>
+                <p>OutLayer&apos;s enclave runs the exploit on the chain state the project committed. Before an instant payout, NEAR checks the enclave&apos;s attestation.</p>
               </div>
             </li>
             <li>
@@ -254,8 +254,8 @@ function AgentRunsLine() {
   const paid = (t: typeof a) => t.paid_on_chain ?? t.succeeded;
   return (
     <p className="small">
-      Measured on testnet: Claude Code, with only Antibody&apos;s MCP server, was paid {paid(a)} of {a.runs} times with the tutorial proof, and{" "}
-      {paid(a2)} of {a2.runs} times writing the proof itself (with file tools in its workspace), read again from near-antibody.{" "}
+      Measured on testnet: Claude Code, with Antibody&apos;s MCP server, took {paid(a)} of {a.runs} runs with the tutorial proof, and {paid(a2)} of {a2.runs}{" "}
+      writing the proof itself (with file tools in its workspace), to a commit near-antibody settled as paid.{" "}
       <Link href="/agents#agent-runs">The runs</Link>
     </p>
   );

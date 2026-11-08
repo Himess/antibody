@@ -14,7 +14,7 @@ What it does, in order:
    nothing) and writes its report to the job summary;
 4. fails the job when a paid proof still breaks a rule (and, by default, when the result is inconclusive).
 
-`antibody immune` first shipped in release v0.5.0; the default `version` is v0.5.1, which has the fixes below; the release must be published.
+`antibody immune` first shipped in release v0.5.0; the default `version` is v0.6.0, which has the fixes below; the release must be published.
 
 ## Use
 
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4     # with `submodules: recursive` if forge build needs them
-      - uses: Himess/antibody/.github/actions/immune-memory@v0.5.1   # or a commit SHA
+      - uses: Himess/antibody/.github/actions/immune-memory@v0.6.0   # or a commit SHA
         with:
           program: "5"
           project-key: ${{ secrets.ANTIBODY_PROJECT_KEY }}   # optional; read Security first
@@ -173,7 +173,7 @@ round's is refused before anything is sent, so a pull request can bring code, ne
 
 | Input | Default | What |
 |---|---|---|
-| `version` | `v0.5.1` | The antibody release whose binary runs |
+| `version` | `v0.6.0` | The antibody release whose binary runs |
 | `repository` | `Himess/antibody` | The repository that publishes it |
 | `program` | the mapping's | The program's id on near-antibody |
 | `config` | `.antibody/immune.toml` | The mapping file, relative to `working-directory` (the `.gitignore` rules above) |
