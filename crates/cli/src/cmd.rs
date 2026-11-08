@@ -1318,9 +1318,31 @@ pub fn parse_release(s: &str) -> Result<Value> {
 /// Proposes the next round: the round manifest (the fix as code overrides at the anchor) goes up with
 /// FastFS, with the releases a passed gate will permit. near-antibody asks the TEE to check the round,
 /// releases included (check_round); it counts once T1-confirmed.
+/// A round manifest is the program's round-0 manifest plus code overrides (and the slots it adds): only its
+/// number depends on when it is proposed. A pull request's check builds it before it holds the program's
+/// proposal slot, and another check may open a round meanwhile, so it is renumbered to the round it now
+/// proposes, in the canonical bytes `manifest-round` writes. Returns the bytes to propose and, when it was
+/// renumbered, the number it had.
+pub fn renumber_round(raw: &[u8], next: u32) -> Result<(Vec<u8>, Option<u32>)> {
+    let mut m = Manifest::parse(raw).map_err(|e| eyre!(e))?;
+    if m.round == next {
+        return Ok((raw.to_vec(), None));
+    }
+    if m.round == 0 {
+        return Err(eyre!("a round-0 manifest is not a round: derive one with `antibody manifest-round`"));
+    }
+    let from = m.round;
+    m.round = next;
+    Ok((m.canonical(), Some(from)))
+}
+
 pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value], base_witness: Option<&Path>, wait: bool) -> Result<Value> {
     let signer = ctx.signer()?;
-    let bytes = std::fs::read(manifest)?;
+    let next = ctx.program(program)?["round"].as_u64().unwrap_or(0) as u32 + 1;
+    let (bytes, renumbered) = renumber_round(&std::fs::read(manifest)?, next)?;
+    if let Some(from) = renumbered {
+        eprintln!("the manifest names round {from}, and program {program}'s next round is {next}: renumbered (a round's code does not depend on its number)");
+    }
     let m: Value = serde_json::from_slice(&bytes)?;
     let sha = hex::encode(sha256(&bytes));
     let up = blob::upload(ctx, &signer, &format!("antibody/rounds/{sha}.json"), &bytes)?;
@@ -1354,7 +1376,7 @@ pub fn round_propose(ctx: &Ctx, program: u32, manifest: &Path, releases: &[Value
     let s = ensure_ok(ctx, &out, "propose_round")?;
     let run_id = run_of(&s)?;
     let mut res = json!({"program": program, "round": m["round"], "manifest_sha256": sha, "run_id": run_id, "upload": up,
-                         "base": {"bytes": rbase.len(), "sha256": rsha}, "tx": s});
+                         "base": {"bytes": rbase.len(), "sha256": rsha}, "tx": s, "renumbered_from": renumbered});
     if wait {
         res["result"] = wait_run(ctx, run_id, 240)?;
     }
@@ -2043,6 +2065,24 @@ pub fn tx(ctx: &Ctx, hash: &str, signer: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A round manifest proposed after another round opened is renumbered and nothing else changes; one already
+    /// at the next round is proposed byte for byte; a round-0 manifest is refused.
+    #[test]
+    fn a_round_manifest_is_renumbered_to_the_round_it_proposes() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/acme-local");
+        let raw = std::fs::read(format!("{dir}/round1/manifest.json")).unwrap();
+        assert_eq!(renumber_round(&raw, 1).unwrap(), (raw.clone(), None));
+        let (out, from) = renumber_round(&raw, 4).unwrap();
+        assert_eq!(from, Some(1));
+        let mut want = Manifest::parse(&raw).unwrap();
+        want.round = 4;
+        let got = Manifest::parse(&out).unwrap();
+        assert_eq!(got.round, 4);
+        assert_eq!(out, want.canonical(), "only the number changes");
+        let base = std::fs::read(format!("{dir}/manifest.json")).unwrap();
+        assert!(renumber_round(&base, 1).is_err());
+    }
 
     /// A proposal takes re-runs once its round check is `ok` and T1-confirmed; its window counts from the
     /// check's answer (`at`), which T1 does not move.

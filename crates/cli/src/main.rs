@@ -112,9 +112,14 @@ enum RoundCmd {
     Results {
         #[arg(long)]
         program: u32,
-        /// A round other than the proposal's (default: the proposal's, or the round just opened)
+        /// A round other than the proposal's (default: the proposal's, or the round just opened). A check passes
+        /// the round its `round propose` printed
         #[arg(long)]
         round: Option<u64>,
+        /// The proposal's round-check run (`run_id` in `round propose`'s output): a check it refused is an
+        /// error, never another round's results
+        #[arg(long)]
+        check_run: Option<u64>,
         /// Wait up to this many seconds for every paid key's re-run to settle, the proposal to go, or its
         /// re-run window to end
         #[arg(long, default_value_t = 0)]
@@ -1210,12 +1215,13 @@ fn run(cli: Cli) -> Result<Value> {
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
         }
         Cmd::Round { cmd: RoundCmd::State { program } } => antibody_cli::pr_check::state(&mk()?, program),
-        Cmd::Round { cmd: RoundCmd::Results { program, round, wait, ref site, ref json, ref md } } => {
+        Cmd::Round { cmd: RoundCmd::Results { program, round, check_run, wait, ref site, ref json, ref md } } => {
             let ctx = mk()?;
+            let proposed = antibody_cli::pr_check::Proposed { round, check_run };
             let r = if wait > 0 {
-                antibody_cli::pr_check::wait_results(&ctx, program, wait, site.as_deref())?
+                antibody_cli::pr_check::wait_results(&ctx, program, wait, site.as_deref(), proposed)?
             } else {
-                antibody_cli::pr_check::results(&ctx, program, round, site.as_deref())?
+                antibody_cli::pr_check::results_of(&ctx, program, proposed, site.as_deref())?
             };
             if let Some(f) = json {
                 std::fs::write(f, serde_json::to_vec_pretty(&r)?)?;
