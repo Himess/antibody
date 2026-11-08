@@ -245,10 +245,17 @@ impl Near {
 
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
         let mut last = eyre!("no attempt");
+        // A transaction goes to the primary RPC only. Another RPC may take it and time out without saying
+        // whether it was sent (a free plan's "Request timeout", 2026-11-08), and an answer that the nonce is
+        // used then has `send` sign it again with the next one: a second execution. The primary's rate limit
+        // refuses a request outright (nothing sent), so the same transaction waits and goes again.
+        let sends = method == "send_tx";
+        let endpoints = if sends { 1 } else { self.endpoints() };
         for attempt in 0..7 {
             let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
             // A failed or rate-limited attempt goes to the next RPC (one RPC: the same, after a pause).
-            match self.post(self.endpoint(attempt as usize), &body) {
+            let url = if sends { self.rpc.as_str() } else { self.endpoint(attempt as usize) };
+            match self.post(url, &body) {
                 Ok(v) => {
                     if let Some(e) = v.get("error") {
                         let s = e.to_string();
@@ -257,7 +264,7 @@ impl Near {
                         let limited = s.contains("Too Many Requests") || s.contains("-429") || s.contains("Rate limit");
                         if s.contains("TIMEOUT_ERROR") || limited || s.contains("UNKNOWN_BLOCK") {
                             last = eyre!("{method}: {s}");
-                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, self.endpoints(), limited)));
+                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, endpoints, limited)));
                             continue;
                         }
                         return Err(eyre!("{method}: {}", s));
