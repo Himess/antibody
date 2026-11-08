@@ -585,6 +585,46 @@ impl Drill {
         Ok(())
     }
 
+    /// A's commit on this drill's program from a run that stopped after committing (its MCP call cut off by
+    /// a rate-limited RPC, 2026-11-08), so that A never commits twice: one that settles or is settled paid is
+    /// used, and one still unrevealed is revealed with A's key from the record the MCP server kept, if its
+    /// window allows. None when there is none, or it can no longer be revealed (it then expires, and a new
+    /// commit follows it).
+    fn earlier_commit(&mut self, root_ctx: &Ctx, pid: u32, net: &[&str], dep_file: &Path, state_a: &Path) -> Result<Option<u64>> {
+        let me = acct("agent-a");
+        let mine: Vec<Value> = cmd::list_commits(root_ctx, pid)?.into_iter().filter(|c| c["hunter"] == json!(me)).collect();
+        for c in mine.iter().rev() {
+            let id = c["id"].as_u64().unwrap_or_default();
+            let st = &c["state"];
+            if st.get("Done").is_some_and(|d| d.get("Paid").is_none()) {
+                continue;
+            }
+            let mut revealed_here = false;
+            if st == "Committed" {
+                let out = Command::new(&self.a.antibody_bin)
+                    .args(net)
+                    .arg("--deployments")
+                    .arg(dep_file)
+                    .args(["--account", me.as_str(), "--key-file"])
+                    .arg(self.a.work.join("keys/agent-a.fc-key.json"))
+                    .args(["reveal", "--program", &pid.to_string(), "--commit", &id.to_string()])
+                    .current_dir(state_a)
+                    .output()?;
+                if !out.status.success() {
+                    let why = String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or_default().to_string();
+                    println!("  A's earlier commit {id} could not be revealed ({why}): a new commit follows it");
+                    continue;
+                }
+                revealed_here = true;
+            }
+            println!("  A's commit {id}, made over MCP by an earlier run of this drill, is used");
+            self.s["mcp"] = json!({"commit_id": id, "resumed": true, "revealed_by": if revealed_here { "the CLI, after the MCP call stopped" } else { "MCP" }});
+            self.save()?;
+            return Ok(Some(id));
+        }
+        Ok(None)
+    }
+
     /// Agent A over MCP; its verdict T1, its instant payment, and the pause on both chains. Writes the
     /// `one_moment` section the API's `moment()` reads.
     fn one_moment(&mut self) -> Result<()> {
@@ -604,7 +644,11 @@ impl Drill {
                 .and_then(|e| e["tx"].as_str().map(String::from))
                 .unwrap_or_default()
         };
-        let a_commit = match self.s["mcp"]["commit_id"].as_u64() {
+        let earlier = match self.s["mcp"]["commit_id"].as_u64() {
+            Some(c) => Some(c),
+            None => self.earlier_commit(&root_ctx, pid, &net, &dep_file, &state_a)?,
+        };
+        let a_commit = match earlier {
             Some(c) => c,
             None => {
                 self.ensure_liquid(&acct("agent-a"), FREE_FOR_RUNS)?;
