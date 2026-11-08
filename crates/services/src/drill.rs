@@ -529,9 +529,21 @@ impl Drill {
         let proxies: Vec<String> = ["AcmeLend", "AcmeVault"].iter().map(|k| dep[*k].as_str().unwrap_or_default().to_lowercase()).collect();
         let chains = json!([{"chain_id": SEPOLIA, "adapter": adapter, "proxies": proxies}, {"chain_id": BASE_SEPOLIA, "adapter": adapter, "proxies": proxies}]);
         let acme = self.ctx_of("acme");
-        self.ensure_liquid(&acct("acme"), 210 * MILLI)?;
-        let reg = acme.near.function_call(&acme.signer()?, &guardian, "register", json!({"program_key": key, "chains": chains}), 100, ONE_NEAR / 10)?;
-        cmd::ensure_ok(&acme, &reg, "register")?;
+        // Registered already by an earlier attempt of this step (on 2026-11-08 a free RPC timed the
+        // registration out, yet it had been sent): kept, never sent twice.
+        let registered = self.near.view(&guardian, "get_program", json!({"program_key": key, "project": acct("acme")})).ok().filter(|p| p.is_object());
+        let register_tx = match registered {
+            Some(_) => {
+                println!("  near-guardian already holds this program: its registration is kept");
+                Value::Null
+            }
+            None => {
+                self.ensure_liquid(&acct("acme"), 210 * MILLI)?;
+                let reg = acme.near.function_call(&acme.signer()?, &guardian, "register", json!({"program_key": key, "chains": chains}), 100, ONE_NEAR / 10)?;
+                cmd::ensure_ok(&acme, &reg, "register")?;
+                json!(antibody_cli::near::tx_hash(&reg))
+            }
+        };
         let pinned = crate::live::poll("near-guardian to pin the MPC key", Duration::from_secs(180), Duration::from_secs(5), || {
             self.near.view(&guardian, "get_program", json!({"program_key": key, "project": acct("acme")})).ok().filter(|p| p["address"].is_string())
         })?;
@@ -540,7 +552,7 @@ impl Drill {
         }
         println!("adapter {adapter} on {SEPOLIA} and {BASE_SEPOLIA}; near-guardian pinned {}", pinned["address"]);
         self.s["guardian"] = json!({"adapter": adapter, "proxies": proxies, "guardian_address": pinned["address"], "mpc": crate::live::MPC, "path": path,
-                                    "register_tx": antibody_cli::near::tx_hash(&reg), "adapters": {"sepolia": ad_a, "base_sepolia": ad_b}});
+                                    "register_tx": register_tx, "adapters": {"sepolia": ad_a, "base_sepolia": ad_b}});
         Ok(())
     }
 
