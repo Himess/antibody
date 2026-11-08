@@ -303,7 +303,13 @@ pub(crate) fn acme_manifest(dep: &Value, evm: &Evm, anchor_n: u64, anchor_h: B25
     Ok(Manifest {
         schema: MANIFEST_SCHEMA_V2.into(),
         program: ProgramInfo {
-            name: format!("Acme Lend v1 — pre-launch ({})", net.label),
+            // `live` runs the same story again for another purpose (the program kept for pull-request checks,
+            // docs/immune.md): ANTIBODY_ACME_NAME names that program so it is not taken for the recorded run's.
+            name: std::env::var("ANTIBODY_ACME_NAME")
+                .ok()
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("Acme Lend v1 — pre-launch ({})", net.label)),
             project: project.into(),
             description: "Fictional lending protocol with planted bugs (DELIBERATELY VULNERABLE TEST FIXTURE).".into(),
         },
