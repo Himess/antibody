@@ -3,6 +3,10 @@
 # (fork mode), in this order, from the fixed deployer (keccak256("antibody/deployer/v1")[12..], nobody's key), on top
 # of a Sepolia block NEAR's Ethereum light client already holds. In arguments, "deployer" names that address and a
 # contract's name its address. DELIBERATELY VULNERABLE TEST FIXTURE: never deploy Acme Lend to mainnet.
+#
+# The demo repository does not have Acme Lend's rules contract yet: copy contracts/evm/src/acme/AcmeInvariants.sol and
+# contracts/evm/src/antibody/IAntibodyInvariants.sol from the Antibody repository to src/acme/ and src/antibody/, and
+# merge them with this file before the first window (window.yml reads both from the base branch).
 artifacts = "out"
 repository = "antibody-immune-demo"
 description = "Acme Lend at this pull request's build (DELIBERATELY VULNERABLE TEST FIXTURE): AcmeLendFinal and AcmeVaultFixed over the contracts they fix, seeded as on testnet, without proxies."
