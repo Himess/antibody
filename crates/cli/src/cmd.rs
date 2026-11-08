@@ -915,6 +915,17 @@ pub fn commit_sealed(ctx: &Ctx, sp: SealedProof) -> Result<Value> {
     let me = account(ctx, &signer.account_id)?;
     let agent = !me["agent"].is_null();
     let from_credit = agent || u128_of(&me["tokens"]) >= bond;
+    // The blob, its content key and its salt are kept before the commit is sent: a commit that executes
+    // while its answer is lost, or a state write that fails after it, would otherwise lock a bond behind a
+    // proof nobody can reveal. The record waits under its commitment until the commit's id is known.
+    let blob_path = ctx.state_dir.join("blobs").join(format!("{}.bin", s.sha256));
+    std::fs::create_dir_all(blob_path.parent().unwrap())?;
+    std::fs::write(&blob_path, &s.blob)?;
+    let mut record = json!({"program": program, "program_key": key, "round": round, "commit_id": null, "hunter": signer.account_id,
+                            "commitment": cm, "sha256": s.sha256, "blob": blob_path, "content_key": hex::encode(s.content_key),
+                            "salt": format!("{salt:#x}"), "local_verdict": verdict_view(&local)});
+    let pending = ctx.state_dir.join("pending").join(format!("{}.json", cm.trim_start_matches("0x")));
+    write_json(&pending, &record)?;
     let (commit_id, summary) = if from_credit {
         // The commit's storage comes from NEAR credit: an agent's owner's, anyone else's own.
         if !agent {
@@ -936,13 +947,10 @@ pub fn commit_sealed(ctx: &Ctx, sp: SealedProof) -> Result<Value> {
         let id = event(&summary, "commit").and_then(|d| d["commit_id"].as_u64()).ok_or_else(|| eyre!("no commit event"))?;
         (id, summary)
     };
-    let blob_path = ctx.state_dir.join("blobs").join(format!("{}.bin", s.sha256));
-    std::fs::create_dir_all(blob_path.parent().unwrap())?;
-    std::fs::write(&blob_path, &s.blob)?;
-    let record = json!({"program": program, "program_key": key, "round": round, "commit_id": commit_id, "hunter": signer.account_id,
-                        "commitment": cm, "sha256": s.sha256, "blob": blob_path, "content_key": hex::encode(s.content_key),
-                        "salt": format!("{salt:#x}"), "local_verdict": verdict_view(&local), "commit_tx": summary["tx"]});
+    record["commit_id"] = json!(commit_id);
+    record["commit_tx"] = summary["tx"].clone();
     write_json(&ctx.record_path(program, commit_id), &record)?;
+    let _ = std::fs::remove_file(&pending);
     Ok(json!({"commit_id": commit_id, "commitment": cm, "bond_from_credit": from_credit, "witness_source": wmeta["source"],
               "witness_bytes": wmeta["stats"]["witness_bytes"], "sealed_bytes": s.blob.len(), "local_verdict": verdict_view(&local),
               "record": ctx.record_path(program, commit_id), "tx": summary,
