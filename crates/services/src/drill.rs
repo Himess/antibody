@@ -306,20 +306,22 @@ impl Drill {
     ///
     /// A deployment that sent part of its transactions and stopped (a public RPC whose nonce lags, say)
     /// cannot be sent again from the same deployer: its first CREATE2 addresses are taken. The next attempt
-    /// derives a fresh deployer (`evm_attempt`, recorded so a resumed drill keeps counting), at most
-    /// [`EVM_ATTEMPTS`] in all; the abandoned contracts are our own fixture, never used.
+    /// derives a fresh deployer (`evm_attempt`, recorded so a resumed drill never reuses one), at most
+    /// [`EVM_ATTEMPTS`] attempts per run; the abandoned contracts are our own fixture, never used.
     fn evm(&mut self) -> Result<()> {
+        let mut tries = 0;
         loop {
             let attempt = self.s["evm_attempt"].as_u64().unwrap_or(0);
             let err = match self.evm_once() {
                 Ok(()) => return Ok(()),
                 Err(e) => e,
             };
+            tries += 1;
             let deployer = self.deployer()?;
             let sent = [self.sepolia(), self.a.base_rpc.clone()].iter().any(|rpc| {
                 Evm::new(rpc).call("eth_getTransactionCount", json!([deployer.address, "latest"])).ok().and_then(|v| crate::evm::hex_u64(&v).ok()).unwrap_or(0) > 0
             });
-            if !sent || attempt + 1 >= EVM_ATTEMPTS {
+            if !sent || tries >= EVM_ATTEMPTS {
                 return Err(err);
             }
             println!("  the deployment stopped after sending transactions ({err:#}): attempt {} with a fresh deployer", attempt + 2);
@@ -850,7 +852,8 @@ fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
 }
 
-/// Deployment attempts in one drill, each from a fresh deployer once an earlier one sent transactions.
+/// Deployment attempts in one run of a drill, each from a fresh deployer once an earlier one sent
+/// transactions.
 const EVM_ATTEMPTS: u64 = 3;
 
 /// The label a drill's deployer is derived with: the date, and the attempt after the first.

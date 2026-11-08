@@ -119,8 +119,6 @@ pub(crate) enum Broadcaster<'a> {
     Key(&'a str),
 }
 
-/// Runs `script` (contracts/evm/script) and reads the JSON it writes to `out`. A key never appears in a
-/// command line or in an error.
 /// The tip forge's deployments with a key pay (`--priority-gas-price`, wei): 0.001 gwei (see below).
 pub(crate) const FORGE_TIP_WEI: u128 = 1_000_000;
 /// The gas limit forge gives each deployment, as a percentage of its simulation (`--gas-estimate-multiplier`).
@@ -134,15 +132,23 @@ pub(crate) fn forge_max_fee(gas_price: u128) -> u128 {
     2 * gas_price + FORGE_TIP_WEI
 }
 
+/// Runs `script` (contracts/evm/script) and reads the JSON it writes to `out`. A key never appears in a
+/// command line or in an error.
 fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Broadcaster, env: &[(&str, &str)], out: &Path) -> Result<Value> {
     let mut c = Command::new(forge_bin);
-    c.current_dir(root.join("contracts/evm")).args(["script", script, "--rpc-url", rpc, "--broadcast", "--slow"]);
+    c.current_dir(root.join("contracts/evm")).args(["script", script, "--rpc-url", rpc, "--broadcast"]);
     match by {
-        Broadcaster::Unlocked(sender) => c.args(["--unlocked", "--sender", sender]).env_remove("DEPLOYER_KEY"),
+        // A local chain: one transaction after another, each confirmed before the next.
+        Broadcaster::Unlocked(sender) => c.args(["--slow", "--unlocked", "--sender", sender]).env_remove("DEPLOYER_KEY"),
         // A public testnet RPC: forge's simulation paced within free tiers and retried when refused. Sepolia
         // (Glamsterdam) prices state creation five to seven times what forge's Cancun simulation counts, so
         // its gas limits are nine times the simulation's (the node charges only the gas used). Its tips are
         // a few wei: forge's default of 1 gwei made one deployment cost 0.024 ETH, so the tip is 0.001 gwei.
+        // No `--slow`: it asks the node for the sender's nonce after every confirmation, and a load-balanced
+        // public RPC answers from a node a block behind often enough that forge stopped part-way after five
+        // asks (19, 22 and 2 of Acme's 29 transactions on Sepolia, 2026-11-08). forge numbers the
+        // transactions itself and waits for every receipt; the drill starts over from a fresh deployer if
+        // one is missing.
         Broadcaster::Key(key) => {
             c.args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier"])
                 .arg(FORGE_GAS_MULTIPLIER_PCT.to_string())
