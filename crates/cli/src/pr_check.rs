@@ -140,18 +140,73 @@ pub fn results(ctx: &Ctx, program: u32, round: Option<u64>, site: Option<&str>) 
               "note": "re-run inside the enclave through near-antibody's rounds; only which keys still break is published"}))
 }
 
-/// `results`, waiting up to `wait` seconds for the check and every paid key's re-run to settle: it stops once
-/// no key is left without a verdict, once the proposal is gone (rejected) or stale, or once its re-run window
-/// has ended.
-pub fn wait_results(ctx: &Ctx, program: u32, wait: u64, site: Option<&str>) -> Result<Value> {
+/// Why near-antibody did not accept a proposal, from its round-check run: the check failed, or answered
+/// anything but `ok` (a wrong round number, canaries that broke, an InfraError). `None` while it is pending
+/// or once it answered `ok`.
+pub fn check_refusal(check_run: &Value) -> Option<String> {
+    let o = &check_run["outcome"];
+    if let Some(f) = o.get("Failed") {
+        return Some(format!("the round check failed: {}", f["reason"].as_str().unwrap_or("no reason given")));
+    }
+    let a = o.get("Answered")?;
+    if a["facts"]["extra"]["RoundCheck"]["ok"] == json!(true) {
+        return None;
+    }
+    Some(format!("near-antibody's round check refused the proposal: {}", a["facts"]["reason"].as_str().unwrap_or("its check was not ok")))
+}
+
+/// A check that did not run: no paid proof was re-run against the proposed code, so it is never a pass.
+fn not_checked(program: u32, round: Option<u64>, check_run: Option<u64>, why: &str, proposal: &Value) -> Value {
+    json!({"program": program, "round": round, "check_run": check_run, "keys": [], "verdict": "error", "reason": why,
+           "counts": {"still breaks": 0, "fixed": 0, "no verdict yet": 0}, "proposal": proposal,
+           "note": "the proposal was not checked: no paid proof was re-run against this code"})
+}
+
+/// The proposal a check sent: the round it proposed (after renumbering) and its round-check run.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Proposed {
+    pub round: Option<u64>,
+    pub check_run: Option<u64>,
+}
+
+/// `results` for one proposal: an error, never another round's results, when its round check refused it.
+pub fn results_of(ctx: &Ctx, program: u32, proposed: Proposed, site: Option<&str>) -> Result<Value> {
+    if let Some(id) = proposed.check_run {
+        if let Some(why) = check_refusal(&cmd::run(ctx, id)?) {
+            return Ok(not_checked(program, proposed.round, Some(id), &why, &Value::Null));
+        }
+    }
+    results(ctx, program, proposed.round, site)
+}
+
+/// `results`, waiting up to `wait` seconds for the check and every paid key's re-run to settle. It follows
+/// one proposal: the one given (`round propose` prints its round and check run), else the one there when it
+/// starts. It stops once no key of that round is left without a verdict, once the proposal is stale or its
+/// re-run window has ended, and with an error once its check refused it or it is gone without its round
+/// opening: a refused proposal used to read as the open round's results, which could be green.
+pub fn wait_results(ctx: &Ctx, program: u32, wait: u64, site: Option<&str>, proposed: Proposed) -> Result<Value> {
     let start = std::time::Instant::now();
+    let first = state(ctx, program)?;
+    let round = proposed.round.or_else(|| first["proposal"]["round"].as_u64());
+    let check_run = proposed.check_run.or_else(|| first["proposal"]["check_run"].as_u64().filter(|_| first["proposal"]["round"].as_u64() == round));
     loop {
         let st = state(ctx, program)?;
-        let r = results(ctx, program, None, site)?;
+        if let Some(id) = check_run {
+            if let Some(why) = check_refusal(&cmd::run(ctx, id)?) {
+                return Ok(not_checked(program, round, Some(id), &why, &st["proposal"]));
+            }
+        }
+        let r = results(ctx, program, round, site)?;
         let prop = &st["proposal"];
-        let window_over = prop["rerun_window_ends_at"].as_u64().is_some_and(|e| st["now"].as_u64().unwrap_or(0) > e);
-        let settled = r["verdict"] != "inconclusive" && prop["state"] == "accepted";
-        if settled || prop.is_null() || prop["state"] == "stale" || window_over || start.elapsed() >= Duration::from_secs(wait) {
+        let ours = round.is_some() && prop["round"].as_u64() == round;
+        let opened = round.is_some_and(|n| st["round"].as_u64().unwrap_or(0) >= n);
+        if round.is_some() && !ours && !opened {
+            return Ok(not_checked(program, round, check_run, "the proposal is gone and its round never opened (refused, or replaced while stale)", prop));
+        }
+        let window_over = ours && prop["rerun_window_ends_at"].as_u64().is_some_and(|e| st["now"].as_u64().unwrap_or(0) > e);
+        let settled = r["verdict"] != "inconclusive" && (opened || (ours && prop["state"] == "accepted"));
+        let stale = ours && prop["state"] == "stale";
+        if settled || stale || window_over || round.is_none() || start.elapsed() >= Duration::from_secs(wait) {
             let mut r = r;
             r["proposal"] = st["proposal"].clone();
             return Ok(r);
@@ -162,6 +217,16 @@ pub fn wait_results(ctx: &Ctx, program: u32, wait: u64, site: Option<&str>) -> R
 
 /// The check's job summary.
 pub fn markdown(r: &Value) -> String {
+    if r["verdict"] == "error" {
+        return [
+            "### Antibody immune memory: the check did not run".to_string(),
+            String::new(),
+            format!("Program {}, round {}: {}.", r["program"], r["round"], r["reason"].as_str().unwrap_or("no reason given")),
+            String::new(),
+            "No paid proof was re-run against this pull request's code, so this is not a pass.".into(),
+        ]
+        .join("\n");
+    }
     let title = match r["verdict"].as_str() {
         Some("red") => "a paid proof still breaks a rule against this pull request's code",
         Some("green") => "no paid proof breaks a rule against this pull request's code",
@@ -233,6 +298,23 @@ mod tests {
         assert_eq!(key_verdict(Some(&answered("T0", "Violation", None, json!([{"slot": 1, "tag": tag}]))), 3, &tag), "no verdict yet");
         assert_eq!(key_verdict(Some(&answered("T1", "InfraError", None, json!([]))), 3, &tag), "no verdict yet");
         assert_eq!(key_verdict(None, 3, &tag), "no verdict yet");
+    }
+
+    /// A check that failed or answered anything but `ok` refuses the proposal, with near-antibody's reason; a
+    /// pending check or an `ok` one does not. The summary of a refused check never reads as a pass.
+    #[test]
+    fn a_refused_round_check_is_an_error_never_a_pass() {
+        let mut wrong = answered("T1", "NoViolation", Some(false), json!([]));
+        wrong["outcome"]["Answered"]["facts"]["reason"] = json!("wrong round number");
+        assert_eq!(check_refusal(&wrong).as_deref(), Some("near-antibody's round check refused the proposal: wrong round number"));
+        assert!(check_refusal(&json!({"outcome": {"Failed": {"reason": "OutLayer returned no output"}}})).unwrap().contains("no output"));
+        assert!(check_refusal(&answered("T1", "InfraError", None, json!([]))).is_some(), "an InfraError check is not ok");
+        assert_eq!(check_refusal(&answered("T0", "NoViolation", Some(true), json!([]))), None);
+        assert_eq!(check_refusal(&json!({"started_at": 900, "outcome": "Pending"})), None);
+        let r = not_checked(12, Some(4), Some(120), "near-antibody's round check refused the proposal: wrong round number", &Value::Null);
+        assert_eq!(r["verdict"], "error");
+        let md = markdown(&r);
+        assert!(md.contains("did not run") && md.contains("wrong round number") && md.contains("not a pass"), "{md}");
     }
 
     /// The summary names a rule only for a key that still breaks, and says when there is no paid key at all.

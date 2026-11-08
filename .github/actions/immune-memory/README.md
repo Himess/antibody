@@ -119,6 +119,10 @@ Each key also has a link to its re-run and its tier. Nothing sealed is shown.
 - **One proposal at a time per program.** An accepted proposal is cleared only by opening its round. The
   action waits for the slot (`wait-for-slot`) and says when the check queued. With `bot-account`, it opens
   the round once the re-run window ends, so the next push gets the slot.
+- **Only its own proposal counts.** A manifest built while another pull request held the slot names a round
+  that has opened since: `round propose` renumbers it to the round it now proposes (only the number
+  changes). The check reads the results of that round and its round check alone. A round check
+  near-antibody refused is an error, never a pass.
 - **The key is scoped.** The project's key is a function-call key limited to `propose_round` and
   `__fastdata_fastfs` (the upload of the manifest) on near-antibody, with an allowance. The project's
   NEAR credit at near-antibody pays each round check (0.03 NEAR), so fund it beforehand.

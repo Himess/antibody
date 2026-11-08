@@ -160,9 +160,13 @@ runs:
           sleep 30
         done
         rm -f "$key"
-        echo "proposed: $(jq -c '{tx: .tx.tx, run: .run_id}' "$RUNNER_TEMP/propose.json" 2>/dev/null)"
+        # This check's own proposal: the round it proposed (the CLI renumbers a manifest built before another check
+        # opened a round) and its round-check run. Only its results count: a refused check is an error.
+        round=$(jq -r '.round // empty' "$RUNNER_TEMP/propose.json" 2>/dev/null); check=$(jq -r '.run_id // empty' "$RUNNER_TEMP/propose.json" 2>/dev/null)
+        if [ -z "$round" ] || [ -z "$check" ]; then finish "round propose printed no round or round-check run"; fi
+        echo "proposed: round $round, $(jq -c '{tx: .tx.tx, check_run: .run_id, renumbered_from}' "$RUNNER_TEMP/propose.json" 2>/dev/null)"
         # The keeper requests every paid proof's re-run once the round check is T1-confirmed; this waits for them.
-        if ! "${A[@]}" round results --program "$PROGRAM" --wait "$WAIT_RESULTS" --site "$SITE" --json "$json" --md "$md" > /dev/null; then
+        if ! "${A[@]}" round results --program "$PROGRAM" --round "$round" --check-run "$check" --wait "$WAIT_RESULTS" --site "$SITE" --json "$json" --md "$md" > /dev/null; then
           finish "the results could not be read (its log says why)"
         fi
         verdict=$(jq -r '.verdict // "error"' "$json" 2>/dev/null) || verdict=error
