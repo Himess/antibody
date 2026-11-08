@@ -9,10 +9,32 @@ import type { FeedRow, IndexedEvent, ProgramDetail, Severity } from "@/lib/api/t
 
 /* ------------------------------------------------------------------ what a program is */
 
-export type ProgramKind = "fixture" | "practice" | "fork" | "program";
+export type ProgramKind = "fixture" | "practice" | "fork" | "window" | "program";
 
-/** Acme Lend is our fixture; the practice programs are tutorials; fork mode is named in the program's name. */
+/** A pull request's bounty window, by the name `antibody window open` gives it: `PR #12 window (repo @ 1a2b3c4)`. */
+export interface WindowName {
+  pr: number;
+  repo: string;
+  head: string | null;
+}
+
+const WINDOW_NAME = /^PR #([1-9]\d{0,8}) window \(([A-Za-z0-9._/-]{1,100})(?: @ ([0-9a-f]{7,40}))?\)$/;
+
+/**
+ * The parts of a window's name, or null for any other program. The same pattern as the CLI's
+ * `window::parse_window_name`: a label only, since a program's name is its project's to choose.
+ */
+export function parseWindowName(name?: string | null): WindowName | null {
+  const m = WINDOW_NAME.exec(name ?? "");
+  return m ? { pr: Number(m[1]), repo: m[2], head: m[3] ?? null } : null;
+}
+
+/**
+ * A pull request's window is named so; Acme Lend is our fixture; the practice programs are tutorials; fork mode is
+ * named in the program's name.
+ */
 export function programKind(name?: string | null, description?: string | null): ProgramKind {
+  if (parseWindowName(name)) return "window";
   const n = (name ?? "").toLowerCase();
   const d = (description ?? "").toLowerCase();
   if (n.includes("fork mode") || d.includes("fork mode")) return "fork";
@@ -25,8 +47,12 @@ export const KIND_TEXT: Record<ProgramKind, { short: string; long: string }> = {
   fixture: { short: "Acme Lend fixture", long: "Acme Lend: our deliberately vulnerable fixture" },
   practice: { short: "Practice", long: "Practice program: a tutorial" },
   fork: { short: "Fork mode", long: "Practice program in fork mode: a tutorial" },
+  window: { short: "Pull-request window", long: "Pull-request window: a fork-mode program for a pull request's build" },
   program: { short: "Program", long: "Program" },
 };
+
+/** Whether a program's contracts exist only inside the verifier (fork mode): its targets have no explorer page. */
+export const isForkMode = (kind: ProgramKind) => kind === "fork" || kind === "window";
 
 /**
  * The recorded run (docs/results/testnet-2026-11-04.json; JUDGES.md: "This run's programs are 5 (Acme Lend),

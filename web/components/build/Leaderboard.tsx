@@ -74,7 +74,7 @@ const OUTCOME_OF = new Map<string, Outcome>([
 type Source = { commit: number; label: string; visitor: boolean };
 type Sources = Map<string, Record<Outcome, Source[]>>;
 
-const KIND_WORD: Record<ProgramKind, string | null> = { fixture: "Acme Lend", practice: "practice", fork: "fork mode", program: null };
+const KIND_WORD: Record<ProgramKind, string | null> = { fixture: "Acme Lend", practice: "practice", fork: "fork mode", window: "a pull-request window", program: null };
 
 /**
  * Our own practice accounts on this run's programs: the recorded run's two tries
