@@ -320,7 +320,8 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
 Direct dependencies, by license:
 
 - MIT or Apache-2.0: alloy, reth 2.2, rsp, serde, serde_json, clap, reqwest, borsh, sha2, hkdf,
-  chacha20poly1305, k256, getrandom, near-sdk 5.9, proptest, futures-util;
+  chacha20poly1305, k256, getrandom, near-sdk 5.9, proptest, futures-util, and wasmi 2.0 (verifier v2's
+  NEAR engine, `crates/verifier-near`);
 - MIT: revm 38, axum, tokio, bincode;
 - BSD-3-Clause: ed25519-dalek, x25519-dalek;
 - Apache-2.0 with LLVM exception: wasmtime 28.
