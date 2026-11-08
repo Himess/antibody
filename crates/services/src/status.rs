@@ -391,9 +391,20 @@ pub fn compute_with(
                 alert("warn", "practice", "practice-vaults-low".into(), format!("{fresh} of {n} vaults left unproved on program {program}: open a fresh practice program before they run out"));
             }
         }
+        // This hour's vends: the contract counts them per UTC clock hour and refuses past `per_hour`.
+        let vends = vend_hour(near, &pr.vending).map(|(hour, in_hour, per_hour)| {
+            let now_hour = now_s() / 3600;
+            let left = if hour >= now_hour { per_hour.saturating_sub(in_hour) } else { per_hour };
+            let resets = rfc3339_of_unix((now_hour + 1) * 3600);
+            if left == 0 {
+                alert("info", "practice", "vends-hour-spent".into(), format!(
+                    "this hour's {per_hour} practice accounts are vended: the count starts again at {resets} (a try needs no other change)"));
+            }
+            json!({"per_hour": per_hour, "left_this_hour": left, "resets_at": resets})
+        });
         components.insert("practice".into(), json!({"vending": pr.vending, "program": pr.program, "balance_near": balance,
                                                    "public_vend_key_allowance_near": allowance, "credit_near": credit_near, "credit_tokens_raw": credit["tokens"],
-                                                   "instances": instances}));
+                                                   "instances": instances, "vends": vends}));
     }
 
     // A `hunt` vending contract, if the deployment names one: watched like the practice one. Its key is
@@ -600,6 +611,32 @@ pub fn pending_images_alert(pending: &[Value], open_created: &[(u64, u64)]) -> O
             many[..many.len() - 1].join(", "), many[many.len() - 1]
         )),
     })
+}
+
+/// The practice vending contract's count for the current hour, from its state (it has no view for it): the
+/// hour it counts (block time / 3600 s), the accounts vended in it, and `per_hour`. The state is Borsh: three
+/// account ids, the program id, the vault count, the terms (four u128 and per_hour), vended, hour, in_hour.
+pub fn vend_hour(near: &Near, vending: &str) -> Option<(u64, u32, u32)> {
+    use base64::Engine as _;
+    let r = near.call("query", json!({"request_type": "view_state", "finality": "final", "account_id": vending, "prefix_base64": "U1RBVEU="})).ok()?;
+    let raw = r["values"].as_array()?.iter().find(|v| v["key"] == json!("U1RBVEU="))?["value"].as_str()?.to_string();
+    let b = base64::engine::general_purpose::STANDARD.decode(raw).ok()?;
+    let mut i = 0usize;
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let s = b.get(i..i + n)?;
+        i += n;
+        Some(s)
+    };
+    for _ in 0..3 {
+        let len = u32::from_le_bytes(take(4)?.try_into().ok()?) as usize;
+        take(len)?;
+    }
+    take(4 + 4 + 4 * 16)?;
+    let per_hour = u32::from_le_bytes(take(4)?.try_into().ok()?);
+    take(4)?;
+    let hour = u64::from_le_bytes(take(8)?.try_into().ok()?);
+    let in_hour = u32::from_le_bytes(take(4)?.try_into().ok()?);
+    (in_hour <= per_hour).then_some((hour, in_hour, per_hour))
 }
 
 #[cfg(test)]

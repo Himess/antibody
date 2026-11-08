@@ -1,0 +1,67 @@
+{
+ "what": "An agent's limits on near-antibody, live: a registered agent commits within its per-commit cap; its owner lowers the cap below the program's bond; the agent's next commit is refused without a panic and recorded as a containment event.",
+ "network": "testnet",
+ "contract": "bounty.antibody.testnet",
+ "owner": "antibody.testnet",
+ "agent": "capdemo.antibody.testnet",
+ "program": 13,
+ "program_bond_raw": "100000000000000000000",
+ "measured": "2026-11-08T23:31Z to 23:35Z",
+ "cli": "antibody 0.6.1 (debug build of the release branch)",
+ "steps": [
+  {
+   "step": "the agent's account, a direct sub-account of its owner",
+   "tx": "J55aUNigbdEfsvgLR7WZ8xR4fECjZ9PLH5QfLv4WzTs1"
+  },
+  {
+   "step": "registered as an agent: bond budget 0.01 wNEAR, per-commit cap 0.0005 wNEAR, program 13 only",
+   "tx": "CXbUgPtsFjaPqpXeVPgDpQyCPUYNJp5g5RHJj7yy5PpG"
+  },
+  {
+   "step": "its function-call key on near-antibody: commit, reveal, upload and the keeper methods; no withdrawal, transfer or deposit",
+   "tx": "HXgHvrDCbrUwec4kqyPw2MZj7skQsrSR9rUjxqRKLLxF"
+  },
+  {
+   "step": "the owner's credit for its bonds: registration, then 0.002 wNEAR",
+   "txs": [
+    "ArRFAGDoLcFqrAX5vxXGoBk9M49Jv9MDXk7a8Kzq1kYE",
+    "6CtGq8Zp9K3Dtmhs8mANh1xXrBbtDDQezVhwbophKKCt"
+   ]
+  },
+  {
+   "step": "a commit within the cap: the program's bond, 0.0001 wNEAR, from the owner's credit (commit 71)",
+   "tx": "DHGQ3oaXsdRVcRHtwFyxvLL33mTGmVEWmPohh88BdDFQ",
+   "commit": 71
+  },
+  {
+   "step": "its reveal: run 161, a Violation, a duplicate of a key already paid on that vault (Done:Duplicate, T1)",
+   "tx": "3RuHSJHoXSiRGvXBCfWAk7ZbNoVQ9PKYrCCsHtxyJJbN",
+   "run": 161
+  },
+  {
+   "step": "the owner lowers the per-commit cap to 0.00005 wNEAR, below the program's bond",
+   "tx": "9XmGRUFqxicUFQ65d8y5iQYV5KaZw3EsMeEyCY16QzB1"
+  },
+  {
+   "step": "the agent's next commit: refused without a panic and recorded as a containment event",
+   "tx": "8nTNVfZbSpwXMB3e296M315hkkRPPAqCWzgdcXDAGTFs",
+   "containment": true
+  }
+ ],
+ "statement": {
+  "agent": "capdemo.antibody.testnet",
+  "bond_budget": "10000000000000000000000",
+  "bonds_locked": "100000000000000000000",
+  "bonds_lost": "0",
+  "bonds_returned": "0",
+  "commits": 1,
+  "containment_events": 1,
+  "key_permissions": "commit, reveal, upload and the permissionless keeper methods; no withdrawal, transfer or deposit",
+  "net_tokens": "0",
+  "owner": "antibody.testnet",
+  "paid": "0",
+  "per_commit_cap": "50000000000000000000",
+  "registered": true,
+  "verification_spent_yocto": "0"
+ }
+}

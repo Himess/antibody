@@ -477,9 +477,11 @@ a.node:hover .nodeLabel {
   fill: var(--lane);
 }
 
+/* A pause: its chain's colour, as the key names it, ringed in the accent. */
 .vevm.vdone .vdot {
-  fill: var(--accent);
+  fill: var(--lane);
   stroke: var(--accent);
+  stroke-width: 2.5;
 }
 
 .vhead {

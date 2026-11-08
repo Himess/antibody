@@ -76,7 +76,9 @@ provenance attestation: `gh attestation verify <file> -R Himess/antibody` (the G
 It prints each contract's locked status (code hashes with `--json`), and every program's verdicts, payouts
 and pauses, with a progress line on stderr as it reads, four programs at a time (about 15 s). `judge` and `try` read FastNEAR's
 public RPC, which limits requests: when it answers `-429`, reads move to two other public testnet RPCs for a
-while, and a transaction waits and goes again. `./antibody --rpc <url> judge` picks another primary RPC.
+while, and a transaction waits and goes again. `./antibody --rpc <url> judge` picks another primary RPC;
+for transactions, FastNEAR's `https://test.rpc.fastnear.com` is the other endpoint known to take them (a free
+plan elsewhere may time out on `send_tx`).
 
 **3. Run a practice bounty end to end.**
 
@@ -216,6 +218,10 @@ cp hunt-<you>/proof.example.bundle.json hunt-<you>/proof.bundle.json   # then ma
 ./antibody check --program <id> --bundle hunt-<you>/proof.bundle.json   # the program hunt start printed
 ./antibody hunt submit --name <you> --vending practice.antibody.testnet --poc hunt-<you>/proof.bundle.json
 ```
+
+`check` needs no Ethereum RPC here: the practice program's pinned base witness covers its targets. On a
+program whose witness does not cover your calls, it reads Ethereum at the program's anchor block, which only
+an archive node serves (`--eth-rpc <archive RPC>`).
 
 On testnet (2026-11-07): two accounts paid on two vaults, a proof that breaks no rule ending `NoViolation`
 with its bond forfeited, and a proof with two calls where one is allowed, judged `InvalidPoC`, its bond

@@ -696,6 +696,26 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                     <div className="xsmall muted">the allowance caps what calls to vend can burn</div>
                   </dd>
                 </div>
+                {num(obj(practice.vends).per_hour) !== null ? (
+                  <div>
+                    <dt>Practice accounts this hour</dt>
+                    <dd>
+                      <span className="num">
+                        {num(obj(practice.vends).left_this_hour)} of {num(obj(practice.vends).per_hour)} left
+                      </span>{" "}
+                      {num(obj(practice.vends).left_this_hour) === 0 ? (
+                        <Pill tone="warn" size="sm">
+                          next at <Time t={unixOf(str(obj(practice.vends).resets_at))} />
+                        </Pill>
+                      ) : (
+                        <Pill tone="ok" size="sm">
+                          open
+                        </Pill>
+                      )}
+                      <div className="xsmall muted">counted per UTC clock hour; a refused vend spends nothing</div>
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Its credit at near-antibody</dt>
                   <dd>

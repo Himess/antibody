@@ -412,6 +412,24 @@ def immune_demo(net):
     return im
 
 
+def agent_containment(net):
+    """The newest live record of an agent's limits on this network (docs/results/agent-containment-<date>.json: a
+    commit within the cap, the cap lowered, the next commit refused and recorded), or None."""
+    base = pathlib.Path(__file__).resolve().parents[2] / "docs" / "results"
+    files = sorted(base.glob("agent-containment-*.json"))
+    if not files:
+        return None
+    try:
+        ac = json.loads(files[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if ac.get("network") != net or not any(s.get("containment") for s in ac.get("steps", [])) \
+            or not (ac.get("statement") or {}).get("containment_events"):
+        return None
+    ac["file"] = f"docs/results/{files[-1].name}"
+    return ac
+
+
 def agent_runs_lines(runs):
     """One line per task of the measured agent runs: what the agent had, how many runs ended paid, the median."""
     lines = []
@@ -768,6 +786,31 @@ def judges(d):
              d.check_view(contract, "get_run", {"run_id": greens[0]}, f"run {greens[0]}, at PR #{green['pull_request']}'s round, breaks nothing", "Read a green re-run on NEAR",
                           path="outcome.Answered.facts.kind", equals="NoViolation")],
             program=im["program"]["id"], results=im["file"])
+    ac = agent_containment(d.net)
+    if ac:
+        # An agent's limits, live (spec §13): within its cap a commit goes through; over it, near-antibody refuses it
+        # without a panic and counts a containment event (docs/results/agent-containment-*.json).
+        n += 1
+        st = ac["statement"]
+        steps = ac["steps"]
+        reg = next(x["tx"] for x in steps if x.get("step", "").startswith("registered"))
+        within = next(x for x in steps if x.get("commit") is not None)
+        lowered = next(x["tx"] for x in steps if "lowers" in x.get("step", ""))
+        refused = next(x for x in steps if x.get("containment"))
+        cmd = d.cli(f"view --contract {contract} --method agent_statement --args '{{\"agent\":\"{ac['agent']}\"}}'")
+        row(n, f"An agent's limits hold on chain: `{ac['agent']}`, registered by its owner with a bond budget and a per-commit cap, commits within "
+               f"its cap (commit {within['commit']}); its owner lowers the cap below the program's bond, and its next commit is refused and recorded "
+               f"as a containment event. Its key cannot withdraw, transfer or deposit",
+            f"`{cmd}`",
+            f"`registered: true`, `commits: {st.get('commits')}`, `containment_events: {st.get('containment_events')}`, `per_commit_cap` "
+            f"{d.tokens(st.get('per_commit_cap'))} (program {ac['program']}'s bond: {d.tokens(ac.get('program_bond_raw'))}); key: {st.get('key_permissions')}",
+            f"register {d.tx(reg)}, commit {d.tx(within['tx'])}, cap lowered {d.tx(lowered)}, refused commit {d.tx(refused['tx'])}; every step: "
+            f"[{ac['file']}]({ac['file']})",
+            "agent_containment", [cmd],
+            [d.link("register", reg), d.link("commit within the cap", within["tx"]), d.link("cap lowered", lowered), d.link("refused commit", refused["tx"])],
+            [d.check_view(contract, "agent_statement", {"agent": ac["agent"]}, f"{ac['agent']} counts {st.get('containment_events')} containment event",
+                          "Read the agent on NEAR", path="containment_events", equals=st.get("containment_events"))],
+            program=ac["program"], results=ac["file"])
     pr = r.get("project_read", {})
     if pr:
         n += 1
