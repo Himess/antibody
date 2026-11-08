@@ -65,9 +65,10 @@ fn acct(n: &str) -> String {
     format!("{n}.{HQ}")
 }
 
-/// The NEAR each account a drill uses must keep free of its storage stake for the drill to run without
-/// topping it up from HQ: the project's escrow and runs, the hunter's run, the keeper's pause ticket and
-/// payment, the T1 relayer's relays. HQ itself must be able to top the others up.
+/// The NEAR each account a drill uses needs free of its storage stake: the project's escrow and runs, the
+/// hunter's run, the keeper's pause ticket and payment, the T1 relayer's relays. Each step tops its own
+/// signer up from HQ, so an account below its floor is covered when HQ can send the difference and still
+/// keep its own floor ([`near_shortfalls`]).
 fn near_floor(role: &str) -> u128 {
     match role {
         // Escrow (0.4) wrapped, plus a run's 0.35 free and the register's MPC credit.
@@ -75,7 +76,7 @@ fn near_floor(role: &str) -> u128 {
         "agent-a" => FREE_FOR_RUNS,
         "keeper" => FREE_FOR_RUNS,
         "relayer" => cmd::parse_near("0.5").unwrap(),
-        // HQ tops the others up: enough for the escrow and a few floats.
+        // What HQ keeps after the top-ups: the escrow and a few floats, and the practice program's needs.
         "hq" => cmd::parse_near("1.5").unwrap(),
         _ => FREE_FOR_RUNS,
     }
@@ -273,6 +274,7 @@ impl Drill {
     /// Reads the balances a drill needs against the floors; returns the shortfalls (empty: ready).
     fn guard_balances(&self) -> Result<Vec<Value>> {
         let mut low = Vec::new();
+        let mut near = Vec::new();
         for role in ["hq", "acme", "agent-a", "keeper", "relayer"] {
             let who = if role == "hq" { HQ.to_string() } else { acct(role) };
             let b = self.near_balance(&who);
@@ -281,10 +283,10 @@ impl Drill {
                 low.push(json!({"kind": "near", "role": role, "account": who, "error": format!("the NEAR RPC did not answer: {e}")}));
                 continue;
             }
-            let liquid = b["liquid_yocto"].as_str().and_then(|s| s.parse::<u128>().ok());
-            if let Some(s) = near_shortfall(role, &who, liquid) {
-                low.push(s);
-            }
+            near.push((role, who, b["liquid_yocto"].as_str().and_then(|s| s.parse::<u128>().ok())));
+        }
+        if low.is_empty() {
+            low.extend(near_shortfalls(&near));
         }
         // The EVM deployer and the relayer must each hold enough on both chains: the deployer the deploys,
         // the relayer the pauses. A derived deployer is funded from the base, so the base deployer must cover
@@ -473,9 +475,12 @@ impl Drill {
         let acme = self.ctx_of("acme");
         let want = self.s["prebuild"]["program_id"].as_u64().ok_or_else(|| eyre!("no prebuilt program id"))? as u32;
         let escrow = cmd::parse_tokens(ESCROW, 24)?;
-        if wnear_of(&acme, &acct("acme"))? < escrow {
-            self.ensure_liquid(&acct("acme"), escrow + FREE_FOR_RUNS)?;
-            wrap(&acme, escrow)?;
+        // A closed drill program's escrow comes back to acme as wNEAR: wrap only what the escrow lacks, so
+        // what came back is spent again instead of piling up.
+        let lack = escrow.saturating_sub(wnear_of(&acme, &acct("acme"))?);
+        if lack > 0 {
+            self.ensure_liquid(&acct("acme"), lack + FREE_FOR_RUNS)?;
+            wrap(&acme, lack)?;
         }
         self.ensure_liquid(&acct("acme"), FREE_FOR_RUNS + 100 * MILLI)?;
         let project_key = self.a.work.join("keys/acme.x25519.json");
@@ -1026,6 +1031,38 @@ fn near_shortfall(role: &str, account: &str, liquid: Option<u128>) -> Option<Val
     }
 }
 
+/// The NEAR shortfalls before a drill, from each role's account and its NEAR free of storage (None: the
+/// account does not exist). A missing account is short. An account below its floor is not: its step tops it
+/// up from HQ, so it adds what it lacks to what HQ must hold above its own floor, and HQ is short (listing
+/// the top-ups) when it cannot cover them. On 2026-11-08 a floor read per account skipped a drill for 0.55
+/// NEAR that HQ had.
+fn near_shortfalls(balances: &[(&str, String, Option<u128>)]) -> Vec<Value> {
+    let mut low = Vec::new();
+    let mut top_ups = Vec::new();
+    let mut lack = 0u128;
+    for (role, account, liquid) in balances.iter().filter(|(r, ..)| *r != "hq") {
+        match liquid {
+            None => low.extend(near_shortfall(role, account, None)),
+            Some(l) if *l < near_floor(role) => {
+                let d = near_floor(role) - l;
+                lack += d;
+                top_ups.push(json!({"role": role, "account": account, "top_up_yocto": d.to_string(), "top_up_near": cmd::fmt_tokens(d, 24)}));
+            }
+            Some(_) => {}
+        }
+    }
+    if let Some((_, hq, liquid)) = balances.iter().find(|(r, ..)| *r == "hq") {
+        let need = near_floor("hq") + lack;
+        match liquid {
+            Some(l) if *l >= need => {}
+            Some(l) => low.push(json!({"kind": "near", "role": "hq", "account": hq, "have_yocto": l.to_string(), "need_yocto": need.to_string(),
+                                       "have_near": cmd::fmt_tokens(*l, 24), "need_near": cmd::fmt_tokens(need, 24), "top_ups": top_ups})),
+            None => low.extend(near_shortfall("hq", hq, None)),
+        }
+    }
+    low
+}
+
 /// An EVM account's shortfall against what a drill needs on a chain, or None when it is ready.
 fn evm_shortfall(kind: &str, chain: u64, address: &str, have_wei: u128, need_wei: u128) -> Option<Value> {
     (have_wei < need_wei).then(|| {
@@ -1066,15 +1103,26 @@ fn fmt_signed(raw: i128, decimals: u32) -> String {
 }
 
 /// Writes a skipped drill results file (`all_ok: false`, with the reason), so `/v1/status` alerts and
-/// `moments()` leaves it out of the site. Returns the file path.
+/// `moments()` leaves it out of the site. Returns the file path. A drill that passed earlier the same day
+/// keeps its file: a later run that skips says so and writes nothing (on 2026-11-08 a skip replaced the
+/// day's passed drill).
 fn write_skipped(results_dir: &Path, date: &str, dep: &Deployments, reason: &str, detail: Value) -> Result<PathBuf> {
     let file = results_dir.join(format!("drill-{date}.json"));
+    if passed(&file) {
+        println!("  {} records a drill that passed today: kept, no skipped file written", file.display());
+        return Ok(file);
+    }
     std::fs::create_dir_all(results_dir)?;
     let s = json!({"network": "testnet", "all_ok": false, "started_unix": unix(), "finished_unix": unix(),
                    "deployment": {"network": "testnet", "near_antibody": dep.antibody, "guardian": dep.guardian, "token": dep.token},
                    "drill": {"skipped": true, "reason": reason, "detail": detail}, "done": []});
     std::fs::write(&file, serde_json::to_vec_pretty(&s)?)?;
     Ok(file)
+}
+
+/// Whether a results file records a drill that passed.
+fn passed(file: &Path) -> bool {
+    std::fs::read(file).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).is_some_and(|v| v["all_ok"] == json!(true))
 }
 
 pub fn run(a: DrillArgs) -> Result<Value> {
@@ -1101,22 +1149,38 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         return d.cleanup();
     }
 
-    // The kill switch: the drill does nothing and says so.
+    // The kill switch: the drill does nothing and says so. A dry run only reports, and writes no file.
     if let Some(why) = kill_switch(&d.a.work) {
         println!("drill disabled: {why}");
+        if d.a.dry_run {
+            return Ok(json!({"dry_run": true, "ready": false, "reason": "kill switch", "why": why}));
+        }
         let file = write_skipped(&d.a.results_dir, &date, &d.dep, "the kill switch is set", json!({"why": why}))?;
         return Ok(json!({"skipped": true, "reason": "kill switch", "why": why, "results_file": file}));
+    }
+
+    // A new drill first closes the drill programs that are exitable (the earlier days'), so their escrow is
+    // back with acme before the guards read the balances. Best effort: a failure is printed, the drill goes on.
+    let started = d.s["done"].as_array().is_some_and(|x| !x.is_empty());
+    if !started && !d.a.dry_run {
+        step("drill: cleanup (close exitable drill programs)");
+        match d.cleanup() {
+            Ok(v) => println!("  {}", v["closed"]),
+            Err(e) => println!("  cleanup failed, the drill goes on: {e:#}"),
+        }
     }
 
     // The guards: read the balances a drill needs; skip with a reason if any is low. Only before a drill
     // starts: a resumed one has spent part of it already (acme's escrow is in the program), and each of its
     // steps tops its own signer up from HQ as it goes.
-    let started = d.s["done"].as_array().is_some_and(|x| !x.is_empty());
     let low = if started && !d.a.dry_run { Vec::new() } else { d.guard_balances()? };
     if !low.is_empty() {
         println!("drill skipped: {} balance(s) below what a drill needs", low.len());
         for l in &low {
             println!("  {l}");
+        }
+        if d.a.dry_run {
+            return Ok(json!({"dry_run": true, "ready": false, "low": low}));
         }
         let file = write_skipped(&d.a.results_dir, &date, &d.dep, "a balance a drill needs is below its floor", json!({"low": low}))?;
         return Ok(json!({"skipped": true, "reason": "low balance", "low": low, "results_file": file}));
@@ -1267,5 +1331,47 @@ mod tests {
         assert_eq!(cost["sepolia_eth"]["deployer"]["spent_wei"], "1000000000000000");
         assert_eq!(cost["sepolia_eth"]["relayer"]["spent_eth"], "0.000100000000000000");
         assert_eq!(cost["outlayer_run_deposits"]["total_near"], "0.040000000000000000000000");
+    }
+
+    #[test]
+    fn hq_covers_what_the_others_lack_and_keeps_its_own_floor() {
+        let n = |s: &str| Some(cmd::parse_near(s).unwrap());
+        let with = |hq: Option<u128>, acme: Option<u128>, agent: Option<u128>| {
+            vec![("hq", "antibody.testnet".to_string(), hq), ("acme", "acme.antibody.testnet".to_string(), acme),
+                 ("agent-a", "agent-a.antibody.testnet".to_string(), agent), ("keeper", "keeper.antibody.testnet".to_string(), n("0.5")),
+                 ("relayer", "relayer.antibody.testnet".to_string(), n("0.6"))]
+        };
+        // 2026-11-08: acme 0.35 of its 0.9; HQ 2.9 covers the 0.55 and keeps its 1.5. Ready.
+        assert!(near_shortfalls(&with(n("2.9"), n("0.35"), n("0.4"))).is_empty());
+        // HQ 1.9 cannot cover 0.55 above its 1.5: one shortfall, HQ's, naming the top-up it could not make.
+        let low = near_shortfalls(&with(n("1.9"), n("0.35"), n("0.4")));
+        assert_eq!(low.len(), 1, "{low:?}");
+        assert_eq!((low[0]["role"].as_str(), low[0]["need_near"].as_str()), (Some("hq"), Some("2.050000000000000000000000")));
+        assert_eq!(low[0]["top_ups"][0]["account"], "acme.antibody.testnet");
+        // Two accounts short: HQ must cover both (0.55 + 0.25 above 1.5 = 2.3).
+        assert!(near_shortfalls(&with(n("2.3"), n("0.35"), n("0.1"))).is_empty());
+        assert_eq!(near_shortfalls(&with(n("2.29"), n("0.35"), n("0.1"))).len(), 1);
+        // A missing account is short whatever HQ holds; so is a missing HQ.
+        let low = near_shortfalls(&with(n("9"), n("1"), None));
+        assert_eq!((low.len(), low[0]["error"].as_str()), (1, Some("account not found")));
+        assert_eq!(near_shortfalls(&with(None, n("1"), n("1")))[0]["role"], "hq");
+    }
+
+    #[test]
+    fn a_skip_never_replaces_a_drill_that_passed_the_same_day() {
+        let dir = std::env::temp_dir().join(format!("drill-skip-{}-{}", std::process::id(), unix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dep: Deployments = serde_json::from_str(include_str!("../../../deployments/near-testnet.json")).unwrap();
+        let file = dir.join("drill-2026-11-08.json");
+        // The day's drill passed: a later skip (a dry run's guard, the kill switch) keeps its file.
+        std::fs::write(&file, serde_json::to_vec(&json!({"all_ok": true, "drill": {"date": "2026-11-08"}})).unwrap()).unwrap();
+        assert_eq!(write_skipped(&dir, "2026-11-08", &dep, "a balance a drill needs is below its floor", json!({})).unwrap(), file);
+        assert!(passed(&file));
+        // A failed one is replaced by the skip, which says why.
+        std::fs::write(&file, serde_json::to_vec(&json!({"all_ok": false})).unwrap()).unwrap();
+        write_skipped(&dir, "2026-11-08", &dep, "the kill switch is set", json!({})).unwrap();
+        let v: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!((v["all_ok"].as_bool(), v["drill"]["reason"].as_str()), (Some(false), Some("the kill switch is set")));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
