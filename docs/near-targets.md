@@ -262,3 +262,33 @@ pinning a v2 guest is optional (N8): only if everything else ships.
 - **Floats:** refused (a run that executes one is `Unevaluable`) through the hackathon, whatever the
   conformance suite shows.
 - **Pairing and BLS host functions:** refused in the first release.
+
+## 14. Implementation notes (E5 N1)
+
+The first engine (`crates/verifier-near`, the new `antibody-verifier-v2` binary) follows this design,
+with these deviations, each made to match the reference runtime on real near-sdk-rs contracts:
+
+- **A refused host function is refused when called, not when imported (§4).** §4 refuses the module that
+  imports a refused host function. But near-sdk-rs links its whole promise surface, so every near-sdk
+  contract imports `promise_batch_action_stake` whether or not it stakes, and the reference runtime
+  accepts the module (the import resolves) — only the action is unmodelled. The engine therefore links
+  the refused host functions and stops the run **when one is called**, by name: `Unevaluable` during a
+  run, `ProgramMisconfigured` when it is reached at activation. Importing one, without calling it, is
+  accepted, exactly as the reference runtime accepts it. This is not a silent stub: a call deterministically
+  stops the run with the named reason. Modules importing an **unknown** host function, or a refused one
+  with the wrong signature, are still refused outright.
+- **Reference-types parsing is enabled, then its constructs are refused by name (§3).** near-sdk-rs
+  output, linked by recent `wasm-ld`, encodes the `call_indirect` table immediate as an overlong LEB
+  zero. wasmi 2.0.0's parser (wasmparser 0.228) reads that only with reference-types parsing on; the
+  reference runtime's own (older) parser reads it either way and so accepts these modules. The engine
+  turns on reference-types *parsing* and then refuses, by name, every instruction and construct the
+  reference-types proposal adds on top of the MVP (`ref.null`, `ref.func`, `table.*`, typed `select`,
+  more than one table, non-funcref tables, reference types in signatures), plus bulk-memory and tail-call
+  operators. The accepted feature surface is therefore exactly the reference runtime's; only the encoding
+  is tolerated.
+- **Gas metering is wasmi fuel, one unit per operator (§3).** The design already says the engine's
+  instruction count is not the reference runtime's exact metering and that no verdict may rest on gas
+  (hence the doubled-cost run and the 10% margin). The engine counts wasm instructions with wasmi's
+  fuel (one unit per executed operator) and does not reproduce the reference runtime's per-stack-frame
+  gas or its trie-node storage fees (which depend on the trie's shape). Gas is never charged to balances
+  and is excluded from impact, as §3 and §6 require.

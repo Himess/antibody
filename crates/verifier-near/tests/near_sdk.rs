@@ -127,9 +127,23 @@ fn a_near_sdk_program_runs_through_the_whole_pipeline() {
     let one = go(&bundle(vec![call("gm")]));
     assert_eq!(one.kind, Kind::NoViolation, "{:?}", one.reason);
     assert!(one.checks.as_ref().unwrap().doubled_gas_run_identical);
-    let two = go(&bundle(vec![call("gm"), call("gn")]));
+    let two_bundle = bundle(vec![call("gm"), call("gn")]);
+    let two = go(&two_bundle);
     assert_eq!(two.kind, Kind::Violation, "{:?}", two.reason);
     let f = &two.broken[0];
     assert_eq!((f.slot, f.method.as_str(), f.call_index), (0, "set_status", Some(1)));
-    assert_eq!(two.canonical(), go(&bundle(vec![call("gm"), call("gn")])).canonical(), "deterministic");
+    assert_eq!(two.canonical(), go(&two_bundle).canonical(), "deterministic");
+
+    // When ANTIBODY_WRITE_FIXTURES=1, write the witness JSON the antibody-verify-v2 binary runs locally.
+    if std::env::var("ANTIBODY_WRITE_FIXTURES").as_deref() == Ok("1") {
+        let witness = serde_json::json!({
+            "schema": "antibody.near-witness.v1",
+            "manifest": String::from_utf8(manifest.clone()).unwrap(),
+            "codes": codes.iter().map(|c| b64(c)).collect::<Vec<_>>(),
+            "bundle": two_bundle,
+        });
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/near/status-witness.json");
+        std::fs::write(path, serde_json::to_vec(&witness).unwrap()).unwrap();
+        eprintln!("wrote {path}");
+    }
 }
