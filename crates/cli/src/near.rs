@@ -228,6 +228,25 @@ impl Near {
         req.send().and_then(|r| r.json::<Value>())
     }
 
+    /// An attempt that got no answer at all (no connection, no DNS, a timeout): which RPC, by its label, what
+    /// failed, and how to use another. The HTTP client's error names the URL, which may carry a key: never
+    /// in a message (SA-31).
+    fn no_answer(&self, method: &str, url: &str, e: reqwest::Error) -> eyre::Report {
+        let role = match self.extra.iter().position(|x| x == url) {
+            Some(i) => format!("extra RPC {} of $NEAR_RPC_EXTRA", i + 1),
+            None => "the NEAR RPC".to_string(),
+        };
+        let e = e.without_url();
+        let mut why = e.to_string();
+        let mut source = std::error::Error::source(&e);
+        while let Some(s) = source {
+            why.push_str(": ");
+            why.push_str(&s.to_string());
+            source = s.source();
+        }
+        eyre!("{method}: no answer from {role} {} ({why}). Use another NEAR RPC with --rpc <url> or $NEAR_RPC", rpc_label(url))
+    }
+
     /// How many RPCs this client tries (the primary and `$NEAR_RPC_EXTRA`'s).
     pub fn endpoints(&self) -> usize {
         1 + self.extra.len()
@@ -236,8 +255,7 @@ impl Near {
     /// One attempt, no retry: for queries whose error is an answer (a height with no block).
     pub fn call_once(&self, method: &str, params: Value) -> Result<Value> {
         let body = json!({"jsonrpc": "2.0", "id": "antibody", "method": method, "params": params});
-        // The HTTP client's error names the URL, which may carry a key: never in a message.
-        let v = self.post(&self.rpc, &body).map_err(|e| eyre!("{method}: {}", e.without_url()))?;
+        let v = self.post(&self.rpc, &body).map_err(|e| self.no_answer(method, &self.rpc, e))?;
         match v.get("error") {
             Some(e) => Err(eyre!("{method}: {e}")),
             None => Ok(v["result"].clone()),
@@ -280,8 +298,7 @@ impl Near {
                     return Ok(r.clone());
                 }
                 Err(e) => {
-                    // The HTTP client's error names the URL, which may carry a key: never in a message.
-                    last = eyre!("{method}: {}", e.without_url());
+                    last = self.no_answer(method, url, e);
                     std::thread::sleep(std::time::Duration::from_millis(800 * (attempt + 1)));
                 }
             }
@@ -429,6 +446,20 @@ pub fn block_secs(header: &Value) -> Result<u64> {
 /// turn to, a short pause, and a longer one each time every RPC has been tried: on 2026-11-08 a drill and
 /// the services shared one host, and a rate limit outlasted three RPCs tried 250 ms apart. With one RPC,
 /// a back-off (longer for a rate limit).
+/// What a message may say about an RPC (SA-31): its host and port, never its URL, whose path, query or user
+/// part may carry a key. A host with a long label, as a key in a subdomain would be, is not named either.
+pub fn rpc_label(url: &str) -> String {
+    let Ok(u) = reqwest::Url::parse(url) else { return "(its URL does not parse)".into() };
+    match u.host_str() {
+        Some(h) if !h.split('.').any(|l| l.len() >= 32) => match u.port() {
+            Some(p) => format!("{h}:{p}"),
+            None => h.to_string(),
+        },
+        Some(_) => "(its host is not shown: it may carry a key)".into(),
+        None => "(no host)".into(),
+    }
+}
+
 /// An RPC's refusal to answer now, in any case: FastNEAR's -429, "Too Many Requests", "rate limit".
 pub fn rate_limited(s: &str) -> bool {
     let l = s.to_ascii_lowercase();
@@ -510,6 +541,28 @@ mod tests {
         assert_eq!(p, vec![250, 250, 1_500, 250, 250, 3_000, 250]);
         // One RPC: the back-off as before.
         assert_eq!((retry_pause_ms(0, 1, true), retry_pause_ms(2, 1, false)), (2_000, 2_400));
+    }
+
+    /// An RPC is named by its host and port, never by a path, query or user part, and never by a host that
+    /// may hold a key (SA-31).
+    #[test]
+    fn an_rpc_label_carries_no_key() {
+        assert_eq!(rpc_label("https://rpc.testnet.fastnear.com/?apiKey=SECRET"), "rpc.testnet.fastnear.com");
+        assert_eq!(rpc_label("https://user:SECRET@near.example.org:8443/v1/SECRET"), "near.example.org:8443");
+        let keyed = rpc_label("https://0123456789abcdef0123456789abcdef.rpc.example.com/");
+        assert!(!keyed.contains("0123") && keyed.contains("not shown"), "{keyed}");
+        assert!(!rpc_label("not a url SECRET").contains("SECRET"));
+    }
+
+    /// An RPC that cannot be reached is named, with how to use another, and its URL's key stays out.
+    #[test]
+    fn an_unreachable_rpc_says_which_and_how_to_change_it() {
+        // Nothing listens on port 9 here: the connection is refused.
+        let n = Near::new("testnet", Some("http://127.0.0.1:9/v1/SECRET?apiKey=SECRET".into()));
+        let e = n.call_once("status", json!([])).unwrap_err().to_string();
+        assert!(e.starts_with("status: no answer from the NEAR RPC 127.0.0.1:9 ("), "{e}");
+        assert!(e.contains("--rpc <url>") && e.contains("$NEAR_RPC"), "{e}");
+        assert!(!e.contains("SECRET"), "{e}");
     }
 
     /// A rate limit is one in any case, and a timeout or an unknown block is worth another attempt; a

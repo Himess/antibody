@@ -204,7 +204,7 @@ every commit ended paid ([docs/agent-runs.md](docs/agent-runs.md)).
 - **12 settlement properties,** each a Quint invariant checked by Apalache and 20,000 random traces, and
   replayed against the rule core near-antibody runs; **41 Kani proofs** of the payout arithmetic and every
   escrow movement ([docs/properties.md](docs/properties.md)).
-- **25 findings from attacking our own system,** each fixed and pinned by a test, and what every attack
+- **31 findings from attacking our own system,** each fixed and pinned by a test, and what every attack
   costs the attacker ([docs/attacks.md](docs/attacks.md); threat model:
   [docs/threat-model.md](docs/threat-model.md)).
 - **Fuzzing and golden vectors:** the parsers (manifests, witnesses, sealed payloads) are fuzzed, every

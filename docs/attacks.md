@@ -65,7 +65,7 @@ The same review's medium and low findings:
 | SA-28 | MCP error results carried text others wrote (a program's location, a contract's message) without the untrusted-data notice | An error is delimited as data like a result | `an_error_is_delimited_as_data` |
 | SA-29 | `practice_try` followed the agent's `vending` and `program_id`, so text an agent read could point the server at another contract | Only the deployment's practice vending contract, on the program it vends for | `practice_try_uses_the_deployments_practice_vending_only` |
 | SA-30 | A vend or a commit sent before its key or blob was kept could strand an account or lock a bond behind a proof nobody can reveal; the MCP server kept them wherever its client started it | Keys and blobs are written before the transaction; the server's state is inside its workspace, checked writable at startup | `names_and_state_stay_usable_inside_the_workspace` |
-| SA-31 | RPC URLs, which may carry keys, reached error messages through the HTTP client's errors | Errors name the RPC's label, never its URL | (`without_url` in `near.rs` and the witness client) |
+| SA-31 | RPC URLs, which may carry keys, reached error messages through the HTTP client's errors | Errors name the RPC's label (its host and port, unless the host may hold a key), never its URL, and say how to use another RPC | `near::tests::an_rpc_label_carries_no_key`, `near::tests::an_unreachable_rpc_says_which_and_how_to_change_it` (and `without_url` in the witness client) |
 
 The review's two remaining notes are stated as residuals in the [threat model](threat-model.md) (I4b,
 P13): OutLayer's quote metadata is not checked, and a page that gets a project's wallet to sign the
