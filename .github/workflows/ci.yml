@@ -99,6 +99,14 @@ jobs:
         run: cargo test --release -p antibody-rules
       - name: model scenarios, 20,000 random traces, 600 traces of 60 steps replayed against the rule core
         run: scripts/formal/replay.sh 600 60
+      # A divergence between the model and the rule core is rare and random: its traces and seed are kept.
+      - name: keep the traces of a replay that failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quint-traces
+          path: target/quint-traces
+          retention-days: 14
       - name: bounded model checking (Apalache)
         working-directory: formal
         run: quint verify antibody.qnt --invariant=all_properties --max-steps=6
