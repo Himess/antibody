@@ -1407,7 +1407,7 @@
   {
    "n": 19,
    "kind": "agent_runs",
-   "claim": "An off-the-shelf agent (Claude Code, the release binary) completes the loop over MCP: measured runs, not bug finding",
+   "claim": "An off-the-shelf agent (Claude Code, the v0.5.0 release binary) completes the loop over MCP: measured runs, not bug finding",
    "check": "each run's commit with `antibody status --commit <id>` (the ids are in each report)",
    "expected": "task a, the tutorial proof through `practice_try`, no built-in tools: 10 of 10 commits ended `Done:Paid` (7 within the agent's own call); median 98 s when paid within the call; task a2, the agent writes the proof itself with `hunt_start`, `check_poc` and `hunt_submit`, and file tools in its workspace: 6 of 6 commits ended `Done:Paid` (3 within the agent's own call); median 91 s when paid within the call",
    "evidence": "[task a](docs/agent-runs/testnet-2026-11-08/task-a/REPORT.md), [task a2](docs/agent-runs/testnet-2026-11-08/task-a2/REPORT.md)",
@@ -1421,6 +1421,7 @@
  ],
  "agent_runs": {
   "dir": "docs/agent-runs/testnet-2026-11-08",
+  "binary": "v0.5.0",
   "tasks": [
    {
     "task": "a",

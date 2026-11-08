@@ -111,7 +111,7 @@ Agent A submitted over MCP. From its commit's block: verdict 18.5 s, T1 29.1 s, 
 
 ## Measured agent runs
 
-Claude Code, headless, with this MCP server and the release binary, on the practice program. They measure completing the loop, not finding bugs; success is each run's commit ending `Done:Paid` on near-antibody, never the agent's words.
+Claude Code, headless, with Antibody's MCP server as release v0.5.0 shipped it, on the practice program. They measure completing the loop, not finding bugs; success is each run's commit ending `Done:Paid` on near-antibody, never the agent's words.
 
 - task a, the tutorial proof through `practice_try`, no built-in tools: 10 of 10 commits ended `Done:Paid` (7 within the agent's own call); median 98 s when paid within the call
 - task a2, the agent writes the proof itself with `hunt_start`, `check_poc` and `hunt_submit`, and file tools in its workspace: 6 of 6 commits ended `Done:Paid` (3 within the agent's own call); median 91 s when paid within the call
