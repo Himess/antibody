@@ -762,7 +762,8 @@ struct ImmuneArgs {
     /// A paid proof that cannot be read counts as inconclusive (exit 3)
     #[arg(long)]
     strict: bool,
-    /// Show where a proof read with the project key breaks (off: it is still sealed; never in a public log)
+    /// Show where a proof read with the project key breaks, and every rule it breaks (off: it is still sealed, and only
+    /// the rules its commit's keys name are shown; never in a public log)
     #[arg(long)]
     reveal_sealed: bool,
 }
