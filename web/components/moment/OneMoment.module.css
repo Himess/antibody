@@ -709,8 +709,8 @@ a.vlabel:focus-visible {
 }
 
 .present .chart {
-  display: block;
-  padding-top: 36px;
+  /* Room for the axis above the NEAR lane's upper labels, which rise about 20 px above the lane. */
+  padding-top: 64px;
 }
 
 .present .axis {
