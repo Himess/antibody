@@ -79,6 +79,21 @@ pub fn adapter_calldata(p: &Value, implementation: Option<Address>) -> Result<Ve
     Ok(out)
 }
 
+/// Every permit near-guardian lists, a page at a time: it returns at most 100 from `from`, and each drill
+/// adds two, so the first page alone stops seeing new ones.
+pub fn list_all_permits(near: &antibody_cli::near::Near, guardian: &str) -> Result<Vec<Value>> {
+    let mut out = Vec::new();
+    loop {
+        let page = near.view(guardian, "list_permits", json!({"from": out.len(), "limit": 100}))?;
+        let page = page.as_array().cloned().unwrap_or_default();
+        let n = page.len();
+        out.extend(page);
+        if n < 100 {
+            return Ok(out);
+        }
+    }
+}
+
 impl Relayer {
     pub fn load_state(&self) -> BTreeMap<String, Value> {
         std::fs::read_to_string(&self.state_file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
@@ -107,21 +122,47 @@ impl Relayer {
         address(found.and_then(|r| r["implementation"].as_str()).ok_or_else(|| eyre!("no implementation for this release"))?)
     }
 
-    /// One pass: submit new permits, track receipts, and read the targets' state. Returns the state.
+    fn all_permits(&self) -> Result<Vec<Value>> {
+        list_all_permits(&self.near, &self.guardian)
+    }
+
+    /// One pass: submit new permits, track receipts, and read the targets' state. Returns the state. A
+    /// permit's error is recorded on it and the pass goes on to the next (one RPC's hiccup on one chain
+    /// never stops the others), and the state is saved after each send, so a later failure never sends
+    /// a permit twice.
     pub fn tick(&self) -> Result<BTreeMap<String, Value>> {
         let mut st = self.load_state();
-        let permits = self.near.view(&self.guardian, "list_permits", json!({"from": 0, "limit": 100}))?;
-        for p in permits.as_array().into_iter().flatten() {
+        for p in self.all_permits()? {
             let id = p["id"].as_u64().unwrap_or_default().to_string();
             let chain_id = p["chain_id"].as_u64().unwrap_or_default();
-            let Some((rpc, explorer)) = self.chains.get(&chain_id) else { continue };
-            let evm = Evm::new(rpc);
-            let adapter = address(p["adapter"].as_str().unwrap_or_default())?;
+            if !self.chains.contains_key(&chain_id) {
+                continue;
+            }
             let kind = if p["body"].get("Pause").is_some() { "pause" } else { "release" };
             let mut e = st.get(&id).cloned().unwrap_or_else(|| {
                 json!({"permit_id": p["id"], "chain_id": chain_id, "kind": kind, "program_key": p["program_key"], "round": p["round"],
                        "adapter": p["adapter"], "signed_ns": p["signed_ns"], "first_seen_ms": now_ms(), "status": "signed"})
             });
+            let before = e["status"].clone();
+            if let Err(err) = self.step(&p, chain_id, kind, &mut e) {
+                e["last_error"] = format!("{err:#}").chars().take(300).collect::<String>().into();
+            }
+            let sent = before != e["status"] && e["status"] == "sent";
+            st.insert(id, e);
+            if sent {
+                self.save_state(&st)?;
+            }
+        }
+        self.save_state(&st)?;
+        Ok(st)
+    }
+
+    /// One permit's pass: send it when signed, read its receipt when sent, read its targets when it pauses.
+    fn step(&self, p: &Value, chain_id: u64, kind: &str, e: &mut Value) -> Result<()> {
+        let (rpc, explorer) = self.chains.get(&chain_id).ok_or_else(|| eyre!("no RPC for chain {chain_id}"))?;
+        let evm = Evm::new(rpc);
+        let adapter = address(p["adapter"].as_str().unwrap_or_default())?;
+        {
             if e["status"] == "signed" {
                 if let Some(signer) = &self.signer {
                     let implementation = if kind == "release" { Some(self.implementation(p)?) } else { None };
@@ -160,22 +201,27 @@ impl Relayer {
                 }
             }
             if kind == "pause" {
-                let targets = evm.address_array(adapter, "pauseTargets()")?;
-                let paused: Vec<bool> = targets.iter().filter_map(|t| evm.paused(&format!("{t:#x}")).ok()).collect();
-                e["targets_paused"] = json!(paused);
+                // An adapter with no code answers nothing: no targets, never an error that repeats forever.
+                match evm.address_array(adapter, "pauseTargets()") {
+                    Ok(targets) => {
+                        let paused: Vec<bool> = targets.iter().filter_map(|t| evm.paused(&format!("{t:#x}")).ok()).collect();
+                        e["targets_paused"] = json!(paused);
+                    }
+                    Err(err) => e["targets_error"] = format!("{err:#}").chars().take(200).collect::<String>().into(),
+                }
             }
-            st.insert(id, e);
         }
-        self.save_state(&st)?;
-        Ok(st)
+        Ok(())
     }
 
     pub fn run(&self, interval_ms: u64) -> Result<()> {
+        // Each confirmation is logged once per process, not on every pass.
+        let mut logged = std::collections::BTreeSet::new();
         loop {
             match self.tick() {
                 Ok(st) => {
                     for (k, v) in &st {
-                        if v["status"] == "confirmed" && v["logged"].is_null() {
+                        if v["status"] == "confirmed" && logged.insert(k.clone()) {
                             println!("{}", json!({"relayer": "permit confirmed", "permit": k, "chain_id": v["chain_id"], "kind": v["kind"], "tx": v["tx_hash"]}));
                         }
                     }

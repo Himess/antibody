@@ -22,6 +22,8 @@ pub struct Notifier {
     pub program: Option<u64>,
     /// Where to read the monitoring alerts from (`/v1/status`); none: events only.
     pub status: Option<(antibody_cli::near::Near, antibody_cli::ctx::Deployments)>,
+    /// EVM RPCs by chain id, as the API's status reads them: the EVM balances and the adapters' `used`.
+    pub chains: std::collections::BTreeMap<u64, String>,
 }
 
 pub fn message(e: &Value) -> Option<String> {
@@ -104,7 +106,10 @@ impl Notifier {
     /// cleared.
     fn alerts(&self, client: &reqwest::blocking::Client) -> Result<usize> {
         let Some((near, dep)) = &self.status else { return Ok(0) };
-        let status = crate::status::compute(near, dep, &self.state_dir, &self.results_dir, &crate::status::Thresholds::default())?;
+        // As the API computes it: with the chains and the recorded relays, so the EVM balance alerts fire and
+        // a permit another run carried out does not count as pending.
+        let recorded = crate::web::recorded_relays(&self.results_dir);
+        let status = crate::status::compute_with(near, dep, &self.state_dir, &self.results_dir, &crate::status::Thresholds::default(), &self.chains, &recorded)?;
         let seen_file = self.state_dir.join("notifier.alerts.json");
         let seen: Vec<String> = std::fs::read_to_string(&seen_file).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
         let now: Vec<(String, String)> = status["alerts"]

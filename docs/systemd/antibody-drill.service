@@ -2,12 +2,15 @@
 # details. Install to /etc/systemd/system/antibody-drill.service, fill in <install-dir> and <user>, then
 # `systemctl daemon-reload`. Run by antibody-drill.timer once a day; `--dry-run` only reads the guards.
 #
-# Needs, in <install-dir>: the built binary (target/release/antibody-services), .env (SEPOLIA_RPC,
-# SEPOLIA_TX_RPC, BASE_SEPOLIA_RPC, RELAYER_EVM_KEY), .secrets/near/<account>.json for the drill's accounts
-# and .secrets/sepolia_deployer.json for the base deployer.
+# Needs, in <install-dir>: the built binaries (target/release/antibody-services, and target/release/antibody,
+# which serves agent A's MCP calls and the CLI reveal), .env (SEPOLIA_RPC, SEPOLIA_TX_RPC, BASE_SEPOLIA_RPC,
+# RELAYER_EVM_KEY), .secrets/near/<account>.json for the drill's accounts and .secrets/sepolia_deployer.json
+# for the base deployer; Foundry's forge on <user>'s PATH (the deployments) and python3 (the fixture's
+# proof bundles).
 #
 # The kill switch: `touch <install-dir>/target/drill/drill.disabled` (or set ANTIBODY_DRILL_OFF in the
-# environment file) to make every run do nothing and say so.
+# environment file) to make every later run do nothing and say so. It is read when a run starts: a drill
+# already running carries on (stop it with `systemctl stop antibody-drill`).
 
 [Unit]
 Description=Antibody daily drill (the one moment on testnet, a fresh fixture)
@@ -21,8 +24,10 @@ WorkingDirectory=<install-dir>
 EnvironmentFile=<install-dir>/.env
 # The drill spends from the operator's keys; it never needs elevated privileges.
 ExecStart=<install-dir>/target/release/antibody-services drill --results-dir <install-dir>/docs/results
-# A drill waits for the light client to reach a fresh anchor (~16 min) plus the moment: an hour is plenty.
-TimeoutStartSec=3600
+# A drill usually takes ~20 min, but its steps may wait longer than an hour (the light client up to 90
+# min, T1 twice up to 15 min, the pauses up to 15 min): above their sum, so a slow day ends in the drill's
+# own failure record, never in a kill that writes none.
+TimeoutStartSec=3h
 Nice=10
 # Hardening (generic): the drill writes only under its work dir and the results dir.
 NoNewPrivileges=true

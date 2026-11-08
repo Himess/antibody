@@ -111,6 +111,44 @@ fn date_of(unix_s: u64) -> String {
     crate::status::rfc3339_of_unix(unix_s)[..10].to_string()
 }
 
+/// The work directory's lock (`<work>/drill.lock`, holding the process id) for a whole run: a second drill
+/// on the same directory would load the same state and spend twice. A lock whose process is gone (a run
+/// that was killed) is taken over.
+#[derive(Debug)]
+struct WorkLock(PathBuf);
+
+impl WorkLock {
+    fn take(work: &Path) -> Result<WorkLock> {
+        std::fs::create_dir_all(work)?;
+        let file = work.join("drill.lock");
+        for _ in 0..2 {
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&file) {
+                Ok(mut f) => {
+                    use std::io::Write;
+                    write!(f, "{}", std::process::id())?;
+                    return Ok(WorkLock(file));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let pid = std::fs::read_to_string(&file).unwrap_or_default().trim().to_string();
+                    let alive = !pid.is_empty() && Path::new("/proc").join(&pid).exists();
+                    if alive {
+                        return Err(eyre!("another drill (process {pid}) holds {}: one drill at a time", file.display()));
+                    }
+                    std::fs::remove_file(&file)?;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Err(eyre!("could not take {}", file.display()))
+    }
+}
+
+impl Drop for WorkLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// Whether the kill switch is set: a file `<work>/drill.disabled` or `$ANTIBODY_DRILL_OFF` not empty.
 fn kill_switch(work: &Path) -> Option<String> {
     if let Ok(v) = std::env::var("ANTIBODY_DRILL_OFF") {
@@ -237,7 +275,7 @@ impl Drill {
                     return json!({"amount_yocto": amount.to_string(), "liquid_yocto": liquid.to_string()});
                 }
                 Ok(None) => return Value::Null,
-                Err(e) => last = format!("{e:#}"),
+                Err(e) => last = scrub(&format!("{e:#}")),
             }
         }
         json!({"error": last})
@@ -251,7 +289,9 @@ impl Drill {
             let who = if role == "hq" { HQ.to_string() } else { acct(role) };
             near.insert(role.into(), json!({"account": who, "balance": self.near_balance(&who)}));
         }
-        let deployer = self.deployer().map(|d| format!("{:?}", d.address)).unwrap_or_default();
+        // The base deployer, which pays: each drill funds a derived one from it (its leftover is spent too),
+        // and the derived address changes with an attempt, so its own delta would not be the cost.
+        let deployer = self.base_evm_key().and_then(|k| EvmSigner::from_hex(&k)).map(|d| format!("{:?}", d.address)).unwrap_or_default();
         let relayer = EvmSigner::from_hex(&self.a.relayer_evm_key).map(|r| format!("{:?}", r.address)).unwrap_or_default();
         let mut evm = serde_json::Map::new();
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
@@ -296,19 +336,45 @@ impl Drill {
         let relayer = EvmSigner::from_hex(&self.a.relayer_evm_key)?;
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
             let e = Evm::new(&rpc);
-            let gas_price = e.gas_price().unwrap_or(2_000_000_000);
+            // A read the RPC does not answer is unknown, never 0: the drill skips with the RPC's error, not
+            // with a false shortfall (as the NEAR side does since 2026-11-08).
+            let read = |what: &str, f: &dyn Fn() -> Result<u128>| -> std::result::Result<u128, Value> {
+                let mut last = String::new();
+                for i in 0..3 {
+                    if i > 0 {
+                        std::thread::sleep(Duration::from_secs(3));
+                    }
+                    match f() {
+                        Ok(v) => return Ok(v),
+                        Err(err) => last = format!("{err:#}"),
+                    }
+                }
+                Err(json!({"kind": what, "chain_id": chain, "error": format!("the RPC did not answer: {}", scrub(&last))}))
+            };
+            let reads = (|| -> std::result::Result<(u128, u128, u128, u128), Value> {
+                Ok((
+                    read("evm-gas-price", &|| e.gas_price())?,
+                    read("evm-deployer", &|| e.balance(&format!("{:?}", deployer.address)))?,
+                    read("evm-deployer", &|| e.balance(&format!("{:?}", base.address)))?,
+                    read("evm-relayer", &|| e.balance(&format!("{:?}", relayer.address)))?,
+                ))
+            })();
+            let (gas_price, have_derived, base_have, relayer_have) = match reads {
+                Ok(r) => r,
+                Err(unknown) => {
+                    low.push(unknown);
+                    continue;
+                }
+            };
             let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
             let deploy_need = deploy_need(chain, gas_price);
             let relay_need = EvmSigner::transfer_reserve(gas_price, l1) + 400_000 * gas_price * 3;
             // The base funds the derived deployer: its own balance must cover the funding the deploy needs
             // (less whatever the derived address already holds from an earlier drill).
-            let have_derived = e.balance(&format!("{:?}", deployer.address)).unwrap_or(0);
             let to_fund = deploy_need.saturating_sub(have_derived);
-            let base_have = e.balance(&format!("{:?}", base.address)).unwrap_or(0);
             if let Some(s) = evm_shortfall("evm-deployer", chain, &format!("{:?}", base.address), base_have, to_fund) {
                 low.push(s);
             }
-            let relayer_have = e.balance(&format!("{:?}", relayer.address)).unwrap_or(0);
             if let Some(s) = evm_shortfall("evm-relayer", chain, &format!("{:?}", relayer.address), relayer_have, relay_need) {
                 low.push(s);
             }
@@ -409,7 +475,8 @@ impl Drill {
         let evm = Evm::new(&self.sepolia());
         let head = crate::evm::hex_u64(&evm.read("eth_blockNumber", json!([]))?)?;
         if head > n + 90 {
-            self.set_done("evm", false);
+            // Only the anchor: the fixture stays deployed (a new anchor is head-8 wherever it has code), and
+            // redeploying it would take a fresh, newly funded deployer.
             self.set_done("anchor", false);
             return Err(eyre!("the anchor {n} is {} blocks old; public RPCs prove about 128 back: the next run picks a fresh anchor", head - n));
         }
@@ -475,8 +542,15 @@ impl Drill {
         let acme = self.ctx_of("acme");
         let want = self.s["prebuild"]["program_id"].as_u64().ok_or_else(|| eyre!("no prebuilt program id"))? as u32;
         let escrow = cmd::parse_tokens(ESCROW, 24)?;
-        // A closed drill program's escrow comes back to acme as wNEAR: wrap only what the escrow lacks, so
-        // what came back is spent again instead of piling up.
+        // A closed drill program's escrow comes back as acme's token credit at near-antibody, not to its
+        // wallet: withdraw it first, then wrap only what the escrow still lacks, so what came back is spent
+        // again instead of piling up as credit.
+        let credit = cmd::u128_of(&cmd::account(&acme, &acct("acme"))?["tokens"]);
+        if credit > 0 {
+            self.ensure_liquid(&acct("acme"), FREE_FOR_RUNS)?;
+            cmd::withdraw(&acme, &cmd::fmt_tokens(credit, 24))?;
+            println!("acme withdrew {} wNEAR of credit (closed drill programs' escrow)", cmd::fmt_tokens(credit, 24));
+        }
         let lack = escrow.saturating_sub(wnear_of(&acme, &acct("acme"))?);
         if lack > 0 {
             self.ensure_liquid(&acct("acme"), lack + FREE_FOR_RUNS)?;
@@ -489,8 +563,13 @@ impl Drill {
         let created = cmd::program_create(&acme, &manifest, ESCROW, &project_key, None)?;
         let pid = created["program"]["program_id"].as_u64().ok_or_else(|| eyre!("no program id: {created}"))? as u32;
         if pid != want {
+            // Another program took the id during the light-client wait: the witnesses are rebuilt for the
+            // contract's new next id on the next run (this program closes with the others, its escrow back).
+            self.set_done("prebuild", false);
+            self.set_done("light-client", false);
+            self.save()?;
             return Err(eyre!(
-                "program {pid} was created, but the witnesses were built for {want} (the contract's next program moved: the next run picks it up)"
+                "program {pid} was created, but the witnesses were built for {want} (the contract's next program moved: the next run builds them again)"
             ));
         }
         println!("drill program {pid} created: {}", created["tx"]["tx"]);
@@ -567,9 +646,27 @@ impl Drill {
         let acme = self.ctx_of("acme");
         let pid = self.pid();
         let t = Instant::now();
+        // A run that stopped after the activation reached T1 (opening failed, or T1 came after the wait)
+        // resumes from there: near-antibody refuses a second activation.
+        let before = acme.program(pid)?;
+        if !before["sealing_pk"].is_null() {
+            if before["phase"] != json!("Open") {
+                cmd::program_open(&acme, pid)?;
+            }
+            println!("program {pid} was already activated (sealing key {}): resumed, open", before["sealing_pk"]);
+            if !self.s["activation"].is_object() {
+                self.s["activation"] = json!({});
+            }
+            self.s["activation"]["sealing_pk"] = before["sealing_pk"].clone();
+            self.s["activation"]["key_epoch"] = before["key_epoch"].clone();
+            self.s["activation"]["resumed"] = json!(true);
+            return Ok(());
+        }
         self.ensure_liquid(&acct("acme"), FREE_FOR_RUNS)?;
         let act = cmd::program_activate(&acme, pid, &[], true)?;
         let act_run = act["run_id"].as_u64().unwrap_or_default();
+        self.s["activation"] = json!({"run_id": act_run, "tx": act["tx"]["tx"], "base": act["base"]});
+        self.save()?;
         demo::wait_t1_for(&acme, act_run, T1_WAIT)?;
         let p = acme.program(pid)?;
         if p["sealing_pk"].is_null() {
@@ -643,7 +740,8 @@ impl Drill {
                 revealed_here = true;
             }
             println!("  A's commit {id}, made over MCP by an earlier run of this drill, is used");
-            self.s["mcp"] = json!({"commit_id": id, "resumed": true, "revealed_by": if revealed_here { "the CLI, after the MCP call stopped" } else { "MCP" }});
+            // `resumed` marks a reveal that came late (the page's note says so): only when this run revealed it.
+            self.s["mcp"] = json!({"commit_id": id, "resumed": revealed_here, "revealed_by": if revealed_here { "the CLI, after the MCP call stopped" } else { "MCP" }});
             self.save()?;
             return Ok(Some(id));
         }
@@ -789,6 +887,9 @@ impl Drill {
         let guard = self.s["evm"]["acme"]["AcmeGuard"].as_str().unwrap_or_default().to_string();
         let paused_both = Evm::new(&self.sepolia()).paused(&guard)? && Evm::new(&self.a.base_rpc).paused(&guard)?;
         let run_view = cmd::run_view(&cmd::run(&root_ctx, a_run)?);
+        // Read again after the waits: the services' keeper may have paid A just after the drill's own keeper
+        // call, and the early value would say 0.
+        let paid_a = cmd::paid_of(&root_ctx.commit(a_commit)?).max(paid_a);
         println!(
             "A, from its commit's block: verdict {t_verdict:.1} s, T1 {t_t1:.1} s, paid {} wNEAR at {t_paid:.1} s; paused on both chains: {paused_both}",
             cmd::fmt_tokens(paid_a, 24)
@@ -931,6 +1032,10 @@ impl Drill {
                 continue;
             }
             let p = acme.program(id)?;
+            // A name is a label anyone can give: only acme's own drill programs are ours to close.
+            if p["project"] != json!(acct("acme")) {
+                continue;
+            }
             let phase = p["phase"].as_str().unwrap_or_default().to_string();
             if matches!(phase.as_str(), "Exited" | "Rejected" | "Pending") && p["close_cursor"].as_u64() >= p["commits"].as_u64() {
                 continue;
@@ -953,6 +1058,35 @@ impl Drill {
         }
         Ok(json!({"closed": closed, "at_unix": now}))
     }
+}
+
+/// An error as the results file and the public /v1/status may show it: every URL cut to its host (an RPC
+/// URL may carry a key in its user part, its path or its query).
+fn scrub(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("http") {
+        let (head, tail) = rest.split_at(i);
+        out.push_str(head);
+        let Some(scheme) = ["https://", "http://"].into_iter().find(|p| tail.starts_with(p)) else {
+            out.push_str("http");
+            rest = &tail[4..];
+            continue;
+        };
+        let after = &tail[scheme.len()..];
+        let end = after.find(|c: char| c.is_whitespace() || "\"'()[]{}<>,".contains(c)).unwrap_or(after.len());
+        let url = &after[..end];
+        let authority = url.split(['/', '?', '#']).next().unwrap_or("");
+        let host = authority.rsplit('@').next().unwrap_or("");
+        out.push_str(scheme);
+        out.push_str(host);
+        if host.len() < url.len() {
+            out.push_str("/…");
+        }
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// wei as whole ether, 18 decimals.
@@ -1143,8 +1277,13 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         .filter(|v: &Value| v["date"] == json!(date))
         .unwrap_or_else(|| json!({"date": date, "done": [], "started_unix": unix()}));
     let mut d = Drill { a, near, dep, s, date: date.clone(), stop: Arc::new(AtomicBool::new(false)), threads: Vec::new() };
+    // One drill at a time on a work directory: a second would deploy, create and commit again.
+    let _lock = WorkLock::take(&d.a.work)?;
 
     if d.a.cleanup {
+        if d.a.dry_run {
+            return Err(eyre!("--cleanup sends transactions; it does not take --dry-run"));
+        }
         step("drill: cleanup (close exitable drill programs)");
         return d.cleanup();
     }
@@ -1159,16 +1298,7 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         return Ok(json!({"skipped": true, "reason": "kill switch", "why": why, "results_file": file}));
     }
 
-    // A new drill first closes the drill programs that are exitable (the earlier days'), so their escrow is
-    // back with acme before the guards read the balances. Best effort: a failure is printed, the drill goes on.
     let started = d.s["done"].as_array().is_some_and(|x| !x.is_empty());
-    if !started && !d.a.dry_run {
-        step("drill: cleanup (close exitable drill programs)");
-        match d.cleanup() {
-            Ok(v) => println!("  {}", v["closed"]),
-            Err(e) => println!("  cleanup failed, the drill goes on: {e:#}"),
-        }
-    }
 
     // The guards: read the balances a drill needs; skip with a reason if any is low. Only before a drill
     // starts: a resumed one has spent part of it already (acme's escrow is in the program), and each of its
@@ -1190,6 +1320,17 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         return Ok(json!({"dry_run": true, "ready": true, "date": date}));
     }
 
+    // A new drill that will run first closes the drill programs that are exitable (the earlier days'), so
+    // their escrow is back as acme's credit, which the program step withdraws. After the guards, so a day
+    // that skips spends nothing. Best effort: a failure is printed, the drill goes on.
+    if !started {
+        step("drill: cleanup (close exitable drill programs)");
+        match d.cleanup() {
+            Ok(v) => println!("  {}", v["closed"]),
+            Err(e) => println!("  cleanup failed, the drill goes on: {e:#}"),
+        }
+    }
+
     // The balances before the drill, so the cost line is the delta (kept across a resume).
     if !d.s["before"].is_object() {
         d.s["before"] = d.balances();
@@ -1202,23 +1343,25 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         if d.done(stage) {
             continue;
         }
-        if i >= services_from {
-            d.start_services()?;
-            d.ensure_liquid(&acct("relayer"), near_floor("relayer"))?;
-        }
         step(&format!("drill: {stage}"));
         let t = Instant::now();
-        let r = match *stage {
-            "evm" => d.evm(),
-            "anchor" => d.anchor(),
-            "prebuild" => d.prebuild(),
-            "light-client" => d.light_client(),
-            "program" => d.program(),
-            "guardian" => d.guardian(),
-            "activate" => d.activate(),
-            "agent" => d.agent(),
-            "one-moment" => d.one_moment(),
-            _ => d.results(),
+        // The services and the relayer's float first, inside the step: their failure is the step's, and is
+        // written to the results file like any other.
+        let ready = if i >= services_from { d.start_services().and_then(|_| d.ensure_liquid(&acct("relayer"), near_floor("relayer")).map(|_| ())) } else { Ok(()) };
+        let r = match ready {
+            Err(e) => Err(e),
+            Ok(()) => match *stage {
+                "evm" => d.evm(),
+                "anchor" => d.anchor(),
+                "prebuild" => d.prebuild(),
+                "light-client" => d.light_client(),
+                "program" => d.program(),
+                "guardian" => d.guardian(),
+                "activate" => d.activate(),
+                "agent" => d.agent(),
+                "one-moment" => d.one_moment(),
+                _ => d.results(),
+            },
         };
         let secs = t.elapsed().as_secs_f64();
         match &r {
@@ -1227,7 +1370,7 @@ pub fn run(a: DrillArgs) -> Result<Value> {
                 d.set_done(stage, true);
             }
             Err(e) => {
-                drill_steps.insert(stage.to_string(), json!({"ok": false, "seconds": secs, "error": format!("{e:#}").chars().take(500).collect::<String>()}));
+                drill_steps.insert(stage.to_string(), json!({"ok": false, "seconds": secs, "error": scrub(&format!("{e:#}")).chars().take(500).collect::<String>()}));
             }
         }
         d.s["drill"]["steps"] = Value::Object(drill_steps.clone());
@@ -1372,6 +1515,34 @@ mod tests {
         write_skipped(&dir, "2026-11-08", &dep, "the kill switch is set", json!({})).unwrap();
         let v: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
         assert_eq!((v["all_ok"].as_bool(), v["drill"]["reason"].as_str()), (Some(false), Some("the kill switch is set")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A step's error reaches the results file and the public /v1/status with every URL cut to its host:
+    /// an RPC URL may carry a key in its path, its query or its user part.
+    #[test]
+    fn a_step_error_never_carries_an_rpc_url() {
+        let e = "send_tx: error sending request for url (https://rpc.example.com/v2/SECRETKEY?x=1): timed out; also http://user:pw@node.local:8545/";
+        let s = scrub(e);
+        assert!(!s.contains("SECRETKEY") && !s.contains("pw@") && !s.contains("x=1"), "{s}");
+        assert!(s.contains("https://rpc.example.com/…") && s.contains("http://node.local:8545/…"), "{s}");
+        assert_eq!(scrub("no url here, just httpd and https"), "no url here, just httpd and https");
+        assert_eq!(scrub("see https://example.org"), "see https://example.org");
+    }
+
+    /// One drill at a time on a work directory; a lock left by a process that is gone is taken over.
+    #[test]
+    fn two_drills_never_share_a_work_directory() {
+        let dir = std::env::temp_dir().join(format!("drill-lock-{}-{}", std::process::id(), unix()));
+        let first = WorkLock::take(&dir).unwrap();
+        if Path::new("/proc").exists() {
+            assert!(WorkLock::take(&dir).unwrap_err().to_string().contains("one drill at a time"));
+        }
+        drop(first);
+        assert!(!dir.join("drill.lock").exists());
+        std::fs::write(dir.join("drill.lock"), "999999999").unwrap();
+        let taken = WorkLock::take(&dir).unwrap();
+        drop(taken);
         std::fs::remove_dir_all(&dir).ok();
     }
 }
