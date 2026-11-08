@@ -8,7 +8,7 @@ each drill is listed under it, labelled "automated drill".
 
 ```bash
 antibody-services drill                 # one drill (resumable); writes drill-YYYY-MM-DD.json
-antibody-services drill --dry-run       # read the guards only, spend nothing
+antibody-services drill --dry-run       # read the guards only: spend nothing, write nothing
 antibody-services drill --cleanup       # close exitable drill programs (escrow back)
 antibody-services drill --results-dir docs/results   # where the drill file is written (the API's --results-dir)
 ```
@@ -56,13 +56,17 @@ it waiting for the light client to reach the fresh anchor).
 Before anything is spent, the drill reads the balances a drill needs and **skips with a reason** if any is
 low — it never fails half-way for want of funds:
 
-- **NEAR**: `antibody.testnet` (tops the others up), `acme` (escrow + runs), `agent-a` (the run), `keeper`
-  (the pause ticket and the payment), `relayer` (the T1 relays), each against its floor.
+- **NEAR**: `acme` (escrow + runs), `agent-a` (the run), `keeper` (the pause ticket and the payment),
+  `relayer` (the T1 relays), each against its floor, and `antibody.testnet`. Each step tops its own signer
+  up from `antibody.testnet`, so an account below its floor does not skip the drill: what it lacks is added
+  to what `antibody.testnet` must hold above its own floor (1.5 NEAR, kept for the practice program and the
+  floats). The drill skips when `antibody.testnet` cannot cover the top-ups, or an account is missing.
 - **EVM**: the base deployer and the relayer on both chains, against what a drill's deploys and relays cost
   at the node's gas price.
 
 A skipped drill writes a results file that says it was skipped and why (`all_ok: false`, so it is left off
-the site), and `/v1/status` raises `drill-skipped`.
+the site), and `/v1/status` raises `drill-skipped`. A drill that passed earlier the same day keeps its
+file: a later run that skips writes nothing. `--dry-run` only prints the shortfalls and writes no file.
 
 ## The kill switch
 
@@ -91,10 +95,13 @@ The results file's `cost` is read from balance deltas over the drill:
 
 ## Cleanup
 
-A drill program closes when its windows allow, so its escrow (0.4 wNEAR) returns to the project.
-`antibody-services drill --cleanup` (a later drill may do the same) exits every drill program past its
-deadline and the exit grace, then closes its commit records a page at a time. Drill programs are labelled
-by their name (`Acme Lend drill …`); `antibody judge` marks them `an automated drill`.
+A drill program closes when its windows allow, so its escrow (0.4 wNEAR, less the payout) returns to the
+project. Each new drill does this first, before its guards read the balances: it exits every drill
+program past its deadline and the exit grace (the earlier days'), then closes its commit records a page at
+a time; a failure there is printed and the drill goes on. `antibody-services drill --cleanup` does the
+same on its own. The next drill wraps only what the escrow lacks, so the returned wNEAR is spent again.
+Drill programs are labelled by their name (`Acme Lend drill …`); `antibody judge` marks them
+`an automated drill`.
 
 ## Reading a drill
 
