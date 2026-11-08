@@ -1,0 +1,209 @@
+name: Antibody immune memory (re-runs in the enclave)
+description: >-
+  Proposes a pull request's build as the next round of the program kept for pull-request checks, waits for
+  near-antibody's re-runs of every paid proof inside the enclave, and fails the check if a paid key still breaks.
+  It holds the project's scoped key: run it in a job that runs none of the pull request's code, on the round
+  manifest the immune-memory action wrote in a job with no secret (README.md, Two halves).
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  version:
+    description: The antibody release whose prebuilt binary runs (its sha256 is checked against the release's .sha256 file)
+    required: false
+    default: v0.6.0
+  repository:
+    description: The repository that publishes the release
+    required: false
+    default: Himess/antibody
+  program:
+    description: The program kept for pull-request checks (never a program whose rounds are real fixes; README.md, The round risk)
+    required: true
+  manifest:
+    description: The round manifest the build job wrote (immune-memory's manifest-out), downloaded into this job
+    required: true
+  project-account:
+    description: The program's project account on NEAR
+    required: true
+  project-key:
+    description: >-
+      The project's function-call key file content (JSON), limited to propose_round and __fastdata_fastfs on
+      near-antibody, with an allowance: a repository secret. GitHub never gives it to pull requests from forks
+    required: true
+  bot-account:
+    description: Optional. An account that opens the round once its re-run window ends, so the next push gets the slot (open_round is permissionless)
+    required: false
+    default: ""
+  bot-key:
+    description: Optional. The bot account's key file content (JSON), a function-call key on near-antibody with an allowance
+    required: false
+    default: ""
+  network:
+    description: NEAR network (the binary has the testnet deployment built in)
+    required: false
+    default: testnet
+  eth-rpc:
+    description: An Ethereum RPC that serves eth_getProof at the program's anchor (the round's base witness is built from it)
+    required: false
+    default: https://rpc.sepolia.ethpandaops.io
+  site:
+    description: The site's origin, for a link to each re-run's page
+    required: false
+    default: https://antibody-three.vercel.app
+  wait-for-slot:
+    description: Seconds to wait for the program's one proposal slot before the check says it queued
+    required: false
+    default: "1500"
+  wait-for-results:
+    description: Seconds to wait for every paid key's re-run to settle once proposed
+    required: false
+    default: "900"
+  open:
+    description: "true: once the re-run window ends, open the round with the bot account so the next push gets the slot"
+    required: false
+    default: "true"
+  fail-on-inconclusive:
+    description: "true: fail when no paid key still breaks but some have no verdict yet (never shown as fixed)"
+    required: false
+    default: "true"
+
+outputs:
+  verdict:
+    description: "red (a paid key still breaks), green (every paid key is fixed), inconclusive, queued (the slot stayed taken), or error"
+    value: ${{ steps.results.outputs.verdict }}
+  report:
+    description: The JSON result's path (empty when none was written)
+    value: ${{ steps.results.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: antibody ${{ inputs.version }} (checksum-verified release binary)
+      id: bin
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        REPO: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        sha256_of() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi < "$1" | cut -d' ' -f1; }
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) target=x86_64-unknown-linux-gnu; exe="" ;;
+          macOS-ARM64) target=aarch64-apple-darwin; exe="" ;;
+          Windows-X64) target=x86_64-pc-windows-msvc; exe=".exe" ;;
+          *) echo "::error::no prebuilt antibody binary for ${RUNNER_OS} ${RUNNER_ARCH}"; exit 1 ;;
+        esac
+        dir="${RUNNER_TEMP}/antibody-${VERSION}"
+        mkdir -p "$dir"
+        base="https://github.com/${REPO}/releases/download/${VERSION}"
+        curl -fsSL --retry 3 -o "$dir/antibody${exe}" "$base/antibody-${target}${exe}"
+        curl -fsSL --retry 3 -o "$dir/antibody.sha256" "$base/antibody-${target}.sha256"
+        want=$(awk -v f="antibody-${target}${exe}" '$2 == f || $2 == "*" f {print $1}' "$dir/antibody.sha256")
+        got=$(sha256_of "$dir/antibody${exe}")
+        if [ -z "$want" ] || [ "$want" != "$got" ]; then
+          echo "::error::antibody-${target}${exe} does not match the release's sha256 (want '${want}', got ${got})"
+          exit 1
+        fi
+        chmod +x "$dir/antibody${exe}"
+        echo "antibody-${target}${exe} ${got} (checked against ${base}/antibody-${target}.sha256)"
+        echo "path=$dir/antibody${exe}" >> "$GITHUB_OUTPUT"
+
+    - name: the program's proposal slot, the proposal and the re-runs
+      id: results
+      shell: bash
+      env:
+        ANTIBODY: ${{ steps.bin.outputs.path }}
+        NETWORK: ${{ inputs.network }}
+        PROGRAM: ${{ inputs.program }}
+        MANIFEST: ${{ inputs.manifest }}
+        PROJECT: ${{ inputs.project-account }}
+        PROJECT_KEY: ${{ inputs.project-key }}
+        ETH_RPC: ${{ inputs.eth-rpc }}
+        SITE: ${{ inputs.site }}
+        WAIT_SLOT: ${{ inputs.wait-for-slot }}
+        WAIT_RESULTS: ${{ inputs.wait-for-results }}
+      run: |
+        set -uo pipefail
+        # GitHub runs this step as `bash -eo pipefail`: every command's failure is handled here, so the summary and
+        # the verdict step always follow.
+        json="$RUNNER_TEMP/round.json"; md="$RUNNER_TEMP/round.md"; key="$RUNNER_TEMP/project-key.json"
+        rm -f "$json" "$md"
+        verdict=error
+        finish() {
+          rm -f "$key"
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          [ -f "$json" ] && echo "report=$json" >> "$GITHUB_OUTPUT"
+          if [ -f "$md" ]; then cat "$md" >> "$GITHUB_STEP_SUMMARY"; else printf '%s\n' "### Antibody immune memory: $1" >> "$GITHUB_STEP_SUMMARY"; fi
+          exit 0
+        }
+        if [ ! -f "$MANIFEST" ]; then finish "no round manifest at $MANIFEST: the build job wrote none (its log says why)"; fi
+        A=("$ANTIBODY" --network "$NETWORK")
+        # One proposal at a time per program, and an accepted one is cleared only by opening its round: wait for the slot.
+        deadline=$(( $(date +%s) + WAIT_SLOT ))
+        while :; do
+          st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
+          [ "$(printf '%s' "$st" | jq -r '.free // false')" = "true" ] && break
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            verdict=queued
+            finish "queued: program $PROGRAM's proposal slot is taken ($(printf '%s' "$st" | jq -r '.proposal.state // "unknown"')); run this job again once it is free"
+          fi
+          sleep 30
+        done
+        umask 077
+        printf '%s' "$PROJECT_KEY" > "$key"
+        if ! "${A[@]}" --account "$PROJECT" --key-file "$key" --eth-rpc "$ETH_RPC" round propose --program "$PROGRAM" --manifest "$MANIFEST" --no-wait > "$RUNNER_TEMP/propose.json"; then
+          finish "the proposal was not sent (its log says why)"
+        fi
+        rm -f "$key"
+        echo "proposed: $(jq -c '{tx: .tx.tx, run: .run_id}' "$RUNNER_TEMP/propose.json" 2>/dev/null)"
+        # The keeper requests every paid proof's re-run once the round check is T1-confirmed; this waits for them.
+        if ! "${A[@]}" round results --program "$PROGRAM" --wait "$WAIT_RESULTS" --site "$SITE" --json "$json" --md "$md" > /dev/null; then
+          finish "the results could not be read (its log says why)"
+        fi
+        verdict=$(jq -r '.verdict // "error"' "$json" 2>/dev/null) || verdict=error
+        finish "done"
+
+    - name: open the round, so the next push gets the slot
+      if: inputs.open == 'true' && inputs.bot-account != '' && inputs.bot-key != '' && (steps.results.outputs.verdict == 'red' || steps.results.outputs.verdict == 'green' || steps.results.outputs.verdict == 'inconclusive')
+      shell: bash
+      env:
+        ANTIBODY: ${{ steps.bin.outputs.path }}
+        NETWORK: ${{ inputs.network }}
+        PROGRAM: ${{ inputs.program }}
+        BOT: ${{ inputs.bot-account }}
+        BOT_KEY: ${{ inputs.bot-key }}
+      run: |
+        set -uo pipefail
+        key="$RUNNER_TEMP/bot-key.json"; umask 077; printf '%s' "$BOT_KEY" > "$key"
+        A=("$ANTIBODY" --network "$NETWORK")
+        # near-antibody opens it once the re-run window has ended, every commit is allocated and no re-run is in flight.
+        for _ in $(seq 1 40); do
+          st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
+          state=$(printf '%s' "$st" | jq -r '.proposal.state // "none"')
+          [ "$state" = "accepted" ] || { echo "nothing to open (proposal: $state)"; break; }
+          now=$(printf '%s' "$st" | jq -r '.now'); from=$(printf '%s' "$st" | jq -r '.proposal.opens_from // 0')
+          if [ "$now" -ge "$from" ] && "${A[@]}" --account "$BOT" --key-file "$key" round open --program "$PROGRAM" > /dev/null 2>&1; then
+            echo "round opened: the slot is free"; break
+          fi
+          sleep 30
+        done
+        rm -f "$key"
+
+    - name: verdict
+      shell: bash
+      env:
+        VERDICT: ${{ steps.results.outputs.verdict }}
+        FAIL_ON_INCONCLUSIVE: ${{ inputs.fail-on-inconclusive }}
+      run: |
+        case "$VERDICT" in
+          green) echo "Every paid key is fixed: re-run inside the enclave through near-antibody's rounds." ;;
+          red) echo "::error title=Antibody immune memory::a paid key still breaks against this pull request's code (job summary)"; exit 1 ;;
+          inconclusive)
+            if [ "$FAIL_ON_INCONCLUSIVE" = "true" ]; then
+              echo "::error title=Antibody immune memory::no paid key still breaks, but some have no verdict yet (job summary)"; exit 1
+            fi
+            echo "::warning title=Antibody immune memory::no paid key still breaks, but some have no verdict yet (job summary)" ;;
+          queued) echo "::error title=Antibody immune memory::queued: the program's proposal slot stayed taken; run this job again (job summary)"; exit 1 ;;
+          *) echo "::error title=Antibody immune memory::the check could not run (job summary)"; exit 1 ;;
+        esac
