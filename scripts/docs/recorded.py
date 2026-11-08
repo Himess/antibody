@@ -5,8 +5,9 @@ run itself (timings, refusals, counts) rather than from chain state.
     python3 scripts/docs/recorded.py one_moment.seconds_from_commit
     python3 scripts/docs/recorded.py 'rounds.*.summary' [--file target/demo/results.json]
 
-The file is the run that is serving when there is one (target/demo/results.json), else the recorded run
-JUDGES.md was generated from (docs/results/sandbox-2026-11-03.json). `*` maps over a list.
+The file is the run that is serving when there is one (target/demo/results.json), else the recorded sandbox
+run (docs/results/sandbox-2026-11-03.json). JUDGES.md and AGENTS.md come from a testnet run: pass its file
+(--file docs/results/testnet-2026-11-04.json), as their commands do. `*` maps over a list.
 """
 import argparse
 import json

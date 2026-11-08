@@ -28,7 +28,9 @@ jobs:
           curl -sSLO "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_checksums.txt"
           grep " gitleaks_${V}_linux_x64.tar.gz\$" "gitleaks_${V}_checksums.txt" | sha256sum -c -
           tar xzf "gitleaks_${V}_linux_x64.tar.gz" gitleaks
-          ./gitleaks git --redact --no-banner --config .gitleaks.toml -v .
+          # The history of the commit under test (a pull request's merge commit, or main), not every branch:
+          # another branch's content is that branch's own check.
+          ./gitleaks git --redact --no-banner --config .gitleaks.toml --log-opts="HEAD" -v .
       - name: never-public paths are not tracked
         run: |
           if git ls-files | grep -E '^(\.secrets/|research/|report/|reports/|measurements/|arena-private/|witnesses/|(.*/)?brief[^/]*\.md$|(.*/)?[^/]*_brief[^/]*\.md$|daily/|scripts/report_to_html\.py$|\.env$)'; then

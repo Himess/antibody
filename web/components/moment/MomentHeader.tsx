@@ -1,8 +1,7 @@
 import Link from "next/link";
 import type { Moment } from "@/lib/api/types";
-import { sourceUrl } from "@/lib/config";
 import { utc, wnear } from "@/lib/format";
-import { chainsWord, committer, pausesOf, possessive } from "@/lib/moment";
+import { chainsWord, committer, pausesOf, possessive, recordHref } from "@/lib/moment";
 import { Icon } from "../ui/Icon";
 import { Pill } from "../ui/Pill";
 
@@ -35,8 +34,8 @@ export function MomentHeader({ moment, live, titleId, level = 2 }: { moment: Mom
         {over ? ` over ${over}` : ""}, {utc(moment.commit.block_ts_ns, "ns")}. Paid {wnear(moment.paid_raw)}
         {moment.instant ? " instantly (attested on NEAR, under the cap)" : ""}.{" "}
         <span style={{ whiteSpace: "nowrap" }}>
-          <a href={sourceUrl(moment.results_file)} target="_blank" rel="noreferrer noopener">
-            Results file <Icon name="external" size={11} style={{ display: "inline" }} />
+          <a href={recordHref(moment)} target="_blank" rel="noreferrer noopener">
+            {moment.kind === "drill" ? "Its record on the API" : "Results file"} <Icon name="external" size={11} style={{ display: "inline" }} />
           </a>{" "}
           · <Link href={`/commits/${moment.commit_id}`}>Commit {moment.commit_id}</Link>
         </span>

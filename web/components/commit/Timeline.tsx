@@ -166,7 +166,7 @@ function single(e: IndexedEvent, x: TimelineInput, rerunRound: Map<number, numbe
           mark: "neutral",
           ev: e,
           title: `Second run requested · run ${run ?? "—"}`,
-          detail: "An independent run of the same proof: above the instant cap, a payout needs one that agrees.",
+          detail: "Another run of the same proof: above the instant cap, a payout needs one that agrees.",
         };
       return {
         key,

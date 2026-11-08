@@ -118,7 +118,7 @@ export default async function TrustPage() {
             <TierBadge tier="T0" code />
             <p className="small">
               OutLayer runs the verifier in an enclave (secure hardware, a TEE), and its operator delivers the output. On that alone, a payout waits
-              its challenge window; above the instant cap it also needs an independent second run that agrees.
+              its challenge window; above the instant cap it also needs a second run that agrees.
             </p>
           </div>
           <div className={styles.cardBox}>
@@ -240,8 +240,9 @@ export default async function TrustPage() {
               </p>
               <ol className={styles.steps}>
                 <li>
-                  the attestation describes exactly the run it requested: the program&apos;s pinned wasm hash, the SHA-256 of the input it sent and
-                  of the bytes it received, the caller and the program&apos;s secrets;
+                  the attestation&apos;s task fields name the run it requested: an execution built for wasm32-wasip2, the program&apos;s pinned wasm
+                  hash, the SHA-256 of the input it sent and of the bytes it received, the caller, that the run used no secrets, and a WasmUrl
+                  source;
                 </li>
                 <li>NEAR&apos;s DCAP verifier returns Verified with an accepted TCB status;</li>
                 <li>

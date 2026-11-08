@@ -13,7 +13,7 @@ type Item = {
   doc?: { path: string; text: string };
 };
 
-/** README's roadmap, in its order. Pull requests and the zero-knowledge proofs (T2) have parts the README marks done. */
+/** docs/roadmap.md, in its order. Pull requests and the zero-knowledge proofs (T2) have parts it marks done. */
 const ROADMAP: Item[] = [
   {
     title: "Antibody for pull requests",
@@ -44,7 +44,7 @@ const ROADMAP: Item[] = [
         done: true,
         text: "near-t2, which checks a Groth16 proof in about 34 Tgas and compares it with near-antibody's records; antibody zk prove, submit and status; the API; a prover service for every practice try.",
       },
-      { done: false, text: "The four testnet runs proven on SP1's prover network, and near-t2 on testnet." },
+      { done: true, text: "The four testnet runs proven on SP1's prover network, and near-t2 on testnet." },
     ],
   },
   { title: "Multi-block proofs with a bounded time warp", detail: "Interest, TWAP and time-dependent bugs." },

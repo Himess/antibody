@@ -547,7 +547,8 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
             <div className={styles.cardBox}>
               <div className="row" style={{ ["--gap" as string]: "10px", justifyContent: "space-between" }}>
                 <h3>
-                  <Link href={`/moment?run=${encodeURIComponent(drillId)}`}>{drillId}</Link>
+                  {/* /moment lists only the drills that passed (the API's /v1/moments); a failed or skipped one is shown here only. */}
+                  {drill.ok === true ? <Link href={`/moment?run=${encodeURIComponent(drillId)}`}>{drillId}</Link> : drillId}
                 </h3>
                 {drill.skipped === true ? (
                   <Pill tone="warn" size="sm">

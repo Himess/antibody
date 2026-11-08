@@ -9,9 +9,9 @@ import { LiveCheck } from "@/components/ui/LiveCheck";
 import { PageHead, Section } from "@/components/ui/PageHead";
 import { Pill } from "@/components/ui/Pill";
 import { TxLink } from "@/components/ui/TxLink";
-import { config, sourceUrl } from "@/lib/config";
+import { config } from "@/lib/config";
 import { cap, utc } from "@/lib/format";
-import { committer, getMoments, laneName, possessive, recordedMoment, stepsWithCommit, timedNote, txNote } from "@/lib/moment";
+import { committer, getMoments, laneName, possessive, recordedMoment, recordHref, stepsWithCommit, timedNote, txNote } from "@/lib/moment";
 import styles from "./moment.module.css";
 
 export const metadata: Metadata = {
@@ -45,8 +45,8 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
         <Link href="/moment/present" className="btn btn-sm">
           <Icon name="play" size={13} /> Presentation mode
         </Link>
-        <a className="btn btn-sm btn-ghost" href={sourceUrl(m.results_file)} target="_blank" rel="noreferrer noopener">
-          The results file <Icon name="external" size={12} />
+        <a className="btn btn-sm btn-ghost" href={recordHref(m)} target="_blank" rel="noreferrer noopener">
+          {m.kind === "drill" ? "Its record on the API" : "The results file"} <Icon name="external" size={12} />
         </a>
       </PageHead>
 
@@ -57,7 +57,17 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
         </div>
       </section>
 
-      <Section id="runs" title="The runs" lede="Each run of the one moment, from its results file: the recorded full run, then the automated drills that run the same loop on testnet. The panel shows the recorded run, or the run you pick.">
+      <Section
+        id="runs"
+        title="The runs"
+        lede={
+          <>
+            Each run of the one moment that passed its checks, from its results file: the recorded full run, then the automated drills that ran
+            the same loop on testnet. A drill that did not pass is not listed here; <Link href="/status#drill">/status</Link> shows where it
+            stopped. The panel shows the recorded run, or the run you pick.
+          </>
+        }
+      >
         <ul className={styles.runs}>
           {data.moments.map((r) => (
             <li key={r.id} className={r.id === m.id ? styles.current : undefined}>

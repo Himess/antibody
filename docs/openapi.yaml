@@ -257,8 +257,8 @@ paths:
     get:
       summary: The one moment's runs, from the results files
       description: >-
-        Recorded runs (docs/results/testnet-YYYY-MM-DD.json) and, once a later backend adds them, scheduled drills
-        (drill-*.json), newest first. Each step carries its seconds from the commit's NEAR block (each chain's own block
+        Recorded runs (docs/results/testnet-YYYY-MM-DD.json) and scheduled drills (drill-*.json), the ones whose
+        checks all passed (all_ok true), newest first. Each step carries its seconds from the commit's NEAR block (each chain's own block
         time) and its transaction: the results file's, else the indexer's event.
       responses:
         "200":
