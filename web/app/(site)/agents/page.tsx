@@ -160,7 +160,7 @@ const verdicts: { verdict: string; outcome: ReactNode; tone: "ok" | "neutral" | 
   {
     verdict: "Violation, first on its key",
     outcome:
-      "Paid at the severity table: in seconds when attested on NEAR and under the instant cap; above it, after an independent second run agrees and the challenge window.",
+      "Paid at the severity table: in seconds when attested on NEAR and under the instant cap; above it, after a second run agrees and the challenge window.",
     tone: "ok",
     word: "paid",
     example: { commit: 13, who: "our fixture agent A" },
@@ -589,12 +589,12 @@ export default function AgentsPage() {
             A commit outside these limits is refused and counted as a containment event in the agent&apos;s statement. The budget
             counts losses because our own review found that, without it, a hijacked agent could drain its owner&apos;s credit
             through a program built to forfeit bonds (
-            <DocLink path="README.md" hash="the-self-attack-log">
+            <DocLink path="docs/attacks.md" hash="the-self-attack-log">
               SA-13
             </DocLink>
             ). An account that already has credit or commits of its own never becomes an agent, so a parent cannot lock a
             sub-account&apos;s credit by registering it (
-            <DocLink path="README.md" hash="the-self-attack-log">
+            <DocLink path="docs/attacks.md" hash="the-self-attack-log">
               SA-23
             </DocLink>
             ).

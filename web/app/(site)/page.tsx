@@ -56,7 +56,8 @@ export default async function Home() {
         </h1>
         <p className={styles.lede}>
           Hunters submit a sealed exploit instead of a report. Antibody re-runs it in secure hardware; if it breaks the project&apos;s rules, NEAR
-          pays the bounty automatically, and a critical bug pauses the protocol on every chain.
+          pays the bounty automatically, and a critical bug in the project&apos;s pause policy, once attested on NEAR, pauses the protocol on
+          every chain the project registered.
         </p>
         <div className="row">
           <PlayLink href="#moment" className="btn btn-primary">
@@ -174,8 +175,8 @@ export default async function Home() {
               <div>
                 <h3>Pay, pause, ship the fix</h3>
                 <p>
-                  The first proof of each bug is paid; duplicates are not. A critical bug pauses the protocol on every chain, and only a fix that
-                  every paid proof fails against is released.
+                  The first proof of each bug is paid; duplicates are not. A critical bug in the project&apos;s pause policy, once attested on NEAR,
+                  pauses the protocol on every chain the project registered, and only a fix that every paid proof fails against is released.
                 </p>
               </div>
             </li>
@@ -290,8 +291,8 @@ export default async function Home() {
             <p className="eyebrow">For projects</p>
             <h2>Pause on proof. Ship only what survived.</h2>
             <p className="muted">
-              Run it next to your existing bounty: rules as code, an escrow, an automatic pause on every chain when a critical bug is proven, and a
-              release gate your fix must pass against every paid proof.
+              Run it next to your existing bounty: rules as code, an escrow, an automatic pause on every chain you register once a critical bug in
+              your pause policy is proven and attested on NEAR, and a release gate your fix must pass against every paid proof.
             </p>
             <div className="row">
               <Link href="/projects" className="btn btn-sm">Open a program</Link>

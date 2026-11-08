@@ -14,7 +14,7 @@ below was fixed and is pinned by a test. The threat model itself is in [threat-m
 | Locking an escrow with copies of a paid proof | A bond per copy | Nothing: copies share one reservation per key | SA-9 |
 | Filling near-antibody's storage | The storage, paid by the caller (each commit prepays its settlement) | Nothing | SA-24 |
 | Steering a finding to a new key to be paid twice | The bond | Nothing | SA-1 |
-| A dishonest TEE operator | It can delay; it cannot pay without a quote verified on NEAR | T0 payouts above the cap wait their window and a second run | Property 8 |
+| A dishonest TEE operator | It can delay; under the instant cap, a false T0 verdict that nobody challenges pays once the challenge window passes (60 s on testnet); T1 and challenges are the defense | T0 payouts wait their window; above the cap, also a second run | Property 8 (instant payouts), Threat I1 |
 | Challenging honest payouts to delay them | A challenge bond, lost when T1 upholds the payout | A delay up to the resolve window | Threat P12 |
 | A project closing its program to escape payouts | Needs a T1 `ProgramMisconfigured` or the window; the escrow stays until exit | — | Property 6 |
 | A compromised owner | Can change the defaults of new programs only | — | Property 12 |

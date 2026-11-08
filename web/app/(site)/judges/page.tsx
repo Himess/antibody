@@ -159,7 +159,7 @@ export default async function JudgesPage() {
   const acme = j.programs?.acme;
   const recordedHasFile = /--file\s/.test(j.recorded_cmd ?? "");
   const limits = j.limits?.items ?? [];
-  // The worker-image delay is in docs/trust.md; README's list does not name it yet.
+  // The worker-image delay is in docs/trust.md; added here only if docs/limitations.md does not name it.
   const imageLimitListed = limits.some((l) => /\bimage/i.test(`${l.title} ${l.text}`));
   const claimNos = new Set(claims.map((c) => c.n));
   const looseEvm = evm.filter((e) => typeof e.claim !== "number" || !claimNos.has(e.claim));
@@ -571,10 +571,10 @@ export default async function JudgesPage() {
         title="Limits"
         lede={
           <>
-            README.md&apos;s limitations, item by item{imageLimitListed ? "" : ", and the worker-image delay from docs/trust.md"}. They hold for
+            docs/limitations.md, item by item{imageLimitListed ? "" : ", and the worker-image delay from docs/trust.md"}. They hold for
             every program, not only this run.{" "}
-            <a href={`${sourceUrl(j.limits?.source ?? "README.md")}#${j.limits?.anchor ?? "limitations"}`} target="_blank" rel="noreferrer noopener">
-              Read them in README.md <ExternalIcon />
+            <a href={`${sourceUrl(j.limits?.source ?? "docs/limitations.md")}#${j.limits?.anchor ?? "limitations"}`} target="_blank" rel="noreferrer noopener">
+              Read them in docs/limitations.md <ExternalIcon />
             </a>
           </>
         }

@@ -377,7 +377,7 @@ export function stateExpect(label: string, raw: unknown): Expect | undefined {
 export const MODE_WORDS: Record<string, string> = {
   activate: "Activation: the enclave derived the program's keys and output its sealing public key.",
   verify: "Verification: the enclave judged a sealed submission.",
-  second: "A second, independent run of the same proof: above the instant cap, a payout needs one that agrees.",
+  second: "A second run of the same proof: above the instant cap, a payout needs one that agrees.",
   rerun: "A re-run of a paid proof, a duplicate or a gap claim at a newer round's code and rules.",
   check_round: "A round check: the enclave checked a proposed fix before its re-runs.",
   distinct: "A distinctness run (switched off in this deployment).",

@@ -31,8 +31,8 @@ sent; "How mainnet works" (docs/mainnet.md, `/v1/mainnet`) makes view calls only
 | Relayers, keeper, indexer, API | Nothing: permissionless calls and derived data | Everything they show is re-derivable from NEAR |
 
 The verification levels: **T0** (OutLayer delivers the TEE's output), **T1** (its quote verified on NEAR).
-Instant payouts need T1. Above the cap, a payout also needs an independent second run that agrees, and
-waits its challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) claims no
+Instant payouts need T1. Above the cap, a payout also needs a second run that agrees, and waits its
+challenge window. **T2** (a validity proof of a disclosed verdict, verified on NEAR) claims no
 privacy, and no payout depends on it.
 
 ## T1: TDX quotes verified on NEAR
@@ -42,16 +42,17 @@ hash, the input hash, the output hash, the caller, the secrets and the time. The
 `testnet-api.outlayer.ai/attestations/by-request/{id}`.
 
 Anyone may relay a quote (`confirm_tee`, or the T1 relayer). near-antibody accepts it only if:
-1. the attestation describes exactly the run near-antibody requested: the program's pinned wasm hash, the
-   SHA-256 of the input it sent and of the bytes it received (both recorded with the run), the caller,
-   and the program's secrets;
+1. the attestation's task fields name the run near-antibody requested: an execution built for
+   `wasm32-wasip2`, the program's pinned wasm hash, the SHA-256 of the input it sent and of the bytes it
+   received (both recorded with the run), the caller, that the run used no secrets, and a `WasmUrl`
+   source;
 2. NEAR's DCAP verifier returns `Verified` with an accepted TCB status;
 3. the quote's `report_data` equals the recomputed hash;
 4. the worker image (MRTD, RTMR0–3) is in the program's pinned allowlist (an image approved later counts
    only after a delay longer than any challenge window).
 
 The run is then **T1**. A T1 payout under the program's instant cap is paid in seconds; above the cap it
-also needs an independent second run that agrees, and waits its challenge window.
+also needs a second run that agrees, and waits its challenge window.
 
 **Evidence (no funds needed).** `antibody tee check --request-id 6496` checks a public OutLayer run end
 to end: the report_data binds the task, `verify_quote` (a free view call) returns `Verified` /
@@ -76,9 +77,10 @@ binds.
 - **Worker images.** OutLayer adds worker images to its approved list. A program accepts the images it
   pinned at creation, and later ones from its pinned registry only after the image delay (2 days on
   testnet), once near-antibody lists them (`sync_images`, permissionless). Until then a run on a new
-  image gets no T1 and its payout waits the window. The keeper lists new images within 10 minutes, the
-  T1 relayer sends nothing for a run whose image does not count yet (it retries when it does), and
-  `/v1/status` warns while an image is pending. On 2026-11-06 OutLayer approved six new images:
+  image gets no T1: its payout waits the window, and its pause waits too, since a pause needs T1. The
+  keeper lists new images within 10 minutes, the T1 relayer sends nothing for a run whose image does not
+  count yet (it retries when it does), and `/v1/status` warns while an image is pending. On 2026-11-06
+  OutLayer approved six new images:
   - two listed by hand and two by the keeper, half an hour later; they count for programs 5–7 from
     2026-11-08 13:15:22 and 13:47:47 UTC;
   - two more that evening, listed at 20:18:16 UTC (by hand: the keeper's 0.298 NEAR could not set aside
@@ -91,6 +93,9 @@ binds.
     program, through its owner's `set_terms`.
 - **Availability.** A run whose quote cannot be had stays T0: its payout waits the window, and a re-run
   may be asked for.
+- **Quote metadata** (threat model I4b). OutLayer's task hash concatenates its fields without length
+  prefixes, and its metadata (task id, block height, timestamp, attached USD) is not checked: a collision
+  would need the TEE to attest a run whose metadata embeds this run's hashes.
 
 ## T2: validity proofs of disclosed verdicts
 
@@ -113,10 +118,11 @@ What it does not do:
 - It claims no privacy: the proof re-runs a disclosed proof.
 - Payouts in the locked deployment do not depend on it.
 
-On testnet (2026-11-07): near-t2 is `zk.antibody.testnet`, locked (code hash `3HFJXFtL…`, built from
-`21e0d696…`). It holds four `confirmed` records, for runs 33, 36, 35 and 53, whose content keys are published
-in `fixtures/zk`; a tampered proof was refused (an invalid G1 point). Each record links its proof's request
-on SP1's prover network (JUDGES.md row 16, `antibody zk status --run 33`).
+On testnet (2026-11-07): near-t2 is `zk.antibody.testnet`, locked (code hash `3HFJXFtL…`, wasm sha256
+`21e0d696…`: the same hash in hex). It holds four `confirmed` records, for runs 33, 36, 35 and 53, whose
+content keys are published in `fixtures/zk`; a tampered proof was refused (an invalid G1 point). Each
+record links its proof's request on SP1's prover network (JUDGES.md row 16,
+`antibody zk status --run 33 --contract zk.antibody.testnet`).
 
 ## What is mock
 

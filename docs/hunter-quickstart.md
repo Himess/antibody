@@ -84,7 +84,7 @@ Then `antibody status --commit <id>`. Settlement is permissionless: anyone runs
 
 | Verdict | What happens |
 |---|---|
-| Violation, first on its key | Paid at the severity table: in seconds when T1-confirmed and under the instant cap; above it, after an independent second run agrees (`antibody second`) and the challenge window |
+| Violation, first on its key | Paid at the severity table: in seconds when T1-confirmed and under the instant cap; above it, after a second run agrees (`antibody second`) and the challenge window |
 | Violation on a key held earlier | A duplicate, with the earlier claim's proof; the bond is refunded; confirmed at the fix |
 | The project's declared known issue | Known; the bond is refunded |
 | NoViolation that harms a protected account | The gap lane: the bond is refunded and a claim recorded; paid if a later round adds a rule it breaks |

@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Open a program",
     description:
-      "Open an Antibody program before a launch or an upgrade: rules as code, an escrow, a pause on every chain on a proven Critical, and a release gate your fix must pass against every paid proof. The quickstart, the business model and the roadmap.",
+      "Open an Antibody program before a launch or an upgrade: rules as code, an escrow, a pause on every chain you register once a Critical in your pause policy is attested on NEAR, and a release gate your fix must pass against every paid proof. The quickstart, the business model and the roadmap.",
   };
 }
 
@@ -90,7 +90,8 @@ const steps: Step[] = [
             <p>
               Deploy to Sepolia, with pause-only copies on other chains if you want, and pick a finalized block after the
               deployment as the anchor. Create the program while the light client still confirms that block, about a week;
-              otherwise its anchor is labelled project-attested.
+              otherwise its anchor is labelled project-attested. Activation builds a witness at the anchor block, and public
+              Sepolia RPCs prove that block&apos;s state for only about 25 minutes: activate within that time, or use an archive RPC.
             </p>
           </div>
           <div className={styles.option}>
@@ -261,8 +262,9 @@ export default function ProjectsPage() {
         lede={
           <>
             An auto-pay lane next to your existing bounty, opened before a launch or an upgrade. You commit your rules as code and
-            an escrow on NEAR; a proof is paid only if it breaks one of them, at the severity you committed. A proven Critical
-            pauses your protocol on every chain, and your fix ships only when every paid proof fails against it.
+            an escrow on NEAR; a proof is paid only if it breaks one of them, at the severity you committed. A proven Critical in
+            your pause policy, once attested on NEAR, pauses your protocol on every chain you registered, and your fix ships only
+            when every paid proof fails against it.
           </>
         }
       >
@@ -289,11 +291,11 @@ export default function ProjectsPage() {
           </div>
           <div>
             <dt>Paid</dt>
-            <dd>The first proof of each rule and entry point; in seconds under the instant cap</dd>
+            <dd>The first proof of each rule and entry point; in seconds under the instant cap once attested on NEAR</dd>
           </div>
           <div>
             <dt>On a Critical</dt>
-            <dd>A pause on every chain where it runs, asked for before the payment</dd>
+            <dd>A pause on every chain you registered, asked for once the verdict is attested on NEAR</dd>
           </div>
           <div>
             <dt>Ships</dt>
@@ -488,10 +490,8 @@ export default function ProjectsPage() {
         title="Roadmap"
         lede={
           <>
-            From the README, in its order. Nothing below is built yet, except the parts marked done.{" "}
-            <DocLink path="README.md" hash="roadmap">
-              README: Roadmap
-            </DocLink>
+            From docs/roadmap.md, in its order. Nothing below is built yet, except the parts marked done.{" "}
+            <DocLink path="docs/roadmap.md">docs/roadmap.md</DocLink>
           </>
         }
       >

@@ -108,7 +108,7 @@ function lede(x: {
       if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, verified in the enclave before the program opened: ${verdict}.`;
       return `The enclave's verification of ${c} sealed proof: ${verdict}.`;
     case "second":
-      return `A second, independent run of ${c} proof: ${verdict}.`;
+      return `A second run of ${c} proof: ${verdict}.`;
     case "rerun":
       return `A re-run of ${c} proof at round ${x.round ?? "—"}'s code and rules: ${
         x.a?.kind === "NoViolation" ? "it breaks nothing, so the fix stops it" : x.a?.kind === "Violation" ? `it still breaks ${slots || "a rule"}` : verdict

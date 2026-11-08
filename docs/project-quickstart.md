@@ -25,7 +25,10 @@ Other ways in:
 
 - **On chain:** deploy to Sepolia (pause-only copies elsewhere if you want) and pick a finalized block
   after the deployment as the anchor. Create the program while the light client still confirms it
-  (about a week); otherwise it is labelled project-attested.
+  (about a week); otherwise it is labelled project-attested. `program activate` builds the base witness
+  with `eth_getProof` at the anchor block, which public Sepolia RPCs answer only about 128 blocks (some
+  25 minutes) back: with one, activate within about 25 minutes of the anchor; later, pass an archive RPC
+  (`--eth-rpc`).
 - **Fork mode:** commit your contracts' deployment in the manifest instead. The verifier deploys them on
   top of the anchor's real state, so no staging deployment is needed (docs/fork-mode.md).
 

@@ -61,8 +61,9 @@ flowchart LR
 5. **T1.** The relayer brings the run's TDX quote; near-antibody verifies it on chain. Instant payouts
    need it.
 6. **Settle.** The keeper allocates final verdicts in commit order and pays funded claims: in seconds
-   under the instant cap; above it, after an agreeing second run and the challenge window. A Critical in
-   the pause policy gets the round's pause ticket, and near-guardian signs a pause permit for every chain.
+   under the instant cap; above it, after an agreeing second run and the challenge window. A T1 Critical
+   in the pause policy gets the round's pause ticket, and near-guardian signs a pause permit for every
+   chain the project registered.
    Once a finding is paid, the project asks for its release wrap and reads the proof
    (`antibody program read`); nothing else is ever wrapped to the project.
 7. **Rounds.** The project proposes a fix as code at the same anchor; the TEE checks it; every paid proof

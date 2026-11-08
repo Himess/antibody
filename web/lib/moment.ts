@@ -1,5 +1,6 @@
 import recorded from "@/data/moments.json";
 import { api, type Moment, type MomentStep, type Moments } from "@/lib/api";
+import { config, sourceUrl } from "@/lib/config";
 import { fixtureAgentLetter, wnear } from "@/lib/format";
 import { plainLevels } from "@/lib/levels";
 
@@ -23,6 +24,12 @@ export const recordedMoment = (m: Moments): Moment => newest(m.moments.filter((x
 
 /** The newest automated drill, when one has run. */
 export const latestDrill = (m: Moments): Moment | null => newest(m.moments.filter((x) => x.kind === "drill")) ?? null;
+
+/**
+ * Where a run's record can be read. A recorded run's results file is in the repository; a drill writes its
+ * file on the operations host, so a drill links the API's copy of its record (/v1/moments) instead.
+ */
+export const recordHref = (m: Moment): string => (m.kind === "drill" ? `${config.apiBase}/v1/moments` : sourceUrl(m.results_file));
 
 /** A run's step, by key: \"verified\", \"t1\", \"paid\", \"paused_<chain id>\"... */
 export const stepOf = (m: Moment, key: string) => m.steps.find((s) => s.key === key);

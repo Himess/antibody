@@ -21,8 +21,8 @@ scaling. In January 2026, curl ended its bug bounty after a flood of AI-generate
 
 **Antibody judges code instead.** A hunter, a person or an AI agent, submits a sealed proof of an exploit.
 A verifier re-runs it inside secure hardware, against the rules the project committed on NEAR. If a rule
-breaks, NEAR pays the bounty automatically, and a critical bug pauses the protocol on every chain it runs
-on. Nobody has to read a report.
+breaks, NEAR pays the bounty automatically, and a Critical in the project's pause policy, once attested on
+NEAR, pauses the protocol on every chain the project registered. Nobody has to read a report.
 
 It runs on NEAR testnet today, with every contract locked.
 
@@ -66,7 +66,8 @@ provenance attestation: `gh attestation verify <file> -R Himess/antibody`.
 ./antibody judge
 ```
 
-It prints each contract's code hash and locked status, and every program's verdicts, payouts and pauses.
+It prints each contract's locked status (code hashes with `--json`), and every program's verdicts, payouts
+and pauses.
 
 **3. Run a practice bounty end to end.**
 
@@ -77,8 +78,9 @@ It prints each contract's code hash and locked status, and every program's verdi
 It gets a practice account, seals the public tutorial proof, commits and reveals it, and settles it, with
 a link for every transaction. It ends `Done:Paid` in under a minute when the run is attested on NEAR
 (the recorded tries took 43.7 s and 39.9 s). While new worker images wait their two-day delay, the payout
-waits the program's 60 s challenge window instead: about a minute and a half (90 to 137 s, measured on
-2026-11-07). The output says which path it took. The same binary runs in Docker:
+waits the program's 60 s challenge window instead: about a minute and a half (91 to 95 s for the paid runs
+in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output says which path it
+took. The same binary runs in Docker:
 `docker run --rm ghcr.io/himess/antibody:v0.5.0 judge`.
 
 ## How it works
@@ -89,10 +91,11 @@ waits the program's 60 s challenge window instead: about a minute and a half (90
    included, can read it before its verdict.
 3. **A verifier re-runs it inside an enclave** (a TEE), on chain state proven at the program's anchor
    block, and reports which rule broke, where, and the impact.
-4. **NEAR pays automatically.** The first proof of each bug (each rule and entry point) is paid, in
-   seconds below the program's instant cap. A proof that breaks nothing loses its bond to the program's
-   escrow.
-5. **A critical bug pauses the protocol on every chain** it runs on, and the project's fix ships only
+4. **NEAR pays automatically.** The first proof of each bug (each rule and entry point) is paid: in
+   seconds below the program's instant cap once the verdict is attested on NEAR, else after the program's
+   challenge window. A proof that breaks nothing loses its bond to the program's escrow.
+5. **A critical bug pauses the protocol on every chain** the project registered, once its verdict is
+   attested on NEAR (T1) and if its rule is in the project's pause policy. The project's fix ships only
    once every paid proof fails against it.
 
 **What NEAR makes possible:**
@@ -103,7 +106,8 @@ waits the program's 60 s challenge window instead: about a minute and a half (90
   instant payout.
 - **Pauses on other chains.** NEAR's MPC network signs the pause and release permits that the protocol's
   Ethereum contracts accept.
-- **Proven state.** The Ethereum light client on NEAR confirms the block every proof runs on.
+- **Proven state.** The Ethereum light client on NEAR confirms each program's anchor block, the block its
+  proofs run on; an anchor it cannot confirm is labelled project-attested.
 - **Agents that cannot run off with funds.** An AI agent works through a NEAR sub-account that cannot
   withdraw, within a bond budget.
 
@@ -133,11 +137,11 @@ transaction behind it.
 
 The same moment runs again every day around 03:00 UTC, on a fresh Acme Lend at new addresses: the
 [daily drill](docs/drill.md) opens a program, lets agent A submit its proof over MCP, and checks the
-verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill is listed
-under the recorded run on [/moment](https://antibody-three.vercel.app/moment), and
-[/status](https://antibody-three.vercel.app/status) says whether the latest one passed. The first to pass
-ran on 2026-11-08 ([results](docs/results/drill-2026-11-08.json)); its times are longer than the recorded
-run's because its reveal waited for a rate-limited RPC.
+verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill that passed
+is listed under the recorded run on [/moment](https://antibody-three.vercel.app/moment), and
+[/status](https://antibody-three.vercel.app/status) says whether the latest one passed, or where it
+stopped. The first to pass ran on 2026-11-08 ([results](docs/results/drill-2026-11-08.json)); its times
+are longer than the recorded run's because its reveal waited for a rate-limited RPC.
 
 ## How a verdict is checked
 
@@ -145,7 +149,7 @@ Every verdict carries one of three levels. The CLI and JUDGES.md print them as T
 
 | Level | What vouches for it |
 |---|---|
-| **Enclave result** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window, and above the instant cap a second, independent run must agree. |
+| **Enclave result** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window, and above the instant cap a second OutLayer run must agree. |
 | **Attested on NEAR** (`T1`) | The run's Intel TDX quote, which binds the pinned verifier, its input and its output, is verified on NEAR. Instant payouts need it. |
 | **Zero-knowledge proof** (`T2`) | An SP1 proof that re-running the verifier on the same input gives the same result, checked on NEAR by near-t2. Live on testnet since 2026-11-07, for disclosed verdicts; no payout depends on it. |
 
@@ -165,8 +169,8 @@ on your machine, and `hunt submit` seals, commits and settles your proof:
 ```
 
 On testnet (2026-11-07): two accounts paid on two vaults, a proof that breaks no rule ending `NoViolation`
-with its bond forfeited, and a malformed one refused as `InvalidPoC`
-([results](docs/results/byo-2026-11-07.json)).
+with its bond forfeited, and a proof with two calls where one is allowed, judged `InvalidPoC`, its bond
+forfeited ([results](docs/results/byo-2026-11-07.json)).
 
 ## For AI agents
 
@@ -258,7 +262,8 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
 ## Hackathon
 
 - **Tracks:** 06 AI Security & Defense (primary): proofs, not reports, judged in an enclave, with a pause
-  on every chain. 07 Agent Economy: agents earn on proof, through accounts that contain them.
+  on every chain the project registered. 07 Agent Economy: agents earn on proof, through accounts that
+  contain them.
 - **Built during the hackathon:** all code was written after the October 19, 2026 announcement, and the
   commits reflect when it was written. Tags: `hackathon-start`, milestone tags, and `hackathon-submission`
   at submission.
@@ -287,7 +292,10 @@ Direct dependencies, by license:
 - Tools: Foundry, Quint and Apalache, Kani, near-sandbox, SP1's `cargo prove` 6.10.0; proofs come from
   SP1's prover network.
 
-Patches: `third_party/patches/` holds two small build fixes (for `kzg-rs` and `near-vm-runner`).
+Patches: `third_party/patches/` holds four: two small build fixes (for `kzg-rs` and `near-vm-runner`),
+and two decoding fixes in the verifier's path (`bitvec` and `revm-bytecode`: a malformed witness becomes
+a decode error instead of a panic; SA-25 in [docs/attacks.md](docs/attacks.md)). What each changes:
+[third_party/patches/README.md](third_party/patches/README.md).
 
 </details>
 

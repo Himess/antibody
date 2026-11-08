@@ -19,11 +19,14 @@ list of limits (`/judges#limits`) is generated from this file by `scripts/docs/j
   this way).
 - **The testnet light client has one trusted relayer.** Anchors it cannot confirm are labelled
   project-attested.
-- **TEE trust is tiered, not removed.** T1 needs DCAP collateral; above the cap a second run and a
-  window are required.
+- **TEE trust is tiered, not removed.** T1 needs DCAP collateral. Without T1 a verdict rests on OutLayer's
+  operator (T0): under the instant cap it becomes final once its challenge window passes (60 s on testnet),
+  so a false one that nobody challenges stands, and a false Violation is paid; above the cap a second
+  OutLayer run must also agree. A challenge demands T1; anyone may file one, but neither the CLI nor the
+  services do.
 - **Worker images.** A worker image OutLayer approves later counts for existing programs only after the
-  image delay (2 days on testnet); until then a run on it gets no T1, and its payout waits the challenge
-  window (docs/runbooks/worker-images.md).
+  image delay (2 days on testnet); until then a run on it gets no T1, so its payout waits the challenge
+  window and its pause waits too, since a pause needs T1 (docs/runbooks/worker-images.md).
 - **Old anchors.** A proof that reads beyond the pinned base needs an RPC that keeps the anchor's state.
 - **Rule strength is the rules' measure,** and a survivor is not necessarily a bug.
 - **Testnet only.** The payout token, wNEAR on testnet, has no value.

@@ -4,7 +4,8 @@ The recorded run (`docs/results/testnet-2026-11-04.json`) proves the one moment 
 **drill** runs the same moment again on NEAR testnet every day, on a fresh instance of the Acme Lend
 fixture, so the system is shown to work *today* and breakage is caught before judges see it: worker
 images, DCAP collateral, the RPCs, floats, the relayer keys. The recorded run stays the hero on the site;
-each drill is listed under it, labelled "automated drill".
+each drill that passed is listed under it, labelled "automated drill", and `/status` shows the latest
+drill, passed or not.
 
 ```bash
 antibody-services drill                 # one drill (resumable); writes drill-YYYY-MM-DD.json
@@ -64,8 +65,8 @@ low — it never fails half-way for want of funds:
 - **EVM**: the base deployer and the relayer on both chains, against what a drill's deploys and relays cost
   at the node's gas price.
 
-A skipped drill writes a results file that says it was skipped and why (`all_ok: false`, so it is left off
-the site), and `/v1/status` raises `drill-skipped`. A drill that passed earlier the same day keeps its
+A skipped drill writes a results file that says it was skipped and why (`all_ok: false`, so `/moment`
+leaves it out), and `/v1/status` raises `drill-skipped`. A drill that passed earlier the same day keeps its
 file: a later run that skips writes nothing. `--dry-run` only prints the shortfalls and writes no file.
 
 ## The kill switch
@@ -80,9 +81,10 @@ demo, set the kill switch. One drill runs at a time on a work directory (`<work-
 ## Timeouts
 
 Each step has a timeout (the light client up to 90 min, T1 up to 15 min, the pauses up to 15 min). A step
-that times out or fails ends the drill with `all_ok: false` and the step's error in the file, so `/moment`
-and `/v1/status` show where it stopped. A failed `prebuild`/`anchor` is retried from a fresh anchor on the
-next run (public RPCs prove only ~128 blocks back).
+that times out or fails ends the drill with `all_ok: false` and the step's error in the file, so
+`/v1/status` (and the site's `/status`) shows where it stopped; `/moment` lists only the drills that
+passed. A failed `prebuild`/`anchor` is retried from a fresh anchor on the next run (public RPCs prove only
+~128 blocks back).
 
 ## The cost line
 
@@ -108,10 +110,11 @@ Drill programs are labelled by their name (`Acme Lend drill …`); `antibody jud
 
 ## Reading a drill
 
-- **`/moment`**: the drill appears in "The runs" under the recorded run, labelled "automated drill"; pick
-  it to replay its steps (verified, T1, pause permits signed, paid, each chain paused), each with its
-  transaction. The API serves it at `/v1/moments` (the `drill-*.json` files; no API change — `moments()`
-  reads them in the one-moment shape).
+- **`/moment`**: a drill that passed appears in "The runs" under the recorded run, labelled "automated
+  drill"; pick it to replay its steps (verified, T1, pause permits signed, paid, each chain paused), each
+  with its transaction. The API serves it at `/v1/moments` (the `drill-*.json` files with `all_ok: true`;
+  no API change — `moments()` reads them in the one-moment shape). A drill that did not pass is not there:
+  `/status` shows it.
 - **`/status`**: the `drill` component shows the latest drill's date, whether it passed, its steps and its
   cost; the `evm_balances` component shows the relayer and deployer balances against their floors. Alerts:
   - `drill-failed` (critical) when the latest drill did not pass, naming the step it stopped at;
