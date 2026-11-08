@@ -1044,7 +1044,13 @@ fn write_skipped(results_dir: &Path, date: &str, dep: &Deployments, reason: &str
 
 pub fn run(a: DrillArgs) -> Result<Value> {
     std::env::set_var("ANTIBODY_MIN_NEAR_CREDIT", crate::live::MIN_NEAR_CREDIT);
-    let dep: Deployments = serde_json::from_str(&std::fs::read_to_string(a.root.join("deployments/near-testnet.json"))?)?;
+    let mut dep: Deployments = serde_json::from_str(&std::fs::read_to_string(a.root.join("deployments/near-testnet.json"))?)?;
+    // The NEAR RPC: `$NEAR_RPC` when set, else the deployments file's. On the operations host the services
+    // already use the latter, and a drill on the same one hit its rate limit (2026-11-08); every client of
+    // the drill, agent A's MCP server included, takes this one ($NEAR_RPC_EXTRA stays the failover).
+    if let Some(rpc) = std::env::var("NEAR_RPC").ok().filter(|v| !v.trim().is_empty()) {
+        dep.rpc = Some(rpc);
+    }
     let near = Near::new("testnet", dep.rpc.clone());
     std::fs::create_dir_all(a.work.join("keys"))?;
     let date = date_of(unix());

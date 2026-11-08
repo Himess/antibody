@@ -257,9 +257,7 @@ impl Near {
                         let limited = s.contains("Too Many Requests") || s.contains("-429") || s.contains("Rate limit");
                         if s.contains("TIMEOUT_ERROR") || limited || s.contains("UNKNOWN_BLOCK") {
                             last = eyre!("{method}: {s}");
-                            // With another RPC to turn to, a short pause; with one, back off.
-                            let ms = if self.endpoints() > 1 { 250 } else if limited { 2_000 * (attempt + 1) } else { 800 * (attempt + 1) };
-                            std::thread::sleep(std::time::Duration::from_millis(ms));
+                            std::thread::sleep(std::time::Duration::from_millis(retry_pause_ms(attempt, self.endpoints(), limited)));
                             continue;
                         }
                         return Err(eyre!("{method}: {}", s));
@@ -411,6 +409,25 @@ pub fn block_secs(header: &Value) -> Result<u64> {
     ns.map(|n| n / 1_000_000_000).ok_or_else(|| eyre!("a block header with no timestamp: {header}"))
 }
 
+/// How long attempt `attempt` (from 0) waits after a transient error before the next. With other RPCs to
+/// turn to, a short pause, and a longer one each time every RPC has been tried: on 2026-11-08 a drill and
+/// the services shared one host, and a rate limit outlasted three RPCs tried 250 ms apart. With one RPC,
+/// a back-off (longer for a rate limit).
+pub fn retry_pause_ms(attempt: u64, endpoints: usize, limited: bool) -> u64 {
+    let n = endpoints.max(1) as u64;
+    if n > 1 {
+        if (attempt + 1) % n == 0 {
+            1_500 * ((attempt + 1) / n)
+        } else {
+            250
+        }
+    } else if limited {
+        2_000 * (attempt + 1)
+    } else {
+        800 * (attempt + 1)
+    }
+}
+
 /// Outcome helpers over a `send_tx` result.
 pub fn tx_hash(outcome: &Value) -> String {
     outcome["transaction"]["hash"].as_str().unwrap_or_default().to_string()
@@ -458,6 +475,15 @@ pub fn events(outcome: &Value) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rate_limit_waits_longer_once_every_rpc_was_tried() {
+        // Three RPCs: two short pauses, then a longer one after the round, and longer after the next.
+        let p: Vec<u64> = (0..7).map(|a| retry_pause_ms(a, 3, true)).collect();
+        assert_eq!(p, vec![250, 250, 1_500, 250, 250, 3_000, 250]);
+        // One RPC: the back-off as before.
+        assert_eq!((retry_pause_ms(0, 1, true), retry_pause_ms(2, 1, false)), (2_000, 2_400));
+    }
 
     /// Cross-checked against near-api-js 5 (scripts/guardian/near_tx_vector.mjs) for the same inputs.
     #[test]
