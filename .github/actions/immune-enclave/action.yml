@@ -139,22 +139,26 @@ runs:
         }
         if [ ! -f "$MANIFEST" ]; then finish "no round manifest at $MANIFEST: the build job wrote none (its log says why)"; fi
         A=("$ANTIBODY" --network "$NETWORK")
-        # One proposal at a time per program, and an accepted one is cleared only by opening its round: wait for the slot.
+        # One proposal at a time per program, and an accepted one is cleared only by opening its round: wait for the
+        # slot, and wait again if another check proposed first (near-antibody refuses a second proposal).
         deadline=$(( $(date +%s) + WAIT_SLOT ))
+        umask 077
+        printf '%s' "$PROJECT_KEY" > "$key"
         while :; do
           st=$("${A[@]}" round state --program "$PROGRAM" 2>/dev/null) || st=""
-          [ "$(printf '%s' "$st" | jq -r '.free // false')" = "true" ] && break
+          if [ "$(printf '%s' "$st" | jq -r '.free // false')" = "true" ]; then
+            if "${A[@]}" --account "$PROJECT" --key-file "$key" --eth-rpc "$ETH_RPC" round propose --program "$PROGRAM" --manifest "$MANIFEST" --no-wait > "$RUNNER_TEMP/propose.json" 2> "$RUNNER_TEMP/propose.err"; then
+              break
+            fi
+            grep -q "one proposal at a time" "$RUNNER_TEMP/propose.err" || { cat "$RUNNER_TEMP/propose.err" >&2; finish "the proposal was not sent (its log says why)"; }
+            echo "another check proposed first: waiting for the slot again"
+          fi
           if [ "$(date +%s)" -ge "$deadline" ]; then
             verdict=queued
             finish "queued: program $PROGRAM's proposal slot is taken ($(printf '%s' "$st" | jq -r '.proposal.state // "unknown"')); run this job again once it is free"
           fi
           sleep 30
         done
-        umask 077
-        printf '%s' "$PROJECT_KEY" > "$key"
-        if ! "${A[@]}" --account "$PROJECT" --key-file "$key" --eth-rpc "$ETH_RPC" round propose --program "$PROGRAM" --manifest "$MANIFEST" --no-wait > "$RUNNER_TEMP/propose.json"; then
-          finish "the proposal was not sent (its log says why)"
-        fi
         rm -f "$key"
         echo "proposed: $(jq -c '{tx: .tx.tx, run: .run_id}' "$RUNNER_TEMP/propose.json" 2>/dev/null)"
         # The keeper requests every paid proof's re-run once the round check is T1-confirmed; this waits for them.
