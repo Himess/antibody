@@ -122,7 +122,7 @@ function rulesOf(program: ProgramDetail | null, v: unknown): string {
   );
 }
 
-/** A level's name in a step's title, its code in the tooltip ("Verified in the enclave", "Attested on NEAR"). */
+/** A level's name in a step's title, its code in the tooltip ("Enclave verdict", "Attested on NEAR"). */
 const Lv = ({ level }: { level: keyof typeof LEVEL }) => <span title={LEVEL[level].title}>{LEVEL[level].name}</span>;
 
 /** One event's step. Grouped events (a reveal and its run request, …) are built by `buildSteps`. */

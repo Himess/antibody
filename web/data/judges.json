@@ -88,7 +88,7 @@
  "one_look": {
   "intro": "Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.",
   "setup": [
-   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, verified in the enclave (OutLayer's operator delivered the enclave's output); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
+   "Commands are written `antibody …`: with the binary from the README's \"Try it\", run `./antibody …` (`.\\antibody.exe …` on Windows). Values only the run records (timings, refusals, counts) print with `python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json`, which needs Python 3 (standard library only) and a clone of this repository; without them, read the same path in that file. Tiers are the verification levels the CLI prints: T0, the enclave verdict (OutLayer's operator delivered the enclave's output; nothing on NEAR checks it yet); T1, attested on NEAR (the run's TDX quote verified on NEAR); T2, a zero-knowledge proof of a disclosed verdict, verified on NEAR.",
    ""
   ],
   "command": "antibody judge",
@@ -267,7 +267,7 @@
   {
    "n": 1,
    "kind": "submission",
-   "claim": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is verified in the enclave, attested on NEAR and paid in seconds under the cap",
+   "claim": "An agent's sealed proof (our scripted fixture agent A), submitted over MCP, is run in the enclave, attested on NEAR and paid in seconds under the cap",
    "check": "`antibody status --commit 13`",
    "expected": "`Violation`, tier `T1`, `Done:Paid`, paid 0.1 wNEAR",
    "evidence": "commit [CynCsx8P…](https://testnet.nearblocks.io/txns/CynCsx8PNsFAYnYp6Zk5HjpSg3fWUrHSKfJ9CD9HQ3nP), reveal [8yEJyYXg…](https://testnet.nearblocks.io/txns/8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY), pay [4W4CYBQu…](https://testnet.nearblocks.io/txns/4W4CYBQucfJL8bawGXJZL4ufAKR2A2Se45hBvT7YmtfZ)",

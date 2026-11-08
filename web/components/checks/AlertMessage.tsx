@@ -18,7 +18,9 @@ function unixOf(iso: string): number | null {
  * through it, so the same alert reads the same on each.
  */
 export function AlertMessage({ text }: { text: string }) {
-  const plural = plainLevels(text).replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
+  // "unix 1794256278" (a contract's own clock in a message) reads as a time too.
+  const timed = text.replace(/unix (\d{9,11})/g, (_, n: string) => new Date(Number(n) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"));
+  const plural = plainLevels(timed).replace(/\b(\d+)([^()\d]*?)\(s\)/g, (_, n: string, words: string) => `${n}${words}${n === "1" ? "" : "s"}`);
   return (
     <>
       {plural.split(ISO_TIME).map((part, i) =>

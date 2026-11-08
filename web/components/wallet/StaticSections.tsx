@@ -158,7 +158,7 @@ export function ReadProofs() {
         <div className="stack">
           <Command label="Derive the project key, once">{"antibody --account <project>.testnet keygen x25519 --nep413 --out project-key.json"}</Command>
           <Command label="Read a paid finding">
-            {`antibody --account <project>.testnet program read --commit <id> --project-key project-key.json --out ./finding --api ${config.apiBase}`}
+            {`antibody --account <project>.testnet program read --commit <id> --project-key project-key.json --out ./finding --api ${config.apiShown}`}
           </Command>
           <p className="small muted">
             <span className="mono">program read</span> asks for the finding&apos;s release wrap the first time (the requester pays), unwraps the content key

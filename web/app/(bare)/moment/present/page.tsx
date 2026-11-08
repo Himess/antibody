@@ -3,7 +3,7 @@ import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { Wordmark } from "@/components/ui/Logo";
 import { utc, wnear } from "@/lib/format";
-import { chainsWord, committer, getMoments, pausesOf, possessive, recordedMoment } from "@/lib/moment";
+import { chainsWord, committer, getMoments, pausesOf, Possessive, recordedMoment } from "@/lib/moment";
 import styles from "./present.module.css";
 
 export const metadata: Metadata = {
@@ -22,7 +22,7 @@ export default async function Present({ searchParams }: { searchParams: Promise<
   // The recorded run unless one is picked (?run=): the newest drill is the API's `latest`, not the stage's.
   const m = data.moments.find((x) => x.id === sp.run) ?? recordedMoment(data);
   const paused = pausesOf(m);
-  const who = possessive(committer(m).name);
+  const who = Possessive(committer(m).name);
   return (
     <div className={styles.stage} data-theme-lock="dark">
       <div className={styles.frame}>
@@ -35,7 +35,7 @@ export default async function Present({ searchParams }: { searchParams: Promise<
         <div className={styles.title}>
           <p className={styles.kicker}>The one moment · recorded on NEAR testnet · {utc(m.commit.block_ts_ns, "ns")}</p>
           <h1>
-            {who} sealed proof of a Critical: verified, paid {wnear(m.paid_raw)}, and the protocol paused on {chainsWord(paused.length)}.
+            {who} sealed proof of a critical bug: verified, paid {wnear(m.paid_raw)}, and the protocol paused on {chainsWord(paused.length)}.
           </h1>
         </div>
         <OneMoment moment={m} variant="present" initialSpeed={sp.speed === "1" ? 1 : 10} />

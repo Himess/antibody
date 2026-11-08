@@ -105,7 +105,7 @@ function lede(x: {
   const c = x.commit !== null ? `commit ${x.commit}'s` : "a";
   switch (x.mode) {
     case "verify":
-      if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, verified in the enclave before the program opened: ${verdict}.`;
+      if (x.knownIssue) return `The project's sealed declaration of a known issue for program ${x.program ?? "—"}, checked in the enclave before the program opened: ${verdict}.`;
       return `The enclave's verification of ${c} sealed proof: ${verdict}.`;
     case "second":
       return `A second run of ${c} proof: ${verdict}.`;

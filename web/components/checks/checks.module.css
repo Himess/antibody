@@ -337,11 +337,11 @@
   min-width: 0;
 }
 
-/* The claim on two lines at most on a phone, one on a wide screen; its card has the whole text. */
+/* The claim on three lines at most on a phone, two on a wide screen; its card has the whole text. */
 .indexTitle {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   overflow: hidden;
   font-size: var(--fs-sm);
   font-weight: 560;
@@ -377,7 +377,7 @@
     gap: 6px 12px;
   }
   .indexTitle {
-    -webkit-line-clamp: 1;
+    -webkit-line-clamp: 2;
   }
   .indexAct {
     grid-column: auto;

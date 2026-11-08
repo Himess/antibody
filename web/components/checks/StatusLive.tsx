@@ -31,6 +31,24 @@ const has = (o: Obj, k: string) => Object.prototype.hasOwnProperty.call(o, k);
 const nearAmt = (v: number | null, digits = 3) => (v === null ? "—" : `${v.toLocaleString("en-US", { maximumFractionDigits: digits })} NEAR`);
 
 /** "42 s ago", "6 min ago", "2.5 h ago". */
+/** A run the relayer could not confirm, in words: why it waits, and when it tries again. */
+function failingLine(f: Obj): string {
+  const run = num(f.run);
+  const next = num(f.next_at);
+  return [
+    `run ${run ?? "?"}`,
+    str(f.waiting) ? `: ${str(f.waiting)}` : "",
+    next ? `; the relayer tries again at ${new Date(next * 1000).toISOString().replace(/\.\d{3}Z$/, "Z")}` : "",
+    f.given_up === true ? "; given up" : "",
+  ].join("");
+}
+
+/** One signer's NEAR over the drill, rounded: what it spent, or what it received (a payout) when negative. */
+function nearDelta(role: string, n: number): string {
+  const amount = Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 3, minimumFractionDigits: 3 });
+  return `${role} ${n < 0 ? "received" : "spent"} ${amount} NEAR`;
+}
+
 function ago(s: number): string {
   if (s < 90) return `${Math.round(s)} s ago`;
   if (s < 5400) return `${Math.round(s / 60)} min ago`;
@@ -395,7 +413,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                               </span>
                               <span className="row" style={{ ["--gap" as string]: "6px" }}>
                                 {w.expired === true ? (
-                                  <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
+                                  <Pill tone={collateral === "outlayer" ? "bad" : "warn"} size="sm">
                                     expired
                                   </Pill>
                                 ) : w.expired === false ? (
@@ -427,7 +445,7 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                       {untilUnix !== null ? <Time t={untilUnix} /> : <span className="muted">—</span>}
                       {expired === true ? (
                         <span className="small">
-                          <Pill tone={collateral === "outlayer" ? "bad" : "info"} size="sm">
+                          <Pill tone={collateral === "outlayer" ? "bad" : "warn"} size="sm">
                             expired
                           </Pill>{" "}
                           {collateral === "outlayer" ? "and the relayer uses only those copies" : "attestation relays use fresh Intel PCS collateral"}
@@ -448,7 +466,9 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                         {failing.map((f, i) => (
                           <li key={i}>
                             <Icon name="alert" size={13} />
-                            <span className="mono xsmall">{typeof f === "number" || typeof f === "string" ? `run ${f}` : JSON.stringify(f)}</span>
+                            <span className="small">
+                              {typeof f === "number" || typeof f === "string" ? `run ${f}` : <AlertMessage text={failingLine(obj(f))} />}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -604,8 +624,8 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                     <dt>Cost (NEAR, this drill)</dt>
                     <dd className="small">
                       {drillNear
-                        .filter((r) => str(r.spent_near) && str(r.spent_near) !== "0.000000000000000000000000")
-                        .map((r) => `${str(r.role)} ${str(r.spent_near)}`)
+                        .filter((r) => Number(str(r.spent_near) ?? "0") !== 0)
+                        .map((r) => nearDelta(str(r.role) ?? "?", Number(str(r.spent_near))))
                         .join(" · ") || "—"}
                     </dd>
                   </div>

@@ -53,9 +53,12 @@ export default async function Home() {
           <span className={styles.accent}>We run them.</span>
         </h1>
         <p className={styles.lede}>
-          Hunters submit a sealed exploit instead of a report. It is verified in the enclave: if it breaks the project&apos;s rules, NEAR pays
-          the bounty automatically, and a critical bug in the project&apos;s pause policy, once attested on NEAR, pauses the protocol on every
-          chain the project registered.
+          Submit exploit code instead of a report. If it breaks the project&apos;s rules, you are paid automatically, and a critical bug pauses
+          the protocol on every chain it runs on.
+        </p>
+        <p className="small muted" style={{ maxWidth: "62ch" }}>
+          The exploit stays sealed until OutLayer&apos;s enclave runs it on the chain state the project committed. NEAR checks the enclave&apos;s
+          attestation before an instant payout, and the MPC network signs the pauses.
         </p>
         <div className="row">
           <Link href="/try" className="btn btn-primary">
@@ -63,6 +66,9 @@ export default async function Home() {
           </Link>
           <Link href="/agents#byo" className="btn">
             Bring your agent
+          </Link>
+          <Link href="/projects" className="btn">
+            For protocols
           </Link>
         </div>
       </section>
@@ -73,14 +79,15 @@ export default async function Home() {
           <OneMoment moment={m} variant="hero" />
           <div className={styles.momentFoot}>
             <p className="small muted">
-              Recorded, not live: seconds from {who} commit block, each pause when the relayer got its chain&apos;s receipt.
+              Recorded on NEAR testnet on {utc(m.commit.block_ts_ns, "ns").slice(0, 10)}: seconds from {who} commit block, each pause when the
+              relayer got its chain&apos;s receipt. The same loop runs again every day as an automated drill.
             </p>
             {drill ? <DrillLine drill={drill} /> : null}
             <div className="row">
               <Link href="/moment" className="btn btn-sm">
                 Every step, checked <Icon name="arrow" size={12} />
               </Link>
-              <Link href="/moment/present" className="btn btn-sm btn-ghost">
+              <Link href="/moment/present" className="btn btn-sm">
                 Presentation mode
               </Link>
             </div>
@@ -114,7 +121,7 @@ export default async function Home() {
             <li>
               <span className={styles.stepNo}>3</span>
               <div>
-                <h3>It is verified in the enclave</h3>
+                <h3>It runs in the enclave</h3>
                 <p>OutLayer&apos;s enclave runs the exploit on the chain state the project committed. Before an instant payout, NEAR checks the enclave&apos;s attestation.</p>
               </div>
             </li>
@@ -204,15 +211,15 @@ export default async function Home() {
         </dl>
         <p className={`xsmall muted ${styles.sources}`}>
           The programs are our own fixtures{paidWho ? `; payouts went to ${paidWho}` : ""}. Raw data:{" "}
-          <a href={`${config.apiBase}/v1/stats`} target="_blank" rel="noreferrer noopener">
+          <a href={`${config.apiShown}/v1/stats`} target="_blank" rel="noreferrer noopener">
             /v1/stats
           </a>
           ,{" "}
-          <a href={`${config.apiBase}/v1/leaderboard`} target="_blank" rel="noreferrer noopener">
+          <a href={`${config.apiShown}/v1/leaderboard`} target="_blank" rel="noreferrer noopener">
             /v1/leaderboard
           </a>
           ,{" "}
-          <a href={`${config.apiBase}/v1/programs`} target="_blank" rel="noreferrer noopener">
+          <a href={`${config.apiShown}/v1/programs`} target="_blank" rel="noreferrer noopener">
             /v1/programs
           </a>
           .
@@ -226,7 +233,7 @@ export default async function Home() {
         </h2>
         <ul className={styles.oneLiners}>
           <li>
-            <strong>Three ways to check a verdict:</strong> verified in the enclave, attested on NEAR, and a zero-knowledge proof on NEAR
+            <strong>Three ways to check a verdict:</strong> the enclave verdict, attested on NEAR, and a zero-knowledge proof on NEAR
             {t2Confirmed ? ` (${t2Confirmed} run${t2Confirmed === 1 ? "" : "s"} so far)` : ""}. <Link href="/trust">How to check each one</Link>
           </li>
           <li>

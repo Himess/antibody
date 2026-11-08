@@ -62,7 +62,14 @@ export function committer(m: Moment): { name: string; over: string | null } {
   return { name: (m.hunter ? fixtureAgentLetter(m.hunter) : undefined) ?? m.hunter ?? "the hunter", over: m.via || null };
 }
 
-export const possessive = (name: string) => `${name}'s`;
+/** "agent A's" for one of our fixture agents (a single letter), else "<name>'s". */
+export const possessive = (name: string) => (/^[A-Z]$/.test(name) ? `agent ${name}'s` : `${name}'s`);
+
+/** The same with a capital, to start a sentence. */
+export const Possessive = (name: string) => {
+  const p = possessive(name);
+  return p.charAt(0).toUpperCase() + p.slice(1);
+};
 
 /** The pauses a moment recorded (its steps on EVM chains), and how to say how many chains that is. */
 export const pausesOf = (m: Moment) => m.steps.filter((s) => s.chain.startsWith("evm:"));

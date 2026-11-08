@@ -116,15 +116,6 @@ function Expectation({ id, initial, r, now }: { id: string; initial: TryInitial;
           )}
         </p>
       )}
-      {r.left === 0 ? (
-        <p className={`callout callout-warn ${styles.expectLine}`}>
-          <Icon name="alert" size={15} />
-          <span>
-            <strong>No practice account is left this hour:</strong> vending resumes at {resetAt(now ?? initial.readAt)}. The <a href="#recorded">recorded tries</a> show the same
-            loop.
-          </span>
-        </p>
-      ) : null}
       {r.closed ? (
         <p className={`callout callout-warn ${styles.expectLine}`}>
           <Icon name="alert" size={15} />
@@ -322,9 +313,20 @@ export function TryApp({ initial }: { initial: TryInitial }) {
                 ) : null}
               </div>
               <div className={styles.actions}>
-                <button type="submit" className="btn btn-primary" aria-describedby={expectId}>
-                  <Icon name="play" size={14} /> Start the try
-                </button>
+                {r.left === 0 ? (
+                  <>
+                    <a href="#recorded" className="btn btn-primary">
+                      <Icon name="play" size={14} /> Watch a recorded try
+                    </a>
+                    <button type="submit" className="btn" disabled aria-describedby={expectId}>
+                      Next accounts at {resetAt(now ?? initial.readAt)}
+                    </button>
+                  </>
+                ) : (
+                  <button type="submit" className="btn btn-primary" aria-describedby={expectId}>
+                    <Icon name="play" size={14} /> Start the try
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"

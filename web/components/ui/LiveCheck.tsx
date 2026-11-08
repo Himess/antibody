@@ -61,7 +61,7 @@ function checkedLine(answer: unknown, e: Expect | undefined, ok: boolean | null)
 }
 
 function describe(c: CheckSpec): string {
-  if (c.kind === "api") return `GET ${config.apiBase}${c.path}`;
+  if (c.kind === "api") return `GET ${config.apiShown}${c.path}`;
   if (c.kind === "near-view") return `view ${c.contract}.${c.method}(${JSON.stringify(c.args ?? {})})`;
   return `${c.method} on chain ${c.chainId}`;
 }

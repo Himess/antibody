@@ -10,7 +10,7 @@ const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument"
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 const description =
-  "Bug bounties that pay on proof. Hunters submit a sealed exploit instead of a report; it is verified in the enclave, NEAR pays the bounty automatically if it breaks the project's rules, and a critical bug in the project's pause policy, once attested on NEAR, pauses the protocol on every chain the project registered.";
+  "Bug bounties that pay on proof. Hunters submit a sealed exploit instead of a report; it runs in the enclave, NEAR pays the bounty automatically if it breaks the project's rules, and a critical bug in the project's pause policy, once attested on NEAR, pauses the protocol on every chain the project registered.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(config.siteUrl),

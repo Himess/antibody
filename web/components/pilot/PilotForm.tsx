@@ -25,7 +25,6 @@ import styles from "./pilot.module.css";
 type Phase = { kind: "editing" } | { kind: "sending" } | { kind: "sent"; id: string | null } | { kind: "failed"; title: string; detail: string; network: boolean };
 
 const ENDPOINT = `${config.apiBase}/v1/interest`;
-const API_HOST = config.apiBase.replace(/^https?:\/\//, "");
 
 /** Where focus goes for a field: its control (for the role, the chosen radio or the first). */
 const targetId = (f: Field, role: Role | "") => (f === "role" ? `pilot-role-${role || ROLES[0].value}` : `pilot-${f}`);
@@ -293,7 +292,7 @@ export function PilotForm({ defaultRole }: { defaultRole?: Role }) {
           )}
         </button>
         <span className={styles.endpoint}>
-          Sent from your browser to <span className="mono">{API_HOST}</span>
+          Sent from your browser straight to the Antibody API (<span className="mono">POST /v1/interest</span>)
         </span>
       </div>
       <p className="visually-hidden" aria-live="polite">

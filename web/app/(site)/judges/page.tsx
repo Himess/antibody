@@ -225,7 +225,7 @@ export default async function JudgesPage() {
             <h3>Try it with no account</h3>
             <p>
               The practice program runs the whole loop on testnet: a practice account is vended, the tutorial proof is sealed, committed and
-              verified in the enclave, and the contract pays it. Your try is live.
+              run in the enclave, and the contract pays it. Your try is live.
             </p>
             <Link href="/try" className="btn btn-sm">
               Try it, no account <Icon name="arrow" size={12} />
@@ -237,7 +237,7 @@ export default async function JudgesPage() {
             </span>
             <h3>Check every claim</h3>
             <p>
-              {claims.length} claims from the run. Run every check with one button, or one at a time: each shows its raw answer, the
+              {claims.length} claims from the run, every one with its check. Run them all with one button, or one at a time: each shows its raw answer, the
               transactions behind the claim and the CLI command.
             </p>
             <a href="#claims" className="btn btn-sm">

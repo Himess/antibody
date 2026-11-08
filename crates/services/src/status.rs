@@ -299,11 +299,8 @@ pub fn compute_with(
             "OutLayer approves {n} worker image(s) near-antibody does not list: a run on one gets no T1 until `sync_images` (the keeper calls it) and the image delay ({} h) have passed",
             images["delay_secs"].as_u64().unwrap_or(0) / 3600));
     }
-    if let Some(from) = images["pending"].as_array().and_then(|p| p.iter().filter_map(|i| i["counts_from"].as_u64()).min()) {
-        alert("warn", "images", "images-pending".into(), format!(
-            "{} recently listed worker image(s) count for existing programs only from {}: a run on one gets no T1 before then",
-            images["pending"].as_array().map(|p| p.len()).unwrap_or(0), rfc3339_of_unix(from)));
-    }
+    // Which open programs it touches is known after the programs are read (below).
+    let pending: Vec<Value> = images["pending"].as_array().cloned().unwrap_or_default();
     if !images.is_null() {
         components.insert("images".into(), images);
     }
@@ -312,6 +309,7 @@ pub fn compute_with(
     let stats = near.view(&dep.antibody, "get_stats", json!({}))?;
     let n = stats["next_program"].as_u64().unwrap_or(0);
     let mut programs = Vec::new();
+    let mut open_created: Vec<(u64, u64)> = Vec::new();
     for id in 0..n {
         let p = near.view(&dep.antibody, "get_program", json!({"program_id": id}))?;
         if p.is_null() {
@@ -323,8 +321,14 @@ pub fn compute_with(
             alert("warn", "escrow", format!("escrow-{id}"), format!("program {id}'s available escrow ({available}) is below its largest payout ({largest}): top it up"));
         }
         programs.push(json!({"program_id": id, "phase": p["phase"], "round": p["round"], "available_raw": p["ledger"]["available"], "largest_payout_raw": largest.to_string()}));
+        if p["phase"] == json!("Open") {
+            open_created.push((id, p["created_at"].as_u64().unwrap_or(0)));
+        }
     }
     components.insert("programs".into(), json!(programs));
+    if let Some((level, message)) = pending_images_alert(&pending, &open_created) {
+        alert(level, "images", "images-pending".into(), message);
+    }
 
     // The operating accounts' floats (`floats.json`, written by `antibody-services all`): the NEAR each
     // keeps liquid for its gas. Below the float: warn; below a quarter of it: critical.
@@ -575,9 +579,45 @@ pub fn unix_of_rfc3339(s: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + hh * 3_600 + mm * 60 + ss).ok()
 }
 
+/// Worker images listed recently, said for the open programs they touch: a program holds the images listed
+/// before it was created at once, and each later one only once the image delay has passed. A warning when an
+/// open program waits for one (its runs get no T1, so its payouts wait the challenge window), else a note.
+pub fn pending_images_alert(pending: &[Value], open_created: &[(u64, u64)]) -> Option<(&'static str, String)> {
+    let from = pending.iter().filter_map(|i| i["counts_from"].as_u64()).min()?;
+    let to = pending.iter().filter_map(|i| i["counts_from"].as_u64()).max().unwrap_or(from);
+    let waiting: Vec<String> = open_created
+        .iter()
+        .filter(|(_, created)| pending.iter().any(|i| i["listed_at"].as_u64().is_some_and(|l| l > *created)))
+        .map(|(id, _)| id.to_string())
+        .collect();
+    let when = if to > from { format!("from {} to {}", rfc3339_of_unix(from), rfc3339_of_unix(to)) } else { format!("from {}", rfc3339_of_unix(from)) };
+    let n = pending.len();
+    Some(match waiting.as_slice() {
+        [] => ("info", format!("{n} recently listed worker image(s) count {when} for older programs; every open program was created after them and holds them now")),
+        [one] => ("warn", format!("{n} recently listed worker image(s) count for open program {one} only {when}: a run there on one of them gets no T1 before then, so its payout waits the program's challenge window")),
+        many => ("warn", format!(
+            "{n} recently listed worker image(s) count for open programs {} and {} only {when}: a run there on one of them gets no T1 before then, so its payout waits the program's challenge window",
+            many[..many.len() - 1].join(", "), many[many.len() - 1]
+        )),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pending-images alert names the open programs that wait for an image, and is only a note when none does.
+    #[test]
+    fn pending_images_name_the_programs_they_hold_back() {
+        let pending = vec![json!({"listed_at": 100, "counts_from": 200}), json!({"listed_at": 150, "counts_from": 250})];
+        let (level, m) = pending_images_alert(&pending, &[(5, 50), (12, 120), (13, 160)]).unwrap();
+        assert_eq!(level, "warn");
+        assert!(m.contains("open programs 5 and 12 only from"), "{m}");
+        let (level, m) = pending_images_alert(&pending, &[(13, 160)]).unwrap();
+        assert_eq!(level, "info");
+        assert!(m.contains("every open program was created after them"), "{m}");
+        assert!(pending_images_alert(&[], &[(5, 50)]).is_none());
+    }
 
     #[test]
     fn a_failed_t1_relay_is_an_alert_until_the_run_is_t1() {

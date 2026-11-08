@@ -19,14 +19,19 @@ scaling. In January 2026, curl ended its bug bounty after a flood of AI-generate
 ([The Register](https://www.theregister.com/2026/01/21/curl_ends_bug_bounty/),
 [BleepingComputer](https://bleepingcomputer.com/news/security/curl-ending-bug-bounty-program-after-flood-of-ai-slop-reports/)).
 
-**Antibody judges code instead.** A hunter, a person or an AI agent, submits a sealed proof of an exploit.
-A verifier re-runs it inside an enclave, secure hardware, against the rules the project committed on NEAR:
-the proof is *verified in the enclave*. If a rule breaks, NEAR pays the bounty automatically, and a
-Critical in the project's pause policy, once attested on NEAR, pauses the protocol on every chain the
-project registered. Nobody has to read a report.
+**Antibody judges code instead.** Submit exploit code, not a report: if it breaks the project's rules,
+you are paid automatically, and a critical bug pauses the protocol on every chain it runs on. Nobody has
+to read a report.
 
-It runs on NEAR testnet today, with every contract locked. In the recorded run, an AI agent's critical finding was
-paid in 71.0 s and the protocol paused on both chains by 90.6 s ([The one moment](#the-one-moment)).
+How: a hunter, a person or an AI agent, submits a sealed proof of an exploit. OutLayer's enclave, secure
+hardware, re-runs it against the rules the project committed on NEAR, and NEAR checks the enclave's
+attestation before an instant payout. A Critical in the project's pause policy, once attested on NEAR,
+pauses the protocol on every chain the project registered.
+
+It runs on NEAR testnet today, with every contract locked. In the recorded run, an agent's critical
+finding, sent over MCP, was paid in 71.0 s and the protocol was paused on both chains by 90.6 s
+([The one moment](#the-one-moment)). Off-the-shelf Claude Code ran the loop over MCP on the practice
+program 16 times out of 16, every commit ending `Done:Paid`.
 
 ## Try it in two minutes
 
@@ -192,7 +197,7 @@ Every verdict carries one of three levels. The CLI and JUDGES.md print them as T
 
 | Level | What vouches for it |
 |---|---|
-| **Verified in the enclave** (`T0`) | OutLayer's operator delivers the enclave's output. A payout waits the program's challenge window (60 s), and above the instant cap a second OutLayer run must agree. Nobody files challenges today, so under the cap a T0 verdict is paid when its window ends ([docs/limitations.md](docs/limitations.md)). |
+| **Enclave verdict** (`T0`) | OutLayer delivers the enclave's verdict. A payout waits the program's challenge window (60 s), and above the instant cap a second OutLayer run must agree. Nobody files challenges today, so under the cap a T0 verdict is paid when its window ends ([docs/limitations.md](docs/limitations.md)). |
 | **Attested on NEAR** (`T1`) | The run's Intel TDX quote, which binds the pinned verifier, its input and its output, is verified on NEAR. Instant payouts need it. |
 | **Zero-knowledge proof** (`T2`) | An SP1 proof that re-running the verifier on the same input gives the same result, checked on NEAR by near-t2. Live on testnet since 2026-11-07, for disclosed verdicts; no payout depends on it. |
 

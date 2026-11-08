@@ -4,8 +4,8 @@ export const NAV = [
   { href: "/try", label: "Try it" },
   { href: "/judges", label: "For judges" },
   { href: "/trust", label: "Trust" },
-  { href: "/agents", label: "Agents" },
-  { href: "/projects", label: "Projects" },
+  { href: "/agents", label: "Hunters & agents" },
+  { href: "/projects", label: "For protocols" },
 ] as const;
 
 export const FOOTER = [
@@ -31,7 +31,7 @@ export const FOOTER = [
     title: "Build",
     links: [
       { href: "/agents", label: "Hunters and agents" },
-      { href: "/projects", label: "Open a program" },
+      { href: "/projects", label: "For protocols" },
       { href: "/pilot", label: "Pilot and early access" },
     ],
   },
