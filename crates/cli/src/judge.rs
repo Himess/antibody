@@ -88,8 +88,17 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value], t2: &BTreeMap<u64, Value>) -> R
     // The current round's rule strength, as its manifest commits it (docs/rule-strength.md).
     let strength = cmd::program_manifest(ctx, id).ok().and_then(|m| serde_json::from_slice::<Value>(&m).ok()).map(|m| m["rule_strength"].clone()).unwrap_or(Value::Null);
     let drill = meta["name"].as_str().is_some_and(is_drill);
+    // A pull request's bounty window (docs/immune.md): a fork-mode program for its build, labelled by its name.
+    let window = meta["name"].as_str().is_some_and(crate::window::is_window);
+    let kind = if drill {
+        "drill"
+    } else if window {
+        "window"
+    } else {
+        "program"
+    };
     Ok(json!({
-        "program_id": id, "name": meta["name"], "kind": if drill { "drill" } else { "program" }, "drill": drill,
+        "program_id": id, "name": meta["name"], "kind": kind, "drill": drill, "window": window,
         "project": p["project"], "phase": p["phase"], "round": p["round"], "program_key": key,
         "anchor": {"chain_id": meta["chain_id"], "block": meta["anchor_block"], "hash": meta["anchor_hash"], "status": record["anchor"]},
         "terms_sha256": meta["terms_sha256"], "pins": ctx.view("get_pins", json!({"program_id": id}))?,
@@ -190,11 +199,25 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
     out.push(format!("  contract audit ok: {} (every credit, escrow and bond it holds balances)", j["audit_contract"]["ok"]));
     let programs = j["programs"].as_array().cloned().unwrap_or_default();
     let drills = programs.iter().filter(|p| p["drill"] == json!(true)).count();
-    out.push(if drills > 0 { format!("{} programs ({drills} of them automated drills)", programs.len()) } else { format!("{} programs", programs.len()) });
+    let windows = programs.iter().filter(|p| p["window"] == json!(true)).count();
+    let n = programs.len();
+    out.push(match (drills, windows) {
+        (0, 0) => format!("{n} programs"),
+        (d, 0) => format!("{n} programs ({d} of them automated drills)"),
+        (0, w) => format!("{n} programs ({w} of them pull-request windows)"),
+        (d, w) => format!("{n} programs ({d} of them automated drills, {w} pull-request windows)"),
+    });
     for p in &programs {
+        let label = if p["drill"] == json!(true) {
+            ", an automated drill"
+        } else if p["window"] == json!(true) {
+            ", a pull-request window"
+        } else {
+            ""
+        };
         out.push(format!(
             "  program {} ({}{}): phase {}, anchor {}, {} of {} verdicts T1-confirmed, {} with a T2 proof, {} payouts, {} pause and {} release permits, audit ok: {}",
-            p["program_id"], p["name"].as_str().unwrap_or(""), if p["drill"] == json!(true) { ", an automated drill" } else { "" },
+            p["program_id"], p["name"].as_str().unwrap_or(""), label,
             p["phase"].as_str().unwrap_or("?"), p["anchor"]["status"].as_str().unwrap_or("?"),
             p["verdicts"]["t1_confirmed"], p["verdicts"]["runs"], p["verdicts"]["t2_confirmed"], p["payouts"].as_array().map(|x| x.len()).unwrap_or(0),
             p["pauses"], p["releases"], p["audit_ok"]
@@ -241,5 +264,18 @@ mod tests {
         assert!(s.contains("2 programs (1 of them automated drills)"), "{s}");
         assert!(s.contains("program 9 (Acme Lend drill 2026-11-10, an automated drill): phase Exited"), "{s}");
         assert!(s.contains("program 5 (Acme Lend v1 — pre-launch (testnet)): phase Open"), "{s}");
+    }
+
+    #[test]
+    fn windows_are_labelled_by_their_name() {
+        let j = json!({"network": "testnet", "contracts": [], "audit_contract": {"ok": true}, "programs": [
+            {"program_id": 9, "name": "Acme Lend drill 2026-11-10", "drill": true, "window": false, "phase": "Exited", "anchor": {"status": "light-client"}, "verdicts": {}},
+            {"program_id": 12, "name": "PR #12 window (antibody-immune-demo @ 1a2b3c4)", "drill": false, "window": true, "phase": "Open", "anchor": {"status": "light-client"}, "verdicts": {}},
+        ]});
+        let s = summary(&j, 24, "wNEAR");
+        assert!(s.contains("2 programs (1 of them automated drills, 1 pull-request windows)"), "{s}");
+        assert!(s.contains("program 12 (PR #12 window (antibody-immune-demo @ 1a2b3c4), a pull-request window): phase Open"), "{s}");
+        assert!(!is_drill("PR #12 window (antibody-immune-demo @ 1a2b3c4)"));
+        assert!(crate::window::is_window("PR #12 window (antibody-immune-demo @ 1a2b3c4)"));
     }
 }

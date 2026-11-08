@@ -11,6 +11,7 @@ import {
   feedIsTries,
   isStagingRun,
   parseProgramId,
+  parseWindowName,
   programKind,
   RECORDED_RUN,
   runGroup,
@@ -43,6 +44,7 @@ const DESCRIBE: Record<ProgramKind, string> = {
   fixture: "Acme Lend, our deliberately vulnerable fixture on NEAR testnet",
   practice: "The practice program, a tutorial on NEAR testnet",
   fork: "The practice program in fork mode, a tutorial on NEAR testnet",
+  window: "A pull request's bounty window on NEAR testnet",
   program: "A program on NEAR testnet",
 };
 
@@ -53,6 +55,8 @@ const DESCRIBE: Record<ProgramKind, string> = {
 const LEDE: Partial<Record<ProgramKind, string>> = {
   practice: "A tutorial whose bug and proof are public: anyone can run a try on testnet, with no account and no key.",
   fork: "The practice program in fork mode: its vaults exist only inside the verifier, which deploys them from the manifest on the anchor's state.",
+  window:
+    "A pull request's bounty window: a fork-mode program for the pull request's build, whose contracts exist only inside the verifier. Its escrow is wNEAR on testnet, which has no value; proofs committed before its deadline are judged and paid.",
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -119,6 +123,7 @@ export default async function ProgramPage({ params }: Props) {
     ...(guard ? [{ id: "guard", label: "Who acts on it" }] : []),
   ];
   const lede = LEDE[kind];
+  const pr = kind === "window" ? parseWindowName(name) : null;
 
   return (
     <>
@@ -129,6 +134,17 @@ export default async function ProgramPage({ params }: Props) {
           lede || practice ? (
             <>
               {lede ? <p>{lede}</p> : null}
+              {pr ? (
+                <p className="small muted">
+                  The build of pull request #{pr.pr} of {pr.repo}
+                  {pr.head ? (
+                    <>
+                      , at commit <code>{pr.head}</code>
+                    </>
+                  ) : null}
+                  . Its deadline is in the terms below.
+                </p>
+              ) : null}
               {practice ? (
                 <p className={styles.headAction}>
                   <Link href="/try" className="btn btn-primary">

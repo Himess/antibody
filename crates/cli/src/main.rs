@@ -560,6 +560,13 @@ enum Cmd {
     /// build's code, with the verifier, locally, at the program's anchor. View calls only. Exit 0: no re-run proof
     /// breaks a rule; 2: one still breaks a rule; 3: none breaks, but a re-run was inconclusive
     Immune(ImmuneArgs),
+    /// A bounty window per pull request (docs/immune.md, "Bounty windows"): a fork-mode program for the pull
+    /// request's build, with wNEAR on testnet (no value) at stake; proofs committed before its deadline are judged
+    /// and paid
+    Window {
+        #[command(subcommand)]
+        cmd: WindowCmd,
+    },
     /// NEAR credit at near-antibody for storage and verification runs (NEP-145 style)
     StorageDeposit {
         #[arg(long, default_value = "0.5")]
@@ -820,6 +827,97 @@ struct ImmuneArgs {
 }
 
 #[derive(Subcommand)]
+enum WindowCmd {
+    /// Write the window's fork-mode manifest for this build (anchored on the newest Sepolia block NEAR's light
+    /// client holds), then create, activate and open the program as the project (--account, its full-access
+    /// key). --dry-run writes the manifest only: no key, nothing sent
+    Open(WindowOpenArgs),
+    /// A window's deadline, held hours, escrow at stake, valid findings (tier and severity) and verdict: open
+    /// before the deadline, then settling, green or red; with the commit status line. View calls only
+    Status {
+        #[arg(long)]
+        program: u32,
+        /// The site the status links to
+        #[arg(long, default_value = antibody_cli::window::DEFAULT_SITE)]
+        site: String,
+    },
+    /// After the deadline and the exit grace: settle what the exit waits for, exit (the escrow's rest returns to
+    /// the project's credit), close the records and withdraw the project's credit. Safe to run again
+    Close {
+        #[arg(long)]
+        program: u32,
+    },
+    /// The windows on near-antibody, by their names: a project's, a repository's, a pull request's. View calls only
+    List {
+        /// Only this project's windows (the account that opened them)
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        repo: Option<String>,
+        #[arg(long)]
+        pr: Option<u64>,
+    },
+}
+
+/// `antibody window open`'s flags.
+#[derive(clap::Args)]
+struct WindowOpenArgs {
+    /// The window config the repository commits (relative paths in it start at --root)
+    #[arg(long, default_value = antibody_cli::window::DEFAULT_CONFIG)]
+    config: PathBuf,
+    /// Where the config's relative paths start (default: the current directory)
+    #[arg(long)]
+    root: Option<PathBuf>,
+    /// The build's Foundry output directory (default: the config's `artifacts`)
+    #[arg(long)]
+    artifacts: Option<PathBuf>,
+    /// Where the rules contract's artifact is (default: --artifacts): the base branch's build, so a pull request
+    /// cannot change the rules its own window is judged by
+    #[arg(long)]
+    rules_artifacts: Option<PathBuf>,
+    /// The pull request's number
+    #[arg(long)]
+    pr: Option<u64>,
+    /// The repository's name (default: the config's `repository`)
+    #[arg(long)]
+    repo: Option<String>,
+    /// The pull request's head commit: its short form goes into the name, one window per head
+    #[arg(long)]
+    head: Option<String>,
+    /// The program's name (default: "PR #<pr> window (<repo> @ <head>)")
+    #[arg(long)]
+    name: Option<String>,
+    /// The window's length in hours (default: the config's `hours`, else 24)
+    #[arg(long)]
+    hours: Option<f64>,
+    /// The escrow in wNEAR (default: the config's `escrow`, else 0.03)
+    #[arg(long)]
+    escrow: Option<String>,
+    /// The project the manifest names (default: --account); with --dry-run and no account, a placeholder
+    #[arg(long)]
+    project: Option<String>,
+    /// Where the manifest is written
+    #[arg(long, default_value = "window-manifest.json")]
+    out: PathBuf,
+    /// Write the manifest only: nothing is signed or sent
+    #[arg(long)]
+    dry_run: bool,
+    /// Windows the project may open in 24 hours (default: the config's `daily_cap`, else 4)
+    #[arg(long)]
+    daily_cap: Option<u32>,
+    /// Refuse an escrow above this many wNEAR
+    #[arg(long)]
+    max_escrow: Option<String>,
+    /// The site the status and the announcement link to
+    #[arg(long, default_value = antibody_cli::window::DEFAULT_SITE)]
+    site: String,
+    /// Never relay the activation's TDX quote here (by default the project relays it when no relayer has
+    /// within 45 s: about 0.018 NEAR)
+    #[arg(long)]
+    no_relay: bool,
+}
+
+#[derive(Subcommand)]
 enum InvariantsCmd {
     /// Deterministic draft from standard shapes, plus templates; with --ai, Claude extends it
     /// (needs ANTHROPIC_API_KEY)
@@ -1031,6 +1129,39 @@ fn run(cli: Cli) -> Result<Value> {
         Cmd::Pull { program, ref out } => cmd::pull(&mk()?, program, &out.clone().unwrap_or_else(|| PathBuf::from(format!("antibody-program-{program}")))),
         Cmd::Check { program, ref manifest, ref bundle, salt } => cmd::check(&mk()?, program, manifest.as_deref(), bundle, salt),
         Cmd::Immune(_) => Err(eyre::eyre!("`antibody immune` sets its own exit code: it runs from main")),
+        Cmd::Window { ref cmd } => {
+            let c = mk()?;
+            match cmd {
+                WindowCmd::Open(a) => {
+                    let opts = antibody_cli::window::OpenOpts {
+                        config: a.config.clone(),
+                        root: a.root.clone().unwrap_or_else(|| PathBuf::from(".")),
+                        artifacts: a.artifacts.clone(),
+                        rules_artifacts: a.rules_artifacts.clone(),
+                        pr: a.pr,
+                        repo: a.repo.clone(),
+                        head: a.head.clone(),
+                        name: a.name.clone(),
+                        hours: a.hours,
+                        escrow: a.escrow.clone(),
+                        project: a.project.clone(),
+                        out: a.out.clone(),
+                        dry_run: a.dry_run,
+                        daily_cap: a.daily_cap,
+                        max_escrow: a.max_escrow.clone(),
+                        site: a.site.clone(),
+                        relay: !a.no_relay,
+                    };
+                    antibody_cli::window::open(&c, &opts)
+                }
+                WindowCmd::Status { program, site } => antibody_cli::window::status(&c, *program, site),
+                WindowCmd::Close { program } => antibody_cli::window::close(&c, *program),
+                WindowCmd::List { project, repo, pr } => {
+                    let rows = antibody_cli::window::list(&c, project.as_deref(), repo.as_deref(), *pr)?;
+                    Ok(json!({"windows": rows}))
+                }
+            }
+        }
         Cmd::FromForge { ref project, ref contract, ref test, ref fork_url, fork_block, ref endowment_floor, ref forge, ref out } => {
             let fork = match (fork_url, fork_block) {
                 (Some(u), Some(b)) => Some((u.as_str(), b)),
@@ -1411,5 +1542,12 @@ mod tests {
         let args = ["antibody", "immune", "--content-key", "13=k.hex", "--content-key", "14=k2.hex", "--json", "r.json", "--md", "r.md", "--strict"];
         let Cmd::Immune(ImmuneArgs { config, content_keys, strict, .. }) = Cli::try_parse_from(args).unwrap().cmd else { panic!("immune") };
         assert_eq!((config, content_keys.len(), strict), (PathBuf::from(".antibody/immune.toml"), 2, true));
+        let args = ["antibody", "window", "open", "--pr", "12", "--repo", "antibody-immune-demo", "--head", "1a2b3c4d", "--rules-artifacts", "base-out", "--dry-run"];
+        let Cmd::Window { cmd: WindowCmd::Open(a) } = Cli::try_parse_from(args).unwrap().cmd else { panic!("window open") };
+        assert_eq!((a.config, a.pr, a.dry_run, a.no_relay, a.out), (PathBuf::from(".antibody/window.toml"), Some(12), true, false, PathBuf::from("window-manifest.json")));
+        Cli::try_parse_from(["antibody", "window", "status", "--program", "15"]).unwrap();
+        Cli::try_parse_from(["antibody", "--account", "bot.testnet", "window", "close", "--program", "15"]).unwrap();
+        Cli::try_parse_from(["antibody", "window", "list", "--repo", "antibody-immune-demo", "--project", "bot.testnet"]).unwrap();
+        assert!(Cli::try_parse_from(["antibody", "window", "status"]).is_err(), "--program is required");
     }
 }

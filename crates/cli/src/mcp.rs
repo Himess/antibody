@@ -32,7 +32,7 @@ fn tools() -> Value {
     let int = |d: &str| json!({"type": "integer", "minimum": 0, "description": d});
     let s = |d: &str| json!({"type": "string", "description": d});
     json!([
-        {"name": "list_programs", "description": "List bounty programs on near-antibody (escrow, anchor, phase, round) and global stats.",
+        {"name": "list_programs", "description": "List bounty programs on near-antibody (escrow, anchor, phase, round) and global stats. `window: true` marks a pull request's bounty window: a fork-mode program for its build, with wNEAR on testnet (no value) at stake; proofs committed before its deadline are judged and paid.",
          "inputSchema": {"type": "object", "properties": {"from": int("first program id"), "limit": int("max programs")}}},
         {"name": "get_program", "description": "One program: its parameters (payouts, bond, windows, budgets), anchor status, record, audit, and every commit with its verdict.",
          "inputSchema": {"type": "object", "properties": {"program_id": int("program id")}, "required": ["program_id"]}},

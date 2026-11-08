@@ -7,10 +7,14 @@ const KIND_LOOK: Record<ProgramKind, { tone: Tone; icon: IconName | null }> = {
   fixture: { tone: "warn", icon: "alert" },
   practice: { tone: "info", icon: "play" },
   fork: { tone: "info", icon: "layers" },
+  window: { tone: "info", icon: "clock" },
   program: { tone: "neutral", icon: null },
 };
 
-/** What a program is: our deliberately vulnerable fixture, a practice tutorial, or practice in fork mode. */
+/**
+ * What a program is: our deliberately vulnerable fixture, a practice tutorial, practice in fork mode, or a pull
+ * request's bounty window.
+ */
 export function ProgramKindBadge({ kind, long = false, size }: { kind: ProgramKind; long?: boolean; size?: "sm" | "md" }) {
   const t = KIND_TEXT[kind];
   const look = KIND_LOOK[kind];

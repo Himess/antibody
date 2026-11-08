@@ -10,7 +10,7 @@ import { chainName, explorers, sourceUrl } from "@/lib/config";
 import { wnear } from "@/lib/format";
 import { Cell } from "./Cell";
 import { getJudge } from "./data";
-import { isZero, ruleSource, type ProgramKind, type SlotView } from "./helpers";
+import { isForkMode, isZero, ruleSource, type ProgramKind, type SlotView } from "./helpers";
 import styles from "./programs.module.css";
 
 interface Strength {
@@ -65,7 +65,7 @@ function Targets({ d, kind }: { d: ProgramDetail; kind: ProgramKind }) {
   const targets = Array.isArray(d.meta?.targets) ? d.meta.targets : [];
   if (!targets.length) return null;
   const chainId = d.meta?.chain_id ?? d.rules?.anchor?.chain_id;
-  const forkOnly = kind === "fork";
+  const forkOnly = isForkMode(kind);
   return (
     <details className={styles.details}>
       <summary>

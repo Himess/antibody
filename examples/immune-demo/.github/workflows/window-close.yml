@@ -1,0 +1,127 @@
+name: bounty window close
+
+# After a bounty window's deadline (window.yml opens them): reads each of this repository's windows on near-antibody,
+# sets the pull request head's final commit status, and closes the window once the windows allow (the exit is
+# permissionless; the escrow's rest returns to the bot's credit, then to its wallet). Green: "Held <N> h, <X> wNEAR
+# at stake, 0 valid findings". Red: "<k> valid findings (<tiers>), merge blocked". A window is a fork-mode program for
+# the pull request's build; its escrow is wNEAR on testnet, which has no value; proofs committed before its deadline
+# are judged and paid.
+#
+# Setup (docs/immune.md): the variable ANTIBODY_WINDOW_ACCOUNT, and in the environment `bounty-window-close` (its
+# deployment branches: the default branch only, so no pull request's workflow reaches it) the secret
+# ANTIBODY_WINDOW_KEY. A required reviewer here would hold every scheduled run.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bounty-window-close
+  cancel-in-progress: false
+
+env:
+  ANTIBODY_VERSION: v0.6.0
+  ANTIBODY_REPOSITORY: Himess/antibody
+
+jobs:
+  close:
+    name: final statuses and exits
+    runs-on: ubuntu-latest
+    environment: bounty-window-close
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: antibody ${{ env.ANTIBODY_VERSION }} (checksum-verified release binary)
+        id: bin
+        run: |
+          set -euo pipefail
+          sha256_of() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi < "$1" | cut -d' ' -f1; }
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64) target=x86_64-unknown-linux-gnu ;;
+            macOS-ARM64) target=aarch64-apple-darwin ;;
+            *) echo "::error::no prebuilt antibody binary for ${RUNNER_OS} ${RUNNER_ARCH}"; exit 1 ;;
+          esac
+          dir="${RUNNER_TEMP}/antibody-${ANTIBODY_VERSION}"
+          mkdir -p "$dir"
+          base="https://github.com/${ANTIBODY_REPOSITORY}/releases/download/${ANTIBODY_VERSION}"
+          curl -fsSL --retry 3 -o "$dir/antibody" "$base/antibody-${target}"
+          curl -fsSL --retry 3 -o "$dir/antibody.sha256" "$base/antibody-${target}.sha256"
+          want=$(awk -v f="antibody-${target}" '$2 == f || $2 == "*" f {print $1}' "$dir/antibody.sha256")
+          got=$(sha256_of "$dir/antibody")
+          if [ -z "$want" ] || [ "$want" != "$got" ]; then
+            echo "::error::antibody-${target} does not match the release's sha256 (want '${want}', got ${got})"
+            exit 1
+          fi
+          chmod +x "$dir/antibody"
+          echo "path=$dir/antibody" >> "$GITHUB_OUTPUT"
+
+      - name: each window of this repository
+        env:
+          ANTIBODY: ${{ steps.bin.outputs.path }}
+          ACCOUNT: ${{ vars.ANTIBODY_WINDOW_ACCOUNT }}
+          WINDOW_KEY: ${{ secrets.ANTIBODY_WINDOW_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.event.repository.name }}
+          SITE: ${{ vars.ANTIBODY_SITE || 'https://antibody-three.vercel.app' }}
+        run: |
+          set -uo pipefail
+          if [ -z "$ACCOUNT" ] || [ -z "$WINDOW_KEY" ]; then
+            echo "::error title=Bounty window::set the variable ANTIBODY_WINDOW_ACCOUNT and the environment secret ANTIBODY_WINDOW_KEY"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/window-key.json"
+          (umask 077 && printf '%s' "$WINDOW_KEY" > "$key")
+          trap 'rm -f "$key"' EXIT
+          # Only the bot's own windows count: anyone can name a program like a window, nobody else can sign as the bot.
+          "$ANTIBODY" window list --project "$ACCOUNT" --repo "$REPO" > windows.json || { echo "::error::window list failed"; exit 1; }
+          echo "### Bounty windows of $REPO" >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          # The windows of the last two weeks: a window someone else exited still gets its final status.
+          for id in $(jq -r '.windows[] | select(.phase != "Rejected" and .deadline > (now - 1209600)) | .program' windows.json); do
+            st=$("$ANTIBODY" window status --program "$id" --site "$SITE") || { echo "::warning::window status $id failed"; failed=1; continue; }
+            verdict=$(jq -r .verdict <<< "$st")
+            if [ "$verdict" = open ] || [ "$verdict" = opening ]; then
+              echo "- program $id: $(jq -r .status.description <<< "$st")" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            # Ended: once the deadline and the exit grace have passed, settle, exit and withdraw; an exited window only
+            # has its records closed and the bot's credit withdrawn, if any is left (safe to repeat).
+            if [ "$(jq -r .exit.allowed <<< "$st")" = true ] || [ "$(jq -r .phase <<< "$st")" = Exited ]; then
+              if "$ANTIBODY" --account "$ACCOUNT" --key-file "$key" window close --program "$id" > "close-$id.json"; then
+                jq -c '{program, exit, withdraw}' "close-$id.json"
+                st=$("$ANTIBODY" window status --program "$id" --site "$SITE") || { failed=1; continue; }
+              else
+                echo "::warning::window close $id failed; the next run tries again"
+                failed=1
+              fi
+            fi
+            head=$(jq -r '.head // empty' <<< "$st")
+            if [ -z "$head" ]; then
+              echo "::warning::program $id names no head commit: no status set"
+              continue
+            fi
+            # The name carries the head's short hash; the commit status needs the full one.
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head" --jq .sha) || { echo "::warning::no commit $head in this repository"; continue; }
+            state=$(jq -r .status.state <<< "$st")
+            context=$(jq -r .status.context <<< "$st")
+            description=$(jq -r .status.description <<< "$st")
+            # Posted only when it changed: a commit keeps at most 1000 statuses per context.
+            now_is=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/status" | jq -r --arg c "$context" '.statuses[] | select(.context == $c) | .state + " " + .description')
+            if [ "$now_is" != "$state $description" ]; then
+              gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+                -f state="$state" -f context="$context" -f description="$description" \
+                -f target_url="$(jq -r .status.target_url <<< "$st")" > /dev/null || { echo "::warning::status for $head not set"; failed=1; }
+            fi
+            {
+              echo "- program $id (PR #$(jq -r .pull_request <<< "$st"), $head): **$verdict**, $(jq -r .status.description <<< "$st") ($(jq -r .status.target_url <<< "$st"))"
+              jq -r --arg site "$SITE" '.valid_findings[] | "  - commit \(.commit): \(.severity), \(.tier), \(.state): \($site)/commits/\(.commit)"' <<< "$st"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "A window is a fork-mode program for the pull request's build; its escrow is wNEAR on testnet, which has no value; proofs committed before its deadline are judged and paid." >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"

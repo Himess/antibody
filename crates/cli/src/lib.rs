@@ -16,4 +16,5 @@ pub mod pr_check;
 pub mod practice;
 pub mod strength;
 pub mod tee;
+pub mod window;
 pub mod zk;

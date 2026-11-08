@@ -1,0 +1,55 @@
+# A window config for the fixture in src/Window.sol (crates/cli/src/window.rs tests). A repository commits its own
+# as .antibody/window.toml; the format is in docs/immune.md, "Bounty windows".
+artifacts = "artifacts"
+repository = "window-fixture"
+description = "The window fixture (DELIBERATELY VULNERABLE TEST FIXTURE)."
+hours = 2
+escrow = "0.01"
+daily_cap = 3
+
+# The deployment, in order, from the fixed deployer: "deployer" names that address, and a contract's name its address.
+[[tx]]
+name = "coin"
+contract = "Coin"
+args = ["Window Coin", "deployer"]
+
+[[tx]]
+name = "vault"
+contract = "Vault"
+args = ["coin", "deployer"]
+
+[[tx]]
+name = "note"
+contract = "Note"
+args = ["0x1234"]
+target = false
+
+[[tx]]
+call = "coin"
+function = "mint(address, uint256)"
+args = ["vault", "1000000000000000000000"]
+
+[rules]
+contract = "VaultRules"
+args = ["vault", "coin"]
+
+[[slot]]
+bit = 0
+name = "vault_keeps_its_coins"
+severity = "high"
+
+[payouts]
+high = "0.005"
+medium = "0.002"
+
+[impact]
+protocol_accounts = ["vault"]
+
+[[impact.token]]
+symbol = "WC"
+contract = "coin"
+decimals = 18
+usd = "1"
+
+[windows]
+challenge = 120

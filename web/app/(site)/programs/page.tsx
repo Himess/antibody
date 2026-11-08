@@ -8,7 +8,7 @@ import { DirectorySkeleton, ProgramsDirectory } from "@/components/programs/Prog
 export const metadata: Metadata = {
   title: "Programs",
   description:
-    "Every program on near-antibody, NEAR testnet: its kind, phase, round, anchor check, escrow coverage, largest payout, commits and payouts. Acme Lend is our deliberately vulnerable fixture; the practice programs are tutorials.",
+    "Every program on near-antibody, NEAR testnet: its kind, phase, round, anchor check, escrow coverage, largest payout, commits and payouts. Acme Lend is our deliberately vulnerable fixture; the practice programs are tutorials; a pull-request window is a fork-mode program for a pull request's build.",
 };
 
 export default function ProgramsPage() {
@@ -22,7 +22,8 @@ export default function ProgramsPage() {
           <>
             A program is a project&apos;s rules as code, an escrow on NEAR and an anchor block. A proof that breaks a rule at the
             anchor is paid by its terms. Everything here is on testnet: Acme Lend is our deliberately vulnerable fixture, the
-            practice programs are tutorials, and wNEAR on testnet has no value.
+            practice programs are tutorials, a pull-request window is a fork-mode program for a pull request&apos;s build whose
+            proofs committed before its deadline are judged and paid, and wNEAR on testnet has no value.
           </>
         }
       >

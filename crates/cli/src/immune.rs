@@ -221,10 +221,16 @@ fn bits_of(t: &str, prefix: &str) -> Result<usize, String> {
 
 /// One static ABI parameter as a 32-byte word.
 fn encode_word(t: &str, v: &toml::Value, m: &Manifest) -> Result<[u8; 32], String> {
+    encode_word_with(t, v, &|s| address_of(s, m))
+}
+
+/// One static ABI parameter as a 32-byte word; `address` turns an address argument given by name into its address
+/// (a target's, here; a deployed contract's, in a bounty window's deployment).
+pub fn encode_word_with(t: &str, v: &toml::Value, address: &dyn Fn(&str) -> Result<Address, String>) -> Result<[u8; 32], String> {
     let s = v.as_str();
     match t {
         "address" => {
-            let a = address_of(s.ok_or("an address is a string: 0x… or a target's name")?, m)?;
+            let a = address(s.ok_or("an address is a string: 0x…, or a name")?)?;
             Ok(a.into_word().0)
         }
         "bool" => match (v.as_bool(), s) {

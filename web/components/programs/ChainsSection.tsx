@@ -213,7 +213,9 @@ async function ChainsBody({ d, id, kind, moment }: { d: ProgramDetail; id: numbe
       <Empty>
         {kind === "practice" || kind === "fork"
           ? "No chains: a practice program pauses nothing and ships no fix. Its proofs are verified and paid; no permit is ever asked for."
-          : "No chain registered: this program asks for no pause or release permit."}
+          : kind === "window"
+            ? "No chains: a pull request's window is a fork-mode program, so it pauses nothing and ships no fix. Its proofs are verified and paid; no permit is ever asked for."
+            : "No chain registered: this program asks for no pause or release permit."}
       </Empty>
     );
   const names = targetNames(d);
