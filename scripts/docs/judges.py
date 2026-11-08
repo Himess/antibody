@@ -7,7 +7,7 @@ with each claim's evidence links and the checks a browser can run on it.
     python3 scripts/docs/judges.py target/demo/results.json [--out .] [--source <path shown in the header>]
         [--site <the site's origin>] [--json <path; default <out>/web/data/judges.json>]
 
-The site's origin comes from --site, else $ANTIBODY_SITE, else https://antibody-three.vercel.app.
+The site's origin comes from --site, else $ANTIBODY_SITE, else https://antibody-near.vercel.app.
 """
 import argparse
 import datetime
@@ -23,7 +23,7 @@ REC = "python3 scripts/docs/recorded.py"
 ROUNDS_SUMMARY = "'rounds.*.summary'"
 B_REVERTS = "'release.checks.*.b_exploit_reverts'"
 # The site that shows the same claims, each with a check the browser runs.
-SITE = "https://antibody-three.vercel.app"
+SITE = "https://antibody-near.vercel.app"
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # EIP-1967's implementation slot: where a proxy keeps the address of its code.
 EIP1967_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
