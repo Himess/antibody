@@ -101,6 +101,33 @@ enum RoundCmd {
         #[arg(long)]
         program: u32,
     },
+    /// The program's proposal slot (view calls only): free, or taken by a proposal that is checking,
+    /// accepted (only opening it clears it) or stale, with when its re-run window ends and the round may open
+    State {
+        #[arg(long)]
+        program: u32,
+    },
+    /// Per paid key, what the proposed round's re-runs inside the enclave make of it: still breaks, fixed,
+    /// or no verdict yet (view calls only). `verdict` is red, green or inconclusive
+    Results {
+        #[arg(long)]
+        program: u32,
+        /// A round other than the proposal's (default: the proposal's, or the round just opened)
+        #[arg(long)]
+        round: Option<u64>,
+        /// Wait up to this many seconds for every paid key's re-run to settle, the proposal to go, or its
+        /// re-run window to end
+        #[arg(long, default_value_t = 0)]
+        wait: u64,
+        /// The site's origin, for a link to each re-run's page
+        #[arg(long)]
+        site: Option<String>,
+        #[arg(long)]
+        json: Option<PathBuf>,
+        /// A Markdown summary (a job summary)
+        #[arg(long)]
+        md: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1038,6 +1065,22 @@ fn run(cli: Cli) -> Result<Value> {
             let (bytes, meta) = cmd::build_round_base(&c, &cmd::program_manifest_at(&c, program, 0)?, &std::fs::read(manifest)?, &key)?;
             std::fs::write(out, &bytes)?;
             Ok(json!({"out": out, "bytes": bytes.len(), "meta": meta}))
+        }
+        Cmd::Round { cmd: RoundCmd::State { program } } => antibody_cli::pr_check::state(&mk()?, program),
+        Cmd::Round { cmd: RoundCmd::Results { program, round, wait, ref site, ref json, ref md } } => {
+            let ctx = mk()?;
+            let r = if wait > 0 {
+                antibody_cli::pr_check::wait_results(&ctx, program, wait, site.as_deref())?
+            } else {
+                antibody_cli::pr_check::results(&ctx, program, round, site.as_deref())?
+            };
+            if let Some(f) = json {
+                std::fs::write(f, serde_json::to_vec_pretty(&r)?)?;
+            }
+            if let Some(f) = md {
+                std::fs::write(f, antibody_cli::pr_check::markdown(&r))?;
+            }
+            Ok(r)
         }
         Cmd::Round { cmd: RoundCmd::Rerun { commit, ref blob, ref reveal_tx, ref reveal_signer, ref api } } => {
             let from = match (blob, reveal_tx, api) {
