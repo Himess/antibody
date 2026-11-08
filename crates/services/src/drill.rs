@@ -507,12 +507,20 @@ impl Drill {
         let by = Broadcaster::Key(&evm_key);
         let (w, root, forge) = (&self.a.work, &self.a.root, &self.a.forge_bin);
         let (sepolia, base) = (self.sepolia(), self.a.base_rpc.clone());
-        let ad_a = forge_retry(deployer.address, &sepolia, "the adapter on Sepolia", || {
-            demo::deploy_adapter(root, forge, &sepolia, &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))
-        })?;
-        let ad_b = forge_retry(deployer.address, &base, "the adapter on Base Sepolia", || {
-            demo::deploy_adapter(root, forge, &base, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))
-        })?;
+        // A step resumed after its adapters were deployed (it stopped at the registration on 2026-11-08)
+        // keeps them: their CREATE2 addresses are taken, and a second deployment reverts.
+        let ad_a = match deployed_adapter(&sepolia, &w.join("adapter-sepolia.json"), &key, &address) {
+            Some(v) => v,
+            None => forge_retry(deployer.address, &sepolia, "the adapter on Sepolia", || {
+                demo::deploy_adapter(root, forge, &sepolia, &by, &address, &key, &w.join("acme-sepolia.json"), &w.join("adapter-sepolia.json"))
+            })?,
+        };
+        let ad_b = match deployed_adapter(&base, &w.join("adapter-base-sepolia.json"), &key, &address) {
+            Some(v) => v,
+            None => forge_retry(deployer.address, &base, "the adapter on Base Sepolia", || {
+                demo::deploy_adapter(root, forge, &base, &by, &address, &key, &w.join("acme-base-sepolia.json"), &w.join("adapter-base-sepolia.json"))
+            })?,
+        };
         let adapter = ad_a["adapter"].as_str().unwrap_or_default().to_lowercase();
         if ad_b["adapter"].as_str().unwrap_or_default().to_lowercase() != adapter {
             return Err(eyre!("the adapter's address differs between chains"));
@@ -933,6 +941,21 @@ impl Drill {
 /// wei as whole ether, 18 decimals.
 fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
+}
+
+/// An adapter an earlier attempt of the guardian step deployed for this program: forge's file for it
+/// names this program and this MPC address (the work directory serves every drill, so an older file names
+/// another program), and the address holds code on the chain. None otherwise.
+fn deployed_adapter(rpc: &str, file: &Path, program_key: &str, guardian: &str) -> Option<Value> {
+    let v: Value = serde_json::from_slice(&std::fs::read(file).ok()?).ok()?;
+    if v["programKey"].as_str() != Some(program_key) || !v["guardian"].as_str().is_some_and(|g| g.eq_ignore_ascii_case(guardian)) {
+        return None;
+    }
+    let code = Evm::new(rpc).read("eth_getCode", json!([v["adapter"].as_str()?, "latest"])).ok()?;
+    code.as_str().is_some_and(|c| c.len() > 2).then(|| {
+        println!("  the adapter {} on chain {} is already deployed for this program: kept", v["adapter"], v["chainId"]);
+        v
+    })
 }
 
 /// The transaction that applied a program's pause permit on a chain, whoever relayed it: the adapter's
