@@ -20,7 +20,8 @@ const seconds = (s: number | undefined) => (typeof s === "number" && Number.isFi
 export async function RecordedAgentRun() {
   const { data, live } = await getMoments();
   const runs = Array.isArray(data?.moments) ? data.moments : [];
-  const m = runs.find((x) => x.id === data.latest && /mcp/i.test(x.via ?? "")) ?? runs.find((x) => /mcp/i.test(x.via ?? ""));
+  // The recorded run: the API's `latest` is the newest drill, and this card shows what is recorded.
+  const m = runs.find((x) => x.kind === "recorded" && /mcp/i.test(x.via ?? "")) ?? runs.find((x) => /mcp/i.test(x.via ?? ""));
   if (!m) return <Empty>No recorded submission over MCP yet.</Empty>;
   const steps = Array.isArray(m.steps) ? m.steps : [];
   const at = (k: string) => steps.find((s) => s.key === k);

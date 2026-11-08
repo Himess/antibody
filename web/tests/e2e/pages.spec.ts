@@ -67,3 +67,21 @@ test("presentation mode is chromeless", async ({ page }) => {
   await expect(page.getByRole("note", { name: "Testnet notice" })).toHaveCount(0);
   await expect(page.locator("h1")).toContainText(/paused/i);
 });
+
+test("the stage and the recorded cards show the recorded run, not the newest drill (the API's latest)", async ({ page }) => {
+  await page.goto("/moment/present");
+  await expect(page.locator("body")).toContainText("2026-11-04");
+  await page.goto("/moment");
+  await expect(page.locator("#run-title")).toContainText("71.0 s");
+  await page.goto("/projects");
+  await expect(page.getByText("program 5 (Acme Lend, our fixture), commit 13")).toBeVisible();
+  await page.goto("/agents");
+  await expect(page.getByText("program 5 (Acme Lend, our fixture) · commit 13")).toBeVisible();
+});
+
+test("a drill whose reveal came late says so with its times", async ({ page }) => {
+  await page.goto("/moment?run=drill-2026-11-08");
+  await expect(page.getByRole("note").filter({ hasText: "reveal came late" })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "Read the note on its times" })).toBeVisible();
+});

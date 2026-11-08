@@ -3,7 +3,7 @@ import Link from "next/link";
 import { OneMoment } from "@/components/moment/OneMoment";
 import { LogoMark } from "@/components/ui/Logo";
 import { utc, wnear } from "@/lib/format";
-import { chainsWord, committer, getMoments, latestMoment, pausesOf, possessive } from "@/lib/moment";
+import { chainsWord, committer, getMoments, pausesOf, possessive, recordedMoment } from "@/lib/moment";
 import styles from "./present.module.css";
 
 export const metadata: Metadata = {
@@ -19,7 +19,8 @@ export const metadata: Metadata = {
 export default async function Present({ searchParams }: { searchParams: Promise<{ speed?: string; run?: string }> }) {
   const sp = await searchParams;
   const { data } = await getMoments();
-  const m = data.moments.find((x) => x.id === sp.run) ?? latestMoment(data);
+  // The recorded run unless one is picked (?run=): the newest drill is the API's `latest`, not the stage's.
+  const m = data.moments.find((x) => x.id === sp.run) ?? recordedMoment(data);
   const paused = pausesOf(m);
   const who = possessive(committer(m).name);
   return (

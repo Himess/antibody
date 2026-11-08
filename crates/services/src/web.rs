@@ -142,18 +142,17 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
     }
     steps.sort_by(|a, b| a["seconds_exact"].as_f64().unwrap_or(0.0).total_cmp(&b["seconds_exact"].as_f64().unwrap_or(0.0)));
     let stem = file_name.trim_end_matches(".json");
-    let mut notes = vec![
-        json!("The pause is asked for before the payment."),
-        json!("NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."),
-    ];
+    // What is true of this run only, shown with its times (`run_notes`); `notes` adds what holds for every
+    // run, which the page already says in its own words.
+    let mut run_notes = Vec::new();
     // A drill resumed after A's commit (its MCP call cut off by a rate-limited RPC) revealed it later than
     // the MCP server would have: every time from the commit includes that wait, and the page says so.
     if r["mcp"]["resumed"] == json!(true) {
-        notes.insert(
-            0,
-            json!("This run's reveal came late: the MCP call that committed A's proof stopped (a rate-limited NEAR RPC), and the drill revealed the commit when it resumed. Every time from the commit includes that wait."),
-        );
+        run_notes.push(json!("This run's reveal came late: the MCP call that committed A's proof stopped (a rate-limited NEAR RPC), and the drill revealed the commit when it resumed. Every time from the commit includes that wait."));
     }
+    let mut notes = run_notes.clone();
+    notes.push(json!("The pause is asked for before the payment."));
+    notes.push(json!("NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."));
     Some(json!({
         "id": stem,
         "kind": kind,
@@ -175,6 +174,7 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
                    "block_ts_ns": commit_ts, "at_utc": utc(commit_ts)},
         "clock": om["clock"],
         "notes": notes,
+        "run_notes": run_notes,
         "steps": steps,
     }))
 }
@@ -665,6 +665,7 @@ mod tests {
         assert_eq!(m["commit"]["tx"], "CommitTxDrill");
         assert_eq!(ms["latest"], "drill-2026-11-10");
         assert_eq!(m["notes"].as_array().unwrap().len(), 2, "a drill that was not resumed has the two usual notes");
+        assert_eq!(m["run_notes"], json!([]), "and nothing of its own");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -676,6 +677,9 @@ mod tests {
         let notes = m["notes"].as_array().unwrap();
         assert_eq!(notes.len(), 3);
         assert!(notes[0].as_str().unwrap().starts_with("This run's reveal came late"));
+        // The run's own note, which the page shows with the run's times.
+        assert_eq!(m["run_notes"].as_array().map(|n| n.len()), Some(1));
+        assert_eq!(m["run_notes"][0], notes[0]);
     }
 
     #[test]
