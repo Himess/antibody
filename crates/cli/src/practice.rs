@@ -344,8 +344,10 @@ impl<'a> Borsh<'a> {
 pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Value> {
     check_name(name)?;
     let t0 = Instant::now();
-    // The same directory a hunt account of this name and vending contract would have: one name, one key.
-    let dir = crate::hunt::account_dir(ctx, vending, name);
+    // `practice/<name>`, whatever the deployments file names: the T2 step and `zk gather` read a try's record
+    // there. (Over MCP a try uses the deployment's practice vending contract only, where a hunt account of the
+    // same name has this same directory.)
+    let dir = ctx.state_dir.join("practice").join(name);
     let key_file = dir.join("key.json");
     let vended = vend(ctx, vending, name, &key_file)?;
     let account = vended["account"].as_str().unwrap_or_default().to_string();
