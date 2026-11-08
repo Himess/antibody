@@ -142,6 +142,18 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
     }
     steps.sort_by(|a, b| a["seconds_exact"].as_f64().unwrap_or(0.0).total_cmp(&b["seconds_exact"].as_f64().unwrap_or(0.0)));
     let stem = file_name.trim_end_matches(".json");
+    let mut notes = vec![
+        json!("The pause is asked for before the payment."),
+        json!("NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."),
+    ];
+    // A drill resumed after A's commit (its MCP call cut off by a rate-limited RPC) revealed it later than
+    // the MCP server would have: every time from the commit includes that wait, and the page says so.
+    if r["mcp"]["resumed"] == json!(true) {
+        notes.insert(
+            0,
+            json!("This run's reveal came late: the MCP call that committed A's proof stopped (a rate-limited NEAR RPC), and the drill revealed the commit when it resumed. Every time from the commit includes that wait."),
+        );
+    }
     Some(json!({
         "id": stem,
         "kind": kind,
@@ -162,7 +174,7 @@ pub fn moment(file_name: &str, kind: &str, r: &Value, events: &[Value], near_exp
         "commit": {"tx": commit_tx, "explorer": commit_tx.as_deref().map(near_explorer), "block_height": commit_ev.as_ref().map(|e| e["block_height"].clone()),
                    "block_ts_ns": commit_ts, "at_utc": utc(commit_ts)},
         "clock": om["clock"],
-        "notes": ["The pause is asked for before the payment.", "NEAR steps are timed at their blocks, each pause when the relayer got its chain's receipt; seconds from the commit's NEAR block."],
+        "notes": notes,
         "steps": steps,
     }))
 }
@@ -652,7 +664,18 @@ mod tests {
         assert_eq!(s("paused_11155111")["tx"], "0xpauseS");
         assert_eq!(m["commit"]["tx"], "CommitTxDrill");
         assert_eq!(ms["latest"], "drill-2026-11-10");
+        assert_eq!(m["notes"].as_array().unwrap().len(), 2, "a drill that was not resumed has the two usual notes");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_resumed_drill_says_its_reveal_came_late() {
+        let mut r = sample_drill();
+        r["mcp"] = json!({"commit_id": 42, "resumed": true, "revealed_by": "the CLI, after the MCP call stopped"});
+        let m = moment("drill-2026-11-10.json", "drill", &r, &[], &|t| format!("https://testnet.nearblocks.io/txns/{t}")).unwrap();
+        let notes = m["notes"].as_array().unwrap();
+        assert_eq!(notes.len(), 3);
+        assert!(notes[0].as_str().unwrap().starts_with("This run's reveal came late"));
     }
 
     #[test]
