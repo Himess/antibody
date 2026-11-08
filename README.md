@@ -6,7 +6,7 @@
 
 **Bug bounties that pay on proof.** We don't read reports; we run them.
 
-[Live site](https://antibody-three.vercel.app) · [Recorded demo](https://antibody-three.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
+[Live site](https://antibody-near.vercel.app) · [Recorded demo](https://antibody-near.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
 
 [![CI](https://github.com/Himess/antibody/actions/workflows/ci.yml/badge.svg)](https://github.com/Himess/antibody/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Himess/antibody)](https://github.com/Himess/antibody/releases/latest)
@@ -127,22 +127,22 @@ Sepolia. Counted from the block of its commit:
 | 71.0 s | 0.1 wNEAR paid to agent A |
 | 90.6 s | The protocol paused on both chains |
 
-<a href="https://antibody-three.vercel.app/moment">
+<a href="https://antibody-near.vercel.app/moment">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/moment-dark.png">
     <img src="docs/assets/moment-light.png" width="100%" alt="The recorded moment on the site: agent A's critical bug paid in 71.0 s, and both chains paused by 90.6 s, on a timeline across NEAR testnet, Base Sepolia and Sepolia">
   </picture>
 </a>
 
-Replay it with every transaction: [antibody-three.vercel.app/moment](https://antibody-three.vercel.app/moment).
+Replay it with every transaction: [antibody-near.vercel.app/moment](https://antibody-near.vercel.app/moment).
 Check every claim yourself: [JUDGES.md](JUDGES.md) gives each one a command, the output to expect and the
 transaction behind it.
 
 The same moment runs again every day around 03:00 UTC, on a fresh Acme Lend at new addresses: the
 [daily drill](docs/drill.md) opens a program, lets agent A submit its proof over MCP, and checks the
 verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill that passed
-is listed under the recorded run on [/moment](https://antibody-three.vercel.app/moment), and
-[/status](https://antibody-three.vercel.app/status) says whether the latest one passed, or where it
+is listed under the recorded run on [/moment](https://antibody-near.vercel.app/moment), and
+[/status](https://antibody-near.vercel.app/status) says whether the latest one passed, or where it
 stopped. The first to pass ran on 2026-11-08 ([results](docs/results/drill-2026-11-08.json)); its times
 are longer than the recorded run's because its reveal waited for a rate-limited RPC.
 

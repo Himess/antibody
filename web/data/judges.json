@@ -11,7 +11,7 @@
  "intro": [
   "These are the results of a run on NEAR testnet (`antibody-services live`) on the locked deployment, with Acme Lend on Sepolia (11155111: it verifies and pauses) and Base Sepolia (84532: it pauses): real OutLayer TEE workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls and need no account."
  ],
- "site": "https://antibody-three.vercel.app/judges",
+ "site": "https://antibody-near.vercel.app/judges",
  "recorded_cmd": "python3 scripts/docs/recorded.py <path> --file docs/results/testnet-2026-11-04.json",
  "deployment": {
   "near_antibody": "bounty.antibody.testnet",

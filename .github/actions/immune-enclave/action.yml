@@ -50,7 +50,7 @@ inputs:
   site:
     description: The site's origin, for a link to each re-run's page
     required: false
-    default: https://antibody-three.vercel.app
+    default: https://antibody-near.vercel.app
   wait-for-slot:
     description: Seconds to wait for the program's one proposal slot before the check says it queued
     required: false

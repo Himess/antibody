@@ -4,9 +4,9 @@
 
 These are the results of a run on NEAR testnet (`antibody-services live`) on the locked deployment, with Acme Lend on Sepolia (11155111: it verifies and pauses) and Base Sepolia (84532: it pauses): real OutLayer TEE workers, their TDX quotes verified on NEAR (T1), the MPC network's signatures and the Ethereum light client. Acme Lend and the practice program are our own fixtures. The commands below read testnet; most are view calls and need no account.
 
-The same claims, each with a check your browser runs: https://antibody-three.vercel.app/judges
+The same claims, each with a check your browser runs: https://antibody-near.vercel.app/judges
 
-The one moment runs again every day on a fresh Acme Lend, the daily drill (docs/drill.md): each drill that passed is listed on https://antibody-three.vercel.app/moment, and https://antibody-three.vercel.app/status says whether the latest one passed, or where it stopped.
+The one moment runs again every day on a fresh Acme Lend, the daily drill (docs/drill.md): each drill that passed is listed on https://antibody-near.vercel.app/moment, and https://antibody-near.vercel.app/status says whether the latest one passed, or where it stopped.
 
 ## One look
 
