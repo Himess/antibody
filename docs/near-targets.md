@@ -278,9 +278,9 @@ with these deviations, each made to match the reference runtime on real near-sdk
   stops the run with the named reason. Modules importing an **unknown** host function, or a refused one
   with the wrong signature, are still refused outright.
 - **Reference-types parsing is enabled, then its constructs are refused by name (§3).** near-sdk-rs
-  output, linked by recent `wasm-ld`, encodes the `call_indirect` table immediate as an overlong LEB
-  zero. wasmi 2.0.0's parser (wasmparser 0.228) reads that only with reference-types parsing on; the
-  reference runtime's own (older) parser reads it either way and so accepts these modules. The engine
+  output, as the Rust toolchain links it, encodes the `call_indirect` table immediate as an overlong LEB
+  zero. The parser wasmi 2.0.0 uses reads that only with reference-types parsing on; the reference
+  runtime's own (older) parser reads it either way and so accepts these modules. The engine
   turns on reference-types *parsing* and then refuses, by name, every instruction and construct the
   reference-types proposal adds on top of the MVP (`ref.null`, `ref.func`, `table.*`, typed `select`,
   more than one table, non-funcref tables, reference types in signatures), plus bulk-memory and tail-call
@@ -292,3 +292,23 @@ with these deviations, each made to match the reference runtime on real near-sdk
   fuel (one unit per executed operator) and does not reproduce the reference runtime's per-stack-frame
   gas or its trie-node storage fees (which depend on the trie's shape). Gas is never charged to balances
   and is excluded from impact, as §3 and §6 require.
+- **The 10% margin is measured on a call's own gas (§3).** Read literally ("ends within 10% of its
+  prepaid gas"), the margin would flag every call that splits its unused gas by weight (after the split,
+  used gas equals prepaid gas by construction, and near-sdk-rs attaches weight 1 by default) and every
+  call that forwards most of its gas to the receipt it creates. The engine measures the gas a call burnt
+  against the gas it kept for itself (prepaid gas minus what it explicitly attached to outgoing receipts):
+  a call that burns more than 90% of that is `Unevaluable`, as is any call that exhausts its gas. Whether
+  forwarded gas sufficed is left to the doubled-cost run, which changes every such amount.
+- **The doubled-cost run doubles wasm and host function costs only, from the same anchor (§3).** Action
+  fees stay as they are (§3 names wasm and host function costs), and activation (`init`, `setup`) runs
+  once: the second run replays the bundle from the anchor state with the doubled schedule. Compared:
+  every receipt's outcome, returned value and logs, the rules' masks after each call, and the final state
+  (storage, balances, keys, code), gas amounts excluded.
+- **Rules ABI (§6).** `check` returns an `i64` mask, so slot bits are below 64 (the manifest is refused
+  otherwise). The evaluation budget (`invariants.gas_limit` instructions) is one pool that covers the
+  rules module and every view it makes, rather than a separate budget per view. An evaluation that fails
+  after an intermediate call is skipped, as v1 skips one; the final evaluation failing is `Unevaluable`.
+- **The receipt's schema string is `antibody.receipt.v2` (§6).** That is the string v1's program receipts
+  carry (`antibody.receipt.v1` is v1's replay and bundle receipt). The NEAR receipt keeps v1's program
+  receipt fields in order, with NEAR types (account ids, yoctoNEAR), `chain_id` 398 and the added `near`
+  section; the facts are v1's facts structure exactly.

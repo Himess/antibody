@@ -8,7 +8,7 @@
 //!   semantics, with nearcore's signature; it imports no memory, table or global (as nearcore requires);
 //! - a rules module imports functions from `antibody` only (src/rules.rs).
 //!
-//! Rewrites (byte splicing over wasmparser's offsets; no other change to the module):
+//! Rewrites (byte splicing over the parser's operator offsets; no other change to the module):
 //! - **Memory:** as nearcore does, a contract's own memory section is dropped and the module imports
 //!   `env.memory` with 1024 pages initial and 2048 maximum, which v2 provides.
 //! - **Floats:** every float instruction in a function body (any f32/f64 operator, conversion,
@@ -34,10 +34,10 @@ pub const FLOAT_FLAG_EXPORT: &str = "__antibody_v2_float_executed";
 /// The wasm features v2 validates against.
 ///
 /// NEAR protocol 74 enables the MVP plus mutable globals and sign extension, and nothing else (nearcore's
-/// contract preparation, version 2). But near-sdk-rs output, linked by recent wasm-ld, encodes the
-/// `call_indirect` table immediate as an overlong LEB zero rather than a single `0x00` byte, which
-/// wasmparser 0.228 (wasmi's parser) reads only with reference-types parsing on; nearcore's own (older)
-/// wasmparser reads it either way, so it accepts these modules and v2 must too. v2 therefore turns on
+/// contract preparation, version 2). But near-sdk-rs output, as the Rust toolchain links it, encodes the
+/// `call_indirect` table immediate as an overlong LEB zero rather than a single `0x00` byte, which the
+/// parser wasmi 2.0.0 uses reads only with reference-types parsing on; the reference runtime's own
+/// (older) parser reads it either way, so it accepts these modules and v2 must too. v2 therefore turns on
 /// reference-types *parsing* and then refuses, by name, every instruction and construct the reference-types
 /// proposal would add on top of the MVP ([`is_refused_op`], the table and element checks in [`prepare`]),
 /// so the accepted feature surface stays exactly nearcore's.

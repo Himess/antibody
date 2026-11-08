@@ -2,8 +2,9 @@
 """native == wasm for a NEAR program (docs/near-targets.md §8).
 
 Runs a NEAR program witness through the native antibody-verify-v2 and through its wasm32-wasip2 build
-under antibody-run (wasmtime, OutLayer's engine config), both reading the witness on stdin with the same
-environment, and requires their output to be byte-identical (full {receipt,facts} and facts alone).
+under antibody-run (crates/runner: OutLayer's engine configuration), both reading the witness on stdin
+with the same environment, and requires their output to be byte-identical (full {receipt,facts} and
+facts alone).
 
   python scripts/demo/check_v2_near_native_vs_wasm.py <witness.json> <native-exe> <wasm> <antibody-run>
 """
