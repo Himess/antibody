@@ -121,6 +121,11 @@ pub(crate) enum Broadcaster<'a> {
 
 /// Runs `script` (contracts/evm/script) and reads the JSON it writes to `out`. A key never appears in a
 /// command line or in an error.
+/// The tip forge's deployments with a key pay (`--priority-gas-price`, wei): 0.001 gwei (see below).
+pub(crate) const FORGE_TIP_WEI: u128 = 1_000_000;
+/// The gas limit forge gives each deployment, as a percentage of its simulation (`--gas-estimate-multiplier`).
+pub(crate) const FORGE_GAS_MULTIPLIER_PCT: u128 = 900;
+
 fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Broadcaster, env: &[(&str, &str)], out: &Path) -> Result<Value> {
     let mut c = Command::new(forge_bin);
     c.current_dir(root.join("contracts/evm")).args(["script", script, "--rpc-url", rpc, "--broadcast", "--slow"]);
@@ -131,8 +136,10 @@ fn forge_script(root: &Path, forge_bin: &Path, script: &str, rpc: &str, by: &Bro
         // its gas limits are nine times the simulation's (the node charges only the gas used). Its tips are
         // a few wei: forge's default of 1 gwei made one deployment cost 0.024 ETH, so the tip is 0.001 gwei.
         Broadcaster::Key(key) => c
-            .args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier", "900",
-                   "--priority-gas-price", "1000000"])
+            .args(["--compute-units-per-second", "60", "--fork-retries", "8", "--fork-retry-backoff", "3000", "--gas-estimate-multiplier"])
+            .arg(FORGE_GAS_MULTIPLIER_PCT.to_string())
+            .arg("--priority-gas-price")
+            .arg(FORGE_TIP_WEI.to_string())
             .env("DEPLOYER_KEY", key),
     };
     for (k, v) in env {

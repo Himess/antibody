@@ -280,10 +280,8 @@ impl Drill {
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
             let e = Evm::new(&rpc);
             let gas_price = e.gas_price().unwrap_or(2_000_000_000);
-            // What this chain's deploys cost at the node's price (Acme ~7M gas, the adapter ~1M, with
-            // margin), plus an OP Stack chain's L1 fee margin.
             let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
-            let deploy_need = 12_000_000u128 * gas_price * 3 + l1;
+            let deploy_need = deploy_need(chain, gas_price);
             let relay_need = EvmSigner::transfer_reserve(gas_price, l1) + 400_000 * gas_price * 3;
             // The base funds the derived deployer: its own balance must cover the funding the deploy needs
             // (less whatever the derived address already holds from an earlier drill).
@@ -313,8 +311,7 @@ impl Drill {
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
             let e = Evm::new(&rpc);
             let gas_price = e.gas_price().unwrap_or(2_000_000_000);
-            let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
-            let need = 12_000_000u128 * gas_price * 3 + l1;
+            let need = deploy_need(chain, gas_price);
             let have = e.balance(&format!("{:?}", deployer.address))?;
             if have < need {
                 let tx = base.transfer(&e, chain, deployer.address, need - have)?;
@@ -828,6 +825,20 @@ fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
 }
 
+/// Gas forge's simulation counts for a drill's deployments on one chain (Acme ~7M, the adapter ~1M, with
+/// margin).
+const DEPLOY_SIM_GAS: u128 = 12_000_000;
+
+/// What a drill's deployments on a chain may need at the node's gas price: forge's gas limits (its
+/// simulation times `FORGE_GAS_MULTIPLIER_PCT`) at forge's fee cap (twice the price plus its tip), and an
+/// OP Stack chain's L1 fee margin. A node must see each transaction's limit times its fee cap in the
+/// balance before it accepts it. At Sepolia's near-zero price (19 wei on 2026-11-07) the tip is nearly all
+/// of it: three times the price alone funded 0.000000000612 ETH, far under forge's first deployment.
+fn deploy_need(chain: u64, gas_price: u128) -> u128 {
+    let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
+    DEPLOY_SIM_GAS * demo::FORGE_GAS_MULTIPLIER_PCT / 100 * (2 * gas_price + demo::FORGE_TIP_WEI) + l1
+}
+
 /// A NEAR account's shortfall against its drill floor, or None when it is ready. `liquid` is its NEAR free
 /// of its storage stake (None: the account does not exist).
 fn near_shortfall(role: &str, account: &str, liquid: Option<u128>) -> Option<Value> {
@@ -1026,6 +1037,16 @@ mod tests {
         let s = evm_shortfall("evm-deployer", SEPOLIA, "0xabc", 1, 1_000).unwrap();
         assert_eq!((s["kind"].as_str(), s["chain_id"].as_u64()), (Some("evm-deployer"), Some(SEPOLIA)));
         assert!(evm_shortfall("evm-relayer", BASE_SEPOLIA, "0xdef", 1_000, 1_000).is_none());
+    }
+
+    #[test]
+    fn a_drill_deployer_is_funded_for_forges_limits_and_tip() {
+        // Sepolia at 19 wei (2026-11-07): 108M gas of limits at forge's 0.001 gwei tip, about 0.000108 ETH,
+        // where three times the price alone gave 0.000000000612 ETH.
+        assert_eq!(deploy_need(SEPOLIA, 19), 108_000_000 * (38 + 1_000_000));
+        assert!(deploy_need(SEPOLIA, 19) > 100_000_000_000_000);
+        // Base Sepolia at 0.006 gwei: the limits at its fee cap, and the 0.002 ETH L1 fee margin.
+        assert_eq!(deploy_need(BASE_SEPOLIA, 6_000_000), 108_000_000 * 13_000_000 + 2_000_000_000_000_000);
     }
 
     #[test]
