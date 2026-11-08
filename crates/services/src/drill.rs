@@ -825,18 +825,19 @@ fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
 }
 
-/// Gas forge's simulation counts for a drill's deployments on one chain (Acme ~7M, the adapter ~1M, with
-/// margin).
-const DEPLOY_SIM_GAS: u128 = 12_000_000;
+/// Gas forge's simulation counts for a drill's deployments on one chain, with margin: its gas limits on
+/// Sepolia on 2026-11-08 were 94.2M for Acme's 29 transactions and 10.3M for the adapter's 4, nine times
+/// their simulation.
+const DEPLOY_SIM_GAS: u128 = 13_000_000;
 
 /// What a drill's deployments on a chain may need at the node's gas price: forge's gas limits (its
-/// simulation times `FORGE_GAS_MULTIPLIER_PCT`) at forge's fee cap (twice the price plus its tip), and an
-/// OP Stack chain's L1 fee margin. A node must see each transaction's limit times its fee cap in the
-/// balance before it accepts it. At Sepolia's near-zero price (19 wei on 2026-11-07) the tip is nearly all
-/// of it: three times the price alone funded 0.000000000612 ETH, far under forge's first deployment.
+/// simulation times `FORGE_GAS_MULTIPLIER_PCT`) at forge's fee cap ([`demo::forge_max_fee`]), a fifth more
+/// for a price that moves, and an OP Stack chain's L1 fee margin. A node must see each transaction's limit
+/// times its fee cap in the balance before it accepts it. At Sepolia's near-zero price (19 wei on
+/// 2026-11-07) the tip is nearly all of it: three times the price alone funded 0.000000000612 ETH.
 fn deploy_need(chain: u64, gas_price: u128) -> u128 {
     let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
-    DEPLOY_SIM_GAS * demo::FORGE_GAS_MULTIPLIER_PCT / 100 * (2 * gas_price + demo::FORGE_TIP_WEI) + l1
+    DEPLOY_SIM_GAS * demo::FORGE_GAS_MULTIPLIER_PCT / 100 * demo::forge_max_fee(gas_price) * 6 / 5 + l1
 }
 
 /// A NEAR account's shortfall against its drill floor, or None when it is ready. `liquid` is its NEAR free
@@ -1040,13 +1041,15 @@ mod tests {
     }
 
     #[test]
-    fn a_drill_deployer_is_funded_for_forges_limits_and_tip() {
-        // Sepolia at 19 wei (2026-11-07): 108M gas of limits at forge's 0.001 gwei tip, about 0.000108 ETH,
-        // where three times the price alone gave 0.000000000612 ETH.
-        assert_eq!(deploy_need(SEPOLIA, 19), 108_000_000 * (38 + 1_000_000));
-        assert!(deploy_need(SEPOLIA, 19) > 100_000_000_000_000);
-        // Base Sepolia at 0.006 gwei: the limits at its fee cap, and the 0.002 ETH L1 fee margin.
-        assert_eq!(deploy_need(BASE_SEPOLIA, 6_000_000), 108_000_000 * 13_000_000 + 2_000_000_000_000_000);
+    fn a_drill_deployer_is_funded_for_forges_limits_and_fee_cap() {
+        // Sepolia at 16 wei (2026-11-08): 117M gas of limits at forge's cap (twice the price plus the 0.001
+        // gwei tip), a fifth more: about 0.00014 ETH, where three times the price alone gave 0.000000000612.
+        assert_eq!(demo::forge_max_fee(16), 1_000_032);
+        assert_eq!(deploy_need(SEPOLIA, 16), 117_000_000 * 1_000_032 * 6 / 5);
+        // It covers the limits forge set that night (94.2M for Acme, 10.3M for the adapter) at that cap.
+        assert!(deploy_need(SEPOLIA, 16) > (94_207_698 + 10_259_055) * 1_000_032);
+        // Base Sepolia at 0.006 gwei: the same, and the 0.002 ETH L1 fee margin.
+        assert_eq!(deploy_need(BASE_SEPOLIA, 6_000_000), 117_000_000 * 13_000_000 * 6 / 5 + 2_000_000_000_000_000);
     }
 
     #[test]
