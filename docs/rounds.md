@@ -46,14 +46,18 @@ the provider's proof window. The proposal counts once the check is T1-confirmed.
 
 ## Immune memory: re-runs
 
-Within `rerun_window` of the confirmed check, anyone may ask for, and pay for, a re-run at the fix
-(`antibody round rerun --commit N`) of:
+Once the check is T1-confirmed, and within `rerun_window` of its answer (the check's T0 time, which T1
+does not move), anyone may ask for, and pay for, a re-run at the fix (`antibody round rerun --commit N`;
+a commit revealed inline needs its blob again: `--blob`, `--reveal-tx` or `--api`) of:
 - every paid PoC, from any round, and every commit that ever held a key;
 - the round's duplicates (their appeal) and gap claims.
 
 The TEE re-runs the original sealed PoC (the same `poc_hash`) under the round manifest. A re-run counts
 for its own proposal only, so the next fix is checked against every paid exploit again, and a fix that
-brings an old bug back is caught. `antibody keeper` requests every eligible re-run while a proposal is open.
+brings an old bug back is caught. `antibody keeper` requests every eligible re-run once the proposal is
+accepted and while its window is open, and requests again any re-run near-antibody counts as stuck
+(failed, unjudged, or with no quote past `run_timeout`). It finds an inline blob through `$ANTIBODY_API`,
+which the services set to their own API.
 
 ## Opening
 

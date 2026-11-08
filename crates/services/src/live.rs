@@ -1317,7 +1317,8 @@ impl Live {
             reruns.push(json!({"commit": v["commit_id"], "run": r, "kind": v["kind"], "tier": v["tier"]}));
         }
         self.ensure_liquid(&Self::acct("keeper"), FREE_FOR_RUNS)?;
-        // The re-run window runs from the proposal's T1; the round opens after it.
+        // The re-run window runs from the round check's answer (its T0 time; T1 does not move it), so
+        // waiting from the T1 seen here is a little longer than needed; the round opens after it.
         let window = Duration::from_secs(600 + 20);
         if let Some(left) = window.checked_sub(accepted.elapsed()) {
             println!("  round {round}: {} re-runs T1; the re-run window closes in {:.0} s", reruns.len(), left.as_secs_f64());
