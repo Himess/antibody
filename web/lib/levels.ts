@@ -6,9 +6,9 @@
 export type Level = "T0" | "T1" | "T2";
 
 export const LEVEL: Record<Level, { name: string; prose: string; title: string }> = {
-  T0: { name: "Enclave result", prose: "an enclave result, not yet attested", title: "Level T0: OutLayer's operator delivered the enclave's output; not yet attested on NEAR" },
+  T0: { name: "Verified in the enclave", prose: "verified in the enclave, not yet attested", title: "Level T0: OutLayer's operator delivered the enclave's output; not yet attested on NEAR" },
   T1: { name: "Attested on NEAR", prose: "attested on NEAR", title: "Level T1: the run's Intel TDX quote was verified on NEAR" },
-  T2: { name: "ZK-proven", prose: "proven with a zero-knowledge proof", title: "Level T2: a zero-knowledge validity proof (SP1) of this verdict was verified on NEAR" },
+  T2: { name: "Zero-knowledge proof", prose: "proven with a zero-knowledge proof", title: "Level T2: a zero-knowledge validity proof (SP1) of this verdict was verified on NEAR" },
 };
 
 /** The level a recorded tier names: anything that is not T1 or T2 reads as the enclave's result. */

@@ -19,7 +19,7 @@ function T2Mark({ t2 }: { t2: T2Badge | null | undefined }) {
   if (t2.outcome === "confirmed")
     return (
       <Pill tone="t2" size="sm" title="Level T2: near-t2 confirmed a zero-knowledge validity proof of this disclosed verdict">
-        ZK-proven
+        Zero-knowledge proof
       </Pill>
     );
   return (
