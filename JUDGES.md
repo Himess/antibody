@@ -6,6 +6,8 @@ These are the results of a run on NEAR testnet (`antibody-services live`) on the
 
 The same claims, each with a check your browser runs: https://antibody-three.vercel.app/judges
 
+The one moment runs again every day on a fresh Acme Lend, the daily drill (docs/drill.md): each drill is listed on https://antibody-three.vercel.app/moment, and https://antibody-three.vercel.app/status says whether the latest one passed.
+
 ## One look
 
 Every claim below names a command that checks it. Unless marked, commands are view calls and need no account and no key.
