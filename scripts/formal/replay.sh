@@ -13,8 +13,7 @@ quint test antibody.qnt --main=antibody
 quint run antibody.qnt --invariant=all_properties --max-samples=20000 --max-steps=50
 rm -rf "$OUT" && mkdir -p "$OUT"
 # The traces' seed, printed, so a run that diverges can be replayed: QUINT_SEED=<seed> scripts/formal/replay.sh
-SEED="${QUINT_SEED:-0x$(od -An -N6 -tx1 /dev/urandom | tr -d ' 
-')}"
+SEED="${QUINT_SEED:-0x$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')}"
 echo "traces: $N of up to $STEPS steps, seed $SEED (QUINT_SEED=$SEED scripts/formal/replay.sh $N $STEPS generates the same)"
 quint run antibody.qnt --max-samples="$N" --max-steps="$STEPS" --mbt --out-itf="$OUT/t_{seq}.itf.json" --n-traces="$N" --seed="$SEED" >/dev/null
 cd "$ROOT"
