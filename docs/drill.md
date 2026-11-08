@@ -40,6 +40,17 @@ A drill runs once a day. The timer (below) runs it; the cadence `/v1/status` exp
 margin (see the alerts). Run it when EVM gas and the testnet are quiet; it takes about 20 minutes (most of
 it waiting for the light client to reach the fresh anchor).
 
+## The RPCs
+
+- **Sepolia** (`SEPOLIA_TX_RPC`, else the first of `SEPOLIA_RPC`): forge forks the chain and reads
+  accounts by block hash, so this RPC must answer those reads consistently. A load-balanced public RPC
+  can answer "block not found" from a node a block behind (measured on 2026-11-08: one read in ten). The
+  deployments are sent without `--slow`, so forge does not ask for the sender's nonce after each one.
+- **NEAR** (`$NEAR_RPC`, else the deployments file's; `$NEAR_RPC_EXTRA` is the failover): on a host
+  that also runs the services, give the drill another primary RPC than theirs, so the two do not share
+  one rate limit. On 2026-11-08 a shared limit made the keeper pay agent A four seconds after the
+  challenge window, so that payment was not instant and the drill reported it.
+
 ## The guards
 
 Before anything is spent, the drill reads the balances a drill needs and **skips with a reason** if any is

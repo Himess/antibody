@@ -164,7 +164,7 @@ impl Drill {
     /// fixture at fresh CREATE2 addresses without touching contracts/.
     fn deployer(&self) -> Result<EvmSigner> {
         let base = EvmSigner::from_hex(&self.base_evm_key()?)?;
-        base.derive(format!("drill-{}", self.date).as_bytes())
+        base.derive(deployer_label(&self.date, self.s["evm_attempt"].as_u64().unwrap_or(0)).as_bytes())
     }
 
     fn base_evm_key(&self) -> Result<String> {
@@ -220,16 +220,26 @@ impl Drill {
 
     // ------------------------------------------------------------------------------ balances and guards
 
-    /// The NEAR amount (yoctoNEAR) and liquid-of-storage of an account now, or null if it does not exist.
+    /// The NEAR amount (yoctoNEAR) and liquid-of-storage of an account now, null if it does not exist, or
+    /// `{"error"}` when the RPC did not answer after three tries (a public RPC's hiccup is not a missing
+    /// account: on 2026-11-08 one made four existing accounts look absent and skipped a drill).
     fn near_balance(&self, account: &str) -> Value {
-        match self.near.account(account) {
-            Ok(Some(a)) => {
-                let amount = cmd::u128_of(&a["amount"]);
-                let liquid = amount.saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
-                json!({"amount_yocto": amount.to_string(), "liquid_yocto": liquid.to_string()})
+        let mut last = String::new();
+        for i in 0..3 {
+            if i > 0 {
+                std::thread::sleep(Duration::from_secs(3));
             }
-            _ => Value::Null,
+            match self.near.account(account) {
+                Ok(Some(a)) => {
+                    let amount = cmd::u128_of(&a["amount"]);
+                    let liquid = amount.saturating_sub(a["storage_usage"].as_u64().unwrap_or(0) as u128 * 10u128.pow(19));
+                    return json!({"amount_yocto": amount.to_string(), "liquid_yocto": liquid.to_string()});
+                }
+                Ok(None) => return Value::Null,
+                Err(e) => last = format!("{e:#}"),
+            }
         }
+        json!({"error": last})
     }
 
     /// A snapshot of every balance a drill spends from: the NEAR accounts, and the EVM deployer and relayer
@@ -266,6 +276,11 @@ impl Drill {
         for role in ["hq", "acme", "agent-a", "keeper", "relayer"] {
             let who = if role == "hq" { HQ.to_string() } else { acct(role) };
             let b = self.near_balance(&who);
+            if let Some(e) = b["error"].as_str() {
+                // Unknown, not low: the drill skips with the RPC's error, never as a missing account.
+                low.push(json!({"kind": "near", "role": role, "account": who, "error": format!("the NEAR RPC did not answer: {e}")}));
+                continue;
+            }
             let liquid = b["liquid_yocto"].as_str().and_then(|s| s.parse::<u128>().ok());
             if let Some(s) = near_shortfall(role, &who, liquid) {
                 low.push(s);
@@ -280,10 +295,8 @@ impl Drill {
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
             let e = Evm::new(&rpc);
             let gas_price = e.gas_price().unwrap_or(2_000_000_000);
-            // What this chain's deploys cost at the node's price (Acme ~7M gas, the adapter ~1M, with
-            // margin), plus an OP Stack chain's L1 fee margin.
             let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
-            let deploy_need = 12_000_000u128 * gas_price * 3 + l1;
+            let deploy_need = deploy_need(chain, gas_price);
             let relay_need = EvmSigner::transfer_reserve(gas_price, l1) + 400_000 * gas_price * 3;
             // The base funds the derived deployer: its own balance must cover the funding the deploy needs
             // (less whatever the derived address already holds from an earlier drill).
@@ -305,7 +318,34 @@ impl Drill {
 
     /// A fresh Acme Lend on both chains, deployed by the per-drill deployer (new CREATE2 addresses). The
     /// deployer is funded from the base deployer first where it needs it.
+    ///
+    /// A deployment that sent part of its transactions and stopped (a public RPC whose nonce lags, say)
+    /// cannot be sent again from the same deployer: its first CREATE2 addresses are taken. The next attempt
+    /// derives a fresh deployer (`evm_attempt`, recorded so a resumed drill never reuses one), at most
+    /// [`EVM_ATTEMPTS`] attempts per run; the abandoned contracts are our own fixture, never used.
     fn evm(&mut self) -> Result<()> {
+        let mut tries = 0;
+        loop {
+            let attempt = self.s["evm_attempt"].as_u64().unwrap_or(0);
+            let err = match self.evm_once() {
+                Ok(()) => return Ok(()),
+                Err(e) => e,
+            };
+            tries += 1;
+            let deployer = self.deployer()?;
+            let sent = [self.sepolia(), self.a.base_rpc.clone()].iter().any(|rpc| {
+                Evm::new(rpc).call("eth_getTransactionCount", json!([deployer.address, "latest"])).ok().and_then(|v| crate::evm::hex_u64(&v).ok()).unwrap_or(0) > 0
+            });
+            if !sent || tries >= EVM_ATTEMPTS {
+                return Err(err);
+            }
+            println!("  the deployment stopped after sending transactions ({err:#}): attempt {} with a fresh deployer", attempt + 2);
+            self.s["evm_attempt"] = json!(attempt + 1);
+            self.save()?;
+        }
+    }
+
+    fn evm_once(&mut self) -> Result<()> {
         let deployer = self.deployer()?;
         let base = EvmSigner::from_hex(&self.base_evm_key()?)?;
         let zero = "0x0000000000000000000000000000000000000000";
@@ -313,8 +353,7 @@ impl Drill {
         for (chain, rpc) in [(SEPOLIA, self.sepolia()), (BASE_SEPOLIA, self.a.base_rpc.clone())] {
             let e = Evm::new(&rpc);
             let gas_price = e.gas_price().unwrap_or(2_000_000_000);
-            let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
-            let need = 12_000_000u128 * gas_price * 3 + l1;
+            let need = deploy_need(chain, gas_price);
             let have = e.balance(&format!("{:?}", deployer.address))?;
             if have < need {
                 let tx = base.transfer(&e, chain, deployer.address, need - have)?;
@@ -546,6 +585,46 @@ impl Drill {
         Ok(())
     }
 
+    /// A's commit on this drill's program from a run that stopped after committing (its MCP call cut off by
+    /// a rate-limited RPC, 2026-11-08), so that A never commits twice: one that settles or is settled paid is
+    /// used, and one still unrevealed is revealed with A's key from the record the MCP server kept, if its
+    /// window allows. None when there is none, or it can no longer be revealed (it then expires, and a new
+    /// commit follows it).
+    fn earlier_commit(&mut self, root_ctx: &Ctx, pid: u32, net: &[&str], dep_file: &Path, state_a: &Path) -> Result<Option<u64>> {
+        let me = acct("agent-a");
+        let mine: Vec<Value> = cmd::list_commits(root_ctx, pid)?.into_iter().filter(|c| c["hunter"] == json!(me)).collect();
+        for c in mine.iter().rev() {
+            let id = c["id"].as_u64().unwrap_or_default();
+            let st = &c["state"];
+            if st.get("Done").is_some_and(|d| d.get("Paid").is_none()) {
+                continue;
+            }
+            let mut revealed_here = false;
+            if st == "Committed" {
+                let out = Command::new(&self.a.antibody_bin)
+                    .args(net)
+                    .arg("--deployments")
+                    .arg(dep_file)
+                    .args(["--account", me.as_str(), "--key-file"])
+                    .arg(self.a.work.join("keys/agent-a.fc-key.json"))
+                    .args(["reveal", "--program", &pid.to_string(), "--commit", &id.to_string()])
+                    .current_dir(state_a)
+                    .output()?;
+                if !out.status.success() {
+                    let why = String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or_default().to_string();
+                    println!("  A's earlier commit {id} could not be revealed ({why}): a new commit follows it");
+                    continue;
+                }
+                revealed_here = true;
+            }
+            println!("  A's commit {id}, made over MCP by an earlier run of this drill, is used");
+            self.s["mcp"] = json!({"commit_id": id, "resumed": true, "revealed_by": if revealed_here { "the CLI, after the MCP call stopped" } else { "MCP" }});
+            self.save()?;
+            return Ok(Some(id));
+        }
+        Ok(None)
+    }
+
     /// Agent A over MCP; its verdict T1, its instant payment, and the pause on both chains. Writes the
     /// `one_moment` section the API's `moment()` reads.
     fn one_moment(&mut self) -> Result<()> {
@@ -565,7 +644,11 @@ impl Drill {
                 .and_then(|e| e["tx"].as_str().map(String::from))
                 .unwrap_or_default()
         };
-        let a_commit = match self.s["mcp"]["commit_id"].as_u64() {
+        let earlier = match self.s["mcp"]["commit_id"].as_u64() {
+            Some(c) => Some(c),
+            None => self.earlier_commit(&root_ctx, pid, &net, &dep_file, &state_a)?,
+        };
+        let a_commit = match earlier {
             Some(c) => c,
             None => {
                 self.ensure_liquid(&acct("agent-a"), FREE_FOR_RUNS)?;
@@ -602,17 +685,41 @@ impl Drill {
         let relayer_file = self.relayer_file();
         let key = self.key();
         let mut confirmed: BTreeMap<String, Value> = BTreeMap::new();
+        // Relaying is permissionless: the services' relayer may carry a permit first (on 2026-11-08 it took
+        // Base Sepolia's), and this drill's own attempt is then refused by the adapter or reverts (used
+        // already). The pause counts either way; its transaction is the adapter's PauseCalled log.
         crate::live::poll("pause() on both chains", Duration::from_secs(900), Duration::from_secs(3), || {
             for v in permits(&relayer_file).values().filter(|v| v["program_key"] == json!(key)) {
-                if v["kind"] == "pause"
-                    && v["status"] == "confirmed"
-                    && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true))
-                {
+                let carried = ["confirmed", "refused", "reverted"].iter().any(|s| v["status"] == json!(s));
+                if v["kind"] == "pause" && carried && v["targets_paused"].as_array().is_some_and(|p| !p.is_empty() && p.iter().all(|x| x == true)) {
                     confirmed.entry(v["chain_id"].to_string()).or_insert_with(|| v.clone());
                 }
             }
             (confirmed.len() == 2).then_some(())
         })?;
+        let mut by_others = Vec::new();
+        for (chain, v) in confirmed.iter_mut().filter(|(_, v)| v["status"] != json!("confirmed")) {
+            let (rpc, explorer) = if *chain == SEPOLIA.to_string() { (self.sepolia(), ETHERSCAN) } else { (self.a.base_rpc.clone(), BASESCAN) };
+            if let Some((tx, block, ts)) = pause_log(&Evm::new(&rpc), v["adapter"].as_str().unwrap_or_default(), &key) {
+                v["status"] = json!("confirmed");
+                v["tx_hash"] = json!(tx);
+                v["explorer"] = json!(format!("{explorer}{tx}"));
+                v["block"] = json!(format!("{block:#x}"));
+                v["confirmed_ms"] = json!(ts * 1000);
+                v["relayed_by"] = json!("another relayer: the adapter refused this drill's copy as used");
+                by_others.push(v.clone());
+            }
+        }
+        if !by_others.is_empty() {
+            // The drill's relayer file says so too, for the results' list of permits.
+            let mut st: BTreeMap<String, Value> = std::fs::read(&relayer_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            for v in &by_others {
+                if let Some(e) = st.get_mut(&v["permit_id"].to_string()) {
+                    *e = v.clone();
+                }
+            }
+            std::fs::write(&relayer_file, serde_json::to_vec_pretty(&st)?)?;
+        }
         let commit_tx = self.s["mcp"]["commit_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("commit", a_commit));
         let reveal_tx = self.s["mcp"]["reveal_tx"].as_str().map(String::from).filter(|t| !t.is_empty()).unwrap_or_else(|| tx_of("reveal", a_commit));
         let pay_tx = keeper_a["steps"]
@@ -828,6 +935,50 @@ fn wei_eth(wei: u128) -> String {
     cmd::fmt_tokens(wei, 18)
 }
 
+/// The transaction that applied a program's pause permit on a chain, whoever relayed it: the adapter's
+/// earliest `PauseCalled(program, …)` log in recent blocks, with its block and the block's time (seconds).
+fn pause_log(evm: &Evm, adapter: &str, program_key: &str) -> Option<(String, u64, u64)> {
+    let topic0 = alloy_primitives::keccak256(b"PauseCalled(bytes32,uint32,uint64,address,bool)");
+    let program = alloy_primitives::keccak256(program_key.as_bytes());
+    let head = crate::evm::hex_u64(&evm.read("eth_blockNumber", json!([])).ok()?).ok()?;
+    let logs = evm
+        .read("eth_getLogs", json!([{"address": adapter, "fromBlock": format!("{:#x}", head.saturating_sub(5_000)), "toBlock": "latest",
+                                    "topics": [format!("{topic0:#x}"), format!("{program:#x}")]}]))
+        .ok()?;
+    let first = logs.as_array()?.first()?.clone();
+    let block = crate::evm::hex_u64(&first["blockNumber"]).ok()?;
+    let b = evm.read("eth_getBlockByNumber", json!([format!("{block:#x}"), false])).ok()?;
+    Some((first["transactionHash"].as_str()?.to_string(), block, crate::evm::hex_u64(&b["timestamp"]).ok()?))
+}
+
+/// Deployment attempts in one run of a drill, each from a fresh deployer once an earlier one sent
+/// transactions.
+const EVM_ATTEMPTS: u64 = 3;
+
+/// The label a drill's deployer is derived with: the date, and the attempt after the first.
+fn deployer_label(date: &str, attempt: u64) -> String {
+    if attempt == 0 {
+        format!("drill-{date}")
+    } else {
+        format!("drill-{date}-{attempt}")
+    }
+}
+
+/// Gas forge's simulation counts for a drill's deployments on one chain, with margin: its gas limits on
+/// Sepolia on 2026-11-08 were 94.2M for Acme's 29 transactions and 10.3M for the adapter's 4, nine times
+/// their simulation.
+const DEPLOY_SIM_GAS: u128 = 13_000_000;
+
+/// What a drill's deployments on a chain may need at the node's gas price: forge's gas limits (its
+/// simulation times `FORGE_GAS_MULTIPLIER_PCT`) at forge's fee cap ([`demo::forge_max_fee`]), a fifth more
+/// for a price that moves, and an OP Stack chain's L1 fee margin. A node must see each transaction's limit
+/// times its fee cap in the balance before it accepts it. At Sepolia's near-zero price (19 wei on
+/// 2026-11-07) the tip is nearly all of it: three times the price alone funded 0.000000000612 ETH.
+fn deploy_need(chain: u64, gas_price: u128) -> u128 {
+    let l1 = if chain == BASE_SEPOLIA { 2_000_000_000_000_000u128 } else { 0 };
+    DEPLOY_SIM_GAS * demo::FORGE_GAS_MULTIPLIER_PCT / 100 * demo::forge_max_fee(gas_price) * 6 / 5 + l1
+}
+
 /// A NEAR account's shortfall against its drill floor, or None when it is ready. `liquid` is its NEAR free
 /// of its storage stake (None: the account does not exist).
 fn near_shortfall(role: &str, account: &str, liquid: Option<u128>) -> Option<Value> {
@@ -893,7 +1044,13 @@ fn write_skipped(results_dir: &Path, date: &str, dep: &Deployments, reason: &str
 
 pub fn run(a: DrillArgs) -> Result<Value> {
     std::env::set_var("ANTIBODY_MIN_NEAR_CREDIT", crate::live::MIN_NEAR_CREDIT);
-    let dep: Deployments = serde_json::from_str(&std::fs::read_to_string(a.root.join("deployments/near-testnet.json"))?)?;
+    let mut dep: Deployments = serde_json::from_str(&std::fs::read_to_string(a.root.join("deployments/near-testnet.json"))?)?;
+    // The NEAR RPC: `$NEAR_RPC` when set, else the deployments file's. On the operations host the services
+    // already use the latter, and a drill on the same one hit its rate limit (2026-11-08); every client of
+    // the drill, agent A's MCP server included, takes this one ($NEAR_RPC_EXTRA stays the failover).
+    if let Some(rpc) = std::env::var("NEAR_RPC").ok().filter(|v| !v.trim().is_empty()) {
+        dep.rpc = Some(rpc);
+    }
     let near = Near::new("testnet", dep.rpc.clone());
     std::fs::create_dir_all(a.work.join("keys"))?;
     let date = date_of(unix());
@@ -916,8 +1073,11 @@ pub fn run(a: DrillArgs) -> Result<Value> {
         return Ok(json!({"skipped": true, "reason": "kill switch", "why": why, "results_file": file}));
     }
 
-    // The guards: read the balances a drill needs; skip with a reason if any is low.
-    let low = d.guard_balances()?;
+    // The guards: read the balances a drill needs; skip with a reason if any is low. Only before a drill
+    // starts: a resumed one has spent part of it already (acme's escrow is in the program), and each of its
+    // steps tops its own signer up from HQ as it goes.
+    let started = d.s["done"].as_array().is_some_and(|x| !x.is_empty());
+    let low = if started && !d.a.dry_run { Vec::new() } else { d.guard_balances()? };
     if !low.is_empty() {
         println!("drill skipped: {} balance(s) below what a drill needs", low.len());
         for l in &low {
@@ -1026,6 +1186,28 @@ mod tests {
         let s = evm_shortfall("evm-deployer", SEPOLIA, "0xabc", 1, 1_000).unwrap();
         assert_eq!((s["kind"].as_str(), s["chain_id"].as_u64()), (Some("evm-deployer"), Some(SEPOLIA)));
         assert!(evm_shortfall("evm-relayer", BASE_SEPOLIA, "0xdef", 1_000, 1_000).is_none());
+    }
+
+    #[test]
+    fn a_new_attempt_has_a_fresh_deployer() {
+        // The first attempt keeps the day's label (and so the addresses of a drill that worked at once).
+        assert_eq!(deployer_label("2026-11-08", 0), "drill-2026-11-08");
+        assert_eq!(deployer_label("2026-11-08", 1), "drill-2026-11-08-1");
+        let base = EvmSigner::from_hex("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80").unwrap();
+        let (a, b) = (base.derive(deployer_label("2026-11-08", 0).as_bytes()).unwrap(), base.derive(deployer_label("2026-11-08", 1).as_bytes()).unwrap());
+        assert_ne!(a.address, b.address);
+    }
+
+    #[test]
+    fn a_drill_deployer_is_funded_for_forges_limits_and_fee_cap() {
+        // Sepolia at 16 wei (2026-11-08): 117M gas of limits at forge's cap (twice the price plus the 0.001
+        // gwei tip), a fifth more: about 0.00014 ETH, where three times the price alone gave 0.000000000612.
+        assert_eq!(demo::forge_max_fee(16), 1_000_032);
+        assert_eq!(deploy_need(SEPOLIA, 16), 117_000_000 * 1_000_032 * 6 / 5);
+        // It covers the limits forge set that night (94.2M for Acme, 10.3M for the adapter) at that cap.
+        assert!(deploy_need(SEPOLIA, 16) > (94_207_698 + 10_259_055) * 1_000_032);
+        // Base Sepolia at 0.006 gwei: the same, and the 0.002 ETH L1 fee margin.
+        assert_eq!(deploy_need(BASE_SEPOLIA, 6_000_000), 117_000_000 * 13_000_000 * 6 / 5 + 2_000_000_000_000_000);
     }
 
     #[test]
