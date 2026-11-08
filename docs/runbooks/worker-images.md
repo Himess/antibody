@@ -44,14 +44,20 @@ changes: near-antibody, near-guardian, the vending code and the verifier wasm st
    ```
 2. **Decide.** If an image counts within the next hour (`images-pending` gives the time), wait.
    Otherwise go on.
-3. **New practice programs at a fresh anchor:**
+3. **New practice programs at a fresh anchor.** First set the drill's kill switch
+   (`touch target/drill/drill.disabled`) and check that no drill is running
+   (`systemctl is-active antibody-drill`): `live` and the drill both build witnesses for near-antibody's
+   next program id and wait for the light client, so a program one of them creates moves the other's id.
+   Remove the switch once step 4 is done. One command, with the recorded run's work directory:
    ```
-   ./target/release/antibody-services live --redo-practice
-   ./target/release/antibody-services live --until practice
+   ./target/release/antibody-services live --work-dir target/live/<the run's dir> --redo-practice --until practice
    ```
-   - The first command picks a Sepolia block, rebuilds the practice and fork-mode bases, and waits for
-     the light client to reach the block (about 16 minutes).
-   - The second creates and activates the new practice program. Its activation is T1 on the new image.
+   Without `--until practice`, `--redo-practice` goes on into the fork-mode stage and the stages after it
+   (on 2026-11-08 the fork-mode program opened and its try stopped on a rate limit; the practice program
+   needs nothing from it).
+   - It picks a Sepolia block, rebuilds the practice and fork-mode bases, and waits for the light client
+     to reach the block (about 16 minutes).
+   - It then creates and activates the new practice program. Its activation is T1 on the new image.
      It then opens the program, points the vending contract at it (`set_terms` alone, by
      `antibody.testnet`: the hourly limit and the practice-account code stay as they are) and runs two
      judge tries. By hand, the same pointing is

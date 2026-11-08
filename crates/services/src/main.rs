@@ -295,9 +295,11 @@ fn chains(args: &[String]) -> Result<BTreeMap<u64, (String, String)>> {
         let (id, url) = a.split_once('=').ok_or_else(|| eyre!("--chain expects <chain id>=<rpc url>"))?;
         m.insert(id.parse()?, (url.to_string(), explorer(id.parse()?)));
     }
-    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    // From the environment, the first of a comma-separated list (as live and the drill read SEPOLIA_RPC);
+    // SEPOLIA_TX_RPC first when set: it serves transactions and current state.
+    let env = |k: &str| std::env::var(k).ok().and_then(|v| v.split(',').map(str::trim).find(|s| !s.is_empty()).map(String::from));
     if m.is_empty() {
-        if let Some(u) = env("SEPOLIA_RPC") {
+        if let Some(u) = env("SEPOLIA_TX_RPC").or_else(|| env("SEPOLIA_RPC")) {
             m.insert(11155111, (u, explorer(11155111)));
         }
         if let Some(u) = env("BASE_SEPOLIA_RPC") {
@@ -543,7 +545,8 @@ fn main() -> Result<()> {
         Cmd::Notifier { program, interval_ms } => {
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
             let status = load_dep(&cli).ok().map(|d| (near_for(&cli, &d), d));
-            notifier::Notifier { state_dir: state_dir(&cli), results_dir: default_results_dir(), webhooks, program: *program, status }.run(*interval_ms)
+            let chains = chains(&[])?.into_iter().map(|(id, (url, _))| (id, url)).collect();
+            notifier::Notifier { state_dir: state_dir(&cli), results_dir: default_results_dir(), webhooks, program: *program, status, chains }.run(*interval_ms)
         }
         Cmd::Api { listen, chains: c, results_dir } => {
             let dep = load_dep(&cli)?;
@@ -612,7 +615,16 @@ fn main() -> Result<()> {
                 std::thread::spawn(move || r.run(3000));
             }
             let webhooks: Vec<String> = std::env::var("ANTIBODY_WEBHOOKS").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(String::from).collect();
-            let n = notifier::Notifier { state_dir: state_dir(&cli), results_dir: default_results_dir(), webhooks, program: None, status: Some((near_for(&cli, &dep), dep.clone())) };
+            // The same chains the API's status reads, so the EVM balance alerts and the relayer's pending
+            // permits reach the webhooks as /v1/status shows them.
+            let n = notifier::Notifier {
+                state_dir: state_dir(&cli),
+                results_dir: default_results_dir(),
+                webhooks,
+                program: None,
+                status: Some((near_for(&cli, &dep), dep.clone())),
+                chains: chains(c)?.into_iter().map(|(id, (url, _))| (id, url)).collect(),
+            };
             std::thread::spawn(move || n.run(5000));
             if let Some(acct) = keeper_account {
                 let ctx = antibody_cli::ctx::Ctx::new(&cli.network, cli.deployments.clone(), cli.rpc.clone(), Some(acct.clone()), keeper_key_file.clone(), None)?;

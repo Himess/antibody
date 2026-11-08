@@ -71,10 +71,11 @@ file: a later run that skips writes nothing. `--dry-run` only prints the shortfa
 ## The kill switch
 
 One documented kill switch: a file **`<work-dir>/drill.disabled`**, or the env var
-**`$ANTIBODY_DRILL_OFF`** (non-empty). The timer checks it; when present the drill does nothing, says so,
-and writes a skipped results file. Remove the file (or unset the var) to re-enable. Ask OutLayer not to
+**`$ANTIBODY_DRILL_OFF`** (non-empty). A run reads it when it starts: when present the drill does
+nothing, says so, and writes a skipped results file. A drill already running carries on; stop it with
+`systemctl stop antibody-drill`. Remove the file (or unset the var) to re-enable. Ask OutLayer not to
 rotate worker images during judging (docs/runbooks/worker-images.md); if a drill would be noisy during a
-demo, set the kill switch.
+demo, set the kill switch. One drill runs at a time on a work directory (`<work-dir>/drill.lock`).
 
 ## Timeouts
 
@@ -96,10 +97,12 @@ The results file's `cost` is read from balance deltas over the drill:
 ## Cleanup
 
 A drill program closes when its windows allow, so its escrow (0.4 wNEAR, less the payout) returns to the
-project. Each new drill does this first, before its guards read the balances: it exits every drill
-program past its deadline and the exit grace (the earlier days'), then closes its commit records a page at
-a time; a failure there is printed and the drill goes on. `antibody-services drill --cleanup` does the
-same on its own. The next drill wraps only what the escrow lacks, so the returned wNEAR is spent again.
+project as its token credit at near-antibody. Each new drill does this once its guards pass (a day that
+skips spends nothing): it exits every drill program of acme's past its deadline and the exit grace (the
+earlier days'), then closes its commit records a page at a time; a failure there is printed and the drill
+goes on. `antibody-services drill --cleanup` does the same on its own (it sends transactions, so it does
+not take `--dry-run`). The program step withdraws acme's credit and wraps only what the escrow still
+lacks, so the returned wNEAR is spent again.
 Drill programs are labelled by their name (`Acme Lend drill …`); `antibody judge` marks them
 `an automated drill`.
 

@@ -225,7 +225,7 @@ pub fn compute_with(
     }
     let relayer = read_json(&state_dir.join("relayer.json"));
     // The permits' bodies (their replay keys), read once if a check needs them.
-    let bodies: Value = if chains.is_empty() { Value::Null } else { dep.guardian.as_ref().and_then(|g| near.view(g, "list_permits", json!({"from": 0, "limit": 100})).ok()).unwrap_or(Value::Null) };
+    let bodies: Value = if chains.is_empty() { Value::Null } else { dep.guardian.as_ref().and_then(|g| crate::relayer::list_all_permits(near, g).ok()).map(Value::Array).unwrap_or(Value::Null) };
     let mut applied = Vec::new();
     let mut pending = Vec::new();
     for (k, v) in relayer.as_object().into_iter().flatten().filter(|(_, v)| v["status"] != json!("confirmed")) {

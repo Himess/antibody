@@ -297,7 +297,7 @@ async fn reflex(State(a): State<Shared>, Path(id): Path<u32>) -> Response {
         let key = p["key"].clone();
         let g = a.dep.guardian.clone().ok_or_else(|| eyre::eyre!("no guardian configured"))?;
         let guard = a.near.view(&g, "get_program", json!({"program_key": key, "project": p["project"]}))?;
-        let permits = a.near.view(&g, "list_permits", json!({"from": 0, "limit": 100}))?;
+        let permits = Value::Array(crate::relayer::list_all_permits(&a.near, &g)?);
         let relayed = read_json(a.state_dir.join("relayer.json"));
         // A permit's state: this relayer's record, else the relay a recorded run made, else the adapter's
         // own `used` view (a permit carried out by any relayer).
@@ -526,7 +526,7 @@ async fn guardian(State(a): State<Shared>) -> Response {
     cached(&b, "guardian".into(), 15, 900, move || {
         let g = a.dep.guardian.clone().ok_or_else(|| eyre::eyre!("no guardian configured"))?;
         Ok(json!({"guardian": g, "config": a.near.view(&g, "get_config", json!({}))?,
-                  "permits": a.near.view(&g, "list_permits", json!({"from": 0, "limit": 100}))?,
+                  "permits": crate::relayer::list_all_permits(&a.near, &g)?,
                   "pending_permits": a.near.view(&g, "pending_permits", json!({}))?,
                   "relayer": read_json(a.state_dir.join("relayer.json"))}))
     })
