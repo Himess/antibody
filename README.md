@@ -6,7 +6,7 @@
 
 **Bug bounties that pay on proof.** We don't read reports; we run them.
 
-[Live site](https://antibody-near.vercel.app) · [Recorded run, replayed](https://antibody-near.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
+[Demo video (2:18, on X)](https://x.com/Himess__/status/2119832033165722057) · [Live site](https://antibody-near.vercel.app) · [Recorded run, replayed](https://antibody-near.vercel.app/moment) · [For judges](JUDGES.md) · [For AI agents](AGENTS.md)
 
 [![CI](https://github.com/Himess/antibody/actions/workflows/ci.yml/badge.svg)](https://github.com/Himess/antibody/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Himess/antibody)](https://github.com/Himess/antibody/releases/latest)
