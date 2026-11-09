@@ -306,8 +306,66 @@ export default function ProjectsPage() {
         </dl>
       </div>
 
+      <Section id="why" title="Why pay for this" lede="An automatic lane for the bugs your rules can state, next to the bounty you already run.">
+        <dl className={styles.model}>
+          <div>
+            <dt>Today</dt>
+            <dd>
+              <span className={styles.modelLead}>Every report is read by a person, and AI made reports free to write.</span>
+              <span>
+                A bounty pays a platform fee and a triage team, and a real Critical waits in the queue with the noise. curl ended its bounty in
+                January 2026 over exactly this.
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>With Antibody</dt>
+            <dd>
+              <span className={styles.modelLead}>Nobody reads anything: the proof runs, and the rules decide.</span>
+              <span>
+                A proof that breaks a rule you committed is paid in minutes, without triage, and a Critical in your pause policy pauses every chain
+                you registered before anyone has read it. A proof that breaks nothing costs its sender the bond. You pay 5% of what is paid out
+                (proposed for mainnet), nothing when nothing is found.
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Its reach</dt>
+            <dd>
+              <span className={styles.modelLead}>Bugs your invariants can state; the rest stays with your bounty.</span>
+              <span>
+                The automatic lane pays only for broken rules, so its reach is your rules&apos; reach: <code>antibody invariants strength</code>{" "}
+                measures it against mutants of your own code before you open (Acme Lend&apos;s fixture rules catch 8 of 28). Harm no rule catches
+                goes to the gap lane: refunded, recorded, and paid once a later round adds the rule.
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>A wrong pause?</dt>
+            <dd>
+              <span className={styles.modelLead}>You choose which rules may pause, and you lift a pause with your fix.</span>
+              <span>
+                Only the rules you put in your pause policy can pause, and only once the verdict is attested on NEAR. A pause stops the targets
+                you registered, nothing else; the release gate lifts it when your fix passes every paid proof, through the same signed permits.
+                The worst case is a pause until that fix ships: the funds stay where they are.
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Design partners</dt>
+            <dd>
+              <span className={styles.modelLead}>We are onboarding the first protocols for mainnet.</span>
+              <span>
+                A pilot runs your own invariants as a program on testnet first. <a href="#pilot">Ask for one</a>.
+              </span>
+            </dd>
+          </div>
+        </dl>
+      </Section>
+
       <OnThisPage
         items={[
+          { href: "#why", label: "Why pay for this" },
           { href: "#what-you-get", label: "What you get" },
           { href: "#business-model", label: "Business model" },
           { href: "#quickstart", label: "Quickstart" },

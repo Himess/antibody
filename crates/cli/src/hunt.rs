@@ -1160,8 +1160,8 @@ mod tests {
         assert!(paid.contains("verdict: Violation, keys slot 0 (tag cc52c19a12); first answered at T0"), "{paid}");
         assert!(paid.contains("\n  payout: T1-confirmed: paid at once (an instant payout, under the cap)\n"), "{paid}");
         assert!(paid.contains("0.001 wNEAR paid to practice.antibody.testnet") && paid.contains("The account is closed"), "{paid}");
-        assert!(paid.contains("    reclaim   Hash4  (antibody admin tx Hash4 --signer practice.antibody.testnet)"), "{paid}");
-        assert!(paid.contains("    commit    Hash1  (antibody admin tx Hash1 --signer ann.practice.antibody.testnet)"), "{paid}");
+        assert!(paid.contains("    reclaim   testnet:Hash4  (signed by practice.antibody.testnet)"), "{paid}");
+        assert!(paid.contains("    commit    testnet:Hash1  (signed by ann.practice.antibody.testnet)"), "{paid}");
         // A wrong proof: no payout, the bond to the escrow, final after the window without T1.
         let wrong = summary(&record("NoViolation", "Done:Forfeited", "T0"), 24, "wNEAR");
         assert!(wrong.contains("verdict: NoViolation; answered at T0") && wrong.contains("final: T0, final after the 60 s challenge window"), "{wrong}");

@@ -86,7 +86,13 @@ fn program(ctx: &Ctx, id: u32, signed: &[Value], t2: &BTreeMap<u64, Value>) -> R
         .collect();
     let pauses = mine.iter().filter(|x| x["body"].get("Pause").is_some()).count();
     // The current round's rule strength, as its manifest commits it (docs/rule-strength.md).
-    let strength = cmd::program_manifest(ctx, id).ok().and_then(|m| serde_json::from_slice::<Value>(&m).ok()).map(|m| m["rule_strength"].clone()).unwrap_or(Value::Null);
+    // One archival read at most: a busy archival RPC must not hold the whole summary up.
+    let round = p["round"].as_u64().unwrap_or(0) as u32;
+    let strength = cmd::program_manifest_at_tries(ctx, id, round, 1)
+        .ok()
+        .and_then(|m| serde_json::from_slice::<Value>(&m).ok())
+        .map(|m| m["rule_strength"].clone())
+        .unwrap_or(Value::Null);
     let drill = meta["name"].as_str().is_some_and(is_drill);
     // A pull request's bounty window (docs/immune.md): a fork-mode program for its build, labelled by its name.
     let window = meta["name"].as_str().is_some_and(crate::window::is_window);
@@ -217,7 +223,8 @@ fn programs_in_parallel(ctx: &Ctx, ids: &[u32], signed: &[Value], t2: &BTreeMap<
 }
 
 /// `judge`'s one-screen summary: the lines JUDGES.md expects, in the same words (`--json` for the record).
-pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
+/// `verbose` adds each program's run tiers, payouts and permits; one program asked for by id always shows them.
+pub fn summary(j: &Value, decimals: u32, symbol: &str, verbose: bool) -> String {
     let mut out = vec![format!("Antibody on {} (view calls only: no account, no key)", j["network"].as_str().unwrap_or("?"))];
     for c in j["contracts"].as_array().into_iter().flatten() {
         out.push(format!("  {:<17} {:<32} locked: {}", c["role"].as_str().unwrap_or(""), c["account"].as_str().unwrap_or(""), c["locked"]));
@@ -249,7 +256,7 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
             p["pauses"], p["releases"], p["audit_ok"]
         ));
         let tiers: Vec<String> = p["verdicts"]["tiers"].as_array().into_iter().flatten().map(|t| format!("run {} {}", t["run"], t["tier"].as_str().unwrap_or("-"))).collect();
-        if !tiers.is_empty() {
+        if verbose && !tiers.is_empty() {
             out.push(format!("    tiers: {}", tiers.join(", ")));
         }
         if p["verdicts"]["t2_contradicted"].as_u64().unwrap_or(0) > 0 {
@@ -257,6 +264,9 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
         }
         if let Some(s) = p["rule_strength"]["statement"].as_str() {
             out.push(format!("    rule strength: {s} (it measures the rules, not the code's security)"));
+        }
+        if !verbose {
+            continue;
         }
         for x in p["payouts"].as_array().into_iter().flatten() {
             let raw = x["amount_raw"].as_str().and_then(|a| a.parse::<u128>().ok()).unwrap_or(0);
@@ -267,7 +277,7 @@ pub fn summary(j: &Value, decimals: u32, symbol: &str) -> String {
             out.push(format!("    permit {}: {kind}, chain {}, round {}", x["id"], x["chain_id"], x["round"]));
         }
     }
-    out.push("The full record, with code hashes, pins and links: add --json".into());
+    out.push(if verbose { "The full record, with code hashes, pins and links: add --json".into() } else { "Each program's run tiers, payouts and permits: add --verbose (or --program <id>). The full record: add --json".into() });
     out.join("\n")
 }
 
@@ -286,7 +296,7 @@ mod tests {
             {"program_id": 5, "name": "Acme Lend v1 — pre-launch (testnet)", "drill": false, "phase": "Open", "anchor": {"status": "light-client"}, "verdicts": {}},
             {"program_id": 9, "name": "Acme Lend drill 2026-11-10", "drill": true, "phase": "Exited", "anchor": {"status": "light-client"}, "verdicts": {}},
         ]});
-        let s = summary(&j, 24, "wNEAR");
+        let s = summary(&j, 24, "wNEAR", false);
         assert!(s.contains("2 programs (1 of them automated drills)"), "{s}");
         assert!(s.contains("program 9 (Acme Lend drill 2026-11-10, an automated drill): phase Exited"), "{s}");
         assert!(s.contains("program 5 (Acme Lend v1 — pre-launch (testnet)): phase Open"), "{s}");
@@ -298,7 +308,7 @@ mod tests {
             {"program_id": 9, "name": "Acme Lend drill 2026-11-10", "drill": true, "window": false, "phase": "Exited", "anchor": {"status": "light-client"}, "verdicts": {}},
             {"program_id": 12, "name": "PR #12 window (antibody-immune-demo @ 1a2b3c4)", "drill": false, "window": true, "phase": "Open", "anchor": {"status": "light-client"}, "verdicts": {}},
         ]});
-        let s = summary(&j, 24, "wNEAR");
+        let s = summary(&j, 24, "wNEAR", false);
         assert!(s.contains("2 programs (1 of them automated drills, 1 pull-request windows)"), "{s}");
         assert!(s.contains("program 12 (PR #12 window (antibody-immune-demo @ 1a2b3c4), a pull-request window): phase Open"), "{s}");
         assert!(!is_drill("PR #12 window (antibody-immune-demo @ 1a2b3c4)"));

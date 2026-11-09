@@ -316,7 +316,7 @@ impl Near {
                         // the next RPC; a transaction, or the only RPC there is, says so at once.
                         if deprecated(&s) {
                             let e = eyre!(
-                                "{method}: {} is a retired NEAR RPC ({s}). Leave out --rpc for the default, or pass another                                  provider's (docs.near.org/api/rpc/providers)",
+                                "{method}: {} is a retired NEAR RPC ({s}). Leave out --rpc for the default, or pass another provider's (docs.near.org/api/rpc/providers)",
                                 rpc_label(url)
                             );
                             if sends || endpoints == 1 {

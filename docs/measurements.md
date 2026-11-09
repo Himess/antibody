@@ -93,7 +93,7 @@ Window: 244 requests from 2026-11-01 11:27 to 2026-11-02 06:17 UTC, from 28 call
 | Metric | Value |
 |---|---|
 | `verify_quote` gas, 200 recent calls | 175.5–175.8 Tgas (about 0.0176 NEAR) |
-| OutLayer request 6496 (public attestation) | `Verified`, TCB `UpToDate`; `report_data` binds the task; worker image = OutLayer approved entry #109 (`antibody tee check --request-id 6496`) |
+| OutLayer request 8839 (run 33, the recorded moment) | `Verified`, TCB `UpToDate`; `report_data` binds the task; caller agent-a; input and output hashes equal run 33's on near-antibody; worker image = OutLayer approved entry #109 (`antibody tee check --request-id 8839`) |
 
 ## Ethereum Sepolia light client (`client-eth2.sepolia.testnet`)
 

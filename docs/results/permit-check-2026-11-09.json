@@ -1,5 +1,5 @@
 {
- "what": "A pause permit checked with Ethereum's own ecrecover: near-guardian's permit 6 (the recorded moment's Sepolia pause), signed by NEAR's MPC network, recovers to the address the Sepolia adapter accepts as its guardian.",
+ "what": "A pause permit checked end to end without trusting Antibody: the MPC network's key for near-guardian's derivation path hashes to an EVM address; Ethereum's own ecrecover of near-guardian's permit 6 (the recorded moment's Sepolia pause) returns that address; and the Sepolia adapter accepts that address as its guardian.",
  "network": "testnet",
  "guardian_contract": "guardian.antibody.testnet",
  "chain_id": 11155111,
@@ -37,5 +37,18 @@
  },
  "address": "0xd10a6d3cdb6363b4200aa976f67296fba844aa94",
  "pause_tx": "0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4",
- "measured": "2026-11-09T00:05Z"
+ "measured": "2026-11-09T00:05Z",
+ "mpc": {
+  "contract": "v1.signer-prod.testnet",
+  "method": "derived_public_key",
+  "args": {
+   "path": "antibody/acme.antibody.testnet/bounty.antibody.testnet/5",
+   "predecessor": "guardian.antibody.testnet",
+   "domain_id": 0
+  },
+  "public_key": "secp256k1:5dF4ANtojF5JzNBCGryX7rpcPd9AHC8sMPNjDhJbdHo8FRVwyxyA3ywjxaDCXqrhHu8LhRSKNe3koix1zcSTQM94",
+  "xy_hex": "e7526e30a5e150619b099027c3a0dfc7146cf61f34edeee8b4d475922d96dc159af4204b733d89925332383c778cdf5171a9dfe2c264959079776d45c67bddbb",
+  "address": "0xd10a6d3cdb6363b4200aa976f67296fba844aa94",
+  "note": "the address is the last 20 bytes of keccak-256 over the 64 bytes x||y (cast keccak 0x<xy_hex>); near-guardian pins the same address for program 5 (get_program)"
+ }
 }

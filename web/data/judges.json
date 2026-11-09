@@ -1323,20 +1323,20 @@
    "n": 17,
    "kind": "immune_demo",
    "claim": "Immune memory on pull requests, in the enclave: every paid proof of program 12 re-runs inside the enclave against a pull request's code, through near-antibody's rounds; a pull request that brings back a paid defect is red, a harmless one green (antibody-immune-demo)",
-   "check": "`antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'` (and runs 131, 136, 137–140)",
-   "expected": "run 133 (round 6, commit 56): `Violation`, slot 1 (`fees_to_treasury`), tier `T1`: PR #2 red; runs 137–140 (round 7): `NoViolation`, `T1`: PR #1 green; both round checks `ok` at T1; PR #1's manifest, built for round 6, renumbered to 7",
-   "evidence": "[PR #2's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42515848087), [PR #1's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42515852210), every run: [docs/results/immune-demo-2026-11-08.json](docs/results/immune-demo-2026-11-08.json)",
+   "check": "`antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":169}'` (and runs 167, 162, 163–166)",
+   "expected": "run 169 (round 11, commit 56): `Violation`, slot 1 (`fees_to_treasury`), tier `T1`: PR #2 red; runs 163–166 (round 10): `NoViolation`, `T1`: PR #1 green; both round checks `ok` at T1; PR #2's manifest, built for round 10, renumbered to 11",
+   "evidence": "[PR #2's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42538787235), [PR #1's check](https://github.com/Himess/antibody-immune-demo/actions/runs/42538785818), every run: [docs/results/immune-demo-2026-11-09.json](docs/results/immune-demo-2026-11-09.json)",
    "commands": [
-    "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'"
+    "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":169}'"
    ],
    "links": [
     {
      "label": "PR #2's check",
-     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515848087"
+     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42538787235"
     },
     {
      "label": "PR #1's check",
-     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515852210"
+     "url": "https://github.com/Himess/antibody-immune-demo/actions/runs/42538785818"
     }
    ],
    "live": [
@@ -1345,34 +1345,34 @@
      "contract": "bounty.antibody.testnet",
      "method": "get_run",
      "args": {
-      "run_id": 133
+      "run_id": 169
      },
      "expect": {
       "path": "outcome.Answered.facts.kind",
       "equals": "Violation",
-      "says": "run 133 breaks slot 1 again: its facts are a Violation"
+      "says": "run 169 breaks slot 1 again: its facts are a Violation"
      },
      "label": "Read the re-run on NEAR",
-     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":133}'"
+     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":169}'"
     },
     {
      "kind": "near-view",
      "contract": "bounty.antibody.testnet",
      "method": "get_run",
      "args": {
-      "run_id": 137
+      "run_id": 163
      },
      "expect": {
       "path": "outcome.Answered.facts.kind",
       "equals": "NoViolation",
-      "says": "run 137, at PR #1's round, breaks nothing"
+      "says": "run 163, at PR #1's round, breaks nothing"
      },
      "label": "Read a green re-run on NEAR",
-     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":137}'"
+     "cli": "antibody view --contract bounty.antibody.testnet --method get_run --args '{\"run_id\":163}'"
     }
    ],
    "program": 12,
-   "results": "docs/results/immune-demo-2026-11-08.json"
+   "results": "docs/results/immune-demo-2026-11-09.json"
   },
   {
    "n": 18,
@@ -1433,11 +1433,13 @@
   {
    "n": 19,
    "kind": "permit_check",
-   "claim": "The MPC network signs the pauses, and Ethereum checks it: the ecrecover precompile on near-guardian's permit 6 (the recorded moment's Sepolia pause) returns the address the Sepolia adapter accepts as its guardian",
-   "check": "`antibody view --contract guardian.antibody.testnet --method get_permit --args '{\"id\":6}'`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
-   "expected": "both return `0xd10a6d3cdb6363b4200aa976f67296fba844aa94`",
+   "claim": "The MPC network signs the pauses, checked without trusting us: the MPC network's key for near-guardian's path hashes to `0xd10a6d3cdb6363b4200aa976f67296fba844aa94`; Ethereum's own ecrecover of near-guardian's permit 6 (the recorded moment's Sepolia pause) returns it; and the Sepolia adapter accepts it as its guardian",
+   "check": "`antibody view --contract v1.signer-prod.testnet --method derived_public_key --args '{\"path\":\"antibody/acme.antibody.testnet/bounty.antibody.testnet/5\",\"predecessor\":\"guardian.antibody.testnet\",\"domain_id\":0}'`, its last 20 bytes of `cast keccak 0x<x‖y>`; `antibody view --contract guardian.antibody.testnet --method get_permit --args '{\"id\":6}'`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
+   "expected": "the MPC key `secp256k1:5dF4ANtojF5J…` hashes to `0xd10a6d3cdb6363b4200aa976f67296fba844aa94`; ecrecover and `guardian()` both return `0xd10a6d3cdb6363b4200aa976f67296fba844aa94`",
    "evidence": "Sepolia pause [0x224f6f77…](https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4); the inputs: [docs/results/permit-check-2026-11-09.json](docs/results/permit-check-2026-11-09.json)",
    "commands": [
+    "antibody view --contract v1.signer-prod.testnet --method derived_public_key --args '{\"path\":\"antibody/acme.antibody.testnet/bounty.antibody.testnet/5\",\"predecessor\":\"guardian.antibody.testnet\",\"domain_id\":0}'",
+    "cast keccak 0xe7526e30a5e150619b099027c3a0dfc7146cf61f34edeee8b4d475922d96dc159af4204b733d89925332383c778cdf5171a9dfe2c264959079776d45c67bddbb",
     "antibody view --contract guardian.antibody.testnet --method get_permit --args '{\"id\":6}'",
     "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0x0000000000000000000000000000000000000001\",\"data\":\"0x5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088000000000000000000000000000000000000000000000000000000000000001b86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad561dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9\"},\"latest\"]}'",
     "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b\",\"data\":\"0x452a9320\"},\"latest\"]}'"
@@ -1451,6 +1453,22 @@
     }
    ],
    "live": [
+    {
+     "kind": "near-view",
+     "contract": "v1.signer-prod.testnet",
+     "method": "derived_public_key",
+     "args": {
+      "path": "antibody/acme.antibody.testnet/bounty.antibody.testnet/5",
+      "predecessor": "guardian.antibody.testnet",
+      "domain_id": 0
+     },
+     "expect": {
+      "equals": "secp256k1:5dF4ANtojF5JzNBCGryX7rpcPd9AHC8sMPNjDhJbdHo8FRVwyxyA3ywjxaDCXqrhHu8LhRSKNe3koix1zcSTQM94",
+      "says": "the MPC network's key for near-guardian's path (its keccak-256 is the address)"
+     },
+     "label": "Ask the MPC network for the key",
+     "cli": "antibody view --contract v1.signer-prod.testnet --method derived_public_key --args '{\"path\":\"antibody/acme.antibody.testnet/bounty.antibody.testnet/5\",\"predecessor\":\"guardian.antibody.testnet\",\"domain_id\":0}'"
+    },
     {
      "kind": "evm",
      "chainId": 11155111,

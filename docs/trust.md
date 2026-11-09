@@ -54,9 +54,13 @@ Anyone may relay a quote (`confirm_tee`, or the T1 relayer). near-antibody accep
 The run is then **T1**. A T1 payout under the program's instant cap is paid in seconds; above the cap it
 also needs a second run that agrees, and waits its challenge window.
 
-**Evidence (no funds needed).** `antibody tee check --request-id 6496` checks a public OutLayer run end
-to end: the report_data binds the task, `verify_quote` (a free view call) returns `Verified` /
-`UpToDate`, and the worker image is in OutLayer's approved measurements. Independently of Antibody's
+**Evidence (no funds needed).** `antibody tee check --request-id 8839` checks the recorded moment's run
+(run 33, agent A's Critical) end to end: its caller is `agent-a.antibody.testnet`, its `input_hash` and
+`output_hash` are run 33's `request_sha256` and `output_sha256` on near-antibody (`get_run`), its
+`wasm_hash` is the pinned verifier (`ccc27f0c…`), the report_data binds the task, `verify_quote` (a free
+view call) returns `Verified` / `UpToDate`, and the worker image is in OutLayer's approved measurements.
+`T1-eligible` means exactly those checks pass, the ones near-antibody repeats on chain before it marks a
+run T1. Independently of Antibody's
 code, OutLayer's open-source `outlayer-verify` re-runs the same checks with Intel's root compiled in:
 `outlayer-verify job <request id> --network testnet`, or `outlayer-verify tx <the transaction that
 requested the run>` (testnet runs only; the sandbox's quotes are MOCK). `fixtures/t1/` records it, and

@@ -20,20 +20,33 @@ scaling. In January 2026, curl ended its bug bounty after a flood of AI-generate
 [BleepingComputer](https://bleepingcomputer.com/news/security/curl-ending-bug-bounty-program-after-flood-of-ai-slop-reports/)).
 
 **Antibody judges code instead.** Submit exploit code, not a report: if it breaks the project's rules,
-you are paid automatically, and a critical bug pauses the protocol on every chain it runs on. Nobody has
-to read a report.
+you are paid automatically, and a critical bug pauses the protocol on every chain the project registered.
+Nobody has to read a report.
 
-How: a hunter, a person or an AI agent, submits a sealed proof of an exploit. OutLayer's enclave, secure
-hardware, re-runs it against the rules the project committed on NEAR, and NEAR checks the enclave's
-attestation before an instant payout. A Critical in the project's pause policy, once attested on NEAR,
-pauses the protocol on every chain the project registered.
+1. A hunter, a person or an AI agent, submits a sealed proof of an exploit.
+2. A secure enclave (OutLayer, Intel TDX) re-runs it against the rules the project committed on NEAR, and
+   NEAR checks the enclave's attestation.
+3. A broken rule pays the hunter automatically. A Critical in the project's pause policy pauses the
+   protocol on every chain the project registered.
+
+The rules are code. An excerpt of our test protocol's
+([AcmeInvariants.sol](contracts/evm/src/acme/AcmeInvariants.sol)): the verifier runs the proof, then asks
+the rules which broke.
+
+```solidity
+function check(bytes calldata pre) external view returns (uint256 broken) {
+    (uint256 fees0, , ) = abi.decode(pre, (uint256, uint256, uint256));
+    if (!solvent()) broken |= SOLVENCY;                          // Critical: pays, and pauses every chain
+    if (_feesAndTreasury() < fees0) broken |= FEES_TO_TREASURY; // High: pays
+}
+```
 
 It runs on NEAR testnet today, with every contract locked. In the recorded run, an agent's critical
 finding, sent over MCP, was paid in 71.0 s and the protocol was paused on both chains by 90.6 s
 ([The one moment](#the-one-moment)). Off-the-shelf Claude Code ran the loop over MCP on the practice
 program 16 times out of 16, every commit ending `Done:Paid`.
 
-## Try it in two minutes
+## Try it now, no account
 
 The release binary has the testnet deployment built in: no repository, no account and no key.
 
@@ -41,7 +54,7 @@ The release binary has the testnet deployment built in: no repository, no accoun
 
 ```bash
 # Linux x86_64
-V=v0.6.1; F=antibody-x86_64-unknown-linux-gnu
+V=v0.6.2; F=antibody-x86_64-unknown-linux-gnu
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -49,7 +62,7 @@ sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```bash
 # macOS (Apple silicon)
-V=v0.6.1; F=antibody-aarch64-apple-darwin
+V=v0.6.2; F=antibody-aarch64-apple-darwin
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -58,7 +71,8 @@ shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```powershell
 # Windows x86_64 (PowerShell): prints OK, or MISMATCH (then delete antibody.exe and download it again)
-$V="v0.6.1"; $U="https://github.com/Himess/antibody/releases/download/$V"
+$ProgressPreference = "SilentlyContinue"   # PowerShell 5.1's progress bar slows the download tenfold
+$V="v0.6.2"; $U="https://github.com/Himess/antibody/releases/download/$V"
 Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.exe" -OutFile antibody.exe -UseBasicParsing
 Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.sha256" -OutFile antibody.sha256 -UseBasicParsing
 if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
@@ -74,7 +88,8 @@ provenance attestation: `gh attestation verify <file> -R Himess/antibody` (the G
 ```
 
 It prints each contract's locked status (code hashes with `--json`), and every program's verdicts, payouts
-and pauses, with a progress line on stderr as it reads, four programs at a time (about 15 s). `judge` and `try` read FastNEAR's
+and pauses, with a progress line on stderr as it reads, four programs at a time (15 s on a quiet public RPC,
+about a minute on a busy one). `judge` and `try` read FastNEAR's
 public RPC, which limits requests: when it answers `-429`, reads move to two other public testnet RPCs for a
 while, and a transaction waits and goes again. `./antibody --rpc <url> judge` picks another primary RPC;
 for transactions, FastNEAR's `https://test.rpc.fastnear.com` is the other endpoint known to take them (a free
@@ -88,9 +103,9 @@ plan elsewhere may time out on `send_tx`).
 
 It gets a practice account, seals the public tutorial proof, commits and reveals it, and settles it,
 printing each step as it happens and a link for every transaction at the end. It ends `Done:Paid` in about
-a minute when the run is attested on NEAR: 43.7 s and 39.9 s in the recorded run, 36.4 s, 44.4 s and 44.6 s
-on the fresh practice program (2026-11-08 and 09); a busy public RPC can stretch that, and every step prints
-as it goes. While new
+a minute when the run is attested on NEAR and the public RPC is quiet (43.7 s and 39.9 s in the recorded run;
+36.4 s, 44.4 s and 44.6 s on the fresh practice program), and in two to three minutes when the RPC is busy:
+94 to 158 s for judges trying it four at a time from one address on 2026-11-09. While new
 worker images wait their two-day delay, the payout waits the program's 60 s challenge window instead (91 to
 95 s for the paid runs in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output
 says which path it took.
@@ -99,7 +114,7 @@ The practice vending contract vends a capped number of accounts an hour (30 thro
 by the UTC clock hour; when the hour's are taken, the error says when the count starts again, and nothing is
 spent. [/try](https://antibody-near.vercel.app/try) shows how many are left. A try that stopped part-way goes on where it
 stopped when you run it again with the same name. The same binary runs in Docker:
-`docker run --rm ghcr.io/himess/antibody:v0.6.1 judge`.
+`docker run --rm ghcr.io/himess/antibody:v0.6.2 judge`.
 
 ## How it works
 
@@ -207,6 +222,14 @@ Every verdict carries one of three levels. The CLI and JUDGES.md print them as T
 All three rest on the same determinism: the native, enclave and zero-knowledge builds of the verifier give
 the same receipt, byte for byte. Details and checks: [docs/trust.md](docs/trust.md).
 
+**What you still trust**, in three lines (each with its check in [docs/trust.md](docs/trust.md)):
+- **OutLayer and Intel TDX:** the enclave and OutLayer's keystore are the only places a sealed proof can be
+  read before its verdict, and a T0 verdict rests on OutLayer's operator until it is attested.
+- **The Ethereum light client:** each program's anchor block comes from `client-eth2.sepolia.testnet`,
+  kept current by one relayer, and is checked once, when the program is created.
+- **Liveness, not safety, from our services:** the keeper and relayers only make permissionless calls; if
+  they stop, payouts and pauses wait for anyone else to make them.
+
 ## Bring your own proof
 
 Write a proof yourself, by hand or with an agent, still with no account. `hunt start` gets an account and
@@ -232,7 +255,8 @@ forfeited ([results](docs/results/byo-2026-11-07.json)).
 
 `antibody mcp` serves the same loop as MCP tools; `hunt_start`, `check_poc` and `hunt_submit` need no
 account. Every result is marked as untrusted data, and file access stays inside a workspace. An agent
-account is a NEAR sub-account that cannot withdraw, with a bond budget and a per-commit cap. Setup:
+account is a NEAR sub-account that near-antibody never lets withdraw (its payouts go to its owner), driven by a key
+that can only commit, reveal and retry, within a bond budget and a per-commit cap. Setup:
 [AGENTS.md](AGENTS.md). Measured on testnet (2026-11-08): Claude Code, with these tools and the release binary,
 took 10 of 10 runs with the tutorial proof, and 6 of 6 writing the proof itself (with file tools in its workspace),
 to a commit that ended `Done:Paid`: 7 and 3 of them within the agent's own call, the rest once the services' keeper
@@ -253,8 +277,11 @@ settled. Practice payouts go back to the vending contract ([docs/agent-runs.md](
 - **Immune memory on pull requests:** every paid proof, sealed or not, re-runs inside the enclave against the
   pull request's code, through near-antibody's rounds, and the check fails if one still breaks a rule. On the
   [demo repository](https://github.com/Himess/antibody-immune-demo), the pull request that brings a paid bug
-  back is red and the harmless one green. A second check re-runs on the runner the proofs it can read, the
-  only one a fork's pull request gets ([docs/immune.md](docs/immune.md)).
+  back is [red](https://github.com/Himess/antibody-immune-demo/actions/runs/42538787235) and the harmless one
+  [green](https://github.com/Himess/antibody-immune-demo/actions/runs/42538785818) (v0.6.1, 2026-11-09). The
+  enclave check takes about 11 minutes, one pull request at a time per program. A second, advisory check
+  re-runs on the runner the proofs it can read, the only one a fork's pull request gets
+  ([docs/immune.md](docs/immune.md)).
 
 ## Checked and attacked
 
@@ -337,7 +364,7 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
   - **Function-call keys:** an agent's key may commit, reveal and retry, and can never withdraw or transfer.
     A pull-request check's keys may only propose a round (`propose_round` and the manifest's upload) or open
     one (`open_round`, `allocate`). Each practice account holds one key scoped to its own contract.
-  - **Agent security:** an agent works through a NEAR sub-account that cannot withdraw, within a bond budget
+  - **Agent security:** an agent works through a NEAR sub-account that near-antibody never lets withdraw, within a bond budget
     and a per-commit cap that count losses; a commit outside them is refused and recorded as a containment
     event, live on testnet (JUDGES.md claim 18).
   - **Agent commerce:** agents earn bounties, paid by near-antibody in wNEAR (the measured runs above).

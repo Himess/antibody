@@ -230,7 +230,7 @@ fn hourly_cap(near: &crate::near::Near, vending: &str, name: &str, e: eyre::Repo
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let (at, mins) = next_hour(now);
     eyre!(
-        "{vending} vends at most {per_hour} practice accounts an hour, and this hour's are taken. Nothing was spent and the name          is still free. The count starts again at {at} UTC (in {mins} min): run the same command then, or now with your own          testnet account: antibody --account <you>.testnet try --name {name}. The recorded tries are on the site's /moment."
+        "{vending} vends at most {per_hour} practice accounts an hour, and this hour's are taken. Nothing was spent and the name is still free. The count starts again at {at} UTC (in {mins} min): run the same command then, or now with your own testnet account: antibody --account <you>.testnet try --name {name}. The recorded tries are on the site's /moment."
     )
 }
 
@@ -278,10 +278,34 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
         Err(e) => return Err(e),
     }
     if cmd::state_label(&ctx.commit(commit)?["state"]) == "Holder" {
-        let s = cmd::call(ctx, "pay", json!({"commit_id": commit}), PAY_TGAS)?;
-        steps.push(json!({"pay": s["tx"], "paid": cmd::event(&s, "paid")}));
+        match cmd::call(ctx, "pay", json!({"commit_id": commit}), PAY_TGAS) {
+            Ok(s) => steps.push(json!({"pay": s["tx"], "paid": cmd::event(&s, "paid")})),
+            // `pay` is permissionless: the services' keeper may pay the commit between the read above (a final
+            // block, a moment behind) and this call, and near-antibody then refuses a second payment. The
+            // commit's own state says whether it was paid.
+            Err(e) => match settled_elsewhere(ctx, commit)? {
+                Some(state) => steps.push(json!({"pay": null, "paid_by": "another caller (the services' keeper)", "state": state})),
+                None => return Err(e),
+            },
+        }
     }
     Ok(Value::Array(steps))
+}
+
+/// A commit someone else settled while this try was settling it: its final state once the views catch up
+/// (a few seconds), or None when it is still not done.
+fn settled_elsewhere(ctx: &Ctx, commit: u64) -> Result<Option<String>> {
+    let t0 = Instant::now();
+    loop {
+        let state = cmd::state_label(&ctx.commit(commit)?["state"]);
+        if state.starts_with("Done:") {
+            return Ok(Some(state));
+        }
+        if t0.elapsed().as_secs() >= 15 {
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
 }
 
 /// The vending contract and practice program to try: as given, else the deployment's.
@@ -487,15 +511,18 @@ pub fn prove(
         crate::progress::step(format!("committed: commit {commit_id}; revealing the sealed proof (the enclave verifies it)"));
         let reveal = cmd::reveal(&practice, program, commit_id, true)?;
         let run_id = reveal["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {reveal}"))?;
-        crate::progress::step(format!(
-            "verdict: {} (run {run_id}); waiting for its attestation on NEAR, or the end of the challenge window",
-            reveal["result"]["kind"].as_str().or(reveal["result"]["facts"]["kind"].as_str()).unwrap_or("answered")
-        ));
+        let kind = reveal["result"]["kind"].as_str().or(reveal["result"]["facts"]["kind"].as_str()).unwrap_or("answered").to_string();
+        crate::progress::step(format!("verdict: {kind} (run {run_id}); waiting for its attestation on NEAR, or the end of the challenge window"));
         // T1 normally arrives in seconds. When it cannot (a worker image the program does not count yet,
         // docs/runbooks/worker-images.md), the verdict stays T0 and is final once NEAR's clock passes the
         // challenge window: the try settles at whichever comes first.
         let ready = payable::wait_on_near(&practice, program, run_id)?;
-        crate::progress::step(format!("payable ({}); settling: allocate, then pay", ready.path.as_str()));
+        // Only a Violation pays; any other verdict is final too, and settling returns or forfeits the bond.
+        crate::progress::step(if kind == "Violation" {
+            format!("payable ({}); settling: allocate, then pay", ready.path.as_str())
+        } else {
+            format!("final ({}): a {kind} pays nothing; settling the bond", ready.path.as_str())
+        });
         let settled = settle(&practice, program, commit_id)?;
         Ok((commit, reveal, commit_id, run_id, ready, settled))
     })();
@@ -529,12 +556,12 @@ pub fn proof_links(ctx: &Ctx, p: &Proved) -> Vec<Value> {
     links
 }
 
-/// One transaction of a summary, with the command that shows it. A vend an earlier attempt made (the try or
-/// hunt went on from it) has no hash here: the line says so.
+/// One transaction of a summary: its explorer link and its signer (`antibody admin tx <hash> --signer <account>`
+/// shows it in full). A vend an earlier attempt made (the try or hunt went on from it) has no link: the line says so.
 pub fn tx_line(k: &str, link: &Value, signer: &str) -> String {
-    match link.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("") {
+    match link.as_str().unwrap_or("") {
         "" => format!("    {k:<9} (made by an earlier attempt with this name)"),
-        hash => format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"),
+        url => format!("    {k:<9} {url}  (signed by {signer})"),
     }
 }
 
@@ -589,7 +616,7 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
             out.push(tx_line(k, v, signer.unwrap_or("?")));
         }
     }
-    out.push("The full record: add --json".into());
+    out.push("Any transaction in full: antibody admin tx <hash> --signer <account>. The full record: add --json".into());
     out.join("\n")
 }
 
