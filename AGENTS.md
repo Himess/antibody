@@ -75,7 +75,7 @@ Your agent writes the proof itself and needs no NEAR account: the server gets it
 }
 ```
 
-With Claude Code, the same in one line: `claude mcp add antibody -- antibody mcp --workspace <dir>`.
+With Claude Code, the same in one line: `claude mcp add antibody -- antibody mcp --workspace <dir>`. The long calls (`practice_try`, `hunt_submit`, about a minute each) send `notifications/progress` for each step when the request carries a `progressToken`.
 
 The practice vending contract vends at most a set number of accounts per UTC clock hour (30 through 25 November). When the hour's are taken, `hunt_start` and `practice_try` refuse with the time the count starts again, and nothing is spent.
 
