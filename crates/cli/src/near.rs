@@ -357,6 +357,14 @@ impl Near {
             if next >= SEND_RATE_LIMIT_ATTEMPTS || (next >= 7 && !(sends && limited)) {
                 break;
             }
+            // A wait long enough to look like a hang says what it waits for (the long commands' progress lines).
+            if limited && pause >= 2_000 {
+                crate::progress::step(format!(
+                    "{method}: the public RPC is rate-limiting (429); trying again in {} s{}",
+                    pause.div_ceil(1000),
+                    if sends { ", the same transaction (nothing was sent)" } else { "" }
+                ));
+            }
             std::thread::sleep(std::time::Duration::from_millis(pause));
         }
         Err(last)

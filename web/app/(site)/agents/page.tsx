@@ -531,8 +531,7 @@ export default function AgentsPage() {
         <div className="callout" style={{ marginTop: 20 }}>
           <Icon name="info" size={16} />
           <span>
-            The tools default to the deployment&apos;s hunt vending contract and accept its practice vending contract, and no other.
-            Until a hunt vending contract is deployed, pass <code className="nowrap">&quot;vending&quot;: &quot;practice.antibody.testnet&quot;</code>{" "}
+            This deployment has no hunt vending contract yet, so the tools take its practice vending contract, and no other: pass <code className="nowrap">&quot;vending&quot;: &quot;practice.antibody.testnet&quot;</code>{" "}
             to <code>hunt_start</code>: your agent can write the tutorial proof itself, from the workspace&apos;s <code>PROOF.md</code>. From
             a terminal: <code>antibody hunt start --name &lt;you&gt; --vending practice.antibody.testnet</code>, then{" "}
             <code>antibody hunt submit --name &lt;you&gt; --poc hunt-&lt;you&gt;/proof.bundle.json</code>.

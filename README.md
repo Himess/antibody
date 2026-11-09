@@ -44,7 +44,8 @@ function check(bytes calldata pre) external view returns (uint256 broken) {
 It runs on NEAR testnet today, with every contract locked. In the recorded run, an agent's critical
 finding, sent over MCP, was paid in 71.0 s and the protocol was paused on both chains by 90.6 s
 ([The one moment](#the-one-moment)). Off-the-shelf Claude Code ran the loop over MCP on the practice
-program 16 times out of 16, every commit ending `Done:Paid`.
+program 16 times, and all 16 commits were paid: 10 within the agent's own call, 6 once the keeper settled
+the queue (release v0.5.0, [the runs](docs/agent-runs.md)).
 
 ## Try it now, no account
 
@@ -113,7 +114,9 @@ says which path it took.
 The practice vending contract vends a capped number of accounts an hour (30 through 25 November), counted
 by the UTC clock hour; when the hour's are taken, the error says when the count starts again, and nothing is
 spent. [/try](https://antibody-near.vercel.app/try) shows how many are left. A try that stopped part-way goes on where it
-stopped when you run it again with the same name. The same binary runs in Docker:
+stopped when you run it again with the same name, revealing a commit it had left unrevealed: claims are paid
+in commit order, so a try behind an abandoned commit waits until that one expires (10 minutes at most). The
+same binary runs in Docker:
 `docker run --rm ghcr.io/himess/antibody:v0.6.2 judge`.
 
 ## How it works
@@ -206,8 +209,9 @@ The same moment runs again every day around 03:00 UTC, on a fresh Acme Lend at n
 verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill that passed
 is listed under the recorded run on [/moment](https://antibody-near.vercel.app/moment), and
 [/status](https://antibody-near.vercel.app/status) says whether the latest one passed, or where it
-stopped. The first to pass ran on 2026-11-08 ([results](docs/results/drill-2026-11-08.json)); its times
-are longer than the recorded run's because its reveal waited for a rate-limited RPC.
+stopped. Two drills ran on 2026-11-08 (programs 8 and 9); the second passed
+([results](docs/results/drill-2026-11-08.json)), with times longer than the recorded run's because its
+reveal waited for a rate-limited RPC.
 
 ## How a verdict is checked
 

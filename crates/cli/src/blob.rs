@@ -174,6 +174,16 @@ pub fn fetch_tries(near: &Near, url: &str, tries: usize) -> Result<Vec<u8>> {
                 Ok(v) => last = v.get("error").map(|e| e.to_string()).unwrap_or_else(|| "no transaction in its answer".into()),
                 Err(e) => last = format!("{e:#}"),
             }
+            // Once, after the archival RPC's first failure: the regular RPCs (`--rpc` and the fallbacks) keep the last
+            // days' transactions, enough for a program created this week (a practice program's base witness).
+            if attempt == 0 && tries > 1 {
+                let regular = near.call("tx", serde_json::json!({"tx_hash": hash, "sender_account_id": signer, "wait_until": "INCLUDED_FINAL"}));
+                if let Ok(r) = regular {
+                    if let Ok(b) = fastfs::content_from_tx_response(&serde_json::json!({"result": r})) {
+                        return Ok(b);
+                    }
+                }
+            }
         }
         return Err(eyre!(
             "the archival RPC did not return transaction {hash} in {tries} tries (its last answer: {last}). A public RPC fails like this for a minute at a time: run the same command again"

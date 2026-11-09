@@ -658,18 +658,21 @@ export function StatusLive({ initial, runRoles }: { initial: Result<Status>; run
                   </dd>
                 </div>
                 <div>
-                  <dt>Balance</dt>
+                  <dt>Balance it can spend</dt>
                   <dd>
-                    <span className="num">{nearAmt(balance)}</span>{" "}
-                    {balance === null ? null : balance < 0.5 ? (
+                    <span className="num">{nearAmt(num(practice.liquid_near) ?? balance)}</span>{" "}
+                    {(num(practice.liquid_near) ?? balance) === null ? null : (num(practice.liquid_near) ?? balance ?? 0) < 1.5 ? (
                       <Pill tone="bad" size="sm">
-                        below 0.5 NEAR
+                        below 1.5 NEAR
                       </Pill>
                     ) : (
                       <Pill tone="ok" size="sm">
-                        above 0.5 NEAR
+                        above 1.5 NEAR
                       </Pill>
                     )}
+                    <div className="xsmall muted">
+                      of {nearAmt(balance)} in all: its storage holds the rest, and each new account needs about 0.26 NEAR until it closes
+                    </div>
                   </dd>
                 </div>
                 <div>
