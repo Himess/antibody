@@ -196,7 +196,7 @@ sequenceDiagram
 <a href="https://antibody-near.vercel.app/moment">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/moment-dark.png">
-    <img src="docs/assets/moment-light.png" width="100%" alt="The recorded moment on the site: agent A's critical bug paid in 71.0 s, and both chains paused by 90.6 s, on a timeline across NEAR testnet, Base Sepolia and Sepolia">
+    <img src="docs/assets/moment-light.png" width="100%" alt="The recorded moment on the site: agent A's critical bug, paid in 71.0 s, both chains paused by 90.6 s, on a timeline across NEAR testnet (committed, enclave verdict, attested on NEAR, pause permits signed, paid), Base Sepolia and Sepolia">
   </picture>
 </a>
 
