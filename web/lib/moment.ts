@@ -81,7 +81,7 @@ function paidBy(d: MomentStep["detail"]): string | undefined {
   const to = typeof d.beneficiary === "string" ? d.beneficiary : null;
   if (!amount || !to) return undefined;
   const lane = d.instant === true ? "an instant payout (attested on NEAR, under the cap)" : "after its challenge window";
-  return `${wnear(amount)} to ${to} from the program's escrow: ${lane}`;
+  return `${wnear(amount)} credited to ${to} from the program's escrow, withdrawable at any time: ${lane}`;
 }
 
 /**

@@ -229,12 +229,15 @@ export function OneMoment({
               </div>
             );
           })}
-          <span className={styles.playhead} style={{ left: `calc(var(--lane-label) + (100% - var(--lane-label)) * ${t / span})` }} aria-hidden />
+          {/* At rest at the end, the playhead would sit on the last step's label: it shows while the replay runs. */}
+          {playing || t < end - 1e-6 ? (
+            <span className={styles.playhead} style={{ left: `calc(var(--lane-label) + (100% - var(--lane-label)) * ${t / span})` }} aria-hidden />
+          ) : null}
         </div>
       </div>
 
       {/* Shown below 760 px in every variant (the stage included, on a phone); the wide chart takes over above it. */}
-      <PhoneChart steps={steps} lanes={lanes} t={t} end={end} />
+      <PhoneChart steps={steps} lanes={lanes} t={t} end={end} playing={playing} />
 
       <div className={styles.controls}>
         <button type="button" className="btn btn-sm" onClick={() => (playing ? setPlaying(false) : play())} aria-label={playing ? "Pause the replay" : "Play the replay"}>
@@ -298,7 +301,7 @@ function Node({ step, left, done, place }: { step: Step; left: string; done: boo
 const V = { pad: 14, tickW: 24, axis: 32, rail: 44, gap: 20, label: 16, row: 24, pps: 5, maxH: 480 };
 
 /** Phones: the same lanes top to bottom, nodes placed by their seconds, the pause permits fanning out to each chain. */
-function PhoneChart({ steps, lanes, t, end }: { steps: Step[]; lanes: Lane[]; t: number; end: number }) {
+function PhoneChart({ steps, lanes, t, end, playing }: { steps: Step[]; lanes: Lane[]; t: number; end: number; playing: boolean }) {
   const pps = Math.min(V.pps, V.maxH / end);
   const y = (s: number) => V.pad + s * pps;
   const x = (lane: Lane) => V.rail + Math.max(0, lanes.indexOf(lane)) * V.gap;
@@ -367,8 +370,12 @@ function PhoneChart({ steps, lanes, t, end }: { steps: Step[]; lanes: Lane[]; t:
               </g>
             );
           })}
-          <line className={styles.vhead} x1={V.axis} x2={labelX - 8} y1={yt} y2={yt} />
-          <circle className={styles.vheadDot} cx={V.axis} cy={yt} r={3.5} />
+          {playing || t < end - 1e-6 ? (
+            <>
+              <line className={styles.vhead} x1={V.axis} x2={labelX - 8} y1={yt} y2={yt} />
+              <circle className={styles.vheadDot} cx={V.axis} cy={yt} r={3.5} />
+            </>
+          ) : null}
         </svg>
         {steps.map((s, i) => (
           <PhoneLabel key={s.key} step={s} top={tops[i]} left={labelX} done={t >= s.seconds_exact - 1e-6} />

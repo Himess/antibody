@@ -1376,6 +1376,62 @@
   },
   {
    "n": 18,
+   "kind": "agent_containment",
+   "claim": "An agent's limits hold on chain: `capdemo.antibody.testnet`, registered by its owner with a bond budget and a per-commit cap, commits within its cap (commit 71); its owner lowers the cap below the program's bond, and its next commit is refused and recorded as a containment event. Its key cannot withdraw, transfer or deposit",
+   "check": "`antibody view --contract bounty.antibody.testnet --method agent_statement --args '{\"agent\":\"capdemo.antibody.testnet\"}'`",
+   "expected": "`registered: true`, `commits: 1`, `containment_events: 1`, `per_commit_cap` 0.00005 wNEAR (program 13's bond: 0.0001 wNEAR); key: commit, reveal, upload and the permissionless keeper methods; no withdrawal, transfer or deposit",
+   "evidence": "register [CXbUgPts…](https://testnet.nearblocks.io/txns/CXbUgPtsFjaPqpXeVPgDpQyCPUYNJp5g5RHJj7yy5PpG), commit [DHGQ3oaX…](https://testnet.nearblocks.io/txns/DHGQ3oaXsdRVcRHtwFyxvLL33mTGmVEWmPohh88BdDFQ), cap lowered [9XmGRUFq…](https://testnet.nearblocks.io/txns/9XmGRUFqxicUFQ65d8y5iQYV5KaZw3EsMeEyCY16QzB1), refused commit [8nTNVfZb…](https://testnet.nearblocks.io/txns/8nTNVfZbSpwXMB3e296M315hkkRPPAqCWzgdcXDAGTFs); every step: [docs/results/agent-containment-2026-11-09.json](docs/results/agent-containment-2026-11-09.json)",
+   "commands": [
+    "antibody view --contract bounty.antibody.testnet --method agent_statement --args '{\"agent\":\"capdemo.antibody.testnet\"}'"
+   ],
+   "links": [
+    {
+     "label": "register",
+     "chain": "near",
+     "tx": "CXbUgPtsFjaPqpXeVPgDpQyCPUYNJp5g5RHJj7yy5PpG",
+     "url": "https://testnet.nearblocks.io/txns/CXbUgPtsFjaPqpXeVPgDpQyCPUYNJp5g5RHJj7yy5PpG"
+    },
+    {
+     "label": "commit within the cap",
+     "chain": "near",
+     "tx": "DHGQ3oaXsdRVcRHtwFyxvLL33mTGmVEWmPohh88BdDFQ",
+     "url": "https://testnet.nearblocks.io/txns/DHGQ3oaXsdRVcRHtwFyxvLL33mTGmVEWmPohh88BdDFQ"
+    },
+    {
+     "label": "cap lowered",
+     "chain": "near",
+     "tx": "9XmGRUFqxicUFQ65d8y5iQYV5KaZw3EsMeEyCY16QzB1",
+     "url": "https://testnet.nearblocks.io/txns/9XmGRUFqxicUFQ65d8y5iQYV5KaZw3EsMeEyCY16QzB1"
+    },
+    {
+     "label": "refused commit",
+     "chain": "near",
+     "tx": "8nTNVfZbSpwXMB3e296M315hkkRPPAqCWzgdcXDAGTFs",
+     "url": "https://testnet.nearblocks.io/txns/8nTNVfZbSpwXMB3e296M315hkkRPPAqCWzgdcXDAGTFs"
+    }
+   ],
+   "live": [
+    {
+     "kind": "near-view",
+     "contract": "bounty.antibody.testnet",
+     "method": "agent_statement",
+     "args": {
+      "agent": "capdemo.antibody.testnet"
+     },
+     "expect": {
+      "path": "containment_events",
+      "equals": 1,
+      "says": "capdemo.antibody.testnet counts 1 containment event"
+     },
+     "label": "Read the agent on NEAR",
+     "cli": "antibody view --contract bounty.antibody.testnet --method agent_statement --args '{\"agent\":\"capdemo.antibody.testnet\"}'"
+    }
+   ],
+   "program": 13,
+   "results": "docs/results/agent-containment-2026-11-09.json"
+  },
+  {
+   "n": 19,
    "kind": "project_read",
    "claim": "The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped",
    "check": "`antibody --account <project> program read --commit 13 --project-key <key file> --out <dir> --reveal-tx 8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY` (the wrap exists: no transaction)",
@@ -1429,7 +1485,7 @@
    "duplicate": 16
   },
   {
-   "n": 19,
+   "n": 20,
    "kind": "audit",
    "claim": "Every conservation equation balances (the ledger's both sides)",
    "check": "`antibody judge` (each program's `audit ok`, and the contract's)",
@@ -1465,7 +1521,7 @@
    ]
   },
   {
-   "n": 20,
+   "n": 21,
    "kind": "agent_runs",
    "claim": "An off-the-shelf agent (Claude Code, the v0.5.0 release binary) completes the loop over MCP: measured runs, not bug finding",
    "check": "each run's commit with `antibody status --commit <id>` (the ids are in each report)",
