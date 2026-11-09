@@ -783,7 +783,7 @@ pub fn markdown(r: &Report) -> String {
     o += "\n</details>\n\n";
     o += &format!(
         "Exit code {}. 0: no re-run paid proof breaks a rule; 2: a paid proof still breaks one; 3: none breaks, but a re-run was \
-         inconclusive{}. {}. Sealed proofs re-run inside the TEE are next, not built.\n",
+         inconclusive{}. {}. Sealed proofs re-run inside the enclave in the immune-enclave check (docs/immune.md, Re-runs in the enclave).\n",
         r.exit_code,
         if r.strict { " or a paid proof could not be read" } else { "" },
         r.verifier

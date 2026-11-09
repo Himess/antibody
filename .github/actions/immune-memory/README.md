@@ -211,5 +211,7 @@ report's path; empty when none was written). The job summary has the report, or 
   commit's keys on chain already name it (their slots are public); any other rule it breaks now shows as
   `another rule (withheld)`. It never says where: the entry point is what the proof's on-chain tag hides.
   Running the CLI locally with `--reveal-sealed` shows them.
-- Sealed proofs are re-run here, outside a TEE, only by a runner that holds the project key. Re-running them
-  inside the TEE, where the result is all anyone sees, is next, not built.
+- Sealed proofs are re-run here, outside a TEE, only by a runner that holds the project key. The
+  [`immune-enclave`](../immune-enclave/action.yml) Action re-runs every paid proof, sealed ones included,
+  inside the enclave, where the result is all anyone sees
+  ([Re-runs in the enclave](../../../docs/immune.md#re-runs-in-the-enclave)).
