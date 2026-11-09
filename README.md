@@ -56,7 +56,7 @@ The release binary has the testnet deployment built in: no repository, no accoun
 
 ```bash
 # Linux x86_64
-V=v0.6.2; F=antibody-x86_64-unknown-linux-gnu
+V=v0.6.3; F=antibody-x86_64-unknown-linux-gnu
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -64,7 +64,7 @@ sha256sum -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```bash
 # macOS (Apple silicon)
-V=v0.6.2; F=antibody-aarch64-apple-darwin
+V=v0.6.3; F=antibody-aarch64-apple-darwin
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F
 curl -fsSLO https://github.com/Himess/antibody/releases/download/$V/$F.sha256
 shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
@@ -73,7 +73,7 @@ shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```powershell
 # Windows x86_64 (PowerShell): prints OK, or MISMATCH (then delete antibody.exe and download it again)
-$V="v0.6.2"; $U="https://github.com/Himess/antibody/releases/download/$V"
+$V="v0.6.3"; $U="https://github.com/Himess/antibody/releases/download/$V"
 curl.exe -fsSL "$U/antibody-x86_64-pc-windows-msvc.exe" -o antibody.exe      # curl.exe ships with Windows 10 and 11
 curl.exe -fsSL "$U/antibody-x86_64-pc-windows-msvc.sha256" -o antibody.sha256
 if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
@@ -116,7 +116,7 @@ spent. [/try](https://antibody-near.vercel.app/try) shows how many are left. A t
 stopped when you run it again with the same name, revealing a commit it had left unrevealed: claims are paid
 in commit order, so a try behind an abandoned commit waits until that one expires (10 minutes at most). The
 same binary runs in Docker:
-`docker run --rm ghcr.io/himess/antibody:v0.6.2 judge`.
+`docker run --rm ghcr.io/himess/antibody:v0.6.3 judge`.
 
 ## How it works
 

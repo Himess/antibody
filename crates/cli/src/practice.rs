@@ -304,7 +304,8 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
-        Err(e) if e.to_string().contains("nothing to allocate") => {}
+        // The services' keeper (or anyone: `allocate` is permissionless) allocated it first.
+        Err(e) if e.to_string().contains("nothing to allocate") => steps.push(json!({"allocate": "by:another caller"})),
         Err(e) => return Err(e),
     }
     if cmd::state_label(&ctx.commit(commit)?["state"]) == "Holder" {
@@ -314,7 +315,7 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
             // block, a moment behind) and this call, and near-antibody then refuses a second payment. The
             // commit's own state says whether it was paid.
             Err(e) => match settled_elsewhere(ctx, commit)? {
-                Some(state) => steps.push(json!({"pay": null, "paid_by": "another caller (the services' keeper)", "state": state})),
+                Some(state) => steps.push(json!({"pay": "by:another caller", "paid_by": "another caller (the services' keeper)", "state": state})),
                 None => return Err(e),
             },
         }
@@ -606,8 +607,10 @@ pub fn proof_links(ctx: &Ctx, p: &Proved) -> Vec<Value> {
     let mut links = vec![json!({"commit": p.commit["tx"]["explorer"]}), json!({"reveal": p.reveal["tx"]["explorer"]})];
     for s in p.settled.as_array().into_iter().flatten() {
         for k in ["allocate", "pay"] {
-            if let Some(h) = s[k].as_str() {
-                links.push(json!({k: ctx.near.explorer_tx(h)}));
+            match s[k].as_str() {
+                Some(by) if by.starts_with("by:") => links.push(json!({k: by})),
+                Some(h) => links.push(json!({k: ctx.near.explorer_tx(h)})),
+                None => {}
             }
         }
     }
@@ -621,6 +624,7 @@ pub fn proof_links(ctx: &Ctx, p: &Proved) -> Vec<Value> {
 pub fn tx_line(k: &str, link: &Value, signer: &str) -> String {
     match link.as_str().unwrap_or("") {
         "" => format!("    {k:<9} (made by an earlier attempt with this name)"),
+        by if by.starts_with("by:") => format!("    {k:<9} (made by {}, a moment earlier: it is permissionless)", &by[3..]),
         url => format!("    {k:<9} {url}  (signed by {signer})"),
     }
 }

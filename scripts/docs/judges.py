@@ -1012,7 +1012,9 @@ def bring_your_own(d, names, vending):
            "the account's key. The vending contract pays the bond, the verification run and the storage, and payouts go back to it. One "
            "config, with no account:", "",
            "```json", json.dumps({"mcpServers": {"antibody": {"command": "antibody", "args": d.net_args() + ["mcp", "--workspace", "<dir>"]}}}, indent=2), "```", "",
-           "With Claude Code, the same in one line: `claude mcp add antibody -- " + " ".join(["antibody"] + d.net_args() + ["mcp", "--workspace", "<dir>"]) + "`.", "",
+           "With Claude Code, the same in one line: `claude mcp add antibody -- " + " ".join(["antibody"] + d.net_args() + ["mcp", "--workspace", "<dir>"]) + "`. "
+           "The long calls (`practice_try`, `hunt_submit`, about a minute each) send `notifications/progress` for each step when the request "
+           "carries a `progressToken`.", "",
            "The practice vending contract vends at most a set number of accounts per UTC clock hour (30 through 25 November). When the hour's "
            "are taken, `hunt_start` and `practice_try` refuse with the time the count starts again, and nothing is spent.", ""]
     added = [n for n in ("hunt_start", "hunt_submit") if names and n not in names]

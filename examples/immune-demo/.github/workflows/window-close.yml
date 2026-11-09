@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ANTIBODY_VERSION: v0.6.2
+  ANTIBODY_VERSION: v0.6.3
   ANTIBODY_REPOSITORY: Himess/antibody
 
 jobs:

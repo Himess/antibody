@@ -198,6 +198,20 @@ pub fn mcp_practice_vending(dep: &Deployments, given: Option<&str>) -> Result<St
     }
 }
 
+/// The arguments a tool's own schema requires, checked before anything runs: a missing one is named, with
+/// every argument the tool takes.
+pub fn required_args(name: &str, a: &Value) -> Result<()> {
+    let tools = tools();
+    let Some(t) = tools.as_array().into_iter().flatten().find(|t| t["name"] == json!(name)) else { return Ok(()) };
+    let schema = &t["inputSchema"];
+    let missing: Vec<&str> = schema["required"].as_array().into_iter().flatten().filter_map(|r| r.as_str()).filter(|r| a.get(*r).is_none_or(|v| v.is_null())).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let all: Vec<String> = schema["properties"].as_object().map(|p| p.keys().cloned().collect()).unwrap_or_default();
+    Err(eyre!("{name}: missing required argument {} (its arguments: {}; `tools/list` has each one's meaning)", missing.join(", "), all.join(", ")))
+}
+
 fn arg_u64(a: &Value, k: &str) -> Result<u64> {
     a[k].as_u64().ok_or_else(|| eyre!("missing integer argument {k}"))
 }
@@ -349,6 +363,8 @@ pub fn serve(ctx: &Ctx, workspace: &Path) -> Result<()> {
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
         let line = line?;
+        // Windows PowerShell 5.1 prefixes what it pipes with a UTF-8 BOM.
+        let line = line.trim_start_matches('\u{feff}');
         if line.trim().is_empty() {
             continue;
         }
@@ -379,8 +395,12 @@ pub fn serve(ctx: &Ctx, workspace: &Path) -> Result<()> {
             "tools/call" => {
                 let name = msg["params"]["name"].as_str().unwrap_or_default();
                 let args = msg["params"]["arguments"].clone();
-                let result = tool_result(checked_args(workspace, name, &args).and_then(|a| call(ctx, name, &a)))?;
-                respond(&mut out, &id, result)?;
+                // A client that sends a progressToken hears each step of a long call (a try, a hunt submit).
+                crate::progress::mcp_sink(msg["params"]["_meta"]["progressToken"].as_str().map(|t| json!(t))
+                    .or_else(|| msg["params"]["_meta"]["progressToken"].as_i64().map(|t| json!(t))));
+                let result = tool_result(required_args(name, &args).and_then(|()| checked_args(workspace, name, &args)).and_then(|a| call(ctx, name, &a)));
+                crate::progress::mcp_sink(None);
+                respond(&mut out, &id, result?)?;
             }
             other => respond_error(&mut out, &id, -32601, &format!("method not found: {other}"))?,
         }
@@ -391,6 +411,15 @@ pub fn serve(ctx: &Ctx, workspace: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tool call that lacks a required argument says which, and every argument the tool takes.
+    #[test]
+    fn a_missing_argument_is_named_with_the_tools_arguments() {
+        let e = required_args("check_poc", &json!({"program_id": 14})).unwrap_err().to_string();
+        assert!(e.contains("missing required argument bundle_path") && e.contains("program_id") && e.contains("salt"), "{e}");
+        assert!(required_args("check_poc", &json!({"program_id": 14, "bundle_path": "p.json"})).is_ok());
+        assert!(required_args("no_such_tool", &json!({})).is_ok());
+    }
 
     /// Over a pipe read in another code page, the em dash must survive: the server writes ASCII only.
     #[test]
