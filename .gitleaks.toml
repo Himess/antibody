@@ -6,6 +6,8 @@ useDefault = true
 
 [allowlist]
 description = "Generated proof data and public test fixtures"
+# The regexes below match the whole line a finding is on (each one names public values).
+regexTarget = "line"
 paths = [
   # Binary state-proof witnesses (Merkle nodes, hashes): high entropy by construction, no secrets.
   '''fixtures/.*\.witness\.bin$''',
@@ -27,7 +29,10 @@ paths = [
 # The zk guest's program vkey: a public constant (docs/zk.md, near-t2's code), recorded in results files.
 # A verdict's reward-key tag (sha256 of a broken rule's slot and location, public in near-antibody's
 # records), as an agent's transcript quotes it ("Key tag claimed: `<hex>`", docs/agent-runs/).
+# A program's sealing-key epoch, public in near-antibody's program record (`get_program`: key_epoch), as the
+# drill's results file records it.
 regexes = [
+  '''"key_epoch": "[0-9a-f]{16}"''',
   '''0x00e87aaad0ca36c285eec6bccab0cace523784873ad65e45b3b65e2759288203''',
   '''0fe4a23afba19da52860b442b7e556d84added7b2720aa955092f160514afaa7''',
 ]

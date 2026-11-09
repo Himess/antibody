@@ -44,7 +44,7 @@ function check(bytes calldata pre) external view returns (uint256 broken) {
 
 It runs on NEAR testnet today, with every contract locked. In the recorded run, an agent's critical
 finding, sent over MCP, was paid in 71.0 s and the protocol was paused on both chains by 90.6 s
-([The one moment](#the-one-moment)). Off-the-shelf Claude Code ran the loop over MCP on the practice
+([The one moment](#the-one-moment)); the daily drill on 2026-11-09 did it in 55.6 s and 59.6 s. Off-the-shelf Claude Code ran the loop over MCP on the practice
 program 16 times, and all 16 commits were paid: 10 within the agent's own call, 6 once the keeper settled
 the queue (release v0.5.0, [the runs](docs/agent-runs.md)).
 
@@ -208,9 +208,10 @@ The same moment runs again every day around 03:00 UTC, on a fresh Acme Lend at n
 verdict, its attestation on NEAR, the instant payout and the pause on both chains. Each drill that passed
 is listed under the recorded run on [/moment](https://antibody-near.vercel.app/moment), and
 [/status](https://antibody-near.vercel.app/status) says whether the latest one passed, or where it
-stopped. Two drills ran on 2026-11-08 (programs 8 and 9); the second passed
-([results](docs/results/drill-2026-11-08.json)), with times longer than the recorded run's because its
-reveal waited for a rate-limited RPC.
+stopped. The latest, on 2026-11-09 (program 15), beat the recorded run: **paid in 55.6 s, both chains
+paused by 59.6 s**, at T1 and instant ([results](docs/results/drill-2026-11-09.json)). Two drills ran on
+2026-11-08 (programs 8 and 9); the second passed ([results](docs/results/drill-2026-11-08.json)), with
+longer times because its reveal waited for a rate-limited RPC.
 
 ## How a verdict is checked
 
