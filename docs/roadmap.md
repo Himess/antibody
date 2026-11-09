@@ -29,8 +29,12 @@ everything else is not built yet.
      practice try.
    - **Done** (2026-11-07): the recorded run's four runs proven on SP1's prover network (0.42 PROVE and
      45-79 s each) and near-t2 on testnet (`zk.antibody.testnet`, locked), all four records `confirmed`;
-     since then the prover service proves every practice try (21 runs `confirmed` by 2026-11-09).
+     since then the prover service proves practice tries while its PROVE budget lasts (21 runs `confirmed` by
+     2026-11-09, when it paused at its floor).
    - Next: zk by default above a cap.
+   - Next: a challenger in the keeper, so that no T0 Violation is paid unchallenged: a challenge demands
+     T1, and with none the verdict is void and both bonds are refunded (spec §6.4). And a pause on two
+     agreeing T0 runs from different workers while a new worker image waits its delay.
 4. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
 5. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).
 6. L2 state verification through MPC foreign-chain verification or L2 light clients; more chains for pause and release.

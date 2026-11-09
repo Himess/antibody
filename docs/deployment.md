@@ -7,7 +7,7 @@ deployer included, can change its code. `antibody judge` reads each one's code h
 |---|---|---|
 | near-antibody | `bounty.antibody.testnet` | locked (code `C9LGvUpq…`, [CkenQk4B…](https://testnet.nearblocks.io/txns/CkenQk4BfJi9uYW72siKVqTRAAYUXxAXKErtNvQWKqDb); the staging run ran on `HMmyk9i7…`, the same code but one view) |
 | near-guardian | `guardian.antibody.testnet` | locked (code `4SdG5PK9…`) |
-| Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 13 since 2026-11-08 21:05 UTC, a fresh one for the judging days (programs 6 and 10 before it: each vault pays once per program, [runbook](runbooks/worker-images.md)); the recorded run's were practice program 6 and its fork-mode twin program 7 |
+| Practice vending | `practice.antibody.testnet` | locked (code `AdXwpxi5…`; its public vend key stays); practice program 14 since 2026-11-09 01:30 UTC (programs 6, 10 and 13 before it; a timer opens a fresh one every two hours when the next vault is proved or 8 or fewer are fresh: each vault pays once per program, [runbook](runbooks/worker-images.md)); the recorded run's were practice program 6 and its fork-mode twin program 7 |
 | Verdict guard | `guard.antibody.testnet` | locked (code `7Wotb7nn…`): a DAO treasury the Acme project owns, watching program 5. It froze on A's T1-confirmed Critical (commit 13), not on D's duplicate (commit 16), and refused the next transfer ([JUDGES.md](../JUDGES.md), row 15) |
 | near-t2 | `zk.antibody.testnet` | locked (code `3HFJXFtL…`): checks zero-knowledge proofs of disclosed verdicts against near-antibody's records ([zk.md](zk.md)) |
 | Payout token | `wrap.testnet` (wNEAR: testnet NEAR, with no value) | existing |

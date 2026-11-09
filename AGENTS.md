@@ -81,7 +81,7 @@ The practice vending contract vends at most a set number of accounts per UTC clo
 
 The recorded run's server had no `hunt_start` or `hunt_submit`: the tools below were added after it.
 
-Three calls:
+Three calls (their arguments: `hunt_start` `{name, vending}`, `check_poc` `{program_id, bundle_path}`, `hunt_submit` `{name, poc}`; `tools/list` gives every tool's schema):
 
 1. `hunt_start` with a new lowercase `name`: the account, the instance of the program's targets it may prove (their addresses), the rules and what each pays, the program's limits, and a workspace `hunt-<name>/` with the proof format (for the practice program, also its sources and a Foundry harness that runs offline).
 2. `check_poc` with the program's id and the proof's path: the verifier on your machine, nothing sent.

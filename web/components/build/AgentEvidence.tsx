@@ -99,7 +99,7 @@ export async function ContainmentChecks() {
         </p>
         <Check
           check={{ kind: "api", path: `/v1/accounts/${PRACTICE_AGENT}` }}
-          expect={{ path: "credit.agent.programs.0", equals: 6, says: `bound to program 6, the practice program; its owner is ${d.vending}` }}
+          expect={{ path: "credit.agent.programs.0", equals: 6, says: `bound to program 6, the practice program of the recorded run (tries go to the vending contract's current program now); its owner is ${d.vending}` }}
           cli={`antibody status --of ${PRACTICE_AGENT}`}
         />
       </div>

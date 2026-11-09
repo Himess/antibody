@@ -1018,7 +1018,8 @@ def bring_your_own(d, names, vending):
     added = [n for n in ("hunt_start", "hunt_submit") if names and n not in names]
     if added:
         out += ["The recorded run's server had no " + " or ".join(f"`{n}`" for n in added) + ": the tools below were added after it.", ""]
-    out += ["Three calls:", "",
+    out += ["Three calls (their arguments: `hunt_start` `{name, vending}`, `check_poc` `{program_id, bundle_path}`, `hunt_submit` `{name, poc}`; "
+            "`tools/list` gives every tool's schema):", "",
             "1. `hunt_start` with a new lowercase `name`: the account, the instance of the program's targets it may prove (their addresses), the "
             "rules and what each pays, the program's limits, and a workspace `hunt-<name>/` with the proof format (for the practice program, also "
             "its sources and a Foundry harness that runs offline).",

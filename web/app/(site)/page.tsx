@@ -145,7 +145,7 @@ export default async function Home() {
             </a>
             : the verifier runs a proof, then asks them which broke.
           </figcaption>
-          <pre style={{ margin: 0, overflowX: "auto" }}>
+          <pre style={{ margin: 0, overflowX: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             <code>{`function check(bytes calldata pre) external view returns (uint256 broken) {
     (uint256 fees0, , ) = abi.decode(pre, (uint256, uint256, uint256));
     if (!solvent()) broken |= SOLVENCY;                          // Critical: pays, and pauses every chain
@@ -209,11 +209,11 @@ export default async function Home() {
         </div>
         <dl className={styles.stats}>
           <div>
-            <dt>Time to verdict, median</dt>
+            <dt>Commit to enclave verdict, median</dt>
             <dd className="num">{seconds(verdict?.p50)}</dd>
           </div>
           <div>
-            <dt>Time to verdict, 95th percentile</dt>
+            <dt>Commit to enclave verdict, 95th percentile</dt>
             <dd className="num">{seconds(verdict?.p95)}</dd>
           </div>
           <div>

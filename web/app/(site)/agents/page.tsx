@@ -255,7 +255,7 @@ export default function AgentsPage() {
   return (
     <>
       <PageHead
-        crumbs={[{ href: "/agents", label: "Hunters and agents" }]}
+        crumbs={[{ href: "/agents", label: "Hunters & agents" }]}
         eyebrow="For hunters and agents"
         title="Earn on proof, not on prose"
         lede={
