@@ -1,0 +1,41 @@
+{
+ "what": "A pause permit checked with Ethereum's own ecrecover: near-guardian's permit 6 (the recorded moment's Sepolia pause), signed by NEAR's MPC network, recovers to the address the Sepolia adapter accepts as its guardian.",
+ "network": "testnet",
+ "guardian_contract": "guardian.antibody.testnet",
+ "chain_id": 11155111,
+ "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+ "permit": {
+  "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+  "body": {
+   "Pause": {
+    "ticket": 13
+   }
+  },
+  "chain_id": 11155111,
+  "deadline": 1794411789,
+  "digest": "5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088",
+  "id": 6,
+  "program_key": "bounty.antibody.testnet/5",
+  "project": "acme.antibody.testnet",
+  "r": "86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad56",
+  "requested_ns": 1793806989745288642,
+  "round": 0,
+  "s": "1dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9",
+  "signed_ns": 1793806993727763825,
+  "v": 27
+ },
+ "ecrecover": {
+  "precompile": "0x0000000000000000000000000000000000000001",
+  "input": "0x5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088000000000000000000000000000000000000000000000000000000000000001b86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad561dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9",
+  "returned": "0x000000000000000000000000d10a6d3cdb6363b4200aa976f67296fba844aa94"
+ },
+ "adapter": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+ "guardian_call": {
+  "data": "0x452a9320",
+  "signature": "guardian()",
+  "returned": "0x000000000000000000000000d10a6d3cdb6363b4200aa976f67296fba844aa94"
+ },
+ "address": "0xd10a6d3cdb6363b4200aa976f67296fba844aa94",
+ "pause_tx": "0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4",
+ "measured": "2026-11-09T00:05Z"
+}

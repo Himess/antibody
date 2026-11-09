@@ -1432,6 +1432,66 @@
   },
   {
    "n": 19,
+   "kind": "permit_check",
+   "claim": "The MPC network signs the pauses, and Ethereum checks it: the ecrecover precompile on near-guardian's permit 6 (the recorded moment's Sepolia pause) returns the address the Sepolia adapter accepts as its guardian",
+   "check": "`antibody view --contract guardian.antibody.testnet --method get_permit --args '{\"id\":6}'`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
+   "expected": "both return `0xd10a6d3cdb6363b4200aa976f67296fba844aa94`",
+   "evidence": "Sepolia pause [0x224f6f77…](https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4); the inputs: [docs/results/permit-check-2026-11-09.json](docs/results/permit-check-2026-11-09.json)",
+   "commands": [
+    "antibody view --contract guardian.antibody.testnet --method get_permit --args '{\"id\":6}'",
+    "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0x0000000000000000000000000000000000000001\",\"data\":\"0x5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088000000000000000000000000000000000000000000000000000000000000001b86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad561dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9\"},\"latest\"]}'",
+    "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b\",\"data\":\"0x452a9320\"},\"latest\"]}'"
+   ],
+   "links": [
+    {
+     "label": "Sepolia pause",
+     "chain_id": 11155111,
+     "tx": "0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4",
+     "url": "https://sepolia.etherscan.io/tx/0x224f6f77ffd081042f634f2a214c1d23d5c232114e35a62e7935981a1ee779e4"
+    }
+   ],
+   "live": [
+    {
+     "kind": "evm",
+     "chainId": 11155111,
+     "method": "eth_call",
+     "params": [
+      {
+       "to": "0x0000000000000000000000000000000000000001",
+       "data": "0x5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088000000000000000000000000000000000000000000000000000000000000001b86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad561dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9"
+      },
+      "latest"
+     ],
+     "expect": {
+      "equals": "0x000000000000000000000000d10a6d3cdb6363b4200aa976f67296fba844aa94",
+      "says": "ecrecover returns 0xd10a6d3cdb6363b4200aa976f67296fba844aa94"
+     },
+     "label": "Recover the signer on Sepolia",
+     "cli": "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0x0000000000000000000000000000000000000001\",\"data\":\"0x5e745195d8d3541c29e7d5fa8fe74df6e8da1764dc44e3dffe7975e67107f088000000000000000000000000000000000000000000000000000000000000001b86ace246a13f71bd3653e359872e41836c600b177f124a56046129788b01ad561dfe5140eb8ff24e9193e5b095728c7a8e9e6f906616839560822561c4eaaad9\"},\"latest\"]}'"
+    },
+    {
+     "kind": "evm",
+     "chainId": 11155111,
+     "method": "eth_call",
+     "params": [
+      {
+       "to": "0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b",
+       "data": "0x452a9320"
+      },
+      "latest"
+     ],
+     "expect": {
+      "equals": "0x000000000000000000000000d10a6d3cdb6363b4200aa976f67296fba844aa94",
+      "says": "the adapter's guardian() is 0xd10a6d3cdb6363b4200aa976f67296fba844aa94"
+     },
+     "label": "Ask the adapter its guardian",
+     "cli": "curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0xad6bc84c8c5a9fb5aca79b13bb867b6e7930d49b\",\"data\":\"0x452a9320\"},\"latest\"]}'"
+    }
+   ],
+   "results": "docs/results/permit-check-2026-11-09.json"
+  },
+  {
+   "n": 20,
    "kind": "project_read",
    "claim": "The project reads only what it paid for: A's proof opens with its NEP-413-derived key; a duplicate is never wrapped",
    "check": "`antibody --account <project> program read --commit 13 --project-key <key file> --out <dir> --reveal-tx 8yEJyYXgz34BJWCTPLVnvq13PLW15oBx8uzkMkopc4DY` (the wrap exists: no transaction)",
@@ -1485,7 +1545,7 @@
    "duplicate": 16
   },
   {
-   "n": 20,
+   "n": 21,
    "kind": "audit",
    "claim": "Every conservation equation balances (the ledger's both sides)",
    "check": "`antibody judge` (each program's `audit ok`, and the contract's)",
@@ -1521,7 +1581,7 @@
    ]
   },
   {
-   "n": 21,
+   "n": 22,
    "kind": "agent_runs",
    "claim": "An off-the-shelf agent (Claude Code, the v0.5.0 release binary) completes the loop over MCP: measured runs, not bug finding",
    "check": "each run's commit with `antibody status --commit <id>` (the ids are in each report)",

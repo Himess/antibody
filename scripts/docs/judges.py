@@ -430,6 +430,23 @@ def agent_containment(net):
     return ac
 
 
+def permit_check(net):
+    """The newest independent check of a pause permit's signature on this network (docs/results/permit-check-<date>.json:
+    Ethereum's ecrecover precompile and the adapter's guardian(), both read on the chain), or None."""
+    base = pathlib.Path(__file__).resolve().parents[2] / "docs" / "results"
+    files = sorted(base.glob("permit-check-*.json"))
+    if not files:
+        return None
+    try:
+        pc = json.loads(files[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if pc.get("network") != net or pc["ecrecover"]["returned"] != pc["guardian_call"]["returned"]:
+        return None
+    pc["file"] = f"docs/results/{files[-1].name}"
+    return pc
+
+
 def agent_runs_lines(runs):
     """One line per task of the measured agent runs: what the agent had, how many runs ended paid, the median."""
     lines = []
@@ -811,6 +828,28 @@ def judges(d):
             [d.check_view(contract, "agent_statement", {"agent": ac["agent"]}, f"{ac['agent']} counts {st.get('containment_events')} containment event",
                           "Read the agent on NEAR", path="containment_events", equals=st.get("containment_events"))],
             program=ac["program"], results=ac["file"])
+    pc = permit_check(d.net)
+    if pc:
+        # The pause permit's signature, checked by Ethereum itself: the ecrecover precompile on the permit's digest and
+        # signature returns the address the adapter accepts as its guardian (the MPC network's key for near-guardian).
+        n += 1
+        pm = pc["permit"]
+        view = d.cli(f"view --contract {pc['guardian_contract']} --method get_permit --args '{{\"id\":{pm['id']}}}'")
+        rec_params = [{"to": pc["ecrecover"]["precompile"], "data": pc["ecrecover"]["input"]}, "latest"]
+        grd_params = [{"to": pc["adapter"], "data": pc["guardian_call"]["data"]}, "latest"]
+        name = chain_name(pc["chain_id"])
+        row(n, f"The MPC network signs the pauses, and Ethereum checks it: the ecrecover precompile on near-guardian's permit {pm['id']} "
+               f"(the recorded moment's {name} pause) returns the address the {name} adapter accepts as its guardian",
+            f"`{view}`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
+            f"both return `{pc['address']}`",
+            f"{name} pause {d.evm_tx('https://sepolia.etherscan.io/tx/' + pc['pause_tx'])}; the inputs: [{pc['file']}]({pc['file']})",
+            "permit_check", [view, d.curl(pc["rpc"], "eth_call", rec_params), d.curl(pc["rpc"], "eth_call", grd_params)],
+            [{"label": f"{name} pause", "chain_id": pc["chain_id"], "tx": pc["pause_tx"], "url": "https://sepolia.etherscan.io/tx/" + pc["pause_tx"]}],
+            [d.check_evm(pc["chain_id"], pc["rpc"], "eth_call", rec_params, f"ecrecover returns {pc['address']}", "Recover the signer on " + name,
+                         equals=pc["ecrecover"]["returned"]),
+             d.check_evm(pc["chain_id"], pc["rpc"], "eth_call", grd_params, f"the adapter's guardian() is {pc['address']}", "Ask the adapter its guardian",
+                         equals=pc["guardian_call"]["returned"])],
+            results=pc["file"])
     pr = r.get("project_read", {})
     if pr:
         n += 1
@@ -887,6 +926,13 @@ def judges(d):
         checks.append({"claim": fork_n, "label": lbl, "chain_id": a, "subject": "practice vault", "address": fm["vault_3"], "expected_result": "0x",
                        "rpc": first_rpc, "method": "eth_getCode", "params": params, "curl": curl, "live": d.live,
                        "expect": {"equals": "0x", "says": "\"0x\": no code at the practice vault's address"}})
+    pc = permit_check(d.net)
+    if pc:
+        for lbl, params in ((f"Permit {pc['permit']['id']}: Ethereum's ecrecover of its digest and signature returns `{pc['address']}`",
+                             [{"to": pc["ecrecover"]["precompile"], "data": pc["ecrecover"]["input"]}, "latest"]),
+                            (f"The {chain_name(pc['chain_id'])} adapter's `guardian()` is `{pc['address']}`",
+                             [{"to": pc["adapter"], "data": pc["guardian_call"]["data"]}, "latest"])):
+            evm += [f"- {lbl}", "", "  ```bash", "  " + d.curl(pc["rpc"], "eth_call", params), "  ```"]
     if evm:
         out += ["", "### The EVM checks", ""] + evm
     # Every transaction behind a claim, in full, and how to look one up.

@@ -146,7 +146,7 @@ Sepolia. Counted from the block of its commit:
 |---:|---|
 | 18.5 s | The enclave's verdict: a critical rule broke |
 | 29.1 s | The verdict attested on NEAR |
-| 71.0 s | 0.1 wNEAR paid to agent A |
+| 71.0 s | 0.1 wNEAR paid to agent A: credited at near-antibody and withdrawable ([withdrawn on 2026-11-09](https://testnet.nearblocks.io/txns/6H1U7ZRT93HeXtKPrBZEXvUdoF6KqXwDvW44DQPB7dYX)) |
 | 90.6 s | The protocol paused on both chains |
 
 Who sent what, in order (the times are from the same commit block):
@@ -303,6 +303,11 @@ function-call key limited to `vend` and `reclaim`.
 
 Full table: [docs/deployment.md](docs/deployment.md).
 
+The keeper, the relayers and the API are conveniences, not authorities: every call they make is
+permissionless (allocating and paying claims, relaying a TDX quote or a signed permit), so anyone can run
+them (`antibody keeper`, or the services) or make the calls by hand, and none of them can change a verdict or redirect
+a payout.
+
 ## Limits
 
 Testnet only: wNEAR on testnet has no value, and Acme Lend and the practice vaults are our own deliberately
@@ -333,7 +338,8 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
     A pull-request check's keys may only propose a round (`propose_round` and the manifest's upload) or open
     one (`open_round`, `allocate`). Each practice account holds one key scoped to its own contract.
   - **Agent security:** an agent works through a NEAR sub-account that cannot withdraw, within a bond budget
-    and a per-commit cap that count losses; a commit outside them is refused.
+    and a per-commit cap that count losses; a commit outside them is refused and recorded as a containment
+    event, live on testnet (JUDGES.md claim 18).
   - **Agent commerce:** agents earn bounties, paid by near-antibody in wNEAR (the measured runs above).
   - **Chain Signatures:** NEAR's MPC network signs the pause and release permits that the protocol's
     contracts on Sepolia and Base Sepolia accept.
@@ -345,8 +351,9 @@ All 17 items, with what is done: [docs/roadmap.md](docs/roadmap.md).
 - **AI-assisted:** written with Claude Code (Claude Opus 5.5). The design, the rules and every decision on
   scope were reviewed by the team.
 - **Business model:** the requester pays verification at cost. Revenue is a fee on payouts and a fee per
-  release permit, both pinned per program, and later a paid tier for the drafter, rule strength and
-  analytics. Forfeited bonds are never revenue: they go to the program's escrow.
+  release permit, both pinned per program: the proposed mainnet price is 5% of each payout, nothing when
+  nothing is found (0 on testnet). Later, a paid tier for the drafter, rule strength and analytics.
+  Forfeited bonds are never revenue: they go to the program's escrow.
 
 <details>
 <summary><b>Libraries and tools</b></summary>
