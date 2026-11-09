@@ -367,6 +367,37 @@ fn later_fix_releases_carried_key() {
     w.audit_ok(&[p]);
 }
 
+/// `rerunBreakingAnotherKeyReleasesItTest`: a key is carried only when its holder's re-run still breaks
+/// that key. The verdict named key 1 while the proof breaks key 2 (a T0 verdict and an agreeing second
+/// run that nobody challenged); its re-run at the fix breaks key 2, so key 1 is released, and immune
+/// memory keeps the gate shut.
+#[test]
+fn a_rerun_breaking_another_key_releases_the_held_key() {
+    let mut w = W::new();
+    let mut prm = params();
+    prm.instant_cap = 50; // a High payout (100) is above it, as B is in the model
+    prm.instant_budget = 50;
+    let p = w.program_open(1_000, prm);
+    let (c0, _) = w.finding(p, H1, Kind::Violation, &[(B, tag(1))], false);
+    let ctx = w.ctx(H1);
+    let spec = w.spec();
+    let r = w.e.request_second(&ctx, c0, spec);
+    let fx = w.ok(r);
+    w.answer(last_run(&fx), Kind::Violation, &[(B, tag(1))]);
+    w.tick(121);
+    w.allocate(p).unwrap();
+    w.pay(c0).unwrap();
+    assert_eq!(w.e.store.holder(p, 0, &tag(1)), Some(c0));
+    w.propose(p, vec![], true);
+    w.rerun(c0, Kind::Violation, &[(B, tag(2))]); // the fix stops key 1, not the bug the proof has
+    w.tick(61);
+    let fx = w.open_round(p).unwrap();
+    assert_eq!(w.e.store.holder(p, 1, &tag(1)), None, "released: its re-run does not break it");
+    assert!(!fx.iter().any(|f| matches!(f, Effect::ReleasePermit { .. })), "the paid proof still breaks a rule");
+    assert!(w.program(p).fixed_tags.is_empty(), "a fix that does not ship counts nothing as fixed");
+    w.audit_ok(&[p]);
+}
+
 /// Immune memory: every paid PoC is re-run at every fix, so a fix that brings a paid bug back is
 /// not released.
 #[test]

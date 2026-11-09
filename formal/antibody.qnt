@@ -97,7 +97,7 @@ module antibody {
     res: int,       // reserved for it now
     debt: int,      // owed but not funded (shortfall queue)
     end: str,       // "" or the terminal outcome
-    rerun: str,     // "none" | "fixed" | "breaks": the T1 re-run at the proposed fix
+    rerun: str,     // "none" | "fixed" | "breaks" | "other": the T1 re-run at the proposed fix (afterFix)
   }
 
   pure val FREE: Commit = {
@@ -160,10 +160,14 @@ module antibody {
   // The exit waits until every commit is allocated or closed, so it voids nothing that could be paid.
   def canExit: bool = exitEnabled and (s.misconfigured or s.cursor >= s.n)
 
-  // What a re-run at the proposed fix shows (a quote is verified, so it is the truth).
+  // What a re-run at the proposed fix shows (a quote is verified, so it is the truth), per key as
+  // near-antibody reads it: "fixed" when it breaks nothing, "breaks" when it still breaks the commit's own
+  // claim (the key of its verdict; for a gap claim, the invariant the round adds), "other" when it breaks
+  // something else. A final verdict can name a key the PoC does not break (a lying T0 verdict nobody
+  // challenged): that key is then shown fixed, though the PoC is not clean.
   def afterFix(x: Commit): str =
-    if (BUGS.contains(x.truth)) (if (s.fix.contains(x.truth)) "fixed" else "breaks")
-    else if (x.truth == "Gap") (if (s.addsInv) "breaks" else "fixed")
+    if (BUGS.contains(x.truth) and not(s.fix.contains(x.truth))) (if (factsOf(x.truth) == x.facts) "breaks" else "other")
+    else if (x.truth == "Gap" and s.addsInv) (if (x.facts == "Gap") "breaks" else "other")
     else "fixed"
 
   // Whether commit c holds a key in round r: as first finding, carried or promoted.
@@ -180,9 +184,10 @@ module antibody {
   def releaseGate: bool = and {
     s.canaries,
     CIDS.forall(c => c >= s.n or s.cs.get(c).end != "paid" or s.cs.get(c).rerun == "fixed"),
-    // every Critical or High PoC of the round, first finding or duplicate, was re-run and is fixed
+    // every Critical or High PoC of the round, first finding or duplicate, was re-run and its key is fixed
+    // (a first finding whose re-run breaks another key fails the holders' clause below)
     CIDS.forall(c => c >= s.n or s.cs.get(c).round != s.round or not(critHigh(s.cs.get(c)))
-                       or s.cs.get(c).alloc == "none" or s.cs.get(c).rerun == "fixed"),
+                       or s.cs.get(c).alloc == "none" or s.cs.get(c).rerun == "fixed" or s.cs.get(c).rerun == "other"),
     // and no gap claim still harms a protected account
     CIDS.forall(c => c >= s.n or s.cs.get(c).round != s.round or s.cs.get(c).alloc != "gap"
                        or s.cs.get(c).rerun != "breaks"),
@@ -1015,6 +1020,19 @@ module antibody {
       .then(ProposeRound(Set("VA1"), false, true)).then(Rerun(0))
       .then(3.reps(_ => Tick)).then(OpenRound)
       .expect(and { s.round == 2, s.permits == 1, s.holder.get((2, "A")) == -1, all_properties })
+
+  // A key is carried only when its holder's re-run still breaks that key. Here the verdict named B while
+  // the PoC breaks C (a lying T0 verdict, an agreeing second run, no challenge): the fix stops B and the
+  // re-run breaks C, so B is released, and immune memory keeps the gate shut (the paid PoC still breaks C).
+  run rerunBreakingAnotherKeyReleasesItTest =
+    init.then(Open).then(MakeCommit("h1")).then(Reveal(0, "VC1"))
+      .then(FactsT0(0, "VB")).then(SecondRun(0, "VB"))
+      .then(3.reps(_ => Tick)).then(Allocate).then(Pay(0))
+      .expect(and { s.holder.get((0, "B")) == 0, s.paid == 400 })
+      .then(ProposeRound(Set("VB1", "VB2"), false, true)).then(Rerun(0))
+      .expect(s.cs.get(0).rerun == "other")
+      .then(3.reps(_ => Tick)).then(OpenRound)
+      .expect(and { s.round == 1, s.holder.get((1, "B")) == -1, s.permits == 0, all_properties })
 
   // Immune memory: a later fix that brings a paid bug back is not released.
   run regressionBlocksReleaseTest =
