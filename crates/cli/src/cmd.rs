@@ -1208,6 +1208,15 @@ pub fn status_summary(ctx: &Ctx, s: &Value) -> String {
     }
     if let Some(a) = s.get("account") {
         out.push(format!("account {}: credit {} {sym}, NEAR credit {} yocto, wallet {} {sym}", txt(&a["id"]), txt(&a["credit"]), txt(&a["near_credit"]), txt(&a["wallet"])));
+        // A registered agent: whose, its limits, and what they refused (spec §13).
+        let ag = &a["agent"];
+        if ag["registered"] == json!(true) {
+            let amount = |k: &str| human_tokens(u128_of(&ag[k]), ctx.dep.decimals());
+            out.push(format!(
+                "  agent of {}: per-commit cap {} {sym}, bond budget {} {sym}; {} commit(s), {} containment event(s) (commits its limits refused); its key: {}",
+                txt(&ag["owner"]), amount("per_commit_cap"), amount("bond_budget"), ag["commits"], ag["containment_events"], txt(&ag["key_permissions"])
+            ));
+        }
     }
     out.push("The full record: add --json".into());
     out.join("\n")
