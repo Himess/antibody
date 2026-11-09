@@ -322,6 +322,15 @@ export function TryApp({ initial }: { initial: TryInitial }) {
                       Next accounts at {resetAt(now ?? initial.readAt)}
                     </button>
                   </>
+                ) : initial.status.alerts.some((a) => a.key === "practice-vault-proved") ? (
+                  <>
+                    <a href="#recorded" className="btn btn-primary">
+                      <Icon name="play" size={14} /> Watch a recorded try
+                    </a>
+                    <button type="submit" className="btn" aria-describedby={expectId}>
+                      Start anyway (its vault is proved: no payout)
+                    </button>
+                  </>
                 ) : (
                   <button type="submit" className="btn btn-primary" aria-describedby={expectId}>
                     <Icon name="play" size={14} /> Start the try

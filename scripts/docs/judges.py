@@ -406,7 +406,7 @@ def immune_demo(net):
     except (OSError, ValueError):
         return None
     if im.get("network") != net or not any(c.get("verdict") == "red" for c in im.get("checks", [])) \
-            or not any(c.get("verdict") == "green" and c.get("renumbered_from") for c in im.get("checks", [])):
+            or not any(c.get("verdict") == "green" for c in im.get("checks", [])):
         return None
     im["file"] = f"docs/results/{files[-1].name}"
     return im
@@ -794,7 +794,8 @@ def judges(d):
             f"`{cmd}` (and runs {red['round_check']['run']}, {green['round_check']['run']}, {greens[0]}–{greens[-1]})",
             f"run {rerun} (round {red['round']}, commit {brk['commit']}): `Violation`, slot {brk['slot']} (`{brk['rule']}`), tier `T1`: PR #{red['pull_request']} red; "
             f"runs {greens[0]}–{greens[-1]} (round {green['round']}): `NoViolation`, `T1`: PR #{green['pull_request']} green; both round checks `ok` at T1; "
-            f"PR #{green['pull_request']}'s manifest, built for round {green['renumbered_from']}, renumbered to {green['round']}",
+            + (lambda ren: f"PR #{ren['pull_request']}'s manifest, built for round {ren['renumbered_from']}, renumbered to {ren['round']}" if ren else "")(
+                next((c for c in (red, green) if c.get("renumbered_from")), None)),
             f"[PR #{red['pull_request']}'s check]({red['workflow_run']}), [PR #{green['pull_request']}'s check]({green['workflow_run']}), every run: [{im['file']}]({im['file']})",
             "immune_demo", [cmd],
             [{"label": f"PR #{red['pull_request']}'s check", "url": red["workflow_run"]}, {"label": f"PR #{green['pull_request']}'s check", "url": green["workflow_run"]}],
@@ -838,14 +839,20 @@ def judges(d):
         rec_params = [{"to": pc["ecrecover"]["precompile"], "data": pc["ecrecover"]["input"]}, "latest"]
         grd_params = [{"to": pc["adapter"], "data": pc["guardian_call"]["data"]}, "latest"]
         name = chain_name(pc["chain_id"])
-        row(n, f"The MPC network signs the pauses, and Ethereum checks it: the ecrecover precompile on near-guardian's permit {pm['id']} "
-               f"(the recorded moment's {name} pause) returns the address the {name} adapter accepts as its guardian",
-            f"`{view}`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
-            f"both return `{pc['address']}`",
+        mpc = pc.get("mpc") or {}
+        mpc_view = d.cli(f"view --contract {mpc.get('contract')} --method derived_public_key --args '{json.dumps(mpc.get('args', {}), separators=(',', ':'))}'") if mpc else None
+        row(n, f"The MPC network signs the pauses, checked without trusting us: the MPC network's key for near-guardian's path hashes to "
+               f"`{pc['address']}`; Ethereum's own ecrecover of near-guardian's permit {pm['id']} (the recorded moment's {name} pause) returns it; "
+               f"and the {name} adapter accepts it as its guardian",
+            (f"`{mpc_view}`, its last 20 bytes of `cast keccak 0x<x‖y>`; " if mpc else "")
+            + f"`{view}`, then `ecrecover(digest, v, r, s)` and the adapter's `guardian()` with `eth_call` (commands below the table)",
+            (f"the MPC key `{mpc.get('public_key', '')[:22]}…` hashes to `{pc['address']}`; " if mpc else "") + f"ecrecover and `guardian()` both return `{pc['address']}`",
             f"{name} pause {d.evm_tx('https://sepolia.etherscan.io/tx/' + pc['pause_tx'])}; the inputs: [{pc['file']}]({pc['file']})",
-            "permit_check", [view, d.curl(pc["rpc"], "eth_call", rec_params), d.curl(pc["rpc"], "eth_call", grd_params)],
+            "permit_check", ([mpc_view, f"cast keccak 0x{mpc.get('xy_hex', '')}"] if mpc else []) + [view, d.curl(pc["rpc"], "eth_call", rec_params), d.curl(pc["rpc"], "eth_call", grd_params)],
             [{"label": f"{name} pause", "chain_id": pc["chain_id"], "tx": pc["pause_tx"], "url": "https://sepolia.etherscan.io/tx/" + pc["pause_tx"]}],
-            [d.check_evm(pc["chain_id"], pc["rpc"], "eth_call", rec_params, f"ecrecover returns {pc['address']}", "Recover the signer on " + name,
+            ([d.check_view(mpc["contract"], "derived_public_key", mpc["args"], "the MPC network's key for near-guardian's path (its keccak-256 is the address)",
+                           "Ask the MPC network for the key", equals=mpc["public_key"])] if mpc else [])
+            + [d.check_evm(pc["chain_id"], pc["rpc"], "eth_call", rec_params, f"ecrecover returns {pc['address']}", "Recover the signer on " + name,
                          equals=pc["ecrecover"]["returned"]),
              d.check_evm(pc["chain_id"], pc["rpc"], "eth_call", grd_params, f"the adapter's guardian() is {pc['address']}", "Ask the adapter its guardian",
                          equals=pc["guardian_call"]["returned"])],
@@ -927,6 +934,11 @@ def judges(d):
                        "rpc": first_rpc, "method": "eth_getCode", "params": params, "curl": curl, "live": d.live,
                        "expect": {"equals": "0x", "says": "\"0x\": no code at the practice vault's address"}})
     pc = permit_check(d.net)
+    if pc and pc.get("mpc"):
+        m = pc["mpc"]
+        evm += [f"- The MPC network's key for near-guardian's path, and its EVM address (the last 20 bytes of the keccak-256 of x‖y): `{m['address']}`", "",
+                "  ```bash", "  " + d.cli(f"view --contract {m['contract']} --method derived_public_key --args '{json.dumps(m['args'], separators=(',', ':'))}'"),
+                f"  # {m['public_key']}: its 64 bytes x‖y in hex, hashed", f"  cast keccak 0x{m['xy_hex']}", "  ```"]
     if pc:
         for lbl, params in ((f"Permit {pc['permit']['id']}: Ethereum's ecrecover of its digest and signature returns `{pc['address']}`",
                              [{"to": pc["ecrecover"]["precompile"], "data": pc["ecrecover"]["input"]}, "latest"]),

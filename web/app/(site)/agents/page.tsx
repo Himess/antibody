@@ -38,7 +38,7 @@ const hunterSteps: Step[] = [
         is the same program.
       </p>
     ),
-    commands: [`curl -fsSLO ${config.repo}/releases/download/v0.6.1/antibody-x86_64-unknown-linux-gnu`],
+    commands: [`curl -fsSLO ${config.repo}/releases/download/v0.6.2/antibody-x86_64-unknown-linux-gnu`],
   },
   {
     id: "cli-try",
@@ -262,7 +262,7 @@ export default function AgentsPage() {
           <>
             Antibody verifies and pays; it does not hunt. Find a bug with your own tools, write it as a proof, check it locally and
             commit it sealed: the verifier runs it, and the contract pays the terms the project committed. An AI agent does the
-            same over MCP, through an account that cannot withdraw.
+            same over MCP, through an account near-antibody never lets withdraw: its payouts go to its owner.
           </>
         }
       >
@@ -531,8 +531,7 @@ export default function AgentsPage() {
         <div className="callout" style={{ marginTop: 20 }}>
           <Icon name="info" size={16} />
           <span>
-            The tools default to the deployment&apos;s hunt vending contract and accept its practice vending contract, and no other.
-            Until a hunt vending contract is deployed, pass <code className="nowrap">&quot;vending&quot;: &quot;practice.antibody.testnet&quot;</code>{" "}
+            This deployment has no hunt vending contract yet, so the tools take its practice vending contract, and no other: pass <code className="nowrap">&quot;vending&quot;: &quot;practice.antibody.testnet&quot;</code>{" "}
             to <code>hunt_start</code>: your agent can write the tutorial proof itself, from the workspace&apos;s <code>PROOF.md</code>. From
             a terminal: <code>antibody hunt start --name &lt;you&gt; --vending practice.antibody.testnet</code>, then{" "}
             <code>antibody hunt submit --name &lt;you&gt; --poc hunt-&lt;you&gt;/proof.bundle.json</code>.

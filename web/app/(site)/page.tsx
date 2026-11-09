@@ -54,7 +54,7 @@ export default async function Home() {
         </h1>
         <p className={styles.lede}>
           Submit exploit code instead of a report. If it breaks the project&apos;s rules, you are paid automatically, and a critical bug pauses
-          the protocol on every chain it runs on.
+          the protocol on every chain the project registered.
         </p>
         <p className="small muted" style={{ maxWidth: "62ch" }}>
           The exploit stays sealed until OutLayer&apos;s enclave runs it on the chain state the project committed. NEAR checks the enclave&apos;s
@@ -137,6 +137,22 @@ export default async function Home() {
             </li>
           </ol>
         </div>
+        <figure className="card stack" style={{ ["--gap" as string]: "8px", margin: "24px 0 0" }}>
+          <figcaption className="small muted">
+            The rules are code. An excerpt of our test protocol&apos;s,{" "}
+            <a href={sourceUrl("contracts/evm/src/acme/AcmeInvariants.sol")} target="_blank" rel="noreferrer noopener">
+              AcmeInvariants.sol
+            </a>
+            : the verifier runs a proof, then asks them which broke.
+          </figcaption>
+          <pre style={{ margin: 0, overflowX: "auto" }}>
+            <code>{`function check(bytes calldata pre) external view returns (uint256 broken) {
+    (uint256 fees0, , ) = abi.decode(pre, (uint256, uint256, uint256));
+    if (!solvent()) broken |= SOLVENCY;                          // Critical: pays, and pauses every chain
+    if (_feesAndTreasury() < fees0) broken |= FEES_TO_TREASURY; // High: pays
+}`}</code>
+          </pre>
+        </figure>
         <details className={styles.why}>
           <summary>Why proofs, not reports</summary>
           <p className="muted">
@@ -240,11 +256,11 @@ export default async function Home() {
             <strong>Every day, again:</strong> the same moment runs on a fresh Acme Lend, the daily drill. <Link href="/moment">The drills</Link>
           </li>
           <li>
-            <strong>For projects:</strong> rules as code, an escrow, the pause, immune memory on every pull request, and a release gate.{" "}
+            <strong>For projects:</strong> rules as code, an escrow, the pause, immune memory on every pull request, and a release gate, for 5% of what is paid out (proposed; nothing when nothing is found).{" "}
             <Link href="/projects">Open a program</Link>
           </li>
           <li>
-            <strong>For agents:</strong> one MCP server, accounts that cannot withdraw, and measured runs. <Link href="/agents">Connect an agent</Link>
+            <strong>For agents:</strong> one MCP server, accounts near-antibody never lets withdraw, and measured runs. <Link href="/agents">Connect an agent</Link>
           </li>
         </ul>
       </section>

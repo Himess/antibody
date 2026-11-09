@@ -673,6 +673,9 @@ enum Cmd {
         /// The full record as JSON (default: a one-screen summary)
         #[arg(long)]
         json: bool,
+        /// Each program's run tiers, payouts and permits too (always shown with --program)
+        #[arg(long, short)]
+        verbose: bool,
     },
     /// A view call on any NEAR contract (no account, no key), e.g. a consumer's state
     View {
@@ -1201,10 +1204,10 @@ fn run(cli: Cli) -> Result<Value> {
             let s = cmd::status(&c, commit, run, program, of.clone())?;
             Ok(if json { s } else { Value::String(cmd::status_summary(&c, &s)) })
         }
-        Cmd::Judge { program, json } => {
+        Cmd::Judge { program, json, verbose } => {
             let c = mk()?;
             let j = antibody_cli::judge::judge(&c, program)?;
-            Ok(if json { j } else { Value::String(antibody_cli::judge::summary(&j, c.dep.decimals(), c.dep.symbol())) })
+            Ok(if json { j } else { Value::String(antibody_cli::judge::summary(&j, c.dep.decimals(), c.dep.symbol(), verbose || program.is_some())) })
         }
         Cmd::View { ref contract, ref method, ref args } => {
             let c = mk()?;

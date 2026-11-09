@@ -55,7 +55,7 @@ impl Default for Thresholds {
     fn default() -> Self {
         Self {
             stale_s: 300,
-            vending_near: 0.5,
+            vending_near: 1.5,
             vend_key_near: 0.05,
             vending_credit_near: 0.1,
             // A drill runs daily; stale after a day plus six hours (a late run, a resume).
@@ -363,13 +363,18 @@ pub fn compute_with(
     if let Some(pr) = &dep.practice {
         let acc = near.account(&pr.vending)?;
         let balance = acc.as_ref().map(|a| yocto(&a["amount"])).unwrap_or(0.0) / ONE_NEAR;
+        // What it can spend: its storage (the accounts map, the practice-account code) locks the rest, and each
+        // vend needs about 0.26 NEAR for the new account until that account closes.
+        let liquid = (balance - acc.as_ref().and_then(|a| a["storage_usage"].as_f64()).unwrap_or(0.0) * 1e19 / ONE_NEAR).max(0.0);
         let public = antibody_cli::practice::public_vend_signer(&pr.vending).public_key_str();
         let key = near.access_keys(&pr.vending)?.into_iter().find(|k| k["public_key"] == json!(public));
         let allowance = key.as_ref().map(|k| yocto(&k["access_key"]["permission"]["FunctionCall"]["allowance"]) / ONE_NEAR);
         let credit = near.view(&dep.antibody, "get_account", json!({"account_id": pr.vending}))?;
         let credit_near = yocto(&credit["near"]) / ONE_NEAR;
-        if balance < t.vending_near {
-            alert("critical", "practice", "vending-balance".into(), format!("the vending contract holds {balance:.3} NEAR: refill it"));
+        if liquid < t.vending_near {
+            alert("critical", "practice", "vending-balance".into(), format!(
+                "the vending contract can spend {liquid:.3} NEAR (its storage holds the rest of its {balance:.3}), about {} new accounts at 0.26 each: refill it",
+                (liquid / 0.26).floor()));
         }
         match allowance {
             None => alert("critical", "practice", "vend-key-missing".into(), "the public vend key is gone: add it again (`antibody practice deploy` adds it)".into()),
@@ -402,7 +407,7 @@ pub fn compute_with(
             }
             json!({"per_hour": per_hour, "left_this_hour": left, "resets_at": resets})
         });
-        components.insert("practice".into(), json!({"vending": pr.vending, "program": pr.program, "balance_near": balance,
+        components.insert("practice".into(), json!({"vending": pr.vending, "program": pr.program, "balance_near": balance, "liquid_near": liquid,
                                                    "public_vend_key_allowance_near": allowance, "credit_near": credit_near, "credit_tokens_raw": credit["tokens"],
                                                    "instances": instances, "vends": vends}));
     }

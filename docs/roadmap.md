@@ -27,8 +27,9 @@ everything else is not built yet.
    - **Done** ([zk.md](zk.md)): near-t2, which checks a Groth16 proof in about 34 Tgas and compares it with
      near-antibody's records; `antibody zk prove|submit|status`; the API; a prover service for every
      practice try.
-   - **Done** (2026-11-07): the four testnet runs proven on SP1's prover network (0.42 PROVE and 45-79 s
-     each) and near-t2 on testnet (`zk.antibody.testnet`, locked), all four records `confirmed`.
+   - **Done** (2026-11-07): the recorded run's four runs proven on SP1's prover network (0.42 PROVE and
+     45-79 s each) and near-t2 on testnet (`zk.antibody.testnet`, locked), all four records `confirmed`;
+     since then the prover service proves every practice try (21 runs `confirmed` by 2026-11-09).
    - Next: zk by default above a cap.
 4. Multi-block proofs with a bounded time warp: interest, TWAP and time-dependent bugs.
 5. The next Ethereum execution rules (an EVM upgrade and fork-switch execution).

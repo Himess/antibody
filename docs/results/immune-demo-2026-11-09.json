@@ -1,0 +1,594 @@
+{
+ "schema": "antibody.results.immune-demo.v1",
+ "network": "testnet",
+ "date": "2026-11-09",
+ "repository": "https://github.com/Himess/antibody-immune-demo",
+ "how": "docs/immune.md#re-runs-in-the-enclave",
+ "program": {
+  "id": 12,
+  "name": "Acme Lend — pull-request checks (antibody-immune-demo)",
+  "create_tx": "https://testnet.nearblocks.io/txns/2YwpK13DQUGvUv726D7UkEcaa2zSDCydR9uWuhkgdsS5",
+  "anchor": "light-client",
+  "anchor_block": 12091630,
+  "round_now": 11,
+  "paid_keys": "commits 55 (A, slot 0), 56 (B, slot 1) and 60 (F, slot 0), and 61 (G, a gap claim with no key)"
+ },
+ "keys": {
+  "project": {
+   "account": "acme.antibody.testnet",
+   "methods": [
+    "propose_round",
+    "__fastdata_fastfs"
+   ],
+   "allowance_near": 1,
+   "add_tx": "https://testnet.nearblocks.io/txns/8UGSKcK6Kw5CYfV9WcpvDKVV2UPyWDaqfK1upscmqAhu"
+  },
+  "bot": {
+   "account": "keeper.antibody.testnet",
+   "methods": [
+    "open_round",
+    "allocate"
+   ],
+   "allowance_near": 0.5,
+   "add_tx": "https://testnet.nearblocks.io/txns/EcbQr6tncnnkm9koC2kTBkt1z12a7FUq9mDfTi2K1jeW"
+  },
+  "project_near_credit_tx": "https://testnet.nearblocks.io/txns/GQtRjkeasYAKdvUEihmA7LeZrmsck4XqHgUbLfi5qkHg"
+ },
+ "checks": [
+  {
+   "label": "v0.6.1, the Actions pinned by commit: both pull requests at once; the harmless one took the slot",
+   "pull_request": 1,
+   "title": "Add a view of the vault's pending fees",
+   "action": "v0.6.1 (48e5122)",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42538785818",
+   "round": 10,
+   "renumbered_from": null,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/84chs7npQv54GC1hhR7mc9vJZPi8NsSVfn7pJgAXLYYJ",
+   "round_check": {
+    "run": 162,
+    "mode": "check_round",
+    "round": 10,
+    "commit": null,
+    "requested_at": 1794183106,
+    "answered_at": 1794183121,
+    "seconds": 15,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 163,
+     "mode": "rerun",
+     "round": 10,
+     "commit": 55,
+     "requested_at": 1794183168,
+     "answered_at": 1794183183,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 164,
+     "mode": "rerun",
+     "round": 10,
+     "commit": 56,
+     "requested_at": 1794183187,
+     "answered_at": 1794183199,
+     "seconds": 12,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 165,
+     "mode": "rerun",
+     "round": 10,
+     "commit": 60,
+     "requested_at": 1794183211,
+     "answered_at": 1794183224,
+     "seconds": 13,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 166,
+     "mode": "rerun",
+     "round": 10,
+     "commit": 61,
+     "requested_at": 1794183228,
+     "answered_at": 1794183242,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [],
+   "verdict": "green",
+   "enclave_job": {
+    "started": "2026-11-09T00:11:22Z",
+    "completed": "2026-11-09T00:22:30Z"
+   },
+   "every_rerun_answered_s_after_round_check_request": 136
+  },
+  {
+   "label": "v0.6.1, the Actions pinned by commit: the second, queued; its manifest named round 10 and was renumbered",
+   "pull_request": 2,
+   "title": "Let anyone trigger the fee sweep",
+   "action": "v0.6.1 (48e5122)",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42538787235",
+   "round": 11,
+   "renumbered_from": 10,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/i2uMDFq4bKjXejh1YK5nwRrXpr8M8bVj3NvfiyHZ5Gp",
+   "round_check": {
+    "run": 167,
+    "mode": "check_round",
+    "round": 11,
+    "commit": null,
+    "requested_at": 1794183774,
+    "answered_at": 1794183789,
+    "seconds": 15,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 168,
+     "mode": "rerun",
+     "round": 11,
+     "commit": 55,
+     "requested_at": 1794183842,
+     "answered_at": 1794183857,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 169,
+     "mode": "rerun",
+     "round": 11,
+     "commit": 56,
+     "requested_at": 1794183860,
+     "answered_at": 1794183876,
+     "seconds": 16,
+     "tier": "T1",
+     "kind": "Violation",
+     "slots_broken": [
+      1
+     ]
+    },
+    {
+     "run": 170,
+     "mode": "rerun",
+     "round": 11,
+     "commit": 60,
+     "requested_at": 1794183882,
+     "answered_at": 1794183896,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 171,
+     "mode": "rerun",
+     "round": 11,
+     "commit": 61,
+     "requested_at": 1794183900,
+     "answered_at": 1794183913,
+     "seconds": 13,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [
+    {
+     "commit": 56,
+     "slot": 1,
+     "rule": "fees_to_treasury",
+     "severity": "high",
+     "rerun_run": 169
+    }
+   ],
+   "verdict": "red",
+   "enclave_job": {
+    "started": "2026-11-09T00:22:33Z",
+    "completed": "2026-11-09T00:33:45Z",
+    "queued_behind_the_first": true
+   },
+   "every_rerun_answered_s_after_round_check_request": 139
+  },
+  {
+   "label": "v0.6.0-rc.2: both pull requests at once, the first to the slot",
+   "pull_request": 2,
+   "title": "Let anyone trigger the fee sweep",
+   "action": "v0.6.0-rc.2",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515848087",
+   "round": 6,
+   "renumbered_from": null,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/4CfhBu9sKUt6Y7uryRqsCobcGPkz9R4GHF1xQ6DAS52w",
+   "round_check": {
+    "run": 131,
+    "mode": "check_round",
+    "round": 6,
+    "commit": null,
+    "requested_at": 1794166628,
+    "answered_at": 1794166643,
+    "seconds": 15,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 132,
+     "mode": "rerun",
+     "round": 6,
+     "commit": 55,
+     "requested_at": 1794166683,
+     "answered_at": 1794166698,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 133,
+     "mode": "rerun",
+     "round": 6,
+     "commit": 56,
+     "requested_at": 1794166702,
+     "answered_at": 1794166717,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "Violation",
+     "slots_broken": [
+      1
+     ]
+    },
+    {
+     "run": 134,
+     "mode": "rerun",
+     "round": 6,
+     "commit": 60,
+     "requested_at": 1794166723,
+     "answered_at": 1794166738,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 135,
+     "mode": "rerun",
+     "round": 6,
+     "commit": 61,
+     "requested_at": 1794166743,
+     "answered_at": 1794166755,
+     "seconds": 12,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [
+    {
+     "commit": 56,
+     "slot": 1,
+     "rule": "fees_to_treasury",
+     "severity": "high",
+     "rerun_run": 133
+    }
+   ],
+   "verdict": "red",
+   "enclave_job": {
+    "started": "2026-11-08T19:36:43Z",
+    "completed": "2026-11-08T19:47:50Z"
+   },
+   "every_rerun_answered_s_after_round_check_request": 127
+  },
+  {
+   "label": "v0.6.0-rc.2: both pull requests at once, the second: its manifest named round 6 and was renumbered",
+   "pull_request": 1,
+   "title": "Add a view of the vault's pending fees",
+   "action": "v0.6.0-rc.2",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42515852210",
+   "round": 7,
+   "renumbered_from": 6,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/G1cdVURVK4bNHkjULeusWVZdey8iWSf59T5QmHrpV6zw",
+   "round_check": {
+    "run": 136,
+    "mode": "check_round",
+    "round": 7,
+    "commit": null,
+    "requested_at": 1794167290,
+    "answered_at": 1794167304,
+    "seconds": 14,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 137,
+     "mode": "rerun",
+     "round": 7,
+     "commit": 55,
+     "requested_at": 1794167327,
+     "answered_at": 1794167341,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 138,
+     "mode": "rerun",
+     "round": 7,
+     "commit": 56,
+     "requested_at": 1794167345,
+     "answered_at": 1794167359,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 139,
+     "mode": "rerun",
+     "round": 7,
+     "commit": 60,
+     "requested_at": 1794167362,
+     "answered_at": 1794167374,
+     "seconds": 12,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 140,
+     "mode": "rerun",
+     "round": 7,
+     "commit": 61,
+     "requested_at": 1794167379,
+     "answered_at": 1794167393,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [],
+   "verdict": "green",
+   "enclave_job": {
+    "started": "2026-11-08T19:47:52Z",
+    "completed": "2026-11-08T19:58:39Z",
+    "queued_behind_the_first": true
+   },
+   "every_rerun_answered_s_after_round_check_request": 103
+  },
+  {
+   "label": "v0.6.0-rc.1: the first check",
+   "pull_request": 1,
+   "title": "Add a view of the vault's pending fees",
+   "action": "v0.6.0-rc.1",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42506841778",
+   "round": 3,
+   "renumbered_from": null,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/7Evyut92GV1TfafHz66WfRg8J9k6geothf4apqionaZR",
+   "round_check": {
+    "run": 115,
+    "mode": "check_round",
+    "round": 3,
+    "commit": null,
+    "requested_at": 1794160192,
+    "answered_at": 1794160208,
+    "seconds": 16,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 116,
+     "mode": "rerun",
+     "round": 3,
+     "commit": 55,
+     "requested_at": 1794160251,
+     "answered_at": 1794160264,
+     "seconds": 13,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 117,
+     "mode": "rerun",
+     "round": 3,
+     "commit": 56,
+     "requested_at": 1794160267,
+     "answered_at": 1794160281,
+     "seconds": 14,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 118,
+     "mode": "rerun",
+     "round": 3,
+     "commit": 60,
+     "requested_at": 1794160301,
+     "answered_at": 1794160316,
+     "seconds": 15,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 119,
+     "mode": "rerun",
+     "round": 3,
+     "commit": 61,
+     "requested_at": 1794160320,
+     "answered_at": 1794160333,
+     "seconds": 13,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [],
+   "verdict": "green",
+   "enclave_job": {
+    "started": "2026-11-08T17:49:34Z",
+    "completed": "2026-11-08T18:02:20Z"
+   },
+   "every_rerun_answered_s_after_round_check_request": 141
+  },
+  {
+   "label": "v0.6.0-rc.1: refused, read as green (the defect #58 fixed)",
+   "pull_request": 2,
+   "title": "Let anyone trigger the fee sweep",
+   "action": "v0.6.0-rc.1",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42506913944",
+   "round": 4,
+   "renumbered_from": null,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/6p3wkdHED1GdRTRM17wKVnWFKw5T4amFM3zCZZpyfwjf",
+   "round_check": {
+    "run": 120,
+    "mode": "check_round",
+    "round": 4,
+    "commit": null,
+    "requested_at": 1794160979,
+    "answered_at": 1794160992,
+    "seconds": 13,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": false,
+    "reason": "wrong round number"
+   },
+   "reruns": [],
+   "still_breaks": [],
+   "verdict": "green (wrong: nothing was re-run)",
+   "enclave_job": {
+    "attempt": 1
+   },
+   "note": "Its manifest, built while PR #1 held the slot, named round 3; near-antibody refused the proposal (wrong round number) and that version of the check read round 3's results. Since #58 a refused round check is an error and `round propose` renumbers."
+  },
+  {
+   "label": "v0.6.0-rc.1: re-run alone",
+   "pull_request": 2,
+   "title": "Let anyone trigger the fee sweep",
+   "action": "v0.6.0-rc.1",
+   "workflow_run": "https://github.com/Himess/antibody-immune-demo/actions/runs/42506913944",
+   "round": 4,
+   "renumbered_from": null,
+   "proposal_tx": "https://testnet.nearblocks.io/txns/F4gr4Gc7sZqNuG1Aag91vifLaFv2isgQp3XjMTuPQmss",
+   "round_check": {
+    "run": 121,
+    "mode": "check_round",
+    "round": 4,
+    "commit": null,
+    "requested_at": 1794161532,
+    "answered_at": 1794161547,
+    "seconds": 15,
+    "tier": "T1",
+    "kind": "NoViolation",
+    "slots_broken": [],
+    "round_check_ok": true,
+    "reason": null
+   },
+   "reruns": [
+    {
+     "run": 122,
+     "mode": "rerun",
+     "round": 4,
+     "commit": 55,
+     "requested_at": 1794161583,
+     "answered_at": 1794161599,
+     "seconds": 16,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 123,
+     "mode": "rerun",
+     "round": 4,
+     "commit": 56,
+     "requested_at": 1794161602,
+     "answered_at": 1794161618,
+     "seconds": 16,
+     "tier": "T1",
+     "kind": "Violation",
+     "slots_broken": [
+      1
+     ]
+    },
+    {
+     "run": 124,
+     "mode": "rerun",
+     "round": 4,
+     "commit": 60,
+     "requested_at": 1794161622,
+     "answered_at": 1794161634,
+     "seconds": 12,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    },
+    {
+     "run": 125,
+     "mode": "rerun",
+     "round": 4,
+     "commit": 61,
+     "requested_at": 1794161638,
+     "answered_at": 1794161651,
+     "seconds": 13,
+     "tier": "T1",
+     "kind": "NoViolation",
+     "slots_broken": []
+    }
+   ],
+   "still_breaks": [
+    {
+     "commit": 56,
+     "slot": 1,
+     "rule": "fees_to_treasury",
+     "severity": "high",
+     "rerun_run": 123
+    }
+   ],
+   "verdict": "red",
+   "enclave_job": {
+    "attempt": 2,
+    "completed_in": "11 min 2 s"
+   },
+   "every_rerun_answered_s_after_round_check_request": 119
+  }
+ ],
+ "costs": {
+  "project_near_credit": "1.00669 NEAR after the deposit, 0.90441 after the first 11 runs: 0.102 NEAR, about 0.009 NEAR a run after OutLayer's refunds",
+  "t1_relay": "each run's TDX quote is relayed to NEAR separately, about 0.018 NEAR of gas a run",
+  "bot": "opening a round attaches 300 Tgas, about 0.3 NEAR paid up front by the bot's account (most comes back); below it the round stays shut (#61)"
+ },
+ "not_built_here": "The brief's third pull request (a defect no paid proof covers, caught by a bounty window) and task C need a new planted defect; they are not part of this run (docs/immune.md)."
+}

@@ -279,6 +279,11 @@ pub fn manifest_compile(toml: &Path, out: &Path) -> Result<Value> {
 /// The manifest of `round` (0: the program's own), fetched from its committed location and checked
 /// against the committed hash.
 pub fn program_manifest_at(ctx: &Ctx, program: u32, round: u32) -> Result<Vec<u8>> {
+    program_manifest_at_tries(ctx, program, round, 5)
+}
+
+/// [`program_manifest_at`] with at most `tries` archival reads of a `near-tx:` location.
+pub fn program_manifest_at_tries(ctx: &Ctx, program: u32, round: u32, tries: usize) -> Result<Vec<u8>> {
     let p = ctx.program(program)?;
     let m = meta(ctx, program)?;
     let (location, want) = match round {
@@ -288,7 +293,7 @@ pub fn program_manifest_at(ctx: &Ctx, program: u32, round: u32) -> Result<Vec<u8
             (m["round_manifests"][i]["location"].as_str().unwrap_or_default().to_string(), p["round_manifests"][i].as_str().unwrap_or_default().to_string())
         }
     };
-    let bytes = blob::fetch(&ctx.near, &location)?;
+    let bytes = blob::fetch_tries(&ctx.near, &location, tries)?;
     let h = hex::encode(sha256(&bytes));
     if h != want {
         return Err(eyre!("round {round} manifest at {location} hashes to {h}, not the committed {want}"));
@@ -963,7 +968,7 @@ pub fn commit_sealed(ctx: &Ctx, sp: SealedProof) -> Result<Value> {
         let id = near::return_value(&out).and_then(|v| v.as_u64()).ok_or_else(|| {
             // Refused without a panic: near-antibody recorded a containment event (`agent_statement` counts them).
             eyre!(
-                "containment: the commit was refused and recorded as a containment event (the bond is over this agent's cap or                  remaining budget): {}",
+                "containment: the commit was refused and recorded as a containment event (the bond is over this agent's cap or remaining budget): {}",
                 summary["explorer"].as_str().unwrap_or("(no link)")
             )
         })?;

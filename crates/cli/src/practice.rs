@@ -117,6 +117,27 @@ pub fn holds_key(state: &Value) -> bool {
 /// and round, so an instance a commit already holds (`taken`) gives the next try on it a duplicate, with
 /// no payout. `{instances, proved, fresh, next_instance, next_is_fresh}`; a fresh program gives every
 /// instance back.
+/// The commit that already holds the key of `vault` on `program`, when one does: a proof of that instance can
+/// then only be a duplicate, paid nothing. It reads the program's commits that hold a key, and the vault each
+/// one's account was vended.
+pub fn proved_by(near: &Near, antibody: &str, vending: &str, program: u32, vault: u32) -> Result<Option<u64>> {
+    let mut from = 0usize;
+    loop {
+        let page = near.view(antibody, "list_commits", json!({"program_id": program, "from": from, "limit": 50}))?;
+        let page = page.as_array().cloned().unwrap_or_default();
+        for c in page.iter().filter(|c| holds_key(&c["state"])) {
+            let hunter = c["hunter"].as_str().unwrap_or_default();
+            if vault_of_near(near, vending, hunter)? == Some(vault) {
+                return Ok(c["id"].as_u64());
+            }
+        }
+        from += page.len();
+        if page.len() < 50 {
+            return Ok(None);
+        }
+    }
+}
+
 pub fn instances_left(config: &VendingConfig, taken: &std::collections::BTreeSet<u32>) -> Value {
     let proved = taken.iter().filter(|v| **v < config.instances).count() as u32;
     let next = config.next_instance();
@@ -223,14 +244,23 @@ fn resume_vend(ctx: &Ctx, vending: &str, account: &str, key_out: &Path) -> Resul
 /// The vending contract's hourly cap, said plainly: how many accounts an hour, that nothing was spent, and the
 /// two ways on (wait, or vend with your own testnet account). Other errors pass unchanged.
 fn hourly_cap(near: &crate::near::Near, vending: &str, name: &str, e: eyre::Report) -> eyre::Report {
-    if !format!("{e:#}").contains("the hour's practice accounts are vended") {
+    let text = format!("{e:#}");
+    // A new account's storage comes from the vending contract's own NEAR; tries that close give theirs back.
+    if text.contains("LackBalanceForState") && text.contains(vending) {
+        return eyre!(
+            "{vending} is short of NEAR for a new account right now: the accounts of tries still running hold it, and it comes back \
+             as they close. Nothing was spent and the name is still free: run the same command again in a few minutes, or now with \
+             your own testnet account: antibody --account <you>.testnet try --name {name}"
+        );
+    }
+    if !text.contains("the hour's practice accounts are vended") {
         return e;
     }
     let per_hour = vending_config(near, vending).map(|c| c.terms.per_hour.to_string()).unwrap_or_else(|_| "a few".into());
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let (at, mins) = next_hour(now);
     eyre!(
-        "{vending} vends at most {per_hour} practice accounts an hour, and this hour's are taken. Nothing was spent and the name          is still free. The count starts again at {at} UTC (in {mins} min): run the same command then, or now with your own          testnet account: antibody --account <you>.testnet try --name {name}. The recorded tries are on the site's /moment."
+        "{vending} vends at most {per_hour} practice accounts an hour, and this hour's are taken. Nothing was spent and the name is still free. The count starts again at {at} UTC (in {mins} min): run the same command then, or now with your own testnet account: antibody --account <you>.testnet try --name {name}. The recorded tries are on the site's /moment."
     )
 }
 
@@ -278,10 +308,34 @@ pub fn settle(ctx: &Ctx, program: u32, commit: u64) -> Result<Value> {
         Err(e) => return Err(e),
     }
     if cmd::state_label(&ctx.commit(commit)?["state"]) == "Holder" {
-        let s = cmd::call(ctx, "pay", json!({"commit_id": commit}), PAY_TGAS)?;
-        steps.push(json!({"pay": s["tx"], "paid": cmd::event(&s, "paid")}));
+        match cmd::call(ctx, "pay", json!({"commit_id": commit}), PAY_TGAS) {
+            Ok(s) => steps.push(json!({"pay": s["tx"], "paid": cmd::event(&s, "paid")})),
+            // `pay` is permissionless: the services' keeper may pay the commit between the read above (a final
+            // block, a moment behind) and this call, and near-antibody then refuses a second payment. The
+            // commit's own state says whether it was paid.
+            Err(e) => match settled_elsewhere(ctx, commit)? {
+                Some(state) => steps.push(json!({"pay": null, "paid_by": "another caller (the services' keeper)", "state": state})),
+                None => return Err(e),
+            },
+        }
     }
     Ok(Value::Array(steps))
+}
+
+/// A commit someone else settled while this try was settling it: its final state once the views catch up
+/// (a few seconds), or None when it is still not done.
+fn settled_elsewhere(ctx: &Ctx, commit: u64) -> Result<Option<String>> {
+    let t0 = Instant::now();
+    loop {
+        let state = cmd::state_label(&ctx.commit(commit)?["state"]);
+        if state.starts_with("Done:") {
+            return Ok(Some(state));
+        }
+        if t0.elapsed().as_secs() >= 15 {
+            return Ok(None);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
 }
 
 /// The vending contract and practice program to try: as given, else the deployment's.
@@ -430,6 +484,25 @@ pub fn try_it(ctx: &Ctx, vending: &str, program: u32, name: &str) -> Result<Valu
               "seconds": t0.elapsed().as_secs_f64()}))
 }
 
+/// A commit of `account` on `program` that an earlier attempt recorded here and that is still `Committed` on
+/// chain (sent, never revealed), with its record.
+fn unrevealed_commit(practice: &Ctx, program: u32, account: &str) -> Result<Option<(u64, Value)>> {
+    let Ok(entries) = std::fs::read_dir(practice.state_dir.join("submissions")) else { return Ok(None) };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let Some(id) = name.strip_prefix(&format!("{program}-")).and_then(|r| r.strip_suffix(".json")).and_then(|r| r.parse::<u64>().ok()) else {
+            continue;
+        };
+        let Ok(rec) = std::fs::read_to_string(e.path()).map_err(|e| eyre!(e)).and_then(|s| serde_json::from_str::<Value>(&s).map_err(|e| eyre!(e))) else {
+            continue;
+        };
+        if rec["hunter"].as_str() == Some(account) && cmd::state_label(&practice.commit(id)?["state"]) == "Committed" {
+            return Ok(Some((id, rec)));
+        }
+    }
+    Ok(None)
+}
+
 /// What a vended account's proof came to, from its commit to the account's close.
 pub struct Proved {
     /// `cmd::commit_sealed`'s summary, and `cmd::reveal`'s (its `result`: the verdict when answered).
@@ -481,21 +554,35 @@ pub fn prove(
         Ok((done, reclaim(ctx, vending, account)?))
     };
     let tried = (|| -> Result<_> {
-        crate::progress::step("sealing the proof to the program's key, then committing its hash with the bond");
-        let commit = cmd::commit_sealed(&practice, seal(&practice)?)?;
-        let commit_id = commit["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {commit}"))?;
+        // An earlier attempt with this account may have committed and stopped before its reveal: that commit is
+        // revealed (its record is here), never left in front of later claims, which are paid in commit order.
+        let (commit, commit_id) = match unrevealed_commit(&practice, program, account)? {
+            Some((id, rec)) => {
+                crate::progress::step(format!("commit {id}, by an earlier attempt, is not revealed yet: revealing it instead of committing again"));
+                (json!({"commit_id": id, "tx": rec["commit_tx"], "resumed": true}), id)
+            }
+            None => {
+                crate::progress::step("sealing the proof to the program's key, then committing its hash with the bond");
+                let commit = cmd::commit_sealed(&practice, seal(&practice)?)?;
+                let commit_id = commit["commit_id"].as_u64().ok_or_else(|| eyre!("no commit id: {commit}"))?;
+                (commit, commit_id)
+            }
+        };
         crate::progress::step(format!("committed: commit {commit_id}; revealing the sealed proof (the enclave verifies it)"));
         let reveal = cmd::reveal(&practice, program, commit_id, true)?;
         let run_id = reveal["run_id"].as_u64().ok_or_else(|| eyre!("no run id: {reveal}"))?;
-        crate::progress::step(format!(
-            "verdict: {} (run {run_id}); waiting for its attestation on NEAR, or the end of the challenge window",
-            reveal["result"]["kind"].as_str().or(reveal["result"]["facts"]["kind"].as_str()).unwrap_or("answered")
-        ));
+        let kind = reveal["result"]["kind"].as_str().or(reveal["result"]["facts"]["kind"].as_str()).unwrap_or("answered").to_string();
+        crate::progress::step(format!("verdict: {kind} (run {run_id}); waiting for its attestation on NEAR, or the end of the challenge window"));
         // T1 normally arrives in seconds. When it cannot (a worker image the program does not count yet,
         // docs/runbooks/worker-images.md), the verdict stays T0 and is final once NEAR's clock passes the
         // challenge window: the try settles at whichever comes first.
         let ready = payable::wait_on_near(&practice, program, run_id)?;
-        crate::progress::step(format!("payable ({}); settling: allocate, then pay", ready.path.as_str()));
+        // Only a Violation pays; any other verdict is final too, and settling returns or forfeits the bond.
+        crate::progress::step(if kind == "Violation" {
+            format!("payable ({}); settling: allocate, then pay", ready.path.as_str())
+        } else {
+            format!("final ({}): a {kind} pays nothing; settling the bond", ready.path.as_str())
+        });
         let settled = settle(&practice, program, commit_id)?;
         Ok((commit, reveal, commit_id, run_id, ready, settled))
     })();
@@ -529,12 +616,12 @@ pub fn proof_links(ctx: &Ctx, p: &Proved) -> Vec<Value> {
     links
 }
 
-/// One transaction of a summary, with the command that shows it. A vend an earlier attempt made (the try or
-/// hunt went on from it) has no hash here: the line says so.
+/// One transaction of a summary: its explorer link and its signer (`antibody admin tx <hash> --signer <account>`
+/// shows it in full). A vend an earlier attempt made (the try or hunt went on from it) has no link: the line says so.
 pub fn tx_line(k: &str, link: &Value, signer: &str) -> String {
-    match link.as_str().unwrap_or("").rsplit(['/', ':']).next().unwrap_or("") {
+    match link.as_str().unwrap_or("") {
         "" => format!("    {k:<9} (made by an earlier attempt with this name)"),
-        hash => format!("    {k:<9} {hash}  (antibody admin tx {hash} --signer {signer})"),
+        url => format!("    {k:<9} {url}  (signed by {signer})"),
     }
 }
 
@@ -589,7 +676,7 @@ pub fn try_summary(r: &Value, decimals: u32, symbol: &str) -> String {
             out.push(tx_line(k, v, signer.unwrap_or("?")));
         }
     }
-    out.push("The full record: add --json".into());
+    out.push("Any transaction in full: antibody admin tx <hash> --signer <account>. The full record: add --json".into());
     out.join("\n")
 }
 

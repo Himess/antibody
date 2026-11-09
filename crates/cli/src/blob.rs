@@ -141,6 +141,12 @@ fn read_capped(r: impl std::io::Read, max: u64) -> Result<Vec<u8>> {
 /// Reads a blob from an https URL or a `near-tx:` location (NEAR archival RPC); `file://` and http only
 /// on the sandbox ([`location_allowed`]); at most [`FETCH_MAX`] bytes. Callers check hashes.
 pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
+    fetch_tries(near, url, ARCHIVAL_TRIES)
+}
+
+/// [`fetch`] with at most `tries` reads of a `near-tx:` location: one, for a value a summary can do without
+/// (`judge`'s rule strength), so that a busy archival RPC never holds the command up.
+pub fn fetch_tries(near: &Near, url: &str, tries: usize) -> Result<Vec<u8>> {
     location_allowed(&near.network, url)?;
     let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(60)).build()?;
     if let Some((hash, signer)) = fastfs::parse_location(url) {
@@ -151,7 +157,8 @@ pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
         // A public archival RPC rate-limits and times out now and then: its answer is an error, not the
         // transaction. A few tries, further apart each time, before saying so.
         let mut last = String::new();
-        for attempt in 0..ARCHIVAL_TRIES {
+        let tries = tries.max(1);
+        for attempt in 0..tries {
             if attempt > 0 {
                 std::thread::sleep(std::time::Duration::from_secs(3 * attempt as u64));
             }
@@ -167,9 +174,19 @@ pub fn fetch(near: &Near, url: &str) -> Result<Vec<u8>> {
                 Ok(v) => last = v.get("error").map(|e| e.to_string()).unwrap_or_else(|| "no transaction in its answer".into()),
                 Err(e) => last = format!("{e:#}"),
             }
+            // Once, after the archival RPC's first failure: the regular RPCs (`--rpc` and the fallbacks) keep the last
+            // days' transactions, enough for a program created this week (a practice program's base witness).
+            if attempt == 0 && tries > 1 {
+                let regular = near.call("tx", serde_json::json!({"tx_hash": hash, "sender_account_id": signer, "wait_until": "INCLUDED_FINAL"}));
+                if let Ok(r) = regular {
+                    if let Ok(b) = fastfs::content_from_tx_response(&serde_json::json!({"result": r})) {
+                        return Ok(b);
+                    }
+                }
+            }
         }
         return Err(eyre!(
-            "the archival RPC did not return transaction {hash} in {ARCHIVAL_TRIES} tries (its last answer: {last}). A public RPC              fails like this for a minute at a time: run the same command again"
+            "the archival RPC did not return transaction {hash} in {tries} tries (its last answer: {last}). A public RPC fails like this for a minute at a time: run the same command again"
         ));
     }
     if let Some(p) = url.strip_prefix("file://") {

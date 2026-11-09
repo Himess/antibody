@@ -360,6 +360,15 @@ pub fn start(ctx: &Ctx, vending: &str, name: &str, out: Option<&Path>) -> Result
             r["example"] = practice::tutorial_bundle(&v.address);
         }
     }
+    // The vending contract hands out instances in turn: one whose key a commit already holds pays nothing.
+    if let Ok(Some(by)) = practice::proved_by(&ctx.near, &ctx.dep.antibody, vending, a.program, a.instance) {
+        r["warning"] = json!(format!(
+            "instance {} is already proved (commit {by} holds its key): a proof of it ends Duplicate, paid nothing. Leave this account \
+             (it is reclaimed an hour after its vend) and start again with another name once a fresh practice program is open \
+             (the site's /status says when)",
+            a.instance
+        ));
+    }
     if let Some(out) = out {
         // On a failure the agent still learns what its account may prove; where its key is stays here.
         let files = write_workspace(ctx, &a, &m, &program, out).map_err(|e| {
@@ -393,6 +402,9 @@ pub fn start_summary(r: &Value) -> String {
             targets_words(&instance)
         ),
     ];
+    if let Some(w) = r["warning"].as_str() {
+        out.push(format!("  WARNING: {w}"));
+    }
     if !shared.is_empty() {
         out.push(format!("  shared by every account: {}", targets_words(&shared)));
     }
@@ -1160,8 +1172,8 @@ mod tests {
         assert!(paid.contains("verdict: Violation, keys slot 0 (tag cc52c19a12); first answered at T0"), "{paid}");
         assert!(paid.contains("\n  payout: T1-confirmed: paid at once (an instant payout, under the cap)\n"), "{paid}");
         assert!(paid.contains("0.001 wNEAR paid to practice.antibody.testnet") && paid.contains("The account is closed"), "{paid}");
-        assert!(paid.contains("    reclaim   Hash4  (antibody admin tx Hash4 --signer practice.antibody.testnet)"), "{paid}");
-        assert!(paid.contains("    commit    Hash1  (antibody admin tx Hash1 --signer ann.practice.antibody.testnet)"), "{paid}");
+        assert!(paid.contains("    reclaim   testnet:Hash4  (signed by practice.antibody.testnet)"), "{paid}");
+        assert!(paid.contains("    commit    testnet:Hash1  (signed by ann.practice.antibody.testnet)"), "{paid}");
         // A wrong proof: no payout, the bond to the escrow, final after the window without T1.
         let wrong = summary(&record("NoViolation", "Done:Forfeited", "T0"), 24, "wNEAR");
         assert!(wrong.contains("verdict: NoViolation; answered at T0") && wrong.contains("final: T0, final after the 60 s challenge window"), "{wrong}");

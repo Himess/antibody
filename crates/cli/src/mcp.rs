@@ -286,15 +286,38 @@ fn call(ctx: &Ctx, name: &str, a: &Value) -> Result<Value> {
 }
 
 fn respond(out: &mut impl Write, id: &Value, result: Value) -> Result<()> {
-    writeln!(out, "{}", json!({"jsonrpc": "2.0", "id": id, "result": result}))?;
+    writeln!(out, "{}", ascii_json(&json!({"jsonrpc": "2.0", "id": id, "result": result})))?;
     out.flush()?;
     Ok(())
 }
 
 fn respond_error(out: &mut impl Write, id: &Value, code: i64, msg: &str) -> Result<()> {
-    writeln!(out, "{}", json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": msg}}))?;
+    writeln!(out, "{}", ascii_json(&json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": msg}})))?;
     out.flush()?;
     Ok(())
+}
+
+/// A message as JSON in ASCII only: every other character as a `\u` escape (a surrogate pair above U+FFFF).
+/// A client that reads the pipe in its own code page (Windows PowerShell's is not UTF-8) then still gets
+/// the em dash and not mojibake. Non-ASCII text only ever occurs inside JSON strings, so escaping it
+/// everywhere is safe.
+pub fn ascii_json(v: &Value) -> String {
+    let s = v.to_string();
+    if s.is_ascii() {
+        return s;
+    }
+    let mut out = String::with_capacity(s.len() + 16);
+    for c in s.chars() {
+        if c.is_ascii() {
+            out.push(c);
+        } else {
+            let mut buf = [0u16; 2];
+            for unit in c.encode_utf16(&mut buf) {
+                out.push_str(&format!("\\u{unit:04x}"));
+            }
+        }
+    }
+    out
 }
 
 /// The server's state directory: `<workspace>/.antibody` (refused to the agent as a secret path), created
@@ -368,6 +391,17 @@ pub fn serve(ctx: &Ctx, workspace: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Over a pipe read in another code page, the em dash must survive: the server writes ASCII only.
+    #[test]
+    fn mcp_answers_are_ascii_and_round_trip() {
+        let v = json!({"name": "Acme Lend v1 \u{2014} pre-launch", "emoji": "\u{1F600}"});
+        let s = ascii_json(&v);
+        assert!(s.is_ascii(), "{s}");
+        assert!(s.contains("\\u2014"), "{s}");
+        assert!(s.contains("\\ud83d\\ude00"), "{s}");
+        assert_eq!(serde_json::from_str::<Value>(&s).unwrap(), v);
+    }
 
     /// A fresh workspace per test: tests run in parallel.
     fn workspace(test: &str) -> (PathBuf, PathBuf) {
