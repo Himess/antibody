@@ -312,12 +312,18 @@ impl Near {
                 Ok(v) => {
                     let limited = if let Some(e) = v.get("error") {
                         let s = e.to_string();
-                        // A retired endpoint answers -429 to everything: no retry makes it answer.
+                        // A retired endpoint answers -429 to everything: no retry makes it answer. A read goes on to
+                        // the next RPC; a transaction, or the only RPC there is, says so at once.
                         if deprecated(&s) {
-                            return Err(eyre!(
+                            let e = eyre!(
                                 "{method}: {} is a retired NEAR RPC ({s}). Leave out --rpc for the default, or pass another                                  provider's (docs.near.org/api/rpc/providers)",
                                 rpc_label(url)
-                            ));
+                            );
+                            if sends || endpoints == 1 {
+                                return Err(e);
+                            }
+                            last = e;
+                            continue;
                         }
                         // Transient conditions worth a retry: a rate limit (FastNEAR answers -429, a request
                         // it refused, so a transaction was not sent) backs off longer.
