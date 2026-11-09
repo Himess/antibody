@@ -75,9 +75,10 @@ binds.
   Intel PCS collateral before that, `Verified` / `UpToDate`, the status programs accept
   (`docs/results/t1-collateral-2026-11-06.json`). After it, on 2026-11-08, the services' T1 relayer
   relayed two runs with fresh Intel PCS collateral, and both are T1 on NEAR (runs 68 and 69, the first
-  automated drill's: `docs/results/t1-collateral-2026-11-08.json`). `/v1/status` shows when the copies
-  expire, says when relays use Intel PCS (`t1-collateral-pcs`), and raises an alert for every T1 relay
-  that fails.
+  automated drill's: `docs/results/t1-collateral-2026-11-08.json`). OutLayer has since renewed its copies
+  (valid to 2026-12-08 for FMSPC B0C06F000000 on 2026-11-09; `antibody tee check --request-id 8839` reads
+  `outlayer-onchain`, `UpToDate`). `/v1/status` shows when the copies expire, says when relays use Intel
+  PCS (`t1-collateral-pcs`), and raises an alert for every T1 relay that fails.
 - **Worker images.** OutLayer adds worker images to its approved list. A program accepts the images it
   pinned at creation, and later ones from its pinned registry only after the image delay (2 days on
   testnet), once near-antibody lists them (`sync_images`, permissionless). Until then a run on a new

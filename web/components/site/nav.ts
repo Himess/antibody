@@ -30,7 +30,7 @@ export const FOOTER = [
   {
     title: "Build",
     links: [
-      { href: "/agents", label: "Hunters and agents" },
+      { href: "/agents", label: "Hunters & agents" },
       { href: "/projects", label: "For protocols" },
       { href: "/pilot", label: "Pilot and early access" },
     ],

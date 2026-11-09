@@ -53,7 +53,7 @@ export default async function MomentPage({ searchParams }: { searchParams: Promi
       <section className={`page ${styles.panelWrap}`} aria-labelledby="run-title">
         <div className={`card ${styles.panel}`}>
           <MomentHeader moment={m} live={live} titleId="run-title" />
-          <OneMoment moment={m} variant="full" />
+          <OneMoment moment={m} variant="full" autoplay={false} />
         </div>
       </section>
 

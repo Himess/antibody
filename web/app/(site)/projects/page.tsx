@@ -330,6 +330,17 @@ export default function ProjectsPage() {
             </dd>
           </div>
           <div>
+            <dt>Costs</dt>
+            <dd>
+              <span className={styles.modelLead}>Cents per verification, on testnet&apos;s measured runs.</span>
+              <span>
+                A verification run costs about 0.009 NEAR after OutLayer&apos;s refund, plus about 0.018 NEAR of gas to verify its TDX quote on
+                NEAR; whoever asks for the run pays it. A pull-request check with four paid proofs costs about 0.05 NEAR. A hunter risks the
+                bond the program sets (0.0001 wNEAR on the practice program), returned with any verdict that breaks a rule.
+              </span>
+            </dd>
+          </div>
+          <div>
             <dt>Its reach</dt>
             <dd>
               <span className={styles.modelLead}>Bugs your invariants can state; the rest stays with your bounty.</span>

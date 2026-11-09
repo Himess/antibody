@@ -25,8 +25,9 @@ Nobody has to read a report.
 
 1. A hunter, a person or an AI agent, submits a sealed proof of an exploit.
 2. A secure enclave (OutLayer, Intel TDX) re-runs it against the rules the project committed on NEAR, and
-   NEAR checks the enclave's attestation.
-3. A broken rule pays the hunter automatically. A Critical in the project's pause policy pauses the
+   NEAR verifies the enclave's attestation, its TDX quote.
+3. A broken rule pays the hunter automatically: at once when the quote is verified, else when the
+   program's challenge window ends. A Critical in the project's pause policy, attested on NEAR, pauses the
    protocol on every chain the project registered.
 
 The rules are code. An excerpt of our test protocol's
@@ -72,10 +73,9 @@ shasum -a 256 -c $F.sha256 && chmod +x $F && mv $F antibody
 
 ```powershell
 # Windows x86_64 (PowerShell): prints OK, or MISMATCH (then delete antibody.exe and download it again)
-$ProgressPreference = "SilentlyContinue"   # PowerShell 5.1's progress bar slows the download tenfold
 $V="v0.6.2"; $U="https://github.com/Himess/antibody/releases/download/$V"
-Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.exe" -OutFile antibody.exe -UseBasicParsing
-Invoke-WebRequest "$U/antibody-x86_64-pc-windows-msvc.sha256" -OutFile antibody.sha256 -UseBasicParsing
+curl.exe -fsSL "$U/antibody-x86_64-pc-windows-msvc.exe" -o antibody.exe      # curl.exe ships with Windows 10 and 11
+curl.exe -fsSL "$U/antibody-x86_64-pc-windows-msvc.sha256" -o antibody.sha256
 if ((Get-FileHash antibody.exe -Algorithm SHA256).Hash.ToLower() -eq (Get-Content antibody.sha256).Split(" ")[0]) { "OK" } else { "MISMATCH" }
 ```
 
@@ -103,10 +103,9 @@ plan elsewhere may time out on `send_tx`).
 ```
 
 It gets a practice account, seals the public tutorial proof, commits and reveals it, and settles it,
-printing each step as it happens and a link for every transaction at the end. It ends `Done:Paid` in about
-a minute when the run is attested on NEAR and the public RPC is quiet (43.7 s and 39.9 s in the recorded run;
-36.4 s, 44.4 s and 44.6 s on the fresh practice program), and in two to three minutes when the RPC is busy:
-94 to 158 s for judges trying it four at a time from one address on 2026-11-09. While new
+printing each step as it happens and a link for every transaction at the end. **Expect `Done:Paid` in
+about a minute** (two to three when the public RPC is busy). The payout goes back to the vending contract,
+which paid your bond and your run; on a real program it is yours. While new
 worker images wait their two-day delay, the payout waits the program's 60 s challenge window instead (91 to
 95 s for the paid runs in [docs/results/byo-2026-11-07.json](docs/results/byo-2026-11-07.json)). The output
 says which path it took.
@@ -164,7 +163,7 @@ Sepolia. Counted from the block of its commit:
 |---:|---|
 | 18.5 s | The enclave's verdict: a critical rule broke |
 | 29.1 s | The verdict attested on NEAR |
-| 71.0 s | 0.1 wNEAR paid to agent A: credited at near-antibody and withdrawable ([withdrawn on 2026-11-09](https://testnet.nearblocks.io/txns/6H1U7ZRT93HeXtKPrBZEXvUdoF6KqXwDvW44DQPB7dYX)) |
+| 71.0 s | 0.1 wNEAR paid to agent A: credited at near-antibody and withdrawable ([withdrawn on 2026-11-08, 23:55 UTC](https://testnet.nearblocks.io/txns/6H1U7ZRT93HeXtKPrBZEXvUdoF6KqXwDvW44DQPB7dYX)) |
 | 90.6 s | The protocol paused on both chains |
 
 Who sent what, in order (the times are from the same commit block):
@@ -281,8 +280,8 @@ settled. Practice payouts go back to the vending contract ([docs/agent-runs.md](
 - **Immune memory on pull requests:** every paid proof, sealed or not, re-runs inside the enclave against the
   pull request's code, through near-antibody's rounds, and the check fails if one still breaks a rule. On the
   [demo repository](https://github.com/Himess/antibody-immune-demo), the pull request that brings a paid bug
-  back is [red](https://github.com/Himess/antibody-immune-demo/actions/runs/42538787235) and the harmless one
-  [green](https://github.com/Himess/antibody-immune-demo/actions/runs/42538785818) (v0.6.1, 2026-11-09). The
+  back is [red](https://github.com/Himess/antibody-immune-demo/actions/runs/42546035887) and the harmless one
+  [green](https://github.com/Himess/antibody-immune-demo/actions/runs/42546034154) (v0.6.2, 2026-11-09). The
   enclave check takes about 11 minutes, one pull request at a time per program. A second, advisory check
   re-runs on the runner the proofs it can read, the only one a fork's pull request gets
   ([docs/immune.md](docs/immune.md)).
@@ -290,7 +289,7 @@ settled. Practice payouts go back to the vending contract ([docs/agent-runs.md](
 ## Checked and attacked
 
 - **12 settlement properties,** each a Quint invariant checked by Apalache and 20,000 random traces, and
-  replayed against the rule core near-antibody runs; **41 Kani proofs** (16 harnesses, one of them for 26 precisions) of the payout arithmetic and every
+  replayed against the rule core near-antibody runs; **41 Kani proofs** (16 harnesses, plus one that proves the impact bonus at each of 25 token precisions, 0 to 24 decimals) of the payout arithmetic and every
   escrow movement ([docs/properties.md](docs/properties.md)).
 - **37 findings from attacking our own system,** each fixed and pinned by a test, and what every attack
   costs the attacker ([docs/attacks.md](docs/attacks.md); threat model:
